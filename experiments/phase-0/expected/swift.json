@@ -1,0 +1,79 @@
+{
+  "facts" : [
+    {
+      "channel" : "dev.isthmus/camera",
+      "dynamic" : false,
+      "kind" : "channel-register",
+      "location" : {
+        "column" : 23,
+        "line" : 7,
+        "path" : "ios/Runner/CameraPlugin.swift"
+      }
+    },
+    {
+      "channel" : "dev.isthmus/camera",
+      "dynamic" : false,
+      "kind" : "method-handle",
+      "location" : {
+        "column" : 18,
+        "line" : 13,
+        "path" : "ios/Runner/CameraPlugin.swift"
+      },
+      "method" : "takePhoto",
+      "symbol" : {
+        "qualifiedName" : "CameraPlugin.register"
+      }
+    },
+    {
+      "channel" : "dev.isthmus/camera",
+      "dynamic" : false,
+      "kind" : "method-handle",
+      "location" : {
+        "column" : 31,
+        "line" : 13,
+        "path" : "ios/Runner/CameraPlugin.swift"
+      },
+      "method" : "captureStill",
+      "symbol" : {
+        "qualifiedName" : "CameraPlugin.register"
+      }
+    },
+    {
+      "channel" : "dev.isthmus/camera",
+      "dynamic" : false,
+      "kind" : "method-handle",
+      "location" : {
+        "column" : 18,
+        "line" : 15,
+        "path" : "ios/Runner/CameraPlugin.swift"
+      },
+      "method" : "recordVideo",
+      "symbol" : {
+        "qualifiedName" : "CameraPlugin.register"
+      }
+    },
+    {
+      "channel" : "\"dev.isthmus/\\(feature)\"",
+      "dynamic" : true,
+      "kind" : "channel-register",
+      "location" : {
+        "column" : 23,
+        "line" : 27,
+        "path" : "ios/Runner/CameraPlugin.swift"
+      }
+    }
+  ],
+  "format" : "bridge-facts",
+  "generatedAt" : "2026-09-04T12:00:00.000Z",
+  "limitations" : [
+    "dynamic-channel-names: 1 channel constructors use a non-literal name"
+  ],
+  "platform" : "swift",
+  "project" : "/fixture",
+  "target" : "flutter",
+  "tool" : {
+    "name" : "isthmus-phase0-swift",
+    "version" : "0.0.0"
+  },
+  "version" : 0
+}

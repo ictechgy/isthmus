@@ -20,6 +20,10 @@ let package = Package(
             name: "Phase0SwiftBridgeExtractor",
             targets: ["Phase0SwiftBridgeExtractor"]
         ),
+        .executable(
+            name: "extract-swift-bridges",
+            targets: ["ExtractSwiftBridges"]
+        ),
     ],
     dependencies: [swiftSyntaxDependency],
     targets: [
@@ -29,6 +33,10 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
             ]
+        ),
+        .executableTarget(
+            name: "ExtractSwiftBridges",
+            dependencies: ["Phase0SwiftBridgeExtractor"]
         ),
         .testTarget(
             name: "Phase0SwiftBridgeExtractorTests",
