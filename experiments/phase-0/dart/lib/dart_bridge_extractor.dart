@@ -1,7 +1,27 @@
+import 'dart:collection';
+import 'dart:convert';
+
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/source/line_info.dart';
+
+/// GRAPH-EXCHANGE 문서를 결정적인 JSON 문자열로 인코딩한다.
+String encodeBridgeFactsJson(Map<String, Object?> document) {
+  const encoder = JsonEncoder.withIndent('  ');
+  return '${encoder.convert(_sortJson(document))}\n';
+}
+
+/// JSON 객체는 키로, 배열은 원래 순서대로 재귀 정렬한다.
+Object? _sortJson(Object? value) {
+  if (value is Map<String, Object?>) {
+    return SplayTreeMap<String, Object?>.from(
+      value.map((key, item) => MapEntry(key, _sortJson(item))),
+    );
+  }
+  if (value is List<Object?>) return value.map(_sortJson).toList();
+  return value;
+}
 
 /// 교환 형식의 브리지 사실 하나를 표현한다.
 final class BridgeFact {
@@ -25,6 +45,41 @@ List<BridgeFact> extractDartBridgeFacts({
   parseResult.unit.accept(visitor);
   return List.unmodifiable(visitor.facts);
 }
+
+/// 추출 사실을 GRAPH-EXCHANGE 문서로 감싼다.
+Map<String, Object?> createDartBridgeFactsDocument({
+  required List<BridgeFact> facts,
+  required DateTime generatedAt,
+  required String project,
+}) => {
+  'format': 'bridge-facts',
+  'version': 0,
+  'tool': {'name': 'isthmus-phase0-dart', 'version': '0.0.0'},
+  'generatedAt': generatedAt.toUtc().toIso8601String(),
+  'platform': 'dart',
+  'target': 'flutter',
+  'project': project,
+  'facts': facts.map((fact) => fact.toJson()).toList(growable: false),
+  'limitations': _dynamicLimitations(facts),
+};
+
+/// 동적 채널과 메서드 사실을 종류별 한계 문장으로 센다.
+List<String> _dynamicLimitations(List<BridgeFact> facts) {
+  final channelCount = _dynamicCount(facts, 'channel-create');
+  final methodCount = _dynamicCount(facts, 'method-invoke');
+  return [
+    if (channelCount > 0)
+      'dynamic-channel-names: $channelCount channel constructors use a non-literal name',
+    if (methodCount > 0)
+      'dynamic-method-names: $methodCount method invocations use a non-literal name',
+  ];
+}
+
+/// 주어진 종류에서 동적 사실만 센다.
+int _dynamicCount(List<BridgeFact> facts, String kind) => facts
+    .where((fact) => fact.fields['kind'] == kind)
+    .where((fact) => fact.fields['dynamic'] == true)
+    .length;
 
 /// MethodChannel 생성 지점을 방문해 사실로 바꾼다.
 final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {

@@ -1,0 +1,60 @@
+{
+  "facts": [
+    {
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "kind": "channel-create",
+      "location": {
+        "column": 23,
+        "line": 3,
+        "path": "lib/camera_bridge.dart"
+      }
+    },
+    {
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "kind": "method-invoke",
+      "location": {
+        "column": 23,
+        "line": 6,
+        "path": "lib/camera_bridge.dart"
+      },
+      "method": "takePhoto"
+    },
+    {
+      "channel": "'dev.isthmus/$feature'",
+      "dynamic": true,
+      "kind": "channel-create",
+      "location": {
+        "column": 5,
+        "line": 10,
+        "path": "lib/camera_bridge.dart"
+      }
+    },
+    {
+      "channel": "dev.isthmus/camera",
+      "dynamic": true,
+      "kind": "method-invoke",
+      "location": {
+        "column": 23,
+        "line": 13,
+        "path": "lib/camera_bridge.dart"
+      },
+      "method": "method"
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-04T12:00:00.000Z",
+  "limitations": [
+    "dynamic-channel-names: 1 channel constructors use a non-literal name",
+    "dynamic-method-names: 1 method invocations use a non-literal name"
+  ],
+  "platform": "dart",
+  "project": "/fixture",
+  "target": "flutter",
+  "tool": {
+    "name": "isthmus-phase0-dart",
+    "version": "0.0.0"
+  },
+  "version": 0
+}

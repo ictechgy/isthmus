@@ -137,4 +137,62 @@ void ping() {
       ),
     );
   });
+
+  test('문서가 동적 이름 개수를 limitations에 기록한다', () async {
+    final source = await File('../fixture/lib/camera_bridge.dart')
+        .readAsString();
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/camera_bridge.dart',
+    );
+
+    final document = createDartBridgeFactsDocument(
+      facts: facts,
+      generatedAt: DateTime.utc(2026, 9, 4, 12),
+      project: '/fixture',
+    );
+
+    expect(document['limitations'], [
+      'dynamic-channel-names: 1 channel constructors use a non-literal name',
+      'dynamic-method-names: 1 method invocations use a non-literal name',
+    ]);
+  });
+
+  test('추출 사실을 GRAPH-EXCHANGE 버전 0 문서로 감싼다', () {
+    const fact = BridgeFact({'kind': 'channel-create'});
+
+    final document = createDartBridgeFactsDocument(
+      facts: const [fact],
+      generatedAt: DateTime.utc(2026, 9, 4, 12),
+      project: '/fixture',
+    );
+
+    expect(document, containsPair('format', 'bridge-facts'));
+    expect(document, containsPair('version', 0));
+    expect(
+      document,
+      containsPair('tool', {'name': 'isthmus-phase0-dart', 'version': '0.0.0'}),
+    );
+    expect(document, containsPair('generatedAt', '2026-09-04T12:00:00.000Z'));
+    expect(document, containsPair('platform', 'dart'));
+    expect(document, containsPair('target', 'flutter'));
+    expect(document, containsPair('project', '/fixture'));
+    expect(document, containsPair('facts', [fact.toJson()]));
+  });
+
+  test('JSON 객체 키를 중첩 수준마다 정렬한다', () {
+    final encoded = encodeBridgeFactsJson({
+      'z': 2,
+      'a': {'z': 1, 'a': 0},
+    });
+
+    expect(encoded, '''{
+  "a": {
+    "a": 0,
+    "z": 1
+  },
+  "z": 2
+}
+''');
+  });
 }
