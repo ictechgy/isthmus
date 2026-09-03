@@ -24,7 +24,7 @@ void main() {
     expect(document['format'], 'bridge-facts');
     expect(document['project'], '/fixture');
     expect(document['generatedAt'], '2026-09-04T12:00:00.000Z');
-    expect(document['facts'], hasLength(4));
+    expect(document['facts'], hasLength(5));
     expect(result.stdout, isNot(contains(Directory.current.parent.path)));
     final expected = await File('../expected/dart.json').readAsString();
     expect(result.stdout, expected);

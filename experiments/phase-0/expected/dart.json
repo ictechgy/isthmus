@@ -41,6 +41,17 @@
         "path": "lib/camera_bridge.dart"
       },
       "method": "method"
+    },
+    {
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "kind": "method-invoke",
+      "location": {
+        "column": 23,
+        "line": 17,
+        "path": "lib/camera_bridge.dart"
+      },
+      "method": "takePhotos"
     }
   ],
   "format": "bridge-facts",

@@ -1,0 +1,88 @@
+{
+  "matchedChannels": [
+    {
+      "channel": "dev.isthmus/camera",
+      "creator": {
+        "column": 23,
+        "line": 3,
+        "path": "lib/camera_bridge.dart"
+      },
+      "registration": {
+        "column": 23,
+        "line": 7,
+        "path": "ios/Runner/CameraPlugin.swift"
+      }
+    }
+  ],
+  "unregisteredChannelCreations": [],
+  "matchedMethods": [
+    {
+      "channel": "dev.isthmus/camera",
+      "method": "takePhoto",
+      "caller": {
+        "column": 23,
+        "line": 6,
+        "path": "lib/camera_bridge.dart"
+      },
+      "handler": {
+        "column": 18,
+        "line": 13,
+        "path": "ios/Runner/CameraPlugin.swift"
+      },
+      "handlerSymbol": {
+        "qualifiedName": "CameraPlugin.register"
+      }
+    }
+  ],
+  "unhandledInvocations": [
+    {
+      "channel": "dev.isthmus/camera",
+      "method": "takePhotos",
+      "caller": {
+        "column": 23,
+        "line": 17,
+        "path": "lib/camera_bridge.dart"
+      }
+    }
+  ],
+  "handlersWithoutInvocations": [
+    {
+      "channel": "dev.isthmus/camera",
+      "method": "captureStill",
+      "handler": {
+        "column": 31,
+        "line": 13,
+        "path": "ios/Runner/CameraPlugin.swift"
+      },
+      "handlerSymbol": {
+        "qualifiedName": "CameraPlugin.register"
+      }
+    },
+    {
+      "channel": "dev.isthmus/camera",
+      "method": "recordVideo",
+      "handler": {
+        "column": 18,
+        "line": 15,
+        "path": "ios/Runner/CameraPlugin.swift"
+      },
+      "handlerSymbol": {
+        "qualifiedName": "CameraPlugin.register"
+      }
+    }
+  ],
+  "limitations": [
+    {
+      "platform": "dart",
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name"
+    },
+    {
+      "platform": "dart",
+      "message": "dynamic-method-names: 1 method invocations use a non-literal name"
+    },
+    {
+      "platform": "swift",
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name"
+    }
+  ]
+}

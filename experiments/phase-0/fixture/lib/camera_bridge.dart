@@ -12,3 +12,7 @@ MethodChannel dynamicChannel(String feature) =>
 Future<void> invokeDynamic(String method) async {
   await cameraChannel.invokeMethod(method);
 }
+
+Future<void> takePhotoTypo() async {
+  await cameraChannel.invokeMethod('takePhotos');
+}
