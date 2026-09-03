@@ -158,7 +158,7 @@ void ping() {
     ]);
   });
 
-  test('추출 사실을 GRAPH-EXCHANGE 버전 0 문서로 감싼다', () {
+  test('추출 사실을 GRAPH-EXCHANGE 버전 1 문서로 감싼다', () {
     const fact = BridgeFact({'kind': 'channel-create'});
 
     final document = createDartBridgeFactsDocument(
@@ -168,7 +168,7 @@ void ping() {
     );
 
     expect(document, containsPair('format', 'bridge-facts'));
-    expect(document, containsPair('version', 0));
+    expect(document, containsPair('version', 1));
     expect(
       document,
       containsPair('tool', {'name': 'isthmus-phase0-dart', 'version': '0.0.0'}),

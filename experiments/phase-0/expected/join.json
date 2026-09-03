@@ -83,6 +83,10 @@
     {
       "platform": "swift",
       "message": "dynamic-channel-names: 1 channel constructors use a non-literal name"
+    },
+    {
+      "platform": "swift",
+      "message": "missing-handler-usrs: 3 method handlers have only a qualified name"
     }
   ]
 }

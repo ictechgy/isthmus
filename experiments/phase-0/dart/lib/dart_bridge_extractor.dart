@@ -53,7 +53,7 @@ Map<String, Object?> createDartBridgeFactsDocument({
   required String project,
 }) => {
   'format': 'bridge-facts',
-  'version': 0,
+  'version': 1,
   'tool': {'name': 'isthmus-phase0-dart', 'version': '0.0.0'},
   'generatedAt': generatedAt.toUtc().toIso8601String(),
   'platform': 'dart',

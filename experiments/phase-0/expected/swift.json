@@ -66,7 +66,8 @@
   "format" : "bridge-facts",
   "generatedAt" : "2026-09-04T12:00:00.000Z",
   "limitations" : [
-    "dynamic-channel-names: 1 channel constructors use a non-literal name"
+    "dynamic-channel-names: 1 channel constructors use a non-literal name",
+    "missing-handler-usrs: 3 method handlers have only a qualified name"
   ],
   "platform" : "swift",
   "project" : "/fixture",
@@ -75,5 +76,5 @@
     "name" : "isthmus-phase0-swift",
     "version" : "0.0.0"
   },
-  "version" : 0
+  "version" : 1
 }

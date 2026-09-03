@@ -1,6 +1,6 @@
-# 브리지 사실 교환 형식 (초안 0)
+# 브리지 사실 교환 형식 (버전 1)
 
-cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 초안이며, isthmus Phase 0 에서 실제 코드에 대조한 뒤 1 로 올린다.
+cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
 
 ## 원칙
 
@@ -14,7 +14,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 ```jsonc
 {
   "format": "bridge-facts",
-  "version": 0,
+  "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 신선도 판단용
   "platform": "dart" | "swift" | "kotlin" | "js",
@@ -38,18 +38,20 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "dynamic": false,
   "location": { "path": "lib/camera.dart", "line": 42, "column": 5 },
   "symbol": {                          // 이 사실을 담고 있는 선언 (있으면)
-    "qualifiedName": "CameraPlugin.takePhoto",
-    "usr": "s:…"                       // cartograph 는 USR, kartograph 는 JVM 시그니처, dartograph 는 요소 ID
+    "qualifiedName": "CameraPlugin.register",
+    "usr": "s:…"                       // 생산 도구의 안정 식별자. Phase 0 구문 실험에서는 생략 가능
   }
 }
 ```
+
+`method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
 ### 종류별 의미
 
 | kind | 누가 내는가 | 뜻 |
 |---|---|---|
 | `channel-create` | Dart / JS | 호출하는 쪽이 채널 객체를 만들었다 |
-| `channel-register` | Swift / Kotlin | 받는 쪽이 채널에 핸들러를 달았다 (`setMethodCallHandler`) |
+| `channel-register` | Swift / Kotlin | 받는 쪽이 채널에 핸들러를 달았다 (`setMethodCallHandler`). 위치도 생성자가 아니라 이 호출을 가리킨다 |
 | `method-invoke` | Dart / JS | `invokeMethod('m')` 호출 |
 | `method-handle` | Swift / Kotlin | 핸들러 안에서 `case "m":` 또는 동등한 분기 |
 | `module-export` | Swift / Kotlin | RN `RCT_EXPORT_MODULE(Name)`, `@ReactModule(name=)` |
@@ -65,6 +67,8 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
 - `module-import` ↔ `module-export`: `channel` (모듈 이름)
 - `dynamic: true` 인 사실은 조인하지 않고 `limitations` 로 센다
+
+생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 
 ## 되돌려 주는 형식: 외부 보존 근거
 
@@ -103,8 +107,9 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 
 **cartograph 가 첫 번째다.** cartograph 는 이미 있고, `bridges` 는 SwiftSyntax 로 리터럴을 뽑는 작은 명령이다. cartograph 저장소에 이슈/PR 로 넣는다.
 
-## 미결
+## Phase 0 결정
 
-- Swift 쪽 `case "takePhoto":` 를 어느 핸들러 심볼에 귀속시킬 것인가 — 클로저 안이라 USR 이 없다. 감싸는 함수/타입의 USR + 줄로 표시하는 것이 현실적
-- Pigeon · Turbo Modules codegen 산출물을 "정적 참조로 해결됨" 으로 표시하는 방법 — 사실 종류를 하나 더 둘지(`codegen-resolved`), `dynamic` 의 반대 플래그로 둘지
-- 버전 0 → 1 승격 조건: Flutter ↔ Swift 코퍼스가 이 형식으로 실제로 조인되었을 때
+- **Swift `case` 귀속**: 감싸는 타입·함수의 `qualifiedName`과, 생산 구현이 가진 안정 식별자(`usr`)를 `symbol`에 넣는다. 사실의 `location`은 `case` 문자열 위치다. Phase 0 SwiftSyntax 실험은 USR을 만들 수 없어 그 수를 `missing-handler-usrs`로 보고한다
+- **Pigeon · Turbo Modules codegen**: 버전 1에는 별도 `codegen-resolved` 종류나 플래그를 추가하지 않는다. 생성 코드의 리터럴도 같은 채널·메서드 사실이고 조인 규칙이 같기 때문이다. 버전 1은 생성 여부를 계약에 싣지 않으며, 필요해지면 조인 키를 바꾸지 않는 선택 필드로 추가한다. 소비자는 경로만 보고 사용자 작성 코드라고 가정하지 않는다
+- **한 단계 상수 추적**: `const kChannel = '…'`와 Swift `static let`처럼 같은 파일의 문자열 상수 한 단계는 정적 사실로 낸다. 그 이상이거나 보간된 표현식은 원문과 `dynamic: true`로 보존한다
+- **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다

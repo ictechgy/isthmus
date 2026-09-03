@@ -137,10 +137,11 @@ func reportsDynamicChannelLimitation() throws {
 
     #expect(document.limitations == [
         "dynamic-channel-names: 1 channel constructors use a non-literal name",
+        "missing-handler-usrs: 3 method handlers have only a qualified name",
     ])
 }
 
-@Test("Swift 사실을 GRAPH-EXCHANGE 버전 0 문서로 감싼다")
+@Test("Swift 사실을 GRAPH-EXCHANGE 버전 1 문서로 감싼다")
 func wrapsSwiftFactsInExchangeDocument() {
     let document = makeSwiftBridgeFactsDocument(
         facts: [],
@@ -149,7 +150,7 @@ func wrapsSwiftFactsInExchangeDocument() {
     )
 
     #expect(document.format == "bridge-facts")
-    #expect(document.version == 0)
+    #expect(document.version == 1)
     #expect(document.tool.name == "isthmus-phase0-swift")
     #expect(document.tool.version == "0.0.0")
     #expect(document.generatedAt == "2026-09-04T12:00:00.000Z")

@@ -128,6 +128,11 @@ test('동적 사실은 조인하지 않고 양쪽 limitations를 보존한다', 
       message:
         'dynamic-channel-names: 1 channel constructors use a non-literal name',
     },
+    {
+      platform: 'swift',
+      message:
+        'missing-handler-usrs: 3 method handlers have only a qualified name',
+    },
   ]);
 });
 

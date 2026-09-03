@@ -17,6 +17,8 @@
 
 목표: `GRAPH-EXCHANGE.md` 초안 0 이 실제 코드에 맞는지 확인하고 1 로 올린다.
 
+**현재 결과**: 로컬에 `flutter/packages`와 Flutter SDK가 없어 `experiments/phase-0/fixture/`의 Dart·Swift 소스 코퍼스를 택했다. analyzer 14.3.0과 SwiftSyntax로 두 JSON을 실제 생성하고 손 조인해 형식을 버전 1로 올렸다. 공개 Flutter 플러그인에서의 도그푸딩은 cartograph Phase 1 수용 조건으로 남긴다.
+
 ### 0.1 대상
 
 - `flutter/packages` 에서 MethodChannel 을 쓰는 플러그인 하나. 후보: `path_provider`, `url_launcher`, `shared_preferences` (전부 iOS 구현이 Swift 인지 ObjC 인지 세션에서 확인 — **ObjC 면 cartograph 가 못 본다**, Swift 구현이 있는 것을 고른다)
@@ -76,7 +78,7 @@
 
 | Phase | 상태 | 비고 |
 |---|---|---|
-| 0 형식 검증 | 미착수 | Dart 임시 스크립트로 dartograph 를 기다리지 않음 |
+| 0 형식 검증 | 핵심 완료 | 합성 코퍼스 조인·형식 v1 완료. 공개 Flutter 플러그인 도그푸딩 남음 |
 | 1 cartograph `bridges` | 미착수 | cartograph 저장소 |
 | 2 골격 + check | 미착수 | |
 | 3 되돌려 주기 | 미착수 | cartograph `--external-retentions` |

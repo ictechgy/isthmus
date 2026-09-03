@@ -110,8 +110,8 @@ public struct BridgeFactsDocument: Encodable, Sendable {
     /// 교환 문서 종류다.
     public let format = "bridge-facts"
 
-    /// Phase 0에서 검증 중인 형식 버전이다.
-    public let version = 0
+    /// Flutter↔Swift 코퍼스로 검증한 형식 버전이다.
+    public let version = 1
 
     /// 문서를 만든 실험 도구다.
     public let tool = BridgeTool(
@@ -172,9 +172,20 @@ public func makeSwiftBridgeFactsDocument(
     let dynamicChannels = facts.filter {
         $0.kind == "channel-register" && $0.dynamic
     }.count
-    let limitations = dynamicChannels == 0 ? [] : [
-        "dynamic-channel-names: \(dynamicChannels) channel constructors use a non-literal name",
-    ]
+    let missingHandlerUSRs = facts.filter {
+        $0.kind == "method-handle" && $0.symbol?.usr == nil
+    }.count
+    var limitations: [String] = []
+    if dynamicChannels > 0 {
+        limitations.append(
+            "dynamic-channel-names: \(dynamicChannels) channel constructors use a non-literal name"
+        )
+    }
+    if missingHandlerUSRs > 0 {
+        limitations.append(
+            "missing-handler-usrs: \(missingHandlerUSRs) method handlers have only a qualified name"
+        )
+    }
     return BridgeFactsDocument(
         generatedAt: generatedAt,
         project: project,
