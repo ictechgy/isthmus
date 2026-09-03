@@ -255,7 +255,10 @@ private final class BridgeFactCollector: SyntaxVisitor {
 
     /// 핸들러 호출에 들어갈 때 수신 채널 문맥을 쌓는다.
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        if let channel = handlerChannel(node) { handlerChannels.append(channel) }
+        if let channel = handlerChannel(node) {
+            recordChannelRegistration(node, channel: channel)
+            handlerChannels.append(channel)
+        }
         return .visitChildren
     }
 
@@ -295,19 +298,13 @@ private final class BridgeFactCollector: SyntaxVisitor {
         stringConstants[name] = value
     }
 
-    /// FlutterMethodChannel의 name 인자를 channel-register 사실로 바꾼다.
+    /// FlutterMethodChannel의 name 인자를 변수의 채널 값으로 보존한다.
     private func recordChannelCreation(variableName: String, expression: ExprSyntax) {
         guard let call = expression.as(FunctionCallExprSyntax.self),
               isFlutterMethodChannel(call),
               let argument = call.arguments.first(where: { $0.label?.text == "name" })
         else { return }
         let channel = bridgeName(argument.expression)
-        facts.append(BridgeFact(
-            kind: "channel-register",
-            channel: channel.value,
-            dynamic: channel.isDynamic,
-            location: location(of: call)
-        ))
         channelsByVariable[variableName] = channel
     }
 
@@ -326,6 +323,20 @@ private final class BridgeFactCollector: SyntaxVisitor {
               let receiver = member.base?.as(DeclReferenceExprSyntax.self)
         else { return nil }
         return channelsByVariable[receiver.baseName.text]
+    }
+
+    /// 실제 setMethodCallHandler 호출을 channel-register 사실로 만든다.
+    private func recordChannelRegistration(
+        _ call: FunctionCallExprSyntax,
+        channel: (value: String, isDynamic: Bool)
+    ) {
+        guard let member = call.calledExpression.as(MemberAccessExprSyntax.self) else { return }
+        facts.append(BridgeFact(
+            kind: "channel-register",
+            channel: channel.value,
+            dynamic: channel.isDynamic,
+            location: location(of: member.declName)
+        ))
     }
 
     /// switch 대상이 call.method 형태인지 확인한다.

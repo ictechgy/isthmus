@@ -5,8 +5,8 @@
       "dynamic" : false,
       "kind" : "channel-register",
       "location" : {
-        "column" : 23,
-        "line" : 7,
+        "column" : 17,
+        "line" : 11,
         "path" : "ios/Runner/CameraPlugin.swift"
       }
     },
@@ -57,8 +57,8 @@
       "dynamic" : true,
       "kind" : "channel-register",
       "location" : {
-        "column" : 23,
-        "line" : 27,
+        "column" : 17,
+        "line" : 31,
         "path" : "ios/Runner/CameraPlugin.swift"
       }
     }

@@ -2,8 +2,8 @@ import Foundation
 import Phase0SwiftBridgeExtractor
 import Testing
 
-@Test("static let으로 전달된 FlutterMethodChannel 생성 지점을 추출한다")
-func extractsChannelCreationThroughStaticConstant() throws {
+@Test("static let 채널의 setMethodCallHandler 등록 지점을 추출한다")
+func extractsChannelRegistrationThroughStaticConstant() throws {
     let source = try String(
         contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
         encoding: .utf8
@@ -20,8 +20,8 @@ func extractsChannelCreationThroughStaticConstant() throws {
         dynamic: false,
         location: BridgeLocation(
             path: "ios/Runner/CameraPlugin.swift",
-            line: 7,
-            column: 23
+            line: 11,
+            column: 17
         )
     )))
 }
@@ -44,8 +44,8 @@ func preservesDynamicChannelExpression() throws {
         dynamic: true,
         location: BridgeLocation(
             path: "ios/Runner/CameraPlugin.swift",
-            line: 27,
-            column: 23
+            line: 31,
+            column: 17
         )
     )))
 }

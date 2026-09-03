@@ -36,8 +36,8 @@ test('같은 정적 채널의 생성과 등록을 양쪽 위치로 연결한다'
       },
       registration: {
         path: 'ios/Runner/CameraPlugin.swift',
-        line: 7,
-        column: 23,
+        line: 11,
+        column: 17,
       },
     },
   ]);

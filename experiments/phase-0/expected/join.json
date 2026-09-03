@@ -8,8 +8,8 @@
         "path": "lib/camera_bridge.dart"
       },
       "registration": {
-        "column": 23,
-        "line": 7,
+        "column": 17,
+        "line": 11,
         "path": "ios/Runner/CameraPlugin.swift"
       }
     }

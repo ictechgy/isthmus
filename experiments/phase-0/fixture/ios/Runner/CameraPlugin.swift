@@ -28,6 +28,6 @@ final class CameraPlugin {
             name: "dev.isthmus/\(feature)",
             binaryMessenger: messenger
         )
-        _ = channel
+        channel.setMethodCallHandler { _, _ in }
     }
 }
