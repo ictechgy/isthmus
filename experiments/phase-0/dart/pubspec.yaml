@@ -1,0 +1,13 @@
+name: isthmus_phase0_dart
+description: Phase 0 Dart bridge-fact extraction experiment for isthmus.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+
+dependencies:
+  analyzer: 14.3.0
+
+dev_dependencies:
+  test: 1.32.0
