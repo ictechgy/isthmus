@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# 로컬 상태
+.omc/
+.claude/settings.local.json
+
+# 비밀
+.env
+.env.*
+*.pem
+*-service-account*.json
