@@ -12,4 +12,7 @@
 - 결정적 `isthmus-check` JSON과 입력 limitations·신선도 보고
 - `check <files...> [--strict]` CLI와 종료 코드 `0/1/2/64` 검증
 - `retentions <files...> --for cartograph`와 실제 `dead`·`--explain` 왕복 검증
+- `query <channel|method> <files...>` 양방향 조회와 qualifiedName 모호성 해소·미발견 응답
+- `graph <files...> [--format json|dot|mermaid]` 경계 그래프 출력
+- 네이티브 핸들러 변경 전 경계 호출자 확인을 안내하는 배포용 isthmus skill
 - 제품 코드 라인·함수·분기 90% 커버리지 게이트

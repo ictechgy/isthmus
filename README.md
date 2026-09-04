@@ -18,7 +18,9 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**Phase 3 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 `check`, cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과 `query`·`graph`다.
+**Phase 4 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과
+0.1.0 릴리스다.
 
 | 문서 | 내용 |
 |---|---|
@@ -67,6 +69,24 @@ cartograph dead --external-retentions external-retentions.json
 
 `retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 안전하게 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
 
+채널이나 메서드가 경계 반대편의 어느 위치와 연결되는지 조회하려면:
+
+```bash
+node dist/cli/main.js query takePhoto dart-bridges.json swift-bridges.json
+```
+
+경계 간선만 JSON, Graphviz DOT, Mermaid로 출력하려면:
+
+```bash
+node dist/cli/main.js graph dart-bridges.json swift-bridges.json
+node dist/cli/main.js graph dart-bridges.json swift-bridges.json --format dot
+node dist/cli/main.js graph dart-bridges.json swift-bridges.json --format mermaid
+```
+
+`query`는 같은 메서드가 여러 채널에 있으면 후보를 반환하고 임의로 고르지 않는다.
+반환된 `qualifiedName`을 같은 subject 자리에 넣어 정확한 후보를 다시 조회할 수 있다.
+`graph`는 매치된 간선만 내보내며, 입력의 `limitations`를 함께 보존한다.
+
 출력은 `isthmus-check` 버전 1 JSON이며 다음 세 사실을 보고한다.
 
 - `unhandled-invocation` (error): 호출은 있지만 네이티브 핸들러가 없음
@@ -95,6 +115,12 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/cartograph \
   /path/to/FalsePositiveCorpus
 ```
+
+## 코딩 에이전트 skill
+
+네이티브 브리지 핸들러를 지우거나 이름을 바꾸기 전에 `query`로 다른 언어의 호출자를
+확인하도록 가르치는 skill 원문을 [`Skills/isthmus/SKILL.md`](Skills/isthmus/SKILL.md)에 제공한다.
+사용하는 에이전트의 프로젝트 skill 디렉터리에 이 파일을 복사해 사용할 수 있다.
 
 ## 라이선스
 
