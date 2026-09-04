@@ -98,6 +98,21 @@ test('target은 facts 존재 여부와 일치해야 한다', () => {
   );
 });
 
+test('한 문서의 fact 수가 안전 상한을 넘으면 정규화 전에 거부한다', () => {
+  const maximumFacts = 100_000;
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      target: 'flutter',
+      facts: Array(maximumFacts + 1).fill(validMethodFact),
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: `Facts exceed the ${maximumFacts} item limit.`,
+    },
+  );
+});
+
 test('플랫폼은 자기 역할의 fact kind만 생산할 수 있다', () => {
   const invalidCases = [
     {
@@ -121,6 +136,37 @@ test('플랫폼은 자기 역할의 fact kind만 생산할 수 있다', () => {
       {
         name: 'BridgeFactsValidationError',
         message: 'Fact kind is not valid for platform at index 0.',
+      },
+    );
+  }
+});
+
+test('아직 조인하지 않는 module·component fact는 fail-closed로 거부한다', () => {
+  const unsupportedFacts = [
+    { platform: 'js', kind: 'module-import' },
+    { platform: 'swift', kind: 'module-export' },
+    { platform: 'js', kind: 'component-require' },
+    { platform: 'kotlin', kind: 'component-export' },
+  ];
+
+  for (const { platform, kind } of unsupportedFacts) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform,
+        target: 'react-native',
+        facts: [
+          {
+            kind,
+            channel: 'CameraModule',
+            dynamic: false,
+            location: { path: 'src/camera.ts', line: 1, column: 1 },
+          },
+        ],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Fact kind is reserved but not supported in isthmus 0.1.',
       },
     );
   }
@@ -260,6 +306,17 @@ test('잘못된 사실을 필드별 검증 오류로 거부한다', () => {
         location: { path: 'ios/Plugin\nInjected.swift', line: 1, column: 1 },
       },
       'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...validMethodFact,
+        location: { path: 'ios/Plugin\u2028Injected.swift', line: 1, column: 1 },
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      { ...validMethodFact, method: 'take\u2029Photo' },
+      'Method fact at index 0 requires a method name.',
     ],
     [
       {

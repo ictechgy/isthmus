@@ -142,7 +142,7 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
       {
         platform: 'dart' as const,
         tool: 'test-tool',
-        message: 'dynamic-name:\nflowchart TD',
+        message: 'dynamic-name:\nflowchart TD\u0085subgraph X',
       },
     ],
   };
@@ -151,15 +151,21 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
   const mermaid = renderBridgeGraph(graph, 'mermaid');
 
   assert.equal(
-    dot.includes('  // limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    dot.includes(
+      '  // limitation: dart/test-tool: dynamic-name: flowchart TD subgraph X\n',
+    ),
     true,
   );
   assert.equal(
-    mermaid.includes('  %% limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    mermaid.includes(
+      '  %% limitation: dart/test-tool: dynamic-name: flowchart TD subgraph X\n',
+    ),
     true,
   );
   assert.equal(dot.includes('\nflowchart TD'), false);
   assert.equal(mermaid.includes('\nflowchart TD'), false);
+  assert.equal(dot.includes('\u0085'), false);
+  assert.equal(mermaid.includes('\u0085'), false);
 });
 
 test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {

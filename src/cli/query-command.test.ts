@@ -40,6 +40,24 @@ test('query 입력 파일이 두 개보다 적으면 사용법과 64를 반환�
   });
 });
 
+test('query 입력 파일이 안전 상한을 넘으면 읽기 전에 거부한다', async () => {
+  let didReadFile = false;
+  const result = await runQueryCommand(
+    [
+      'query',
+      'takePhoto',
+      ...Array.from({ length: 257 }, (_, index) => `${index}.json`),
+    ],
+    async () => {
+      didReadFile = true;
+      return '';
+    },
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(didReadFile, false);
+});
+
 test('query 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
   const result = await runQueryCommand(
     ['query', 'takePhoto', 'private-dart.json', 'private-swift.json'],
@@ -54,6 +72,35 @@ test('query 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다
       'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   });
+});
+
+test('query 내부 오류를 입력 오류와 구분한다', async () => {
+  const result = await runQueryCommand(
+    ['query', 'takePhoto', 'first.json', 'second.json'],
+    async () => undefined as unknown as string,
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError,
+    'Internal isthmus error; retry with a current version.\n',
+  );
+});
+
+test('query도 너무 큰 입력 뒤의 파일을 읽지 않는다', async () => {
+  const reads: string[] = [];
+  const result = await runQueryCommand(
+    ['query', 'takePhoto', 'large.json', 'later.json'],
+    async (path) => {
+      reads.push(path);
+      return path === 'large.json'
+        ? ' '.repeat(16 * 1024 * 1024 + 1)
+        : '{}';
+    },
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, ['large.json']);
 });
 
 test('없는 subject는 notFound JSON과 종료 코드 64를 반환한다', async () => {

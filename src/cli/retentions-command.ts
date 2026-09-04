@@ -1,11 +1,18 @@
-import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
+import {
+  isBridgeJoinDeferred,
+  joinBridgeDocuments,
+  MAX_DOCUMENTS_PER_JOIN,
+} from '../join/join.ts';
 import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
+  RetentionValidationError,
 } from '../report/retentions.ts';
 import {
   bridgeJoinDeferredError,
+  internalError,
+  isExpectedInputError,
+  readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
 } from './check-command.ts';
@@ -23,10 +30,7 @@ export async function runRetentionsCommand(
   const inputPaths = retentionInputPaths(arguments_);
   if (inputPaths === undefined) return retentionUsageError();
   try {
-    const texts = await Promise.all(inputPaths.map(readTextFile));
-    const documents = texts.map((text) =>
-      parseBridgeFactsDocument(JSON.parse(text)),
-    );
+    const documents = await readBridgeDocuments(inputPaths, readTextFile);
     const joined = joinBridgeDocuments(documents);
     if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
     const retentions = createCartographRetentionsDocument(
@@ -39,8 +43,10 @@ export async function runRetentionsCommand(
       standardError: '',
       exitCode: 0,
     };
-  } catch {
-    return retentionInputError();
+  } catch (error) {
+    return isExpectedInputError(error) || error instanceof RetentionValidationError
+      ? retentionInputError()
+      : internalError();
   }
 }
 
@@ -61,7 +67,10 @@ function retentionInputPaths(arguments_: readonly string[]): string[] | undefine
   if (forIndex !== arguments_.length - 2) return undefined;
   if (arguments_[forIndex + 1] !== 'cartograph') return undefined;
   const paths = arguments_.slice(1, forIndex);
-  return paths.some((path) => path.startsWith('-')) ? undefined : paths;
+  return paths.length > MAX_DOCUMENTS_PER_JOIN ||
+    paths.some((path) => path.startsWith('-'))
+    ? undefined
+    : paths;
 }
 
 /** 잘못된 retentions 호출을 사용법과 코드 64로 바꾼다. */

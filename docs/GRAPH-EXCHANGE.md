@@ -49,6 +49,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 `location.path`는 프로젝트 루트 기준 상대 경로다. 절대 경로, `..` 상위 이동, 제어 문자를 넣지 않는다.
 소비자는 이 조건을 어긴 문서를 거부해 로컬 경로 노출과 후속 출력 문법 오염을 막는다.
 프로젝트 경로와 채널·메서드·심볼 이름에도 제어 문자를 넣지 않는다.
+NEL(U+0085)과 Unicode 줄·문단 구분자(U+2028/U+2029)도 허용하지 않는다.
 `generatedAt`은 timezone이 명시된 ISO 8601 날짜·시각이어야 한다.
 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
 제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
@@ -70,11 +71,15 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
 
+`module-*`과 `component-*`는 버전 1에 예약되어 있지만 isthmus 0.1에서는 아직 조인하지
+않는다. 0.1 소비자는 거짓 정상 결과를 막기 위해 이 네 종류를 입력 오류로 거부하며,
+실제 조인은 RN 지원과 함께 0.2에서 제공한다.
+
 ## 조인 규칙 (isthmus 가 적용)
 
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
-- `module-import` ↔ `module-export`: `channel` (모듈 이름)
+- `module-import` ↔ `module-export`: 0.2에서 `channel`(모듈 이름)로 조인할 예정
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다
 - 위치는 증거이지 조인 키가 아니다. 같은 `(channel, method)` 사실이 여러 위치에 있어도 존재 여부는 키 집합으로 판단하고, 위치는 모두 증거로 보존한다
 - 한 번의 조인에 넣는 모든 문서는 정확히 같은 `project` 문자열을 가져야 한다. 다른 프로젝트의 같은 채널 이름을 연결하지 않기 위해 불일치는 입력 오류로 거부한다
@@ -92,6 +97,13 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 
 소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,
 Swift/Kotlin은 수신 측 종류만 생산할 수 있다.
+
+### 입력 자원 상한
+
+- 한 명령은 최대 256개 교환 문서를 받는다
+- 한 문서는 최대 100,000개 fact를 담는다
+- CLI는 파일 하나당 UTF-16 문자열 길이 16Mi, 전체 64Mi를 넘으면 파싱 전에 거부한다
+- 경계 그래프의 Cartesian 간선은 최대 100,000개다
 
 ## 되돌려 주는 형식: 외부 보존 근거
 

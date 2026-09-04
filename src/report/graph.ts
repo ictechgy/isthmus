@@ -124,7 +124,7 @@ function renderDot(graph: BridgeGraphDocument): string {
 /** 분석 한계를 텍스트 그래프의 한 줄 주석으로 안전하게 만든다. */
 function limitationComment(limitation: JoinLimitation): string {
   const text = `${limitation.platform}/${limitation.tool}: ${limitation.message}`;
-  return text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/gu, ' ');
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ');
 }
 
 /** DOT 문자열 리터럴로 안전하게 이스케이프한다. */

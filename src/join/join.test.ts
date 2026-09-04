@@ -283,6 +283,18 @@ test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다
   );
 });
 
+test('조인 문서 수가 안전 상한을 넘으면 그룹 생성 전에 거부한다', () => {
+  const maximumDocuments = 256;
+
+  assert.throws(
+    () => joinBridgeDocuments(Array(maximumDocuments + 1).fill(dartDocument)),
+    {
+      name: 'BridgeJoinValidationError',
+      message: `Bridge join exceeds the ${maximumDocuments} document limit.`,
+    },
+  );
+});
+
 test('입력 생성 시각이 하루 넘게 다르면 신선도 한계를 추가한다', () => {
   const staleDartDocument = parseBridgeFactsDocument({
     ...dartDocument,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -116,4 +117,22 @@ test('실제 CLI 프로세스가 Mermaid 경계 그래프를 출력한다', asyn
   assert.equal(stderr, '');
   assert.equal(stdout.startsWith('flowchart LR\n'), true);
   assert.equal(stdout.includes('method dev.isthmus/camera#takePhoto'), true);
+});
+
+test('stdout 소비자가 먼저 닫혀도 EPIPE 스택을 출력하지 않는다', async () => {
+  const child = spawn(process.execPath, [mainPath, '--help'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.destroy();
+  let standardError = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    standardError += chunk;
+  });
+
+  const [exitCode, signal] = await once(child, 'close');
+
+  assert.equal(signal, null);
+  assert.equal(exitCode, 0);
+  assert.equal(standardError.includes('EPIPE'), false);
 });

@@ -1,8 +1,19 @@
-import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
-import { createBridgeGraph, renderBridgeGraph } from '../report/graph.ts';
+import {
+  isBridgeJoinDeferred,
+  joinBridgeDocuments,
+  MAX_DOCUMENTS_PER_JOIN,
+} from '../join/join.ts';
+import {
+  BridgeGraphLimitError,
+  BridgeGraphValidationError,
+  createBridgeGraph,
+  renderBridgeGraph,
+} from '../report/graph.ts';
 import {
   bridgeJoinDeferredError,
+  internalError,
+  isExpectedInputError,
+  readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
 } from './check-command.ts';
@@ -15,10 +26,7 @@ export async function runGraphCommand(
   const options = parseGraphArguments(arguments_);
   if (options === undefined) return graphUsageError();
   try {
-    const texts = await Promise.all(options.inputPaths.map(readTextFile));
-    const documents = texts.map((text) =>
-      parseBridgeFactsDocument(JSON.parse(text)),
-    );
+    const documents = await readBridgeDocuments(options.inputPaths, readTextFile);
     const joined = joinBridgeDocuments(documents);
     if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
     const graph = createBridgeGraph(joined);
@@ -27,8 +35,12 @@ export async function runGraphCommand(
       standardError: '',
       exitCode: 0,
     };
-  } catch {
-    return graphInputError();
+  } catch (error) {
+    return isExpectedInputError(error) ||
+      error instanceof BridgeGraphLimitError ||
+      error instanceof BridgeGraphValidationError
+      ? graphInputError()
+      : internalError();
   }
 }
 
@@ -37,7 +49,11 @@ function parseGraphArguments(arguments_: readonly string[]): GraphOptions | unde
   if (arguments_[0] !== 'graph') return undefined;
   const formatIndex = arguments_.indexOf('--format');
   const inputPaths = arguments_.slice(1, formatIndex < 0 ? undefined : formatIndex);
-  if (inputPaths.length < 2 || inputPaths.some((path) => path.startsWith('-'))) {
+  if (
+    inputPaths.length < 2 ||
+    inputPaths.length > MAX_DOCUMENTS_PER_JOIN ||
+    inputPaths.some((path) => path.startsWith('-'))
+  ) {
     return undefined;
   }
   if (formatIndex < 0) return { inputPaths, format: 'json' };

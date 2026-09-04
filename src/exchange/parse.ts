@@ -15,6 +15,9 @@ export type BridgeFactKind =
   | 'component-export'
   | 'component-require';
 
+/** 한 생산 문서가 담을 수 있는 최대 사실 수다. */
+export const MAX_FACTS_PER_DOCUMENT = 100_000;
+
 /** 사실의 프로젝트 상대 소스 위치다. */
 export interface BridgeLocation {
   readonly path: string;
@@ -130,6 +133,9 @@ function validateDocumentMetadata(
   }
   if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
   if (!Array.isArray(document.facts)) fail('Facts must be an array.');
+  if (document.facts.length > MAX_FACTS_PER_DOCUMENT) {
+    fail(`Facts exceed the ${MAX_FACTS_PER_DOCUMENT} item limit.`);
+  }
   document.facts.forEach((fact, index) =>
     validateFact(fact, index, document.platform),
   );
@@ -143,6 +149,9 @@ function validateDocumentMetadata(
 function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
+  if (!supportedBridgeFactKinds.has(value.kind)) {
+    fail('Fact kind is reserved but not supported in isthmus 0.1.');
+  }
   if (!isFactKindForPlatform(platform, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
   }
@@ -183,7 +192,7 @@ function validateLocation(value: unknown, index: number): void {
 function isProjectRelativePath(value: unknown): value is string {
   if (!isNonEmptyString(value)) return false;
   if (/^(?:[/\\]|[A-Za-z]:)/u.test(value)) return false;
-  if (/[\u0000-\u001f\u007f]/u.test(value)) return false;
+  if (controlCharacterPattern.test(value)) return false;
   return !value.split(/[/\\]/u).includes('..');
 }
 
@@ -288,6 +297,14 @@ const bridgeFactKinds = new Set<unknown>([
   'component-require',
 ]);
 
+/** 0.1 조인과 보고가 실제로 처리하는 사실 종류다. */
+const supportedBridgeFactKinds = new Set<unknown>([
+  'channel-create',
+  'channel-register',
+  'method-invoke',
+  'method-handle',
+]);
+
 const callerFactKinds = new Set<unknown>([
   'channel-create',
   'method-invoke',
@@ -306,7 +323,7 @@ const methodFactKinds = new Set<unknown>(['method-invoke', 'method-handle']);
 
 const timestampPattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
-const controlCharacterPattern = /[\u0000-\u001f\u007f]/u;
+const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 
 /** 배열과 null을 제외한 JSON 객체인지 확인한다. */
 function isJsonObject(value: unknown): value is Record<string, unknown> {
