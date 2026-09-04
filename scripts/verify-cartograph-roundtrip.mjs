@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { writeFile, unlink } from 'node:fs/promises';
+import { mkdtemp, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +22,8 @@ const swiftFacts = join(
   repositoryRoot,
   'experiments/phase-0/expected/cartograph-swift.json',
 );
-const retentionPath = join(tmpdir(), `isthmus-retentions-${process.pid}.json`);
+const retentionDirectory = await mkdtemp(join(tmpdir(), 'isthmus-retentions-'));
+const retentionPath = join(retentionDirectory, 'retentions.json');
 
 try {
   const retentionResult = run(process.execPath, [
@@ -34,7 +35,10 @@ try {
     'cartograph',
   ]);
   verify(retentionResult.status === 0, 'isthmus retentions');
-  await writeFile(retentionPath, retentionResult.stdout, { mode: 0o600 });
+  await writeFile(retentionPath, retentionResult.stdout, {
+    mode: 0o600,
+    flag: 'wx',
+  });
 
   const before = unusedMessages(runCartograph(['dead', '--report-format', 'json']));
   const after = unusedMessages(
@@ -66,6 +70,7 @@ try {
   process.stdout.write('Cartograph retention roundtrip verified.\n');
 } finally {
   await unlink(retentionPath).catch(() => undefined);
+  await rmdir(retentionDirectory).catch(() => undefined);
 }
 
 /** cartograph에 공통 fixture 경로를 붙여 실행한다. */

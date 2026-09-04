@@ -7,6 +7,7 @@ import {
   type BridgeFactsDocument,
 } from '../exchange/parse.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
+import type { BridgeJoinResult } from '../join/join.ts';
 import {
   createBridgeGraph,
   renderBridgeGraph,
@@ -132,6 +133,229 @@ test('graph mermaid 형식은 외부 경로의 문법 제어 문자를 이스케
 
   assert.equal(output.includes('evil&quot;&#10;  attacker --&gt; victim'), true);
   assert.equal(output.includes('\n  attacker --> victim'), false);
+});
+
+test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으로 보존한다', () => {
+  const graph = {
+    ...createBridgeGraph(joinBridgeDocuments([dartDocument, swiftDocument])),
+    limitations: [
+      {
+        platform: 'dart' as const,
+        tool: 'test-tool',
+        message: 'dynamic-name:\nflowchart TD',
+      },
+    ],
+  };
+
+  const dot = renderBridgeGraph(graph, 'dot');
+  const mermaid = renderBridgeGraph(graph, 'mermaid');
+
+  assert.equal(
+    dot.includes('  // limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    true,
+  );
+  assert.equal(
+    mermaid.includes('  %% limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    true,
+  );
+  assert.equal(dot.includes('\nflowchart TD'), false);
+  assert.equal(mermaid.includes('\nflowchart TD'), false);
+});
+
+test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/large',
+        creations: Array.from({ length: 317 }, (_, index) => ({
+          platform: 'dart',
+          location: { path: `lib/caller-${index}.dart`, line: 1, column: 1 },
+        })),
+        registrations: Array.from({ length: 317 }, (_, index) => ({
+          platform: 'swift',
+          location: { path: `ios/receiver-${index}.swift`, line: 1, column: 1 },
+        })),
+      },
+    ],
+    unregisteredChannelCreations: [],
+    matchedMethods: [],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  assert.throws(
+    () => createBridgeGraph(joined),
+    {
+      name: 'BridgeGraphLimitError',
+      message: 'Bridge graph exceeds the 100000 edge limit.',
+    },
+  );
+});
+
+test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합하지 않는다', () => {
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'first',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/first.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+            symbol: { qualifiedName: 'FirstPlugin.handle' },
+          },
+        ],
+      },
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'second',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/second.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+            symbol: { qualifiedName: 'SecondPlugin.handle' },
+          },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  assert.throws(
+    () => createBridgeGraph(joined),
+    {
+      name: 'BridgeGraphValidationError',
+      message: 'Bridge graph node has conflicting symbols.',
+    },
+  );
+});
+
+test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', () => {
+  const receiver = {
+    platform: 'swift' as const,
+    location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+  };
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        creations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/plugin.dart', line: 1, column: 1 },
+          },
+        ],
+        registrations: [receiver],
+      },
+    ],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'invoke',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/plugin.dart', line: 2, column: 1 },
+          },
+        ],
+        handlers: [
+          { ...receiver, symbol: { qualifiedName: 'Plugin.handle' } },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  const graph = createBridgeGraph(joined);
+  const receiverNode = graph.nodes.find(({ id }) => id.startsWith('swift:'));
+
+  assert.deepEqual(receiverNode?.symbol, { qualifiedName: 'Plugin.handle' });
+});
+
+test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () => {
+  const location = { path: 'ios/Plugin.swift', line: 5, column: 7 };
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'first',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/first.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location,
+            symbol: { qualifiedName: 'Plugin.handle' },
+          },
+        ],
+      },
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'second',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/second.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location,
+            symbol: { qualifiedName: 'Plugin.handle', usr: 's:Plugin.handle' },
+          },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  const graph = createBridgeGraph(joined);
+  const receiverNode = graph.nodes.find(({ id }) => id.startsWith('swift:'));
+
+  assert.deepEqual(receiverNode?.symbol, {
+    qualifiedName: 'Plugin.handle',
+    usr: 's:Plugin.handle',
+  });
 });
 
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */

@@ -2,14 +2,21 @@ import Foundation
 import Phase0SwiftBridgeExtractor
 import Testing
 
+private let cameraFixtureURL = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .appendingPathComponent("fixture/ios/Runner/CameraPlugin.swift")
+
 @Test("static let 채널의 setMethodCallHandler 등록 지점을 추출한다")
 func extractsChannelRegistrationThroughStaticConstant() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
 
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -29,11 +36,11 @@ func extractsChannelRegistrationThroughStaticConstant() throws {
 @Test("보간된 채널 이름을 원문 표현식과 함께 보존한다")
 func preservesDynamicChannelExpression() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
 
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -53,11 +60,11 @@ func preservesDynamicChannelExpression() throws {
 @Test("setMethodCallHandler 내부 case를 선언된 채널과 연결한다")
 func associatesHandledMethodWithChannel() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
 
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -76,14 +83,302 @@ func associatesHandledMethodWithChannel() throws {
     )))
 }
 
+@Test("핸들러 매개변수와 무관한 method switch는 추출하지 않는다")
+func ignoresUnrelatedMethodSwitch() throws {
+    let source = """
+    import Flutter
+    final class Plugin {
+        func register(with messenger: FlutterBinaryMessenger) {
+            let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+            channel.setMethodCallHandler { call, result in
+                switch state.method {
+                case "notAFlutterMethod": result(nil)
+                default: break
+                }
+                switch call.method {
+                case "realMethod": result(nil)
+                default: break
+                }
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+    let handledMethods = facts
+        .filter { $0.kind == "method-handle" }
+        .compactMap(\.method)
+
+    #expect(handledMethods == ["realMethod"])
+}
+
+@Test("nil 핸들러는 채널 등록으로 추출하지 않는다")
+func ignoresRemovedMethodHandler() throws {
+    let source = """
+    import Flutter
+    func unregister(from messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler(nil)
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(!facts.contains { $0.kind == "channel-register" })
+}
+
+@Test("동적 handler case를 원문과 limitation으로 보존한다")
+func preservesDynamicHandledMethod() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler { call, result in
+            switch call.method {
+            case makeMethod(): result(nil)
+            default: break
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+    let handledMethod = facts.first { $0.kind == "method-handle" }
+    let document = makeSwiftBridgeFactsDocument(
+        facts: facts,
+        generatedAt: "2026-09-04T12:00:00.000Z",
+        project: "/fixture"
+    )
+
+    #expect(handledMethod?.method == "makeMethod()")
+    #expect(handledMethod?.dynamic == true)
+    #expect(document.limitations.contains(
+        "dynamic-method-names: 1 method handlers use a non-literal name"
+    ))
+}
+
+@Test("Flutter import 없는 같은 이름의 API를 브리지로 오인하지 않는다")
+func ignoresLookalikeChannelWithoutFlutterImport() throws {
+    let source = """
+    func register(with messenger: Messenger) {
+        let channel = FlutterMethodChannel(name: "not-flutter", binaryMessenger: messenger)
+        channel.setMethodCallHandler { call, result in
+            switch call.method {
+            case "fakeMethod": result(nil)
+            default: break
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "Sources/Lookalike.swift"
+    )
+
+    #expect(facts.isEmpty)
+}
+
+@Test("다른 함수의 같은 변수 이름을 채널로 연결하지 않는다")
+func isolatesChannelVariablesByFunctionScope() throws {
+    let source = """
+    import Flutter
+    func create(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+    }
+    func unrelated() {
+        channel.setMethodCallHandler { _, _ in }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(!facts.contains { $0.kind == "channel-register" })
+}
+
+@Test("초기화 없는 지역 선언은 바깥 채널 변수를 가린다")
+func localDeclarationShadowsOuterChannel() throws {
+    let source = """
+    import Flutter
+    let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+    func unrelated() {
+        var channel: OtherChannel
+        channel.setMethodCallHandler { _, _ in }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(!facts.contains { $0.kind == "channel-register" })
+}
+
+@Test("안쪽 비상수 이름은 바깥 문자열 상수를 가린다")
+func localNameShadowsOuterStringConstant() throws {
+    let source = """
+    import Flutter
+    let methodName = "outerMethod"
+    func register(with messenger: FlutterBinaryMessenger) {
+        let methodName = makeMethodName()
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler { call, result in
+            switch call.method {
+            case (methodName): result(nil)
+            default: break
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+    let handler = try #require(facts.first { $0.kind == "method-handle" })
+
+    #expect(handler.method == "(methodName)")
+    #expect(handler.dynamic)
+}
+
+@Test("extension의 타입 이름을 handler 심볼에 포함한다")
+func attributesHandlerInsideExtension() throws {
+    let source = """
+    import Flutter
+    extension CameraPlugin {
+        func register(with messenger: FlutterBinaryMessenger) {
+            let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+            channel.setMethodCallHandler { call, result in
+                switch call.method {
+                case "takePhoto": result(nil)
+                default: break
+                }
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin+Bridge.swift"
+    )
+    let handler = try #require(facts.first { $0.kind == "method-handle" })
+
+    #expect(handler.symbol?.qualifiedName == "CameraPlugin.register")
+}
+
+@Test("self 채널 프로퍼티의 handler를 등록과 메서드에 연결한다")
+func resolvesSelfChannelReceiver() throws {
+    let source = """
+    import Flutter
+    final class Plugin {
+        private let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        func register() {
+            self.channel.setMethodCallHandler { call, result in
+                switch call.method {
+                case "takePhoto": result(nil)
+                default: break
+                }
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(facts.contains { $0.kind == "channel-register" })
+    #expect(facts.contains { $0.kind == "method-handle" && $0.method == "takePhoto" })
+}
+
+@Test("즉석 생성한 채널의 handler를 등록과 메서드에 연결한다")
+func resolvesInlineChannelReceiver() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+            .setMethodCallHandler { call, result in
+                switch call.method {
+                case "takePhoto": result(nil)
+                default: break
+                }
+            }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(facts.contains { $0.kind == "channel-register" })
+    #expect(facts.contains { $0.kind == "method-handle" && $0.method == "takePhoto" })
+}
+
+@Test("암시적 첫 closure 매개변수의 method switch를 추출한다")
+func resolvesImplicitCallParameter() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler {
+            switch $0.method {
+            case "takePhoto": break
+            default: break
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(facts.contains { $0.kind == "method-handle" && $0.method == "takePhoto" })
+}
+
+@Test("인자 없는 handler 호출은 채널 등록으로 추출하지 않는다")
+func ignoresHandlerCallWithoutArgument() throws {
+    let source = """
+    import Flutter
+    func unregister(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler()
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(!facts.contains { $0.kind == "channel-register" })
+}
+
 @Test("쉼표로 묶인 모든 문자열 case를 각각 추출한다")
 func extractsEveryMethodInCaseLabel() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
 
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -105,11 +400,11 @@ func extractsEveryMethodInCaseLabel() throws {
 @Test("method-handle을 감싸는 타입과 함수에 귀속한다")
 func attributesHandledMethodToEnclosingDeclaration() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
 
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -121,10 +416,10 @@ func attributesHandledMethodToEnclosingDeclaration() throws {
 @Test("Swift 문서가 동적 채널 개수를 limitations에 기록한다")
 func reportsDynamicChannelLimitation() throws {
     let source = try String(
-        contentsOfFile: "../fixture/ios/Runner/CameraPlugin.swift",
+        contentsOf: cameraFixtureURL,
         encoding: .utf8
     )
-    let facts = SwiftBridgeFactExtractor().extract(
+    let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: "ios/Runner/CameraPlugin.swift"
     )
@@ -155,7 +450,7 @@ func wrapsSwiftFactsInExchangeDocument() {
     #expect(document.tool.version == "0.0.0")
     #expect(document.generatedAt == "2026-09-04T12:00:00.000Z")
     #expect(document.platform == "swift")
-    #expect(document.target == "flutter")
+    #expect(document.target == nil)
     #expect(document.project == "/fixture")
     #expect(document.facts.isEmpty)
 }
@@ -177,6 +472,7 @@ func encodesDeterministicSwiftDocument() throws {
     #expect(factsIndex < formatIndex)
     #expect(formatIndex < generatedAtIndex)
     #expect(generatedAtIndex < limitationsIndex)
+    #expect(encoded.contains(#""target" : null"#))
     #expect(encoded.hasSuffix("\n"))
     #expect(encoded == (try encodeSwiftBridgeFactsDocument(document)))
 }

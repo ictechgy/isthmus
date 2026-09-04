@@ -76,7 +76,46 @@ export function parseBridgeFactsDocument(input: unknown): BridgeFactsDocument {
     );
   }
   validateDocumentMetadata(input);
-  return input;
+  return normalizeDocument(input);
+}
+
+/** 검증된 입력에서 v1 허용 필드만 복사해 신뢰 경계 밖 데이터를 제거한다. */
+function normalizeDocument(document: BridgeFactsDocument): BridgeFactsDocument {
+  return {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: document.tool.name, version: document.tool.version },
+    generatedAt: document.generatedAt,
+    platform: document.platform,
+    target: document.target,
+    project: document.project,
+    facts: document.facts.map(normalizeFact),
+    limitations: [...document.limitations],
+  };
+}
+
+/** 사실과 중첩 위치·심볼에서 계약 필드만 보존한다. */
+function normalizeFact(fact: BridgeFact): BridgeFact {
+  const symbol = fact.symbol === undefined
+    ? {}
+    : {
+        symbol: {
+          qualifiedName: fact.symbol.qualifiedName,
+          ...(fact.symbol.usr === undefined ? {} : { usr: fact.symbol.usr }),
+        },
+      };
+  return {
+    kind: fact.kind,
+    channel: fact.channel,
+    ...(fact.method === undefined ? {} : { method: fact.method }),
+    dynamic: fact.dynamic,
+    location: {
+      path: fact.location.path,
+      line: fact.location.line,
+      column: fact.location.column,
+    },
+    ...symbol,
+  };
 }
 
 /** 문서 수준 필드가 v1 타입과 허용값을 따르는지 검증한다. */
@@ -89,16 +128,27 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
-  if (!isNonEmptyString(document.project)) fail('Invalid project path.');
+  if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
   if (!Array.isArray(document.facts)) fail('Facts must be an array.');
-  document.facts.forEach(validateFact);
+  document.facts.forEach((fact, index) =>
+    validateFact(fact, index, document.platform),
+  );
+  if ((document.target === null) !== (document.facts.length === 0)) {
+    fail('Target must be set exactly when facts are present.');
+  }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
 }
 
 /** 사실 하나의 조인 키와 증거 필드를 검증한다. */
-function validateFact(value: unknown, index: number): void {
+function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
+  if (!isFactKindForPlatform(platform, value.kind)) {
+    fail(`Fact kind is not valid for platform at index ${index}.`);
+  }
+  if (!methodFactKinds.has(value.kind) && value.method !== undefined) {
+    fail(`Unexpected method at index ${index}.`);
+  }
   if (value.channel !== null && !isSafeNonEmptyString(value.channel)) {
     fail(`Invalid fact channel at index ${index}.`);
   }
@@ -108,6 +158,13 @@ function validateFact(value: unknown, index: number): void {
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
   validateLocation(value.location, index);
   validateSymbol(value.symbol, index);
+}
+
+/** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */
+function isFactKindForPlatform(platform: unknown, kind: unknown): boolean {
+  return platform === 'dart' || platform === 'js'
+    ? callerFactKinds.has(kind)
+    : receiverFactKinds.has(kind);
 }
 
 /** 사실 위치가 상대 경로와 1부터 시작하는 줄·열을 갖는지 검증한다. */
@@ -146,8 +203,8 @@ function validateSymbol(value: unknown, index: number): void {
 function validateTool(value: unknown): void {
   if (
     !isJsonObject(value) ||
-    !isNonEmptyString(value.name) ||
-    !isNonEmptyString(value.version)
+    !isSafeNonEmptyString(value.name) ||
+    !isSafeNonEmptyString(value.version)
   ) {
     fail('Invalid tool metadata.');
   }
@@ -155,11 +212,33 @@ function validateTool(value: unknown): void {
 
 /** ISO 계열 생성 시각으로 해석할 수 있는지 확인한다. */
 function isTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = timestampPattern.exec(value);
+  if (match === null || Number.isNaN(Date.parse(value))) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
   return (
-    typeof value === 'string' &&
-    timestampPattern.test(value) &&
-    !Number.isNaN(Date.parse(value))
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= daysInMonth(year, month) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59
   );
+}
+
+/** 윤년을 포함한 주어진 달의 실제 일수를 반환한다. */
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return isLeapYear ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
 /** 공백만 있지 않은 문자열인지 확인한다. */
@@ -179,7 +258,7 @@ function isStringArray(value: unknown): value is readonly string[] {
 
 /** 1부터 시작하는 정수인지 확인한다. */
 function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 1;
+  return Number.isSafeInteger(value) && Number(value) >= 1;
 }
 
 /** 입력 값을 포함하지 않는 검증 오류를 던진다. */
@@ -209,11 +288,24 @@ const bridgeFactKinds = new Set<unknown>([
   'component-require',
 ]);
 
+const callerFactKinds = new Set<unknown>([
+  'channel-create',
+  'method-invoke',
+  'module-import',
+  'component-require',
+]);
+const receiverFactKinds = new Set<unknown>([
+  'channel-register',
+  'method-handle',
+  'module-export',
+  'component-export',
+]);
+
 /** method 필드가 필수인 사실 종류다. */
 const methodFactKinds = new Set<unknown>(['method-invoke', 'method-handle']);
 
 const timestampPattern =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 const controlCharacterPattern = /[\u0000-\u001f\u007f]/u;
 
 /** 배열과 null을 제외한 JSON 객체인지 확인한다. */

@@ -1,7 +1,11 @@
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
+import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
 import { createBridgeGraph, renderBridgeGraph } from '../report/graph.ts';
-import type { CommandResult, ReadTextFile } from './check-command.ts';
+import {
+  bridgeJoinDeferredError,
+  type CommandResult,
+  type ReadTextFile,
+} from './check-command.ts';
 
 /** graph 인자를 실행해 경계 그래프와 종료 코드를 반환한다. */
 export async function runGraphCommand(
@@ -15,7 +19,9 @@ export async function runGraphCommand(
     const documents = texts.map((text) =>
       parseBridgeFactsDocument(JSON.parse(text)),
     );
-    const graph = createBridgeGraph(joinBridgeDocuments(documents));
+    const joined = joinBridgeDocuments(documents);
+    if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
+    const graph = createBridgeGraph(joined);
     return {
       standardOutput: renderBridgeGraph(graph, options.format),
       standardError: '',

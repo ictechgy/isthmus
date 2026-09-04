@@ -2,11 +2,20 @@ import Foundation
 import Phase0SwiftBridgeExtractor
 import Testing
 
+private let phase0Root = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+
 @Test("Swift 소스 파일을 bridge-facts JSON 문서로 변환한다")
 func convertsSwiftSourceToExchangeDocument() throws {
+    let sourcePath = phase0Root
+        .appendingPathComponent("fixture/ios/Runner/CameraPlugin.swift")
+        .path
     let result = try runSwiftBridgeCommand(
         arguments: [
-            "../fixture/ios/Runner/CameraPlugin.swift",
+            sourcePath,
             "--project", "/fixture",
             "--path", "ios/Runner/CameraPlugin.swift",
             "--generated-at", "2026-09-04T12:00:00.000Z",
@@ -24,7 +33,7 @@ func convertsSwiftSourceToExchangeDocument() throws {
     #expect(json["project"] as? String == "/fixture")
     #expect((json["facts"] as? [Any])?.count == 5)
     let expected = try String(
-        contentsOfFile: "../expected/swift.json",
+        contentsOf: phase0Root.appendingPathComponent("expected/swift.json"),
         encoding: .utf8
     )
     #expect(result.standardOutput == expected)
@@ -40,6 +49,50 @@ func rejectsInvalidSwiftArguments() throws {
     #expect(result.exitCode == 64)
     #expect(result.standardOutput.isEmpty)
     #expect(result.standardError.hasPrefix("Usage: extract-swift-bridges"))
+}
+
+@Test("공개 run 함수도 짧은 인자 배열을 안전하게 거부한다")
+func publicRunRejectsShortArguments() throws {
+    let result = try runSwiftBridgeCommand(
+        arguments: [],
+        readSource: { _ in Issue.record("invalid arguments must not read a file"); return "" }
+    )
+
+    #expect(result.exitCode == 64)
+    #expect(result.standardOutput.isEmpty)
+}
+
+@Test("안전하지 않은 프로젝트·상대 경로·생성 시각은 읽기 전에 거부한다")
+func rejectsUnsafeSwiftMetadata() {
+    let invalidMetadata = [
+        (project: "relative", path: "ios/Plugin.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture\nevil", path: "ios/Plugin.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "../private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "\\server\\private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "C:/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "ios/Plugin\n.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "ios/Plugin.swift", generatedAt: "2026-02-31T12:00:00Z"),
+    ]
+
+    for metadata in invalidMetadata {
+        var didReadSource = false
+        let result = executeSwiftBridgeCommand(
+            arguments: [
+                "source.swift",
+                "--project", metadata.project,
+                "--path", metadata.path,
+                "--generated-at", metadata.generatedAt,
+            ],
+            readSource: { _ in
+                didReadSource = true
+                return ""
+            }
+        )
+
+        #expect(result.exitCode == 64)
+        #expect(!didReadSource)
+    }
 }
 
 @Test("읽기 실패는 경로를 노출하지 않고 종료 코드 2를 반환한다")
@@ -59,6 +112,27 @@ func reportsSwiftSourceReadFailure() throws {
     #expect(
         result.standardError
             == "Unable to read the source file; check its path and permissions.\n"
+    )
+    #expect(!result.standardError.contains("private-source.swift"))
+}
+
+@Test("Swift 구문 오류는 경로 없는 종료 코드 2로 보고한다")
+func reportsSwiftParseFailure() {
+    let result = executeSwiftBridgeCommand(
+        arguments: [
+            "private-source.swift",
+            "--project", "/fixture",
+            "--path", "ios/Runner/Private.swift",
+            "--generated-at", "2026-09-04T12:00:00.000Z",
+        ],
+        readSource: { _ in "import Flutter\nfunc broken(" }
+    )
+
+    #expect(result.exitCode == 2)
+    #expect(result.standardOutput.isEmpty)
+    #expect(
+        result.standardError
+            == "Unable to parse the source file; fix syntax errors and retry.\n"
     )
     #expect(!result.standardError.contains("private-source.swift"))
 }

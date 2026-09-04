@@ -18,6 +18,7 @@ const swiftDocument = await loadDocument(
 test('채널 키 하나에 생성과 등록 위치를 모두 연결한다', () => {
   const result = joinBridgeDocuments([dartDocument, swiftDocument]);
 
+  assert.equal(result.deferred, false);
   assert.deepEqual(result.matchedChannels, [
     {
       target: 'flutter',
@@ -255,6 +256,7 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
 
   const result = joinBridgeDocuments([dartDocument, mixedSwiftDocument]);
 
+  assert.equal(result.deferred, true);
   assert.deepEqual(result.matchedChannels, []);
   assert.deepEqual(result.unregisteredChannelCreations, []);
   assert.deepEqual(result.matchedMethods, []);
@@ -263,6 +265,21 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
   assert.equal(
     result.limitations.some(({ message }) => message.startsWith('mixed-targets:')),
     true,
+  );
+});
+
+test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다', () => {
+  const otherProject = parseBridgeFactsDocument({
+    ...swiftDocument,
+    project: '/another-project',
+  });
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, otherProject]),
+    {
+      name: 'BridgeJoinValidationError',
+      message: 'Bridge documents must describe the same project.',
+    },
   );
 });
 

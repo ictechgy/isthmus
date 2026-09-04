@@ -1,7 +1,11 @@
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
+import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
 import { createBridgeQuery, encodeBridgeQuery } from '../report/query.ts';
-import type { CommandResult, ReadTextFile } from './check-command.ts';
+import {
+  bridgeJoinDeferredError,
+  type CommandResult,
+  type ReadTextFile,
+} from './check-command.ts';
 
 /** query 인자를 실행해 bridge 질의 JSON과 종료 코드를 반환한다. */
 export async function runQueryCommand(
@@ -24,7 +28,9 @@ export async function runQueryCommand(
     const documents = texts.map((text) =>
       parseBridgeFactsDocument(JSON.parse(text)),
     );
-    const query = createBridgeQuery(joinBridgeDocuments(documents), requested);
+    const joined = joinBridgeDocuments(documents);
+    if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
+    const query = createBridgeQuery(joined, requested);
     return {
       standardOutput: encodeBridgeQuery(query),
       standardError: '',

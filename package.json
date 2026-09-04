@@ -1,6 +1,6 @@
 {
   "name": "isthmus-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Join bridge facts across cross-platform application boundaries.",
   "keywords": [
     "flutter",
@@ -39,9 +39,10 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
+    "test:phase0:join": "node --test experiments/phase-0/join/join.test.mjs",
     "verify:cli": "npm run build && node scripts/verify-cli-contract.mjs",
     "verify:package": "node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run verify:cli && npm run verify:package",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:cli && npm run verify:package",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

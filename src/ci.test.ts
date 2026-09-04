@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowUrl = new URL('../.github/workflows/ci.yml', import.meta.url);
+const packageUrl = new URL('../package.json', import.meta.url);
 
 test('공개 CI가 최소 Node 버전에서 검증하고 액션을 고정한다', async () => {
   const workflow = await readFile(workflowUrl, 'utf8');
@@ -21,4 +22,17 @@ test('공개 CI가 최소 Node 버전에서 검증하고 액션을 고정한다'
     true,
   );
   assert.equal(/actions\/[\w-]+@v\d/u.test(workflow), false);
+});
+
+test('표준 verify가 Phase 0 손 조인 회귀 테스트를 포함한다', async () => {
+  const packageDocument = JSON.parse(await readFile(packageUrl, 'utf8'));
+
+  assert.equal(
+    packageDocument.scripts['test:phase0:join'],
+    'node --test experiments/phase-0/join/join.test.mjs',
+  );
+  assert.equal(
+    packageDocument.scripts.verify.includes('npm run test:phase0:join'),
+    true,
+  );
 });

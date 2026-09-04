@@ -1,5 +1,5 @@
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
+import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
 import { createCheckReport, encodeCheckReport } from '../report/check-report.ts';
 
 /** 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다. */
@@ -28,7 +28,9 @@ export async function runCheckCommand(
     const documents = texts.map((text) =>
       parseBridgeFactsDocument(JSON.parse(text)),
     );
-    const report = createCheckReport(joinBridgeDocuments(documents));
+    const joined = joinBridgeDocuments(documents);
+    if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
+    const report = createCheckReport(joined);
     return {
       standardOutput: encodeCheckReport(report),
       standardError: '',
@@ -37,6 +39,16 @@ export async function runCheckCommand(
   } catch {
     return inputError();
   }
+}
+
+/** 전체 조인 보류를 깨끗한 결과와 구분하는 코드 2 결과로 바꾼다. */
+export function bridgeJoinDeferredError(): CommandResult {
+  return {
+    standardOutput: '',
+    standardError:
+      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+    exitCode: 2,
+  };
 }
 
 /** 파일·JSON·계약 오류를 민감정보 없는 코드 2 결과로 바꾼다. */

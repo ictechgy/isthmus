@@ -18,9 +18,10 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**0.1.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
-cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과
-React Native 지원이다.
+**0.1.1.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
+Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
+도그푸딩과 React Native 지원이다.
 
 | 문서 | 내용 |
 |---|---|
@@ -91,7 +92,7 @@ node dist/cli/main.js retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 안전하게 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
+`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
 
 채널이나 메서드가 경계 반대편의 어느 위치와 연결되는지 조회하려면:
 
@@ -109,7 +110,9 @@ node dist/cli/main.js graph dart-bridges.json swift-bridges.json --format mermai
 
 `query`는 같은 메서드가 여러 채널에 있으면 후보를 반환하고 임의로 고르지 않는다.
 반환된 `qualifiedName`을 같은 subject 자리에 넣어 정확한 후보를 다시 조회할 수 있다.
-`graph`는 매치된 간선만 내보내며, 입력의 `limitations`를 함께 보존한다.
+`graph`는 매치된 간선만 내보내며, 입력의 `limitations`를 JSON 필드 또는 DOT/Mermaid
+주석으로 보존한다. 증거의 Cartesian 곱이 100,000개 간선을 넘으면 메모리 폭증을 막기
+위해 입력 오류로 종료한다.
 
 출력은 `isthmus-check` 버전 1 JSON이며 다음 세 사실을 보고한다.
 
@@ -123,8 +126,8 @@ node dist/cli/main.js graph dart-bridges.json swift-bridges.json --format mermai
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
 | `1` | `--strict`에서 error 이슈를 발견함 |
-| `2` | 파일 읽기, JSON, 교환 계약 등 도구 실패 |
-| `64` | 잘못된 명령, 옵션, 입력 개수 |
+| `2` | 파일 읽기, JSON, 교환 계약, 보류된 조인 등 도구 실패 |
+| `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
 
 개발 검증은 타입 체크, 제품 코드 90% 커버리지, 빌드, 실제 CLI 계약을 함께 실행한다.
 

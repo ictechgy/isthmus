@@ -39,6 +39,25 @@ export interface BridgeGraphDocument {
   readonly limitations: readonly JoinLimitation[];
 }
 
+/** 한 번에 생성할 수 있는 경계 그래프 간선 수다. */
+export const MAX_GRAPH_EDGES = 100_000;
+
+/** 입력 증거의 곱이 안전한 그래프 크기를 넘었음을 나타낸다. */
+export class BridgeGraphLimitError extends Error {
+  constructor() {
+    super(`Bridge graph exceeds the ${MAX_GRAPH_EDGES} edge limit.`);
+    this.name = 'BridgeGraphLimitError';
+  }
+}
+
+/** 같은 위치 노드가 서로 모순된 심볼을 가졌음을 나타낸다. */
+export class BridgeGraphValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BridgeGraphValidationError';
+  }
+}
+
 /** 경계 그래프를 요청한 출력 형식으로 렌더링한다. */
 export function renderBridgeGraph(
   graph: BridgeGraphDocument,
@@ -55,6 +74,9 @@ function renderMermaid(graph: BridgeGraphDocument): string {
     graph.nodes.map((node, index) => [node.id, `n${index}`]),
   );
   const lines = ['flowchart LR'];
+  for (const limitation of graph.limitations) {
+    lines.push(`  %% limitation: ${limitationComment(limitation)}`);
+  }
   for (const node of graph.nodes) {
     const label = `${mermaidText(node.platform)}<br/>${mermaidText(locationLabel(node.location))}`;
     lines.push(`  ${identifiers.get(node.id)}["${label}"]`);
@@ -82,6 +104,9 @@ function mermaidText(value: string): string {
 /** Graphviz DOT 문법으로 경계 그래프를 렌더링한다. */
 function renderDot(graph: BridgeGraphDocument): string {
   const lines = ['digraph isthmus {', '  rankdir=LR;'];
+  for (const limitation of graph.limitations) {
+    lines.push(`  // limitation: ${limitationComment(limitation)}`);
+  }
   for (const node of graph.nodes) {
     const label = `${node.platform}\n${locationLabel(node.location)}`;
     lines.push(`  ${dotString(node.id)} [label=${dotString(label)}];`);
@@ -94,6 +119,12 @@ function renderDot(graph: BridgeGraphDocument): string {
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;
+}
+
+/** 분석 한계를 텍스트 그래프의 한 줄 주석으로 안전하게 만든다. */
+function limitationComment(limitation: JoinLimitation): string {
+  const text = `${limitation.platform}/${limitation.tool}: ${limitation.message}`;
+  return text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/gu, ' ');
 }
 
 /** DOT 문자열 리터럴로 안전하게 이스케이프한다. */
@@ -116,6 +147,7 @@ function edgeLabel(edge: BridgeGraphEdge): string {
 
 /** 조인 결과의 매치만 경계 그래프로 바꾼다. */
 export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument {
+  assertBridgeGraphSize(joined);
   const nodes = new Map<string, BridgeGraphNode>();
   const edges: BridgeGraphEdge[] = [];
   addChannelEdges(joined, nodes, edges);
@@ -127,6 +159,28 @@ export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument
     edges: edges.sort(compareEdges),
     limitations: joined.limitations,
   };
+}
+
+/** 모든 Cartesian 간선 수를 할당 전에 계산해 메모리 폭증을 막는다. */
+export function assertBridgeGraphSize(joined: BridgeJoinResult): void {
+  let edgeCount = 0;
+  const endpointCounts = [
+    ...joined.matchedChannels.map(({ creations, registrations }) =>
+      [creations.length, registrations.length] as const,
+    ),
+    ...joined.matchedMethods.map(({ invocations, handlers }) =>
+      [invocations.length, handlers.length] as const,
+    ),
+  ];
+  for (const [fromCount, toCount] of endpointCounts) {
+    if (
+      toCount > 0 &&
+      fromCount > Math.floor((MAX_GRAPH_EDGES - edgeCount) / toCount)
+    ) {
+      throw new BridgeGraphLimitError();
+    }
+    edgeCount += fromCount * toCount;
+  }
 }
 
 /** 매치된 채널의 생성→등록 간선을 추가한다. */
@@ -182,7 +236,8 @@ function addNode(
   endpoint: BridgeEndpoint,
 ): string {
   const id = endpointId(endpoint);
-  if (!nodes.has(id)) {
+  const existing = nodes.get(id);
+  if (existing === undefined) {
     nodes.set(
       id,
       endpoint.symbol === undefined
@@ -192,10 +247,34 @@ function addNode(
             platform: endpoint.platform,
             location: endpoint.location,
             symbol: endpoint.symbol,
-          },
+      },
     );
+  } else if (endpoint.symbol !== undefined) {
+    const symbol = mergeSymbols(existing.symbol, endpoint.symbol);
+    if (symbol === undefined) {
+      throw new BridgeGraphValidationError(
+        'Bridge graph node has conflicting symbols.',
+      );
+    }
+    nodes.set(id, { ...existing, symbol });
   }
   return id;
+}
+
+/** 호환되는 두 심볼을 더 구체적인 선언 식별자로 병합한다. */
+function mergeSymbols(
+  left: BridgeSymbol | undefined,
+  right: BridgeSymbol,
+): BridgeSymbol | undefined {
+  if (left === undefined) return right;
+  if (left.qualifiedName !== right.qualifiedName) return undefined;
+  if (left.usr !== undefined && right.usr !== undefined && left.usr !== right.usr) {
+    return undefined;
+  }
+  const usr = left.usr ?? right.usr;
+  return usr === undefined
+    ? { qualifiedName: left.qualifiedName }
+    : { qualifiedName: left.qualifiedName, usr };
 }
 
 /** 플랫폼과 소스 위치로 실행 간 안정적인 노드 ID를 만든다. */

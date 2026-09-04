@@ -66,3 +66,67 @@ test('없는 subject는 notFound JSON과 종료 코드 64를 반환한다', asyn
   assert.equal(result.standardError, '');
   assert.equal(JSON.parse(result.standardOutput).status, 'notFound');
 });
+
+test('모호한 subject는 후보 JSON과 종료 코드 64를 반환한다', async () => {
+  const dartDocument = JSON.parse(await readFile(dartPath, 'utf8'));
+  const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
+  const inputs = new Map([
+    [dartPath, JSON.stringify({
+      ...dartDocument,
+      facts: [
+        ...dartDocument.facts,
+        {
+          kind: 'method-invoke',
+          channel: 'dev.isthmus/secondary',
+          method: 'takePhoto',
+          dynamic: false,
+          location: { path: 'lib/secondary.dart', line: 8, column: 19 },
+        },
+      ],
+    })],
+    [swiftPath, JSON.stringify({
+      ...swiftDocument,
+      facts: [
+        ...swiftDocument.facts,
+        {
+          kind: 'method-handle',
+          channel: 'dev.isthmus/secondary',
+          method: 'takePhoto',
+          dynamic: false,
+          location: { path: 'ios/SecondaryPlugin.swift', line: 12, column: 18 },
+        },
+      ],
+    })],
+  ]);
+
+  const result = await runQueryCommand(
+    ['query', 'takePhoto', dartPath, swiftPath],
+    (path) => Promise.resolve(inputs.get(path) ?? ''),
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(result.standardError, '');
+  assert.equal(JSON.parse(result.standardOutput).status, 'ambiguous');
+});
+
+test('mixed-targets로 전체 조인이 보류되면 query를 실행하지 않는다', async () => {
+  const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
+  const mixedSwift = JSON.stringify({
+    ...swiftDocument,
+    limitations: [
+      ...swiftDocument.limitations,
+      'mixed-targets: facts come from multiple bridge mechanisms',
+    ],
+  });
+  const result = await runQueryCommand(
+    ['query', 'takePhoto', dartPath, swiftPath],
+    (path) => path === swiftPath ? Promise.resolve(mixedSwift) : readFile(path, 'utf8'),
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+    exitCode: 2,
+  });
+});

@@ -1,3 +1,7 @@
+import { parseBridgeFactsDocument } from '../../../src/exchange/parse.ts';
+import { joinBridgeDocuments } from '../../../src/join/join.ts';
+import { assertBridgeGraphSize } from '../../../src/report/graph.ts';
+
 /**
  * Dart와 Swift 교환 문서의 정적 브리지 사실을 연결한다.
  *
@@ -6,119 +10,63 @@
  * @returns {Record<string, unknown>} Phase 0 손 조인 보고서
  */
 export function joinBridgeFacts(dartDocument, swiftDocument) {
-  const limitations = [
-    ...platformLimitations(dartDocument),
-    ...platformLimitations(swiftDocument),
-  ];
-  if (hasMixedTargets(dartDocument) || hasMixedTargets(swiftDocument)) {
-    return emptyJoinReport(limitations);
-  }
-  const creations = staticFacts(dartDocument, 'channel-create');
-  const registrations = staticFacts(swiftDocument, 'channel-register');
-  const invocations = staticFacts(dartDocument, 'method-invoke');
-  const handlers = staticFacts(swiftDocument, 'method-handle');
+  const joined = joinBridgeDocuments([
+    parseBridgeFactsDocument(dartDocument),
+    parseBridgeFactsDocument(swiftDocument),
+  ]);
+  assertBridgeGraphSize(joined);
   return {
-    matchedChannels: creations.flatMap((creation) =>
-      registrations
-        .filter((registration) => registration.channel === creation.channel)
-        .map((registration) => ({
-          channel: creation.channel,
-          creator: creation.location,
-          registration: registration.location,
+    matchedChannels: joined.matchedChannels.flatMap((match) =>
+      match.creations.flatMap((creation) =>
+        match.registrations.map((registration) => ({
+          channel: match.channel,
+          creator: legacyLocation(creation.location),
+          registration: legacyLocation(registration.location),
+        })),
+      ),
+    ),
+    unregisteredChannelCreations: joined.unregisteredChannelCreations.flatMap(
+      (unregistered) =>
+        unregistered.creations.map((creation) => ({
+          channel: unregistered.channel,
+          creator: legacyLocation(creation.location),
         })),
     ),
-    unregisteredChannelCreations: creations
-      .filter(
-        (creation) =>
-          !registrations.some(
-            (registration) => registration.channel === creation.channel,
-          ),
-      )
-      .map((creation) => ({
-        channel: creation.channel,
-        creator: creation.location,
+    matchedMethods: joined.matchedMethods.flatMap((match) =>
+      match.invocations.flatMap((invocation) =>
+        match.handlers.map((handler) => ({
+          channel: match.channel,
+          method: match.method,
+          caller: legacyLocation(invocation.location),
+          handler: legacyLocation(handler.location),
+          handlerSymbol: handler.symbol,
+        })),
+      ),
+    ),
+    unhandledInvocations: joined.unhandledInvocations.flatMap((unhandled) =>
+      unhandled.invocations.map((invocation) => ({
+        channel: unhandled.channel,
+        method: unhandled.method,
+        caller: legacyLocation(invocation.location),
       })),
-    matchedMethods: invocations.flatMap((invocation) =>
-      handlers
-        .filter((handler) => sameMethod(invocation, handler))
-        .map((handler) => ({
-          channel: invocation.channel,
-          method: invocation.method,
-          caller: invocation.location,
-          handler: handler.location,
+    ),
+    handlersWithoutInvocations: joined.handlersWithoutInvocations.flatMap(
+      (unhandled) =>
+        unhandled.handlers.map((handler) => ({
+          channel: unhandled.channel,
+          method: unhandled.method,
+          handler: legacyLocation(handler.location),
           handlerSymbol: handler.symbol,
         })),
     ),
-    unhandledInvocations: invocations
-      .filter(
-        (invocation) =>
-          !handlers.some((handler) => sameMethod(invocation, handler)),
-      )
-      .map((invocation) => ({
-        channel: invocation.channel,
-        method: invocation.method,
-        caller: invocation.location,
-      })),
-    handlersWithoutInvocations: handlers
-      .filter(
-        (handler) =>
-          !invocations.some((invocation) => sameMethod(handler, invocation)),
-      )
-      .map((handler) => ({
-        channel: handler.channel,
-        method: handler.method,
-        handler: handler.location,
-        handlerSymbol: handler.symbol,
-      })),
-    limitations,
+    limitations: joined.limitations.map(({ platform, message }) => ({
+      platform,
+      message,
+    })),
   };
 }
 
-/** mixed-targets 문서는 사실별 메커니즘을 알 수 없어 안전하게 보류한다. */
-function hasMixedTargets(document) {
-  return document.limitations.some((message) =>
-    message.startsWith('mixed-targets:'),
-  );
-}
-
-/** 입력 한계만 보존하는 조인 보류 결과를 만든다. */
-function emptyJoinReport(limitations) {
-  return {
-    matchedChannels: [],
-    unregisteredChannelCreations: [],
-    matchedMethods: [],
-    unhandledInvocations: [],
-    handlersWithoutInvocations: [],
-    limitations,
-  };
-}
-
-/** 입력 한계에 출처 플랫폼을 붙인다. */
-function platformLimitations(document) {
-  return document.limitations.map((message) => ({
-    platform: document.platform,
-    message,
-  }));
-}
-
-/** 두 사실의 채널과 메서드 키가 같은지 확인한다. */
-function sameMethod(left, right) {
-  return left.channel === right.channel && left.method === right.method;
-}
-
-/**
- * 동적 이름을 제외하고 한 종류의 사실만 고른다.
- *
- * @param {Record<string, unknown>} document bridge-facts 문서
- * @param {string} kind 사실 종류
- * @returns {Array<Record<string, any>>} 정적으로 조인 가능한 사실
- */
-function staticFacts(document, kind) {
-  return document.facts.filter(
-    (fact) =>
-      fact.kind === kind &&
-      fact.dynamic === false &&
-      typeof fact.channel === 'string' &&
-      fact.channel.length > 0,
-  );
+/** 기존 Phase 0 golden의 결정적인 위치 키 순서를 유지한다. */
+function legacyLocation({ path, line, column }) {
+  return { column, line, path };
 }
