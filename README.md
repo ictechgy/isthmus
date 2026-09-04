@@ -101,6 +101,26 @@ cartograph dead --external-retentions external-retentions.json
 
 `retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
 
+실제 공개 Flutter 플러그인에서 생산부터 소비까지 확인하려면 저장소 루트에서 다음 검증을
+실행한다. 스크립트는 `plus_plugins`의 고정 커밋을 sparse checkout하고 배터리 플러그인의
+원본 Dart·Swift 소스에서 세 메서드의 보존 근거를 확인한 뒤 임시 checkout을 지운다.
+네트워크, Git 2.26 이상, Swift 6, cartograph 0.5.3 이상, dartograph 0.1.1 이상이
+필요하다. isthmus는 현재 소스에서 자동으로 다시 빌드하며, 세 번째 인자로 별도 isthmus
+JavaScript 산출물을 넘길 수도 있다.
+
+```bash
+npm run build
+node scripts/verify-public-flutter-plugin.mjs \
+  /path/to/cartograph \
+  /path/to/dartograph
+```
+
+공개 플러그인 검증은 원본 `addMethodCallDelegate` 구현에서 나온 Swift USR과 세 원본 Dart
+호출 위치를 확인하고, cartograph `--explain`이 해당 심볼의 대표 근거를 읽는지 검증한다. 이미
+public인 플러그인 handler의 dead 상태 전환을 억지로 만들지는 않는다. 그 전환과
+`setMethodCallHandler` 경로는 `verify-cartograph-roundtrip.mjs`의 합성 코퍼스가 별도로
+검증한다.
+
 채널이나 메서드가 경계 반대편의 어느 위치와 연결되는지 조회하려면:
 
 ```bash
@@ -146,13 +166,15 @@ handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limit
 npm run verify
 ```
 
-로컬 cartograph 코퍼스와 외부 보존 근거 왕복을 검증하려면 빌드된 cartograph 바이너리와 fixture 루트를 넘긴다.
-이 검증은 외부 바이너리와 코퍼스가 필요하므로 `npm run verify`와 공개 CI에는 포함되지
-않으며 릴리스 전에 수동으로 실행한다.
+실제 두 producer와 외부 보존 근거 왕복을 검증하려면 cartograph 0.5.3 이상,
+dartograph 바이너리와 두 도구가 함께 분석할 fixture 루트를 넘긴다. 이 검증은 producer
+바이너리와 컴파일러 인덱스가 필요하므로 `npm run verify`와 공개 CI에는 포함되지 않으며
+릴리스 전에 수동으로 실행한다.
 
 ```bash
 node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/cartograph \
+  /path/to/dartograph \
   /path/to/FalsePositiveCorpus
 ```
 

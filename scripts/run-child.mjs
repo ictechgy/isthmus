@@ -8,6 +8,7 @@ export function runChild(command, arguments_, options = {}) {
   return spawnSync(command, arguments_, {
     cwd: options.cwd,
     encoding: 'utf8',
+    env: options.env,
     timeout: options.timeout ?? defaultTimeout,
     maxBuffer: options.maxBuffer ?? defaultMaxBuffer,
     stdio: options.stdio,

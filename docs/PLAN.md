@@ -8,7 +8,7 @@
 |---|---|---|
 | `../cartograph` | `bridges --format json` — SwiftSyntax 로 `FlutterMethodChannel(name:)` · `setMethodCallHandler` · `case "…"` · `RCT_EXPORT_MODULE/METHOD` · `@objc(…)` 리터럴 추출. 형식은 `docs/GRAPH-EXCHANGE.md` | 완료 — PR #11 |
 | `../cartograph` | `--external-retentions <path>` + `RetentionReason.externalBridge` + `--explain` 문장 | 완료 — PR #11 |
-| `../dartograph` | `bridges --format json` — Phase 4 | dartograph 가 Phase 1 도 안 됨 |
+| `../dartograph` | `bridges --format json` — Dart `MethodChannel` 생성·호출 추출 | 완료 — dartograph 0.1.1 |
 | `../kartograph` | `bridges --format json` — Phase 4 | v0.2 에서 필요 |
 
 **dartograph 를 기다리지 않는 길**: Phase 0 에서 Dart 쪽 추출을 `package:analyzer` 기반 100 줄짜리 스크립트로 임시 구현해 형식을 검증한다. 그 스크립트가 나중에 dartograph `bridges` 의 초안이 된다.
@@ -17,7 +17,9 @@
 
 목표: `GRAPH-EXCHANGE.md` 초안 0 이 실제 코드에 맞는지 확인하고 1 로 올린다.
 
-**현재 결과**: 로컬에 `flutter/packages`와 Flutter SDK가 없어 `experiments/phase-0/fixture/`의 Dart·Swift 소스 코퍼스를 택했다. analyzer 14.3.0과 SwiftSyntax로 두 JSON을 실제 생성하고 손 조인해 형식을 버전 1로 올렸다. 공개 Flutter 플러그인에서의 도그푸딩은 cartograph Phase 1 수용 조건으로 남긴다.
+**현재 결과**: `experiments/phase-0/fixture/`의 합성 코퍼스로 형식 버전 1을 확정했고,
+`fluttercommunity/plus_plugins`의 고정 커밋에 있는 배터리 플러그인에서도 실제
+cartograph·dartograph 생산, isthmus 조인, cartograph retention 소비를 검증했다.
 
 ### 0.1 대상
 
@@ -81,10 +83,10 @@
 
 | Phase | 상태 | 비고 |
 |---|---|---|
-| 0 형식 검증 | 핵심 완료 | 합성 코퍼스 조인·형식 v1 완료. 공개 Flutter 플러그인 도그푸딩 남음 |
+| 0 형식 검증 | 완료 | 합성 코퍼스와 공개 배터리 플러그인 고정 소스에서 형식 v1 검증 |
 | 1 cartograph `bridges` | 완료 | cartograph PR #11 |
-| 2 골격 + check | 핵심 완료 | 파서·조인·JSON 보고·CLI 0/1/2/64 구현. 실제 Flutter 플러그인 도그푸딩 남음 |
-| 3 되돌려 주기 | 핵심 완료 | 실제 cartograph 인덱스 코퍼스에서 dead·explain 왕복 검증. Flutter 앱 도그푸딩 남음 |
+| 2 골격 + check | 완료 | 파서·조인·JSON 보고·CLI 0/1/2/64 및 실제 producer 입력 검증 |
+| 3 되돌려 주기 | 완료 | 합성 코퍼스의 dead·explain과 공개 플러그인의 retention 소비 왕복 검증 |
 | 4 query · graph · 릴리스 | 완료 | `isthmus-cli` 0.1.3, CLI 이름은 `isthmus` |
 | 5 RN | 미착수 | v0.2 |
 | 6 Kotlin | 미착수 | kartograph 대기 |

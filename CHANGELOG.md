@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 실제 cartograph·dartograph `bridges` 출력을 isthmus와 cartograph 보존 근거까지 왕복 검증
+- 왕복 검증에서 cartograph 0.5.3 미만의 stale 바이너리를 fail-closed로 거부
+- 생산자 버전을 정확한 형식으로 검증하고 대상 심볼의 retention 근거와 실패 후 정리를 확인
+- 격리된 Git 설정과 고정 `plus_plugins` 배터리 플러그인 소스로 USR·원본 위치·
+  `--explain` 근거까지 생산·조인·보존 소비를 dogfood
+- isthmus 계약을 완성한 dartograph 0.1.1 미만 생산자를 fail-closed로 거부
+
 ## [0.1.3] - 2026-09-04
 
 ### Changed
