@@ -150,7 +150,7 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
   if (!supportedBridgeFactKinds.has(value.kind)) {
-    fail('Fact kind is reserved but not supported in isthmus 0.1.');
+    fail(`Fact kind is reserved but not supported in isthmus 0.1 at index ${index}.`);
   }
   if (!isFactKindForPlatform(platform, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);

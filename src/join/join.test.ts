@@ -295,6 +295,31 @@ test('조인 문서 수가 안전 상한을 넘으면 그룹 생성 전에 거�
   );
 });
 
+test('한 그룹의 대량 endpoint를 호출 인자 spread 없이 중복 제거한다', () => {
+  const makeDocument = (startLine: number): BridgeFactsDocument => ({
+    ...dartDocument,
+    limitations: [],
+    facts: Array.from({ length: 70_000 }, (_, index) => ({
+      kind: 'method-invoke',
+      channel: 'dev.isthmus/large',
+      method: 'invoke',
+      dynamic: false,
+      location: {
+        path: 'lib/large.dart',
+        line: startLine + index,
+        column: 1,
+      },
+    })),
+  });
+
+  const result = joinBridgeDocuments([
+    makeDocument(1),
+    makeDocument(70_001),
+  ]);
+
+  assert.equal(result.unhandledInvocations[0]?.invocations.length, 140_000);
+});
+
 test('입력 생성 시각이 하루 넘게 다르면 신선도 한계를 추가한다', () => {
   const staleDartDocument = parseBridgeFactsDocument({
     ...dartDocument,

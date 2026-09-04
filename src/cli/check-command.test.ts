@@ -135,6 +135,27 @@ test('너무 큰 입력은 다음 파일을 읽기 전에 종료 코드 2로 거
   assert.deepEqual(reads, ['large.json']);
 });
 
+test('전체 입력 합계가 안전 상한을 넘으면 마지막 파일 파싱 전에 거부한다', async () => {
+  const document = JSON.parse(await readFile(dartPath, 'utf8'));
+  const largeDocument = JSON.stringify({
+    ...document,
+    padding: 'x'.repeat(13 * 1024 * 1024),
+  });
+  const paths = ['1.json', '2.json', '3.json', '4.json', '5.json'];
+  const reads: string[] = [];
+
+  const result = await runCheckCommand(
+    ['check', ...paths],
+    async (path) => {
+      reads.push(path);
+      return largeDocument;
+    },
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, paths);
+});
+
 test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 않는다', async () => {
   const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
   const mixedSwift = JSON.stringify({
@@ -153,6 +174,56 @@ test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 �
     standardOutput: '',
     standardError:
       'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+    exitCode: 2,
+  });
+});
+
+test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한다', async () => {
+  const base = {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'test-tool', version: '1.0.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    target: 'react-native',
+    project: '/fixture',
+    limitations: [],
+  };
+  const inputs = new Map([
+    ['caller.json', JSON.stringify({
+      ...base,
+      platform: 'js',
+      facts: [
+        {
+          kind: 'module-import',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        },
+      ],
+    })],
+    ['receiver.json', JSON.stringify({
+      ...base,
+      platform: 'swift',
+      facts: [
+        {
+          kind: 'module-export',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+        },
+      ],
+    })],
+  ]);
+
+  const result = await runCheckCommand(
+    ['check', 'caller.json', 'receiver.json', '--strict'],
+    async (path) => inputs.get(path) ?? '',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   });
 });

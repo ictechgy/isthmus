@@ -166,7 +166,8 @@ test('아직 조인하지 않는 module·component fact는 fail-closed로 거부
       }),
       {
         name: 'BridgeFactsValidationError',
-        message: 'Fact kind is reserved but not supported in isthmus 0.1.',
+        message:
+          'Fact kind is reserved but not supported in isthmus 0.1 at index 0.',
       },
     );
   }

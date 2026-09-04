@@ -232,14 +232,21 @@ function collectMethodGroups(
 /** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
 function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
   endpoints.sort(compareEndpoints);
-  let previous: BridgeEndpoint | undefined;
-  const unique = endpoints.filter((endpoint) => {
-    const isDuplicate =
-      previous !== undefined && compareEndpoints(previous, endpoint) === 0;
-    previous = endpoint;
-    return !isDuplicate;
-  });
-  endpoints.splice(0, endpoints.length, ...unique);
+  if (endpoints.length < 2) return;
+  let writeIndex = 1;
+  for (let readIndex = 1; readIndex < endpoints.length; readIndex++) {
+    const previous = endpoints[writeIndex - 1];
+    const current = endpoints[readIndex];
+    if (
+      previous !== undefined &&
+      current !== undefined &&
+      compareEndpoints(previous, current) !== 0
+    ) {
+      endpoints[writeIndex] = current;
+      writeIndex++;
+    }
+  }
+  endpoints.length = writeIndex;
 }
 
 /** 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다. */
