@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 실제 cartograph·dartograph `bridges` 출력을 isthmus와 cartograph 보존 근거까지 왕복 검증
+- 왕복 검증에서 cartograph 0.5.3 미만의 stale 바이너리를 fail-closed로 거부
+
 ## [0.1.3] - 2026-09-04
 
 ### Changed

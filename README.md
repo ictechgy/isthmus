@@ -146,13 +146,15 @@ handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limit
 npm run verify
 ```
 
-로컬 cartograph 코퍼스와 외부 보존 근거 왕복을 검증하려면 빌드된 cartograph 바이너리와 fixture 루트를 넘긴다.
-이 검증은 외부 바이너리와 코퍼스가 필요하므로 `npm run verify`와 공개 CI에는 포함되지
-않으며 릴리스 전에 수동으로 실행한다.
+실제 두 producer와 외부 보존 근거 왕복을 검증하려면 cartograph 0.5.3 이상,
+dartograph 바이너리와 두 도구가 함께 분석할 fixture 루트를 넘긴다. 이 검증은 producer
+바이너리와 컴파일러 인덱스가 필요하므로 `npm run verify`와 공개 CI에는 포함되지 않으며
+릴리스 전에 수동으로 실행한다.
 
 ```bash
 node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/cartograph \
+  /path/to/dartograph \
   /path/to/FalsePositiveCorpus
 ```
 

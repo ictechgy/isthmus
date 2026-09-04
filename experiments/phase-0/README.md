@@ -57,11 +57,13 @@ node --test join.test.mjs
 node join-cli.mjs ../expected/dart.json ../expected/swift.json
 ```
 
-cartograph의 실제 컴파일러 인덱스 코퍼스와 보존 근거 왕복은 저장소 루트에서 실행한다.
+cartograph·dartograph의 실제 생산 출력과 컴파일러 인덱스 보존 근거 왕복은 저장소
+루트에서 실행한다. cartograph 0.5.3 이상이 필요하다.
 
 ```bash
 npm run build
 node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/cartograph \
+  /path/to/dartograph \
   /path/to/FalsePositiveCorpus
 ```
