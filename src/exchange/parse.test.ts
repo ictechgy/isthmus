@@ -91,6 +91,34 @@ test('잘못된 사실을 필드별 검증 오류로 거부한다', () => {
       'Invalid fact location at index 0.',
     ],
     [
+      {
+        ...validMethodFact,
+        location: { path: '/private/Plugin.swift', line: 1, column: 1 },
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...validMethodFact,
+        location: { path: '../private/Plugin.swift', line: 1, column: 1 },
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...validMethodFact,
+        location: { path: 'C:\\private\\Plugin.swift', line: 1, column: 1 },
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...validMethodFact,
+        location: { path: 'ios/Plugin\nInjected.swift', line: 1, column: 1 },
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
       { ...validMethodFact, symbol: { qualifiedName: '' } },
       'Invalid fact symbol at index 0.',
     ],

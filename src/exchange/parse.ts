@@ -114,12 +114,20 @@ function validateFact(value: unknown, index: number): void {
 function validateLocation(value: unknown, index: number): void {
   if (
     !isJsonObject(value) ||
-    !isNonEmptyString(value.path) ||
+    !isProjectRelativePath(value.path) ||
     !isPositiveInteger(value.line) ||
     !isPositiveInteger(value.column)
   ) {
     fail(`Invalid fact location at index ${index}.`);
   }
+}
+
+/** 절대·상위 경로와 제어 문자를 제외한 프로젝트 상대 경로인지 확인한다. */
+function isProjectRelativePath(value: unknown): value is string {
+  if (!isNonEmptyString(value)) return false;
+  if (/^(?:[/\\]|[A-Za-z]:)/u.test(value)) return false;
+  if (/[\u0000-\u001f\u007f]/u.test(value)) return false;
+  return !value.split(/[/\\]/u).includes('..');
 }
 
 /** 선택 symbol의 이름과 USR이 비어 있지 않은지 검증한다. */
