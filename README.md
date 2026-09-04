@@ -18,7 +18,7 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**Phase 2 `check` 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 문자열 키 조인, 결정적 JSON 보고서, 종료 코드 계약을 구현했다. cartograph의 `bridges`와 `--external-retentions`도 PR #11로 준비돼 있다. 다음 단계는 실제 Flutter 플러그인 도그푸딩과 `retentions --for cartograph`다.
+**Phase 3 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 `check`, cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과 `query`·`graph`다.
 
 | 문서 | 내용 |
 |---|---|
@@ -55,6 +55,18 @@ CI에서 브리지 오류가 있으면 실패시키려면 `--strict`를 붙인�
 node dist/cli/main.js check dart-bridges.json swift-bridges.json --strict
 ```
 
+매치된 Swift 핸들러를 cartograph 보존 근거로 돌려주려면:
+
+```bash
+node dist/cli/main.js retentions \
+  dart-bridges.json swift-bridges.json \
+  --for cartograph > external-retentions.json
+
+cartograph dead --external-retentions external-retentions.json
+```
+
+`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 안전하게 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
+
 출력은 `isthmus-check` 버전 1 JSON이며 다음 세 사실을 보고한다.
 
 - `unhandled-invocation` (error): 호출은 있지만 네이티브 핸들러가 없음
@@ -74,6 +86,14 @@ node dist/cli/main.js check dart-bridges.json swift-bridges.json --strict
 
 ```bash
 npm run verify
+```
+
+로컬 cartograph 코퍼스와 외부 보존 근거 왕복을 검증하려면 빌드된 cartograph 바이너리와 fixture 루트를 넘긴다.
+
+```bash
+node scripts/verify-cartograph-roundtrip.mjs \
+  /path/to/cartograph \
+  /path/to/FalsePositiveCorpus
 ```
 
 ## 라이선스

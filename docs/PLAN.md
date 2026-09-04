@@ -48,7 +48,7 @@
 - `check` — 세 종류 보고. 각 항목에 양쪽 위치. `limitations` 에 동적 이름 수와 입력 신선도
 - 코퍼스: Phase 0 의 대상에서 실제로 만든 두 JSON 을 `fixtures/` 에 커밋. 스크립트가 기대 보고와 양방향 대조
 
-## Phase 3 — 되돌려 주기 (cartograph + isthmus, 1~2 세션)
+## Phase 3 — 되돌려 주기 (핵심 완료)
 
 - isthmus `retentions --for cartograph`
 - cartograph `--external-retentions` + `RetentionReason.externalBridge` + `--explain`
@@ -81,7 +81,7 @@
 | 0 형식 검증 | 핵심 완료 | 합성 코퍼스 조인·형식 v1 완료. 공개 Flutter 플러그인 도그푸딩 남음 |
 | 1 cartograph `bridges` | 완료 | cartograph PR #11 |
 | 2 골격 + check | 핵심 완료 | 파서·조인·JSON 보고·CLI 0/1/2/64 구현. 실제 Flutter 플러그인 도그푸딩 남음 |
-| 3 되돌려 주기 | 부분 완료 | cartograph 입력은 PR #11 완료, isthmus `retentions` 남음 |
+| 3 되돌려 주기 | 핵심 완료 | 실제 cartograph 인덱스 코퍼스에서 dead·explain 왕복 검증. Flutter 앱 도그푸딩 남음 |
 | 4 query · graph · 릴리스 | 미착수 | |
 | 5 RN | 미착수 | v0.2 |
 | 6 Kotlin | 미착수 | kartograph 대기 |

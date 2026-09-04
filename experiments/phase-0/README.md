@@ -9,6 +9,7 @@
 - `expected/dart.json`, `expected/swift.json`: 두 추출기의 결정적 출력
 - `expected/join.json`: 정적 사실만 `(channel, method)`로 연결한 결과
 - `expected/check.json`: 제품 `check` 명령의 결정적 JSON 출력
+- `expected/cartograph-*.json`: cartograph 실제 코퍼스 USR로 외부 보존 왕복을 검증하는 target별 입력·출력
 
 로컬에 Flutter SDK와 `flutter/packages`가 없어 소스 코퍼스를 직접 만들었다. 두 파서와 조인은 실행했지만 Flutter 앱 빌드는 검증하지 않았다. 공개 Flutter 플러그인 도그푸딩은 cartograph Phase 1에서 계속한다.
 
@@ -47,4 +48,13 @@ SWIFT_SYNTAX_PATH=/path/to/swift-syntax swift test
 cd experiments/phase-0/join
 node --test join.test.mjs
 node join-cli.mjs ../expected/dart.json ../expected/swift.json
+```
+
+cartograph의 실제 컴파일러 인덱스 코퍼스와 보존 근거 왕복은 저장소 루트에서 실행한다.
+
+```bash
+npm run build
+node scripts/verify-cartograph-roundtrip.mjs \
+  /path/to/cartograph \
+  /path/to/FalsePositiveCorpus
 ```
