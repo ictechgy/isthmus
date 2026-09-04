@@ -16,6 +16,7 @@ verifyStrictFindings();
 verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
+verifyGraph();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
@@ -80,6 +81,20 @@ function verifyMissingQuery() {
   verify(result.status === 64, 'missing query exit code');
   verify(result.stderr === '', 'missing query stderr');
   verify(JSON.parse(result.stdout).status === 'notFound', 'missing query JSON');
+}
+
+/** graph가 요청한 Mermaid 문서를 내는지 검증한다. */
+function verifyGraph() {
+  const result = run([
+    'graph',
+    dartPath,
+    swiftPath,
+    '--format',
+    'mermaid',
+  ]);
+  verify(result.status === 0, 'graph exit code');
+  verify(result.stderr === '', 'graph stderr');
+  verify(result.stdout.startsWith('flowchart LR\n'), 'graph Mermaid');
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */

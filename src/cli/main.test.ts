@@ -64,3 +64,18 @@ test('실제 CLI 프로세스가 bridge query JSON을 출력한다', async () =>
   assert.equal(document.result.subject.kind, 'method');
   assert.equal(stdout, await readFile(queryPath, 'utf8'));
 });
+
+test('실제 CLI 프로세스가 Mermaid 경계 그래프를 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'graph',
+    dartPath,
+    swiftPath,
+    '--format',
+    'mermaid',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('flowchart LR\n'), true);
+  assert.equal(stdout.includes('method dev.isthmus/camera#takePhoto'), true);
+});

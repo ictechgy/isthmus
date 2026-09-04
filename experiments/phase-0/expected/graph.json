@@ -1,0 +1,84 @@
+{
+  "edges": [
+    {
+      "channel": "dev.isthmus/camera",
+      "from": "dart:lib/camera_bridge.dart:3:23",
+      "kind": "channel",
+      "target": "flutter",
+      "to": "swift:ios/Runner/CameraPlugin.swift:11:17"
+    },
+    {
+      "channel": "dev.isthmus/camera",
+      "from": "dart:lib/camera_bridge.dart:6:23",
+      "kind": "method",
+      "method": "takePhoto",
+      "target": "flutter",
+      "to": "swift:ios/Runner/CameraPlugin.swift:13:18"
+    }
+  ],
+  "format": "isthmus-graph",
+  "limitations": [
+    {
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",
+      "platform": "dart",
+      "tool": "isthmus-phase0-dart"
+    },
+    {
+      "message": "dynamic-method-names: 1 method invocations use a non-literal name",
+      "platform": "dart",
+      "tool": "isthmus-phase0-dart"
+    },
+    {
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",
+      "platform": "swift",
+      "tool": "isthmus-phase0-swift"
+    },
+    {
+      "message": "missing-handler-usrs: 3 method handlers have only a qualified name",
+      "platform": "swift",
+      "tool": "isthmus-phase0-swift"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "dart:lib/camera_bridge.dart:3:23",
+      "location": {
+        "column": 23,
+        "line": 3,
+        "path": "lib/camera_bridge.dart"
+      },
+      "platform": "dart"
+    },
+    {
+      "id": "dart:lib/camera_bridge.dart:6:23",
+      "location": {
+        "column": 23,
+        "line": 6,
+        "path": "lib/camera_bridge.dart"
+      },
+      "platform": "dart"
+    },
+    {
+      "id": "swift:ios/Runner/CameraPlugin.swift:11:17",
+      "location": {
+        "column": 17,
+        "line": 11,
+        "path": "ios/Runner/CameraPlugin.swift"
+      },
+      "platform": "swift"
+    },
+    {
+      "id": "swift:ios/Runner/CameraPlugin.swift:13:18",
+      "location": {
+        "column": 18,
+        "line": 13,
+        "path": "ios/Runner/CameraPlugin.swift"
+      },
+      "platform": "swift",
+      "symbol": {
+        "qualifiedName": "CameraPlugin.register"
+      }
+    }
+  ],
+  "version": 1
+}
