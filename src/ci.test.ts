@@ -13,11 +13,11 @@ test('공개 CI가 최소 Node 버전에서 검증하고 액션을 고정한다'
   assert.equal(workflow.includes('run: npm ci'), true);
   assert.equal(workflow.includes('run: npm run verify'), true);
   assert.equal(
-    workflow.includes('actions/checkout@11d5960a326750d5838078e36cf38b85af677262'),
+    workflow.includes('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'),
     true,
   );
   assert.equal(
-    workflow.includes('actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020'),
+    workflow.includes('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020'),
     true,
   );
   assert.equal(/actions\/[\w-]+@v\d/u.test(workflow), false);
