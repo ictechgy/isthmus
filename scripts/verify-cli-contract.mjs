@@ -14,6 +14,8 @@ verifyInputError();
 verifySuccessfulCheck();
 verifyStrictFindings();
 verifyRetentions();
+verifyQuery();
+verifyMissingQuery();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
@@ -62,6 +64,22 @@ function verifyRetentions() {
   const document = JSON.parse(result.stdout);
   verify(document.format === 'external-retentions', 'retentions JSON');
   verify(document.retentions.length === 1, 'retentions count');
+}
+
+/** query가 찾은 bridge subject를 JSON으로 내는지 검증한다. */
+function verifyQuery() {
+  const result = run(['query', 'takePhoto', dartPath, swiftPath]);
+  verify(result.status === 0, 'query exit code');
+  verify(result.stderr === '', 'query stderr');
+  verify(JSON.parse(result.stdout).status === 'found', 'query JSON');
+}
+
+/** 없는 query subject가 notFound JSON과 64를 내는지 검증한다. */
+function verifyMissingQuery() {
+  const result = run(['query', 'missingMethod', dartPath, swiftPath]);
+  verify(result.status === 64, 'missing query exit code');
+  verify(result.stderr === '', 'missing query stderr');
+  verify(JSON.parse(result.stdout).status === 'notFound', 'missing query JSON');
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */

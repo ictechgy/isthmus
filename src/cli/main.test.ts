@@ -16,6 +16,9 @@ const swiftPath = fileURLToPath(
 const checkPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/check.json', import.meta.url),
 );
+const queryPath = fileURLToPath(
+  new URL('../../experiments/phase-0/expected/query.json', import.meta.url),
+);
 
 test('실제 CLI 프로세스가 check JSON을 stdout으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
@@ -44,4 +47,20 @@ test('실제 CLI 프로세스가 cartograph 보존 JSON을 출력한다', async 
   const document = JSON.parse(stdout);
   assert.equal(document.format, 'external-retentions');
   assert.equal(document.retentions.length, 1);
+});
+
+test('실제 CLI 프로세스가 bridge query JSON을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'query',
+    'takePhoto',
+    dartPath,
+    swiftPath,
+  ]);
+
+  assert.equal(stderr, '');
+  const document = JSON.parse(stdout);
+  assert.equal(document.status, 'found');
+  assert.equal(document.result.subject.kind, 'method');
+  assert.equal(stdout, await readFile(queryPath, 'utf8'));
 });

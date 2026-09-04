@@ -1,0 +1,57 @@
+{
+  "level": "bridge",
+  "limitations": [
+    {
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",
+      "platform": "dart",
+      "tool": "isthmus-phase0-dart"
+    },
+    {
+      "message": "dynamic-method-names: 1 method invocations use a non-literal name",
+      "platform": "dart",
+      "tool": "isthmus-phase0-dart"
+    },
+    {
+      "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",
+      "platform": "swift",
+      "tool": "isthmus-phase0-swift"
+    },
+    {
+      "message": "missing-handler-usrs: 3 method handlers have only a qualified name",
+      "platform": "swift",
+      "tool": "isthmus-phase0-swift"
+    }
+  ],
+  "requested": "takePhoto",
+  "result": {
+    "dependsOn": [
+      {
+        "location": {
+          "column": 18,
+          "line": 13,
+          "path": "ios/Runner/CameraPlugin.swift"
+        },
+        "platform": "swift",
+        "symbol": {
+          "qualifiedName": "CameraPlugin.register"
+        }
+      }
+    ],
+    "subject": {
+      "kind": "method",
+      "name": "takePhoto",
+      "qualifiedName": "flutter:dev.isthmus/camera#takePhoto"
+    },
+    "usedBy": [
+      {
+        "location": {
+          "column": 23,
+          "line": 6,
+          "path": "lib/camera_bridge.dart"
+        },
+        "platform": "dart"
+      }
+    ]
+  },
+  "status": "found"
+}
