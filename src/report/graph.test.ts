@@ -300,6 +300,64 @@ test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', (
   assert.deepEqual(receiverNode?.symbol, { qualifiedName: 'Plugin.handle' });
 });
 
+test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () => {
+  const location = { path: 'ios/Plugin.swift', line: 5, column: 7 };
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'first',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/first.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location,
+            symbol: { qualifiedName: 'Plugin.handle' },
+          },
+        ],
+      },
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'second',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/second.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location,
+            symbol: { qualifiedName: 'Plugin.handle', usr: 's:Plugin.handle' },
+          },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  const graph = createBridgeGraph(joined);
+  const receiverNode = graph.nodes.find(({ id }) => id.startsWith('swift:'));
+
+  assert.deepEqual(receiverNode?.symbol, {
+    qualifiedName: 'Plugin.handle',
+    usr: 's:Plugin.handle',
+  });
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

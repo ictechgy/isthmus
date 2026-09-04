@@ -219,6 +219,37 @@ test('손 조인 출력은 입력 사실 순서와 중복에 무관하다', () =
   assert.deepEqual(joinBridgeFacts(duplicateDart, duplicateSwift), expected);
 });
 
+test('손 조인도 Cartesian 간선 안전 상한을 넘기 전에 거부한다', () => {
+  const callers = {
+    ...dartDocument,
+    limitations: [],
+    facts: Array.from({ length: 317 }, (_, index) => ({
+      kind: 'channel-create',
+      channel: 'dev.isthmus/large',
+      dynamic: false,
+      location: { path: `lib/caller-${index}.dart`, line: 1, column: 1 },
+    })),
+  };
+  const receivers = {
+    ...swiftDocument,
+    limitations: [],
+    facts: Array.from({ length: 317 }, (_, index) => ({
+      kind: 'channel-register',
+      channel: 'dev.isthmus/large',
+      dynamic: false,
+      location: { path: `ios/receiver-${index}.swift`, line: 1, column: 1 },
+    })),
+  };
+
+  assert.throws(
+    () => joinBridgeFacts(callers, receivers),
+    {
+      name: 'BridgeGraphLimitError',
+      message: 'Bridge graph exceeds the 100000 edge limit.',
+    },
+  );
+});
+
 test('CLI가 두 교환 문서를 손 조인 JSON으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     joinCliPath,

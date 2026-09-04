@@ -1,5 +1,6 @@
 import { parseBridgeFactsDocument } from '../../../src/exchange/parse.ts';
 import { joinBridgeDocuments } from '../../../src/join/join.ts';
+import { assertBridgeGraphSize } from '../../../src/report/graph.ts';
 
 /**
  * Dart와 Swift 교환 문서의 정적 브리지 사실을 연결한다.
@@ -13,6 +14,7 @@ export function joinBridgeFacts(dartDocument, swiftDocument) {
     parseBridgeFactsDocument(dartDocument),
     parseBridgeFactsDocument(swiftDocument),
   ]);
+  assertBridgeGraphSize(joined);
   return {
     matchedChannels: joined.matchedChannels.flatMap((match) =>
       match.creations.flatMap((creation) =>

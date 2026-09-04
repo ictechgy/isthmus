@@ -147,7 +147,7 @@ function edgeLabel(edge: BridgeGraphEdge): string {
 
 /** 조인 결과의 매치만 경계 그래프로 바꾼다. */
 export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument {
-  assertGraphSize(joined);
+  assertBridgeGraphSize(joined);
   const nodes = new Map<string, BridgeGraphNode>();
   const edges: BridgeGraphEdge[] = [];
   addChannelEdges(joined, nodes, edges);
@@ -162,7 +162,7 @@ export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument
 }
 
 /** 모든 Cartesian 간선 수를 할당 전에 계산해 메모리 폭증을 막는다. */
-function assertGraphSize(joined: BridgeJoinResult): void {
+export function assertBridgeGraphSize(joined: BridgeJoinResult): void {
   let edgeCount = 0;
   const endpointCounts = [
     ...joined.matchedChannels.map(({ creations, registrations }) =>
@@ -249,23 +249,32 @@ function addNode(
             symbol: endpoint.symbol,
       },
     );
-  } else if (existing.symbol === undefined && endpoint.symbol !== undefined) {
-    nodes.set(id, { ...existing, symbol: endpoint.symbol });
-  } else if (
-    existing.symbol !== undefined &&
-    endpoint.symbol !== undefined &&
-    !sameSymbol(existing.symbol, endpoint.symbol)
-  ) {
-    throw new BridgeGraphValidationError(
-      'Bridge graph node has conflicting symbols.',
-    );
+  } else if (endpoint.symbol !== undefined) {
+    const symbol = mergeSymbols(existing.symbol, endpoint.symbol);
+    if (symbol === undefined) {
+      throw new BridgeGraphValidationError(
+        'Bridge graph node has conflicting symbols.',
+      );
+    }
+    nodes.set(id, { ...existing, symbol });
   }
   return id;
 }
 
-/** 두 노드 심볼이 같은 선언 식별자를 가리키는지 확인한다. */
-function sameSymbol(left: BridgeSymbol, right: BridgeSymbol): boolean {
-  return left.qualifiedName === right.qualifiedName && left.usr === right.usr;
+/** 호환되는 두 심볼을 더 구체적인 선언 식별자로 병합한다. */
+function mergeSymbols(
+  left: BridgeSymbol | undefined,
+  right: BridgeSymbol,
+): BridgeSymbol | undefined {
+  if (left === undefined) return right;
+  if (left.qualifiedName !== right.qualifiedName) return undefined;
+  if (left.usr !== undefined && right.usr !== undefined && left.usr !== right.usr) {
+    return undefined;
+  }
+  const usr = left.usr ?? right.usr;
+  return usr === undefined
+    ? { qualifiedName: left.qualifiedName }
+    : { qualifiedName: left.qualifiedName, usr };
 }
 
 /** 플랫폼과 소스 위치로 실행 간 안정적인 노드 ID를 만든다. */
