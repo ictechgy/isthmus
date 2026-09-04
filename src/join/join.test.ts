@@ -312,6 +312,8 @@ test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보
     'MIXED-TARGETS multiple bridges',
     'mixed-targets',
     'Detected mixed-targets: dart and swift facts',
+    'mixed-targets, dart and swift facts',
+    'mixed-targets. Facts span two bridges.',
   ];
 
   for (const message of messages) {
