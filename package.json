@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=22.18.0"
   },
+  "bin": {
+    "isthmus": "dist/cli/main.js"
+  },
   "files": [
     "dist",
     "LICENSE",
@@ -16,7 +19,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
-    "verify": "npm run typecheck && npm test && npm run build",
+    "verify:cli": "npm run build && node scripts/verify-cli-contract.mjs",
+    "verify": "npm run typecheck && npm test && npm run verify:cli",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
