@@ -131,6 +131,53 @@ test('같은 메서드가 여러 채널에 있으면 후보를 주고 추측하�
       qualifiedName: 'flutter:dev.isthmus/secondary#takePhoto',
     },
   ]);
+
+  const selected = createBridgeQuery(
+    joined,
+    'flutter:dev.isthmus/secondary#takePhoto',
+  );
+
+  assert.equal(selected.status, 'found');
+  assert.equal(
+    selected.result?.subject.qualifiedName,
+    'flutter:dev.isthmus/secondary#takePhoto',
+  );
+});
+
+test('같은 채널이 여러 target에 있으면 후보를 주고 qualifiedName으로 고른다', () => {
+  const reactNativeCaller = parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'js',
+    target: 'react-native',
+  });
+  const reactNativeReceiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    target: 'react-native',
+  });
+  const joined = joinBridgeDocuments([
+    dartDocument,
+    swiftDocument,
+    reactNativeCaller,
+    reactNativeReceiver,
+  ]);
+
+  const ambiguous = createBridgeQuery(joined, 'dev.isthmus/camera');
+
+  assert.equal(ambiguous.status, 'ambiguous');
+  assert.deepEqual(ambiguous.candidates, [
+    { qualifiedName: 'flutter:dev.isthmus/camera' },
+    { qualifiedName: 'react-native:dev.isthmus/camera' },
+  ]);
+
+  const selected = createBridgeQuery(
+    joined,
+    'react-native:dev.isthmus/camera',
+  );
+  assert.equal(selected.status, 'found');
+  assert.equal(
+    selected.result?.subject.qualifiedName,
+    'react-native:dev.isthmus/camera',
+  );
 });
 
 test('query JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {
