@@ -81,11 +81,29 @@ public struct SwiftBridgeFactExtractor: Sendable {
 
     /// Swift 소스 하나에서 브리지 사실을 찾는다.
     public func extract(source: String, relativePath: String) throws -> [BridgeFact] {
+        try analyze(source: source, relativePath: relativePath).facts
+    }
+
+    /// 사실과 함께 구문만으로 해석하지 못한 후보 수를 반환한다.
+    public func analyze(source: String, relativePath: String) throws -> SwiftBridgeExtraction {
         let tree = Parser.parse(source: source)
         guard !tree.hasError else { throw SwiftBridgeExtractionError.invalidSyntax }
         let importDetector = FlutterImportDetector()
         importDetector.walk(tree)
-        guard importDetector.hasFlutterImport else { return [] }
+        guard importDetector.hasFlutterImport else {
+            return SwiftBridgeExtraction(facts: [], limitations: [])
+        }
+        let shadowDetector = LocalFlutterMethodChannelDetector()
+        shadowDetector.walk(tree)
+        guard !shadowDetector.hasLocalDeclaration else {
+            return SwiftBridgeExtraction(
+                facts: [],
+                limitations: [
+                    "shadowed-flutter-method-channel: "
+                        + "a local declaration hides the imported Flutter type",
+                ]
+            )
+        }
         let conditionalDetector = ConditionalFlutterBridgeDetector()
         conditionalDetector.walk(tree)
         guard !conditionalDetector.hasConditionalBridgeSyntax else {
@@ -97,7 +115,96 @@ public struct SwiftBridgeFactExtractor: Sendable {
             converter: converter
         )
         collector.walk(tree)
-        return collector.facts
+        guard isSafeBridgeValue(relativePath),
+              collector.facts.allSatisfy(isSafeBridgeFact)
+        else { throw SwiftBridgeExtractionError.unsafeBridgeValue }
+        let limitations = collector.opaqueHandlerBodies == 0 ? [] : [
+            "opaque-handler-bodies: \(collector.opaqueHandlerBodies) "
+                + (collector.opaqueHandlerBodies == 1
+                    ? "setMethodCallHandler call uses"
+                    : "setMethodCallHandler calls use")
+                + " a non-closure handler",
+        ]
+        return SwiftBridgeExtraction(
+            facts: collector.facts,
+            limitations: limitations
+        )
+    }
+}
+
+/// Phase 0 추출 사실과 해석하지 못한 후보 limitation이다.
+public struct SwiftBridgeExtraction: Sendable {
+    /// 불변 사실과 limitation을 보존한다.
+    public init(facts: [BridgeFact], limitations: [String]) {
+        self.facts = facts
+        self.limitations = limitations
+    }
+
+    /// 교환 문서에 넣을 브리지 사실이다.
+    public let facts: [BridgeFact]
+
+    /// 누락을 정상 부재와 구분하는 분석 한계다.
+    public let limitations: [String]
+}
+
+/// 사실의 공개 문자열이 교환 계약의 출력 안전 문자를 따르는지 확인한다.
+private func isSafeBridgeFact(_ fact: BridgeFact) -> Bool {
+    isSafeBridgeValue(fact.channel)
+        && (fact.method.map(isSafeBridgeValue) ?? true)
+        && (fact.symbol.map {
+            isSafeBridgeValue($0.qualifiedName)
+                && ($0.usr.map(isSafeBridgeValue) ?? true)
+        } ?? true)
+}
+
+/// 비어 있지 않고 출력 문법을 깨뜨리는 제어 문자가 없는 문자열인지 확인한다.
+private func isSafeBridgeValue(_ value: String) -> Bool {
+    !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && !value.unicodeScalars.contains {
+            $0.value <= 0x1F
+                || (0x7F ... 0x9F).contains($0.value)
+                || $0.value == 0x2028
+                || $0.value == 0x2029
+        }
+}
+
+/// 로컬 타입이 import된 FlutterMethodChannel을 가리는지 확인한다.
+private final class LocalFlutterMethodChannelDetector: SyntaxVisitor {
+    private(set) var hasLocalDeclaration = false
+
+    init() {
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
+        record(node.name)
+    }
+
+    private func record(_ name: TokenSyntax) -> SyntaxVisitorContinueKind {
+        if name.text == "FlutterMethodChannel" {
+            hasLocalDeclaration = true
+        }
+        return .visitChildren
     }
 }
 
@@ -105,40 +212,20 @@ public struct SwiftBridgeFactExtractor: Sendable {
 public enum SwiftBridgeExtractionError: Error, Sendable {
     case invalidSyntax
     case conditionalCompilation
+    case unsafeBridgeValue
 }
 
 /// 활성 컴파일 구성을 모르는 상태에서 조건부 브리지 구문을 오인하지 않게 한다.
 private final class ConditionalFlutterBridgeDetector: SyntaxVisitor {
     private(set) var hasConditionalBridgeSyntax = false
-    private var conditionalDepth = 0
 
     init() {
         super.init(viewMode: .sourceAccurate)
     }
 
     override func visit(_ node: IfConfigDeclSyntax) -> SyntaxVisitorContinueKind {
-        conditionalDepth += 1
-        return .visitChildren
-    }
-
-    override func visitPost(_ node: IfConfigDeclSyntax) {
-        conditionalDepth -= 1
-    }
-
-    override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
-        if conditionalDepth > 0, node.path.trimmedDescription == "Flutter" {
-            hasConditionalBridgeSyntax = true
-        }
+        hasConditionalBridgeSyntax = true
         return .skipChildren
-    }
-
-    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        guard conditionalDepth > 0 else { return .visitChildren }
-        let callee = node.calledExpression.trimmedDescription
-        if callee == "FlutterMethodChannel" || callee.hasSuffix(".setMethodCallHandler") {
-            hasConditionalBridgeSyntax = true
-        }
-        return .visitChildren
     }
 }
 
@@ -264,7 +351,8 @@ public func encodeSwiftBridgeFactsDocument(
 public func makeSwiftBridgeFactsDocument(
     facts: [BridgeFact],
     generatedAt: String,
-    project: String
+    project: String,
+    extractionLimitations: [String] = []
 ) -> BridgeFactsDocument {
     let dynamicChannels = facts.filter {
         $0.kind == "channel-register" && $0.dynamic
@@ -274,7 +362,7 @@ public func makeSwiftBridgeFactsDocument(
     }.count
     // Phase 0 구문 실험은 컴파일러 인덱스가 없어 모든 handler USR이 비어 있다.
     let missingHandlerUSRs = facts.filter { $0.kind == "method-handle" }.count
-    var limitations: [String] = []
+    var limitations = extractionLimitations
     if dynamicChannels > 0 {
         limitations.append(
             "dynamic-channel-names: \(dynamicChannels) channel constructors use a non-literal name"
@@ -310,6 +398,9 @@ private final class BridgeFactCollector: SyntaxVisitor {
     /// 추출된 브리지 사실이다.
     private(set) var facts: [BridgeFact] = []
 
+    /// named-function handler라 본문을 연결하지 못한 등록 수다.
+    private(set) var opaqueHandlerBodies = 0
+
     /// 어휘 범위별 한 단계 문자열 상수다.
     private var stringConstantScopes: [[String: String]] = [[:]]
 
@@ -321,6 +412,9 @@ private final class BridgeFactCollector: SyntaxVisitor {
 
     /// 현재 순회 중인 setMethodCallHandler의 채널·호출 매개변수 문맥이다.
     private var handlerContexts: [HandlerContext] = []
+
+    /// 각 함수 호출이 handler 문맥을 실제로 추가했는지 보존한다.
+    private var handlerContextPushes: [Bool] = []
 
     /// 중첩 switch가 call.method를 대상으로 하는지 보존한다.
     private var methodSwitches: [Bool] = []
@@ -415,15 +509,44 @@ private final class BridgeFactCollector: SyntaxVisitor {
         declarationNames.removeLast()
     }
 
+    /// initializer 이름과 매개변수를 하위 사실의 선언·어휘 문맥에 추가한다.
+    override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationNames.append("init")
+        pushScope()
+        for parameter in node.signature.parameterClause.parameters {
+            declare((parameter.secondName ?? parameter.firstName).text)
+        }
+        return .visitChildren
+    }
+
+    /// initializer 순회가 끝나면 선언 문맥을 제거한다.
+    override func visitPost(_ node: InitializerDeclSyntax) {
+        popScope()
+        declarationNames.removeLast()
+    }
+
     /// 중첩 코드 블록의 지역 이름을 바깥 범위와 분리한다.
     override func visit(_ node: CodeBlockSyntax) -> SyntaxVisitorContinueKind {
         pushScope()
+        if let ifExpression = node.parent?.as(IfExprSyntax.self),
+           ifExpression.body.id == node.id {
+            declareConditionBindings(ifExpression.conditions)
+        }
+        if let forStatement = node.parent?.as(ForStmtSyntax.self),
+           forStatement.body.id == node.id {
+            declarePatternBindings(forStatement.pattern)
+        }
         return .visitChildren
     }
 
     /// 코드 블록을 벗어나면 지역 이름을 제거한다.
     override func visitPost(_ node: CodeBlockSyntax) {
         popScope()
+    }
+
+    /// guard 성공 뒤에는 optional binding 이름을 현재 범위에 선언한다.
+    override func visitPost(_ node: GuardStmtSyntax) {
+        declareConditionBindings(node.conditions)
     }
 
     /// 클로저 매개변수와 지역 선언을 독립된 범위에 둔다.
@@ -480,8 +603,13 @@ private final class BridgeFactCollector: SyntaxVisitor {
 
     /// 핸들러 호출에 들어갈 때 수신 채널 문맥을 쌓는다.
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        if let channel = handlerChannel(node) {
+        let channel = handlerChannel(node)
+        handlerContextPushes.append(channel != nil)
+        if let channel {
             recordChannelRegistration(node, channel: channel)
+            if handlerClosure(node) == nil {
+                opaqueHandlerBodies += 1
+            }
             handlerContexts.append(HandlerContext(
                 channel: channel,
                 callParameterName: handlerCallParameterName(node)
@@ -492,7 +620,7 @@ private final class BridgeFactCollector: SyntaxVisitor {
 
     /// 핸들러 호출 순회가 끝나면 해당 채널 문맥을 제거한다.
     override func visitPost(_ node: FunctionCallExprSyntax) {
-        if handlerChannel(node) != nil { handlerContexts.removeLast() }
+        if handlerContextPushes.removeLast() { handlerContexts.removeLast() }
     }
 
     /// call.method switch 여부를 중첩 문맥에 기록한다.
@@ -627,8 +755,7 @@ private final class BridgeFactCollector: SyntaxVisitor {
 
     /// 핸들러 클로저의 첫 번째 호출 매개변수 이름을 얻는다.
     private func handlerCallParameterName(_ call: FunctionCallExprSyntax) -> String? {
-        let closure = call.trailingClosure
-            ?? call.arguments.first?.expression.as(ClosureExprSyntax.self)
+        let closure = handlerClosure(call)
         guard let closure else { return nil }
         guard let parameters = closure.signature?.parameterClause else { return "$0" }
         let name: String?
@@ -639,6 +766,12 @@ private final class BridgeFactCollector: SyntaxVisitor {
             name = clause.parameters.first.map { ($0.secondName ?? $0.firstName).text }
         }
         return name == "_" ? nil : name
+    }
+
+    /// trailing 또는 첫 인자 위치의 handler 클로저를 찾는다.
+    private func handlerClosure(_ call: FunctionCallExprSyntax) -> ClosureExprSyntax? {
+        call.trailingClosure
+            ?? call.arguments.first?.expression.as(ClosureExprSyntax.self)
     }
 
     /// switch 대상이 해당 핸들러 매개변수의 method인지 확인한다.
@@ -737,6 +870,31 @@ private final class BridgeFactCollector: SyntaxVisitor {
             for parameter in clause.parameters {
                 declare((parameter.secondName ?? parameter.firstName).text)
             }
+        }
+    }
+
+    /// 조건 목록의 optional binding 패턴 이름을 현재 범위에 선언한다.
+    private func declareConditionBindings(_ conditions: ConditionElementListSyntax) {
+        for condition in conditions {
+            guard case let .optionalBinding(binding) = condition.condition else { continue }
+            declarePatternBindings(binding.pattern)
+        }
+    }
+
+    /// 식별자·tuple·value-binding 패턴의 선언 이름을 재귀적으로 모은다.
+    private func declarePatternBindings(_ pattern: PatternSyntax) {
+        if let identifier = pattern.as(IdentifierPatternSyntax.self) {
+            declare(identifier.identifier.text)
+            return
+        }
+        if let tuple = pattern.as(TuplePatternSyntax.self) {
+            for element in tuple.elements {
+                declarePatternBindings(element.pattern)
+            }
+            return
+        }
+        if let binding = pattern.as(ValueBindingPatternSyntax.self) {
+            declarePatternBindings(binding.pattern)
         }
     }
 

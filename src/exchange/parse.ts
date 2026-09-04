@@ -143,6 +143,19 @@ function validateDocumentMetadata(
     fail('Target must be set exactly when facts are present.');
   }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
+  const hasUnattributedHandler = document.facts.some(
+    (fact) =>
+      isJsonObject(fact) &&
+      fact.kind === 'method-handle' &&
+      fact.channel === null,
+  );
+  if (
+    hasUnattributedHandler &&
+    !document.limitations.some((message) =>
+      message.startsWith('unattributed-method-handles:'))
+  ) {
+    fail('Unattributed method handles require a limitation.');
+  }
 }
 
 /** 사실 하나의 조인 키와 증거 필드를 검증한다. */
@@ -158,7 +171,11 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!methodFactKinds.has(value.kind) && value.method !== undefined) {
     fail(`Unexpected method at index ${index}.`);
   }
-  if (value.channel !== null && !isSafeNonEmptyString(value.channel)) {
+  if (
+    value.channel === null
+      ? value.kind !== 'method-handle'
+      : !isSafeNonEmptyString(value.channel)
+  ) {
     fail(`Invalid fact channel at index ${index}.`);
   }
   if (methodFactKinds.has(value.kind) && !isSafeNonEmptyString(value.method)) {

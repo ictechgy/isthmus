@@ -214,6 +214,44 @@ test('등록 없는 채널 생성을 논리 채널과 모든 생성 위치로 �
   ]);
 });
 
+test('생성 없는 채널 등록을 논리 채널과 모든 등록 위치로 남긴다', () => {
+  const receiverWithOrphan = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel: 'dev.isthmus/native-only',
+        dynamic: false,
+        location: {
+          path: 'ios/NativeOnlyPlugin.swift',
+          line: 4,
+          column: 9,
+        },
+      },
+    ],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, receiverWithOrphan]);
+
+  assert.deepEqual(result.registrationsWithoutCreations, [
+    {
+      target: 'flutter',
+      channel: 'dev.isthmus/native-only',
+      registrations: [
+        {
+          platform: 'swift',
+          location: {
+            path: 'ios/NativeOnlyPlugin.swift',
+            line: 4,
+            column: 9,
+          },
+        },
+      ],
+    },
+  ]);
+});
+
 test('입력 limitations를 플랫폼과 생산 도구 출처와 함께 전달한다', () => {
   const result = joinBridgeDocuments([dartDocument, swiftDocument]);
 
@@ -266,6 +304,63 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
     result.limitations.some(({ message }) => message.startsWith('mixed-targets:')),
     true,
   );
+});
+
+test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보류한다', () => {
+  const messages = [
+    ' Mixed-Targets: multiple bridges',
+    'MIXED-TARGETS multiple bridges',
+    'mixed-targets',
+    'Detected mixed-targets: dart and swift facts',
+    'mixed-targets, dart and swift facts',
+    'mixed-targets. Facts span two bridges.',
+  ];
+
+  for (const message of messages) {
+    const mixedSwiftDocument = parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, message],
+    });
+
+    const result = joinBridgeDocuments([dartDocument, mixedSwiftDocument]);
+
+    assert.equal(result.deferred, true, message);
+  }
+});
+
+test('channel null handler는 문자열 null 채널과 연결되지 않는다', () => {
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    limitations: [],
+    facts: [
+      {
+        kind: 'method-invoke',
+        channel: 'null',
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'lib/null_channel.dart', line: 1, column: 1 },
+      },
+    ],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    limitations: ['unattributed-method-handles: 1 handler has no channel'],
+    facts: [
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'ios/Detached.swift', line: 1, column: 1 },
+      },
+    ],
+  });
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(result.matchedMethods, []);
+  assert.equal(result.unhandledInvocations[0]?.channel, 'null');
+  assert.deepEqual(result.handlersWithoutInvocations, []);
 });
 
 test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다', () => {

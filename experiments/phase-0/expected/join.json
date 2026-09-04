@@ -15,6 +15,7 @@
     }
   ],
   "unregisteredChannelCreations": [],
+  "registrationsWithoutCreations": [],
   "matchedMethods": [
     {
       "channel": "dev.isthmus/camera",

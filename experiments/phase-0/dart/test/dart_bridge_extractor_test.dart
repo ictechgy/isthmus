@@ -356,6 +356,36 @@ void unrelated(Object channel) {
     );
   });
 
+  test('메서드와 생성자 매개변수는 같은 이름의 클래스 채널을 가린다', () {
+    const source = """
+import 'package:flutter/services.dart';
+class Plugin {
+  final channel = MethodChannel('dev.isthmus/test');
+  Plugin(Object channel) {
+    channel.invokeMethod('constructorFake');
+  }
+  void send(Object channel) {
+    channel.invokeMethod('methodFake');
+  }
+  void sendReal() {
+    channel.invokeMethod('real');
+  }
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/plugin.dart',
+    );
+    final methods = facts
+        .map((fact) => fact.toJson())
+        .where((fact) => fact['kind'] == 'method-invoke')
+        .map((fact) => fact['method'])
+        .toList();
+
+    expect(methods, ['real']);
+  });
+
   test('catch·for-in·지역 함수 이름은 바깥 채널 변수를 가린다', () {
     const source = """
 import 'package:flutter/services.dart';
@@ -473,6 +503,30 @@ void create() { /* 😀 */ MethodChannel('dev.isthmus/utf8'); }
     final location = facts.single.toJson()['location'];
 
     expect(location, {'path': 'lib/utf8.dart', 'line': 2, 'column': 28});
+  });
+
+  test('금지 문자가 든 채널·메서드 값을 교환 사실로 내보내지 않는다', () {
+    const unsafeSources = [
+      r"""
+import 'package:flutter/services.dart';
+final channel = MethodChannel('dev\u0085camera');
+""",
+      r"""
+import 'package:flutter/services.dart';
+final channel = MethodChannel('dev.isthmus/camera');
+void invoke() { channel.invokeMethod('take\u2028Photo'); }
+""",
+    ];
+
+    for (final source in unsafeSources) {
+      expect(
+        () => extractDartBridgeFacts(
+          source: source,
+          relativePath: 'lib/unsafe.dart',
+        ),
+        throwsFormatException,
+      );
+    }
   });
 
   test('문서가 동적 이름 개수를 limitations에 기록한다', () async {

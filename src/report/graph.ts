@@ -9,6 +9,7 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
+import { isBridgeJoinDeferred } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
@@ -147,6 +148,9 @@ function edgeLabel(edge: BridgeGraphEdge): string {
 
 /** 조인 결과의 매치만 경계 그래프로 바꾼다. */
 export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot create a graph from a deferred bridge join.');
+  }
   assertBridgeGraphSize(joined);
   const nodes = new Map<string, BridgeGraphNode>();
   const edges: BridgeGraphEdge[] = [];

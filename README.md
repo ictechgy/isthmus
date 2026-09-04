@@ -22,7 +22,7 @@ isthmus는 조사한 도구들이 언어별로 나눠 보던 이 교차 경계�
 
 ## 상태
 
-**0.1.2.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+**0.1.3.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
 cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
 Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
 도그푸딩과 React Native 지원이다.
@@ -121,13 +121,16 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 주석으로 보존한다. 증거의 Cartesian 곱이 100,000개 간선을 넘으면 메모리 폭증을 막기
 위해 입력 오류로 종료한다.
 
-출력은 `isthmus-check` 버전 1 JSON이며 다음 세 사실을 보고한다.
+출력은 `isthmus-check` 버전 1 JSON이며 다음 네 사실을 보고한다.
 
 - `unhandled-invocation` (error): 호출은 있지만 네이티브 핸들러가 없음
 - `unregistered-channel-creation` (error): 호출 측 채널 생성은 있지만 네이티브 등록이 없음
+- `registration-without-creation` (warning): 네이티브 채널 등록은 있지만 호출 측 생성이 없음
 - `handler-without-invocation` (warning): 네이티브 핸들러는 있지만 호출 측 사용이 없음
 
-모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께 남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
+모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
+handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께
+남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
 
 | 종료 코드 | 의미 |
 |---|---|

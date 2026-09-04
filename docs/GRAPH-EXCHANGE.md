@@ -58,7 +58,11 @@ UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으
 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
 제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
 
-`channel: null`은 "채널이 없다"가 아니라 생산자가 핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고, 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 `unattributed-method-handles` 같은 limitation으로 알려야 한다.
+`channel: null`은 `method-handle`에서만 허용하며, "채널이 없다"가 아니라 생산자가
+핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고,
+호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 정확히
+`unattributed-method-handles:`로 시작하는 limitation으로 알려야 하며, 없으면 소비자는
+문서를 거부한다.
 
 ### 종류별 의미
 
@@ -82,6 +86,7 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 ## 조인 규칙 (isthmus 가 적용)
 
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
+- 생성 없는 `channel-register`는 호출 측 사용을 찾지 못한 경고로 보존한다
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
 - `module-import` ↔ `module-export`: 0.2에서 `channel`(모듈 이름)로 조인할 예정
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다
@@ -97,7 +102,7 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이
   함께 있으면 생산자는 결정적인 대표값을 쓰고 정확히 `mixed-targets:`로 시작하는
   limitation을 반드시 추가한다
-- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
+- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. 생산자는 위의 정확한 표기를 써야 하며, 소비자는 대소문자·앞 공백·콜론 누락처럼 명백한 변형도 fail-closed로 보류한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
 
 소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,
 Swift/Kotlin은 수신 측 종류만 생산할 수 있다.
@@ -117,7 +122,7 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 {
   "format": "external-retentions",
   "version": 0,
-  "producedBy": { "name": "isthmus", "version": "0.1.2" },
+  "producedBy": { "name": "isthmus", "version": "x.y.z" },
   "generatedAt": "…",
   "retentions": [
     {
@@ -153,4 +158,6 @@ cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스�
 - **Swift `case` 귀속**: 감싸는 타입·함수의 `qualifiedName`과, 생산 구현이 가진 안정 식별자(`usr`)를 `symbol`에 넣는다. 사실의 `location`은 `case` 문자열 위치다. Phase 0 SwiftSyntax 실험은 USR을 만들 수 없어 그 수를 `missing-handler-usrs`로 보고한다
 - **Pigeon · Turbo Modules codegen**: 버전 1에는 별도 `codegen-resolved` 종류나 플래그를 추가하지 않는다. 생성 코드의 리터럴도 같은 채널·메서드 사실이고 조인 규칙이 같기 때문이다. 버전 1은 생성 여부를 계약에 싣지 않으며, 필요해지면 조인 키를 바꾸지 않는 선택 필드로 추가한다. 소비자는 경로만 보고 사용자 작성 코드라고 가정하지 않는다
 - **한 단계 상수 추적**: `const kChannel = '…'`와 Swift `static let`처럼 같은 파일의 문자열 상수 한 단계는 정적 사실로 낸다. 그 이상이거나 보간된 표현식은 원문과 `dynamic: true`로 보존한다
+- **구문 해석 한계**: Dart의 해석하지 못한 `invokeMethod` receiver는 `unresolved-receiver-invocations:`, Swift의 named-function handler는 `opaque-handler-bodies:` limitation으로 센다. 로컬 선언이 import된 `FlutterMethodChannel`을 가리면 `shadowed-flutter-method-channel:`로 알리고 사실 생성을 보류한다
+- **Swift 조건부 컴파일**: Flutter를 import한 파일에 `#if`가 있으면 활성 구성을 추측하지 않고 compiler-indexed 추출이 필요하다고 실패한다
 - **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다

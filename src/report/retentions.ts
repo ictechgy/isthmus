@@ -86,7 +86,9 @@ function collectCartographRetentions(
     if (caller === undefined) continue;
     for (const handler of method.handlers) {
       if (handler.platform !== 'swift' || handler.symbol === undefined) continue;
-      const symbolKey = handler.symbol.usr ?? `name:${handler.symbol.qualifiedName}`;
+      const symbolKey = handler.symbol.usr === undefined
+        ? `name:${handler.symbol.qualifiedName}`
+        : `usr:${handler.symbol.usr}`;
       const retentionKey = `${symbolKey}\u0000${method.channel}\u0000${method.method}`;
       if (seen.has(retentionKey)) continue;
       seen.add(retentionKey);

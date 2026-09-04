@@ -70,6 +70,8 @@ func rejectsUnsafeSwiftMetadata() {
         (project: "/fixture", path: "../private.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "\\server\\private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture\u{0085}evil", path: "ios/Plugin.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "ios/Plugin\u{2028}.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "C:/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "ios/Plugin\n.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "ios/Plugin.swift", generatedAt: "2026-02-31T12:00:00Z"),
@@ -120,6 +122,70 @@ func normalizesSwiftGeneratedAt() throws {
         #expect(result.exitCode == 0)
         #expect(document["generatedAt"] as? String == item.expected)
     }
+}
+
+@Test("named-function handler 본문을 해석하지 못한 사실을 limitation으로 보고한다")
+func reportsOpaqueSwiftHandlerBody() throws {
+    let source = """
+    import Flutter
+    func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "takePhoto": result(nil)
+        default: break
+        }
+    }
+    func register(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler(handle)
+    }
+    """
+
+    let result = try runSwiftBridgeCommand(
+        arguments: [
+            "source.swift",
+            "--project", "/fixture",
+            "--path", "ios/Plugin.swift",
+            "--generated-at", "2026-09-04T12:00:00Z",
+        ],
+        readSource: { _ in source }
+    )
+    let data = try #require(result.standardOutput.data(using: .utf8))
+    let document = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(document["limitations"] as? [String] == [
+        "opaque-handler-bodies: 1 setMethodCallHandler call uses a non-closure handler",
+    ])
+}
+
+@Test("로컬 FlutterMethodChannel shadow를 limitation으로 보고한다")
+func reportsShadowedSwiftMethodChannel() throws {
+    let source = """
+    import Flutter
+    struct FlutterMethodChannel {}
+    """
+
+    let result = try runSwiftBridgeCommand(
+        arguments: [
+            "source.swift",
+            "--project", "/fixture",
+            "--path", "ios/Plugin.swift",
+            "--generated-at", "2026-09-04T12:00:00Z",
+        ],
+        readSource: { _ in source }
+    )
+    let data = try #require(result.standardOutput.data(using: .utf8))
+    let document = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect((document["facts"] as? [Any])?.isEmpty == true)
+    #expect(document["limitations"] as? [String] == [
+        "shadowed-flutter-method-channel: a local declaration hides the imported Flutter type",
+    ])
 }
 
 @Test("읽기 실패는 경로를 노출하지 않고 종료 코드 2를 반환한다")

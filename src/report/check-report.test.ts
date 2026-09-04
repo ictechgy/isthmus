@@ -133,6 +133,48 @@ test('등록 없는 채널 생성을 method 없는 오류로 보고한다', () =
   );
 });
 
+test('생성 없는 채널 등록을 method 없는 경고로 보고한다', () => {
+  const receiverWithOrphan = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel: 'dev.isthmus/native-only',
+        dynamic: false,
+        location: {
+          path: 'ios/NativeOnlyPlugin.swift',
+          line: 4,
+          column: 9,
+        },
+      },
+    ],
+  });
+  const joined = joinBridgeDocuments([dartDocument, receiverWithOrphan]);
+
+  const report = createCheckReport(joined);
+
+  assert.deepEqual(
+    report.issues.find(({ code }) => code === 'registration-without-creation'),
+    {
+      severity: 'warning',
+      code: 'registration-without-creation',
+      target: 'flutter',
+      channel: 'dev.isthmus/native-only',
+      evidence: [
+        {
+          platform: 'swift',
+          location: {
+            path: 'ios/NativeOnlyPlugin.swift',
+            line: 4,
+            column: 9,
+          },
+        },
+      ],
+    },
+  );
+});
+
 test('check 문서 종류·버전과 입력 limitations를 함께 제공한다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
 
@@ -141,6 +183,21 @@ test('check 문서 종류·버전과 입력 limitations를 함께 제공한다',
   assert.equal(report.format, 'isthmus-check');
   assert.equal(report.version, 1);
   assert.deepEqual(report.limitations, joined.limitations);
+});
+
+test('보류된 조인을 깨끗한 check 보고서로 만들지 않는다', () => {
+  const joined = joinBridgeDocuments([
+    dartDocument,
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, 'mixed-targets: multiple bridges'],
+    }),
+  ]);
+
+  assert.throws(
+    () => createCheckReport(joined),
+    /Cannot create a check report from a deferred bridge join\./,
+  );
 });
 
 test('check JSON 객체 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {

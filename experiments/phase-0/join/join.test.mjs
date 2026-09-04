@@ -42,6 +42,34 @@ test('같은 정적 채널의 생성과 등록을 양쪽 위치로 연결한다'
     },
   ]);
   assert.deepEqual(report.unregisteredChannelCreations, []);
+  assert.deepEqual(report.registrationsWithoutCreations, []);
+});
+
+test('손 조인도 생성 없는 채널 등록을 수신 위치와 함께 남긴다', () => {
+  const receiverWithOrphan = structuredClone(swiftDocument);
+  receiverWithOrphan.facts.push({
+    kind: 'channel-register',
+    channel: 'dev.isthmus/native-only',
+    dynamic: false,
+    location: {
+      path: 'ios/NativeOnlyPlugin.swift',
+      line: 4,
+      column: 9,
+    },
+  });
+
+  const report = joinBridgeFacts(dartDocument, receiverWithOrphan);
+
+  assert.deepEqual(report.registrationsWithoutCreations, [
+    {
+      channel: 'dev.isthmus/native-only',
+      registration: {
+        path: 'ios/NativeOnlyPlugin.swift',
+        line: 4,
+        column: 9,
+      },
+    },
+  ]);
 });
 
 test('같은 채널과 메서드의 호출과 핸들러를 양쪽 위치로 연결한다', () => {
@@ -149,6 +177,9 @@ test('채널을 모르는 핸들러는 호출 없음으로 판정하지 않는�
       column: 10,
     },
   });
+  swiftWithUnknownChannel.limitations.push(
+    'unattributed-method-handles: 1 handler has no channel',
+  );
 
   const report = joinBridgeFacts(dartDocument, swiftWithUnknownChannel);
 

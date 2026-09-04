@@ -4,6 +4,7 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
+import { isBridgeJoinDeferred } from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** check 결과 개수를 빠르게 판단할 요약이다. */
@@ -18,6 +19,7 @@ export interface CheckSummary {
 export type CheckIssueCode =
   | 'unhandled-invocation'
   | 'unregistered-channel-creation'
+  | 'registration-without-creation'
   | 'handler-without-invocation';
 
 /** 삭제 판정 없이 경계 불일치 사실과 증거만 전달한다. */
@@ -46,6 +48,9 @@ export function encodeCheckReport(report: CheckReport): string {
 
 /** 조인 결과를 정책 심각도가 포함된 check 문서로 바꾼다. */
 export function createCheckReport(joined: BridgeJoinResult): CheckReport {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot create a check report from a deferred bridge join.');
+  }
   return {
     format: 'isthmus-check',
     version: 1,
@@ -53,7 +58,9 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       errors:
         joined.unhandledInvocations.length +
         joined.unregisteredChannelCreations.length,
-      warnings: joined.handlersWithoutInvocations.length,
+      warnings:
+        joined.registrationsWithoutCreations.length +
+        joined.handlersWithoutInvocations.length,
       matchedChannels: joined.matchedChannels.length,
       matchedMethods: joined.matchedMethods.length,
     },
@@ -72,6 +79,13 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
         target: item.target,
         channel: item.channel,
         evidence: item.creations,
+      })),
+      ...joined.registrationsWithoutCreations.map<CheckIssue>((item) => ({
+        severity: 'warning',
+        code: 'registration-without-creation',
+        target: item.target,
+        channel: item.channel,
+        evidence: item.registrations,
       })),
       ...joined.handlersWithoutInvocations.map<CheckIssue>((item) => ({
         severity: 'warning',

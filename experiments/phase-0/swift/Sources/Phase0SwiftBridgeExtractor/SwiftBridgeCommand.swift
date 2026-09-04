@@ -40,14 +40,15 @@ public func runSwiftBridgeCommand(
     } catch {
         throw SwiftBridgeCommandFailure.sourceRead
     }
-    let facts = try SwiftBridgeFactExtractor().extract(
+    let extraction = try SwiftBridgeFactExtractor().analyze(
         source: source,
         relativePath: arguments[4]
     )
     let document = makeSwiftBridgeFactsDocument(
-        facts: facts,
+        facts: extraction.facts,
         generatedAt: generatedAt,
-        project: arguments[2]
+        project: arguments[2],
+        extractionLimitations: extraction.limitations
     )
     return try SwiftBridgeCommandResult(
         standardOutput: encodeSwiftBridgeFactsDocument(document),
@@ -141,10 +142,15 @@ private func isProjectRelativePath(_ value: String) -> Bool {
     return !value.split(whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..")
 }
 
-/// 비어 있지 않고 ASCII 제어 문자가 없는 문자열인지 확인한다.
+/// 비어 있지 않고 출력 문법을 깨뜨리는 제어 문자가 없는 문자열인지 확인한다.
 private func isSafeNonEmptyString(_ value: String) -> Bool {
     !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && !value.unicodeScalars.contains { $0.value <= 0x1F || $0.value == 0x7F }
+        && !value.unicodeScalars.contains {
+            $0.value <= 0x1F
+                || (0x7F ... 0x9F).contains($0.value)
+                || $0.value == 0x2028
+                || $0.value == 0x2029
+        }
 }
 
 /// 실제 달력 날짜와 명시적 timezone을 갖는 ISO 8601 시각인지 확인한다.

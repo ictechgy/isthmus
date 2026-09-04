@@ -49,6 +49,8 @@ void main() {
       ('/fixture', '/private.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', r'C:\private.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', r'\server\private.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture\u0085evil', 'lib/source.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', 'lib/source\u2028.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', 'lib/source.dart', '2026-02-31T12:00:00Z'),
     ];
 
@@ -70,7 +72,7 @@ void main() {
       expect(result.stderr, startsWith('Usage: extract_bridges.dart'));
       expect(result.stderr, isNot(contains('does-not-exist.dart')));
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 1)));
 
   test('읽을 수 없는 소스는 경로를 노출하지 않고 종료 코드 2를 낸다', () async {
     final result = await Process.run(Platform.resolvedExecutable, [
@@ -115,6 +117,42 @@ void main() {
     );
     expect(result.stderr, isNot(contains('invalid_dart.txt')));
     expect(result.stderr, isNot(contains('package:analyzer')));
+  });
+
+  test('해석할 수 없는 invokeMethod receiver를 limitation으로 보고한다', () async {
+    final temporaryDirectory = await Directory.systemTemp.createTemp(
+      'isthmus-phase0-dart-',
+    );
+    final sourceFile = File('${temporaryDirectory.path}/bridge.dart');
+    try {
+      await sourceFile.writeAsString("""
+import 'package:flutter/services.dart';
+void invoke(dynamic plugin) {
+  plugin.channel.invokeMethod('takePhoto');
+}
+""");
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'bin/extract_bridges.dart',
+        sourceFile.path,
+        '--project',
+        '/fixture',
+        '--path',
+        'lib/bridge.dart',
+        '--generated-at',
+        '2026-09-04T12:00:00Z',
+      ]);
+
+      expect(result.exitCode, 0, reason: result.stderr as String);
+      final document =
+          jsonDecode(result.stdout as String) as Map<String, Object?>;
+      expect(document['facts'], isEmpty);
+      expect(document['limitations'], [
+        'unresolved-receiver-invocations: 1 invokeMethod call has an unresolved receiver',
+      ]);
+    } finally {
+      await temporaryDirectory.delete(recursive: true);
+    }
   });
 
   test('UTF-8이 아닌 소스도 스택과 경로 없는 종료 코드 2로 보고한다', () async {
