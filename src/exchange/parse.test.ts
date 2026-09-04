@@ -178,6 +178,14 @@ test('지원하지 않는 bridge-facts 버전을 거부한다', () => {
 test('잘못된 문서 메타데이터를 필드별 안전한 오류로 거부한다', () => {
   const invalidCases: ReadonlyArray<readonly [unknown, string]> = [
     [{ ...emptyDocument, tool: { name: '', version: '0.1.0' } }, 'Invalid tool metadata.'],
+    [
+      { ...emptyDocument, tool: { name: 'dartograph\nevil', version: '0.1.0' } },
+      'Invalid tool metadata.',
+    ],
+    [
+      { ...emptyDocument, tool: { name: 'dartograph', version: '0.1.0\u0000evil' } },
+      'Invalid tool metadata.',
+    ],
     [{ ...emptyDocument, generatedAt: 'not-a-date' }, 'Invalid generatedAt timestamp.'],
     [
       { ...emptyDocument, generatedAt: '2026-09-04T12:00:00' },

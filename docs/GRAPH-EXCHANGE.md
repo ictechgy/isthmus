@@ -85,7 +85,9 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 
 - 사실이 없을 때만 문서의 `target`은 `null`이다
 - 사실이 하나 이상이고 한 브리지 메커니즘만 담으면 그 값을 쓴다
-- 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이 함께 있으면 생산자는 결정적인 대표값을 쓰고 `mixed-targets` limitation을 반드시 추가한다
+- 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이
+  함께 있으면 생산자는 결정적인 대표값을 쓰고 정확히 `mixed-targets:`로 시작하는
+  limitation을 반드시 추가한다
 - 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
 
 소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,

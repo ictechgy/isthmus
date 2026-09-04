@@ -203,8 +203,8 @@ function validateSymbol(value: unknown, index: number): void {
 function validateTool(value: unknown): void {
   if (
     !isJsonObject(value) ||
-    !isNonEmptyString(value.name) ||
-    !isNonEmptyString(value.version)
+    !isSafeNonEmptyString(value.name) ||
+    !isSafeNonEmptyString(value.version)
   ) {
     fail('Invalid tool metadata.');
   }
