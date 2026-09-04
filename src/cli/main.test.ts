@@ -29,3 +29,19 @@ test('실제 CLI 프로세스가 check JSON을 stdout으로 출력한다', async
   assert.equal(JSON.parse(stdout).format, 'isthmus-check');
   assert.equal(stdout, await readFile(checkPath, 'utf8'));
 });
+
+test('실제 CLI 프로세스가 cartograph 보존 JSON을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'retentions',
+    dartPath,
+    swiftPath,
+    '--for',
+    'cartograph',
+  ]);
+
+  assert.equal(stderr, '');
+  const document = JSON.parse(stdout);
+  assert.equal(document.format, 'external-retentions');
+  assert.equal(document.retentions.length, 1);
+});

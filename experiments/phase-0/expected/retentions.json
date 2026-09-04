@@ -1,0 +1,26 @@
+{
+  "format": "external-retentions",
+  "generatedAt": "2026-09-04T13:00:00.000Z",
+  "producedBy": {
+    "name": "isthmus",
+    "version": "0.0.0"
+  },
+  "retentions": [
+    {
+      "evidence": {
+        "caller": {
+          "line": 6,
+          "path": "lib/camera_bridge.dart",
+          "platform": "dart"
+        },
+        "channel": "dev.isthmus/camera",
+        "method": "takePhoto"
+      },
+      "reason": "bridge",
+      "symbol": {
+        "qualifiedName": "CameraPlugin.register"
+      }
+    }
+  ],
+  "version": 0
+}

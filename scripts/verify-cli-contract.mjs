@@ -13,6 +13,7 @@ verifyUsageError();
 verifyInputError();
 verifySuccessfulCheck();
 verifyStrictFindings();
+verifyRetentions();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
@@ -45,6 +46,22 @@ function verifyStrictFindings() {
   verify(result.status === 1, 'strict exit code');
   verify(result.stderr === '', 'strict stderr');
   verify(JSON.parse(result.stdout).summary.errors === 1, 'strict JSON');
+}
+
+/** retentions가 cartograph용 보존 문서를 내는지 검증한다. */
+function verifyRetentions() {
+  const result = run([
+    'retentions',
+    dartPath,
+    swiftPath,
+    '--for',
+    'cartograph',
+  ]);
+  verify(result.status === 0, 'retentions exit code');
+  verify(result.stderr === '', 'retentions stderr');
+  const document = JSON.parse(result.stdout);
+  verify(document.format === 'external-retentions', 'retentions JSON');
+  verify(document.retentions.length === 1, 'retentions count');
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */
