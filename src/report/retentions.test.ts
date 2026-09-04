@@ -124,6 +124,25 @@ test('외부 보존 JSON 키를 재귀 정렬하고 마지막 개행을 붙인�
   assert.equal(encoded, encodeCartographRetentionsDocument(document));
 });
 
+test('조인이 보류된 결과로 빈 보존 문서를 만들지 않는다', () => {
+  const joined = joinBridgeDocuments([
+    dartDocument,
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, 'mixed-targets: multiple bridges'],
+    }),
+  ]);
+
+  assert.throws(
+    () => createCartographRetentionsDocument(
+      joined,
+      '2026-09-04T13:00:00Z',
+      '0.0.0',
+    ),
+    /Cannot create retentions from a deferred bridge join\./,
+  );
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

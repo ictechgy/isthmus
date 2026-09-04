@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -38,6 +38,15 @@ for (const requiredPath of [
   verify(paths.has(requiredPath), `artifact file ${requiredPath}`);
 }
 verify([...paths].every((path) => !path.startsWith('src/')), 'source exclusion');
+for (const sourceMapPath of [...paths].filter((path) => path.endsWith('.js.map'))) {
+  const sourceMap = JSON.parse(
+    readFileSync(join(repositoryRoot, sourceMapPath), 'utf8'),
+  );
+  verify(
+    sourceMap.sourcesContent?.length === sourceMap.sources?.length,
+    `inline source map ${sourceMapPath}`,
+  );
+}
 
 process.stdout.write('Package contract verified: isthmus-cli@0.1.0\n');
 

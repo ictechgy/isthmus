@@ -71,3 +71,27 @@ test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환�
     exitCode: 2,
   });
 });
+
+test('mixed-targets로 전체 조인이 보류되면 retentions를 만들지 않는다', async () => {
+  const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
+  const mixedSwift = JSON.stringify({
+    ...swiftDocument,
+    limitations: [
+      ...swiftDocument.limitations,
+      'mixed-targets: facts come from multiple bridge mechanisms',
+    ],
+  });
+  const result = await runRetentionsCommand(
+    ['retentions', dartPath, swiftPath, '--for', 'cartograph'],
+    (path) => path === swiftPath ? Promise.resolve(mixedSwift) : readFile(path, 'utf8'),
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.0',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+    exitCode: 2,
+  });
+});

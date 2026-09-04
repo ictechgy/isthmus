@@ -86,6 +86,56 @@ test('메서드 질의가 호출 위치와 핸들러 위치를 양방향으로 �
   ]);
 });
 
+test('같은 짧은 이름의 채널과 메서드가 있으면 종류를 추측하지 않는다', () => {
+  const channel = 'shared';
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [
+      ...dartDocument.facts,
+      {
+        kind: 'channel-create',
+        channel,
+        dynamic: false,
+        location: { path: 'lib/shared_bridge.dart', line: 2, column: 7 },
+      },
+      {
+        kind: 'method-invoke',
+        channel: 'dev.isthmus/camera',
+        method: channel,
+        dynamic: false,
+        location: { path: 'lib/shared_bridge.dart', line: 4, column: 7 },
+      },
+    ],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel,
+        dynamic: false,
+        location: { path: 'ios/SharedPlugin.swift', line: 2, column: 7 },
+      },
+      {
+        kind: 'method-handle',
+        channel: 'dev.isthmus/camera',
+        method: channel,
+        dynamic: false,
+        location: { path: 'ios/SharedPlugin.swift', line: 4, column: 7 },
+      },
+    ],
+  });
+
+  const document = createBridgeQuery(joinBridgeDocuments([caller, receiver]), channel);
+
+  assert.equal(document.status, 'ambiguous');
+  assert.deepEqual(document.candidates, [
+    { qualifiedName: 'flutter:dev.isthmus/camera#shared' },
+    { qualifiedName: 'flutter:shared' },
+  ]);
+});
+
 test('같은 메서드가 여러 채널에 있으면 후보를 주고 추측하지 않는다', () => {
   const dartWithSecondChannel = parseBridgeFactsDocument({
     ...dartDocument,
@@ -219,6 +269,46 @@ test('qualifiedName은 채널의 구분 문자를 이스케이프해 메서드�
 
   assert.equal(method.result?.subject.kind, 'method');
   assert.equal(escapedChannel.result?.subject.kind, 'channel');
+});
+
+test('qualifiedName 정확 일치는 다른 종류의 같은 짧은 이름보다 우선한다', () => {
+  const channel = 'flutter:dev.isthmus/camera#takePhoto';
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [
+      ...dartDocument.facts,
+      {
+        kind: 'channel-create',
+        channel,
+        dynamic: false,
+        location: { path: 'lib/qualified_bridge.dart', line: 2, column: 7 },
+      },
+    ],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel,
+        dynamic: false,
+        location: { path: 'ios/QualifiedPlugin.swift', line: 2, column: 7 },
+      },
+    ],
+  });
+
+  const document = createBridgeQuery(
+    joinBridgeDocuments([caller, receiver]),
+    channel,
+  );
+
+  assert.equal(document.status, 'found');
+  assert.equal(document.result?.subject.kind, 'method');
+  assert.equal(
+    document.result?.subject.qualifiedName,
+    'flutter:dev.isthmus/camera#takePhoto',
+  );
 });
 
 test('query JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {

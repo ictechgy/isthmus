@@ -71,10 +71,20 @@ export interface BridgeJoinResult {
   readonly limitations: readonly JoinLimitation[];
 }
 
+/** 함께 조인할 입력 문서 집합이 논리 계약을 위반했음을 나타낸다. */
+export class BridgeJoinValidationError extends Error {
+  /** 입력 경로를 노출하지 않는 안전한 메시지를 보존한다. */
+  constructor(message: string) {
+    super(message);
+    this.name = 'BridgeJoinValidationError';
+  }
+}
+
 /** 위치가 아니라 문자열 키로 검증된 교환 문서를 조인한다. */
 export function joinBridgeDocuments(
   documents: readonly BridgeFactsDocument[],
 ): BridgeJoinResult {
+  validateProjects(documents);
   const limitations = collectLimitations(documents);
   if (documents.some(hasMixedTargets)) return emptyJoinResult(limitations);
   const groups = collectChannelGroups(documents);
@@ -115,6 +125,20 @@ export function joinBridgeDocuments(
     handlersWithoutInvocations,
     limitations,
   };
+}
+
+/** 입력 한계 때문에 조인 전체가 보류된 결과인지 확인한다. */
+export function isBridgeJoinDeferred(joined: BridgeJoinResult): boolean {
+  return joined.limitations.some(({ message }) => message.startsWith('mixed-targets:'));
+}
+
+/** 한 번의 조인 입력이 정확히 하나의 project를 기술하는지 검증한다. */
+function validateProjects(documents: readonly BridgeFactsDocument[]): void {
+  if (new Set(documents.map(({ project }) => project)).size > 1) {
+    throw new BridgeJoinValidationError(
+      'Bridge documents must describe the same project.',
+    );
+  }
 }
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */

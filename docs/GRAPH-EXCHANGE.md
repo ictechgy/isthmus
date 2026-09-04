@@ -49,7 +49,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 `location.path`는 프로젝트 루트 기준 상대 경로다. 절대 경로, `..` 상위 이동, 제어 문자를 넣지 않는다.
 소비자는 이 조건을 어긴 문서를 거부해 로컬 경로 노출과 후속 출력 문법 오염을 막는다.
 채널·메서드·심볼 이름에도 제어 문자를 넣지 않는다. `generatedAt`은 timezone이 명시된
-ISO 8601 날짜·시각이어야 한다.
+ISO 8601 날짜·시각이어야 한다. 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
+제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
 
 `channel: null`은 "채널이 없다"가 아니라 생산자가 핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고, 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 `unattributed-method-handles` 같은 limitation으로 알려야 한다.
 
@@ -75,15 +76,19 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - `module-import` ↔ `module-export`: `channel` (모듈 이름)
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다
 - 위치는 증거이지 조인 키가 아니다. 같은 `(channel, method)` 사실이 여러 위치에 있어도 존재 여부는 키 집합으로 판단하고, 위치는 모두 증거로 보존한다
+- 한 번의 조인에 넣는 모든 문서는 정확히 같은 `project` 문자열을 가져야 한다. 다른 프로젝트의 같은 채널 이름을 연결하지 않기 위해 불일치는 입력 오류로 거부한다
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 
 ### `target` 호환 규칙
 
-- 사실이 없으면 문서의 `target`은 `null`이다
-- 문서가 한 브리지 메커니즘만 담으면 그 값을 쓴다
+- 사실이 없을 때만 문서의 `target`은 `null`이다
+- 사실이 하나 이상이고 한 브리지 메커니즘만 담으면 그 값을 쓴다
 - 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이 함께 있으면 생산자는 결정적인 대표값을 쓰고 `mixed-targets` limitation을 반드시 추가한다
-- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류하고 limitation만 전달한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
+- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
+
+소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,
+Swift/Kotlin은 수신 측 종류만 생산할 수 있다.
 
 ## 되돌려 주는 형식: 외부 보존 근거
 

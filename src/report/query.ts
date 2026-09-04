@@ -43,39 +43,36 @@ export function createBridgeQuery(
   joined: BridgeJoinResult,
   requested: string,
 ): BridgeQueryDocument {
-  const channels = channelResults(joined, requested);
-  if (channels.length > 1) {
-    return ambiguousQuery(joined, requested, channels);
-  }
-  const channel = channels[0];
-  if (channel !== undefined) {
-    return {
-      status: 'found',
-      requested,
-      level: 'bridge',
-      limitations: joined.limitations,
-      result: channel,
-    };
-  }
-  const methods = methodResults(joined, requested);
-  if (methods.length > 1) {
-    return ambiguousQuery(joined, requested, methods);
-  }
-  const method = methods[0];
-  if (method !== undefined) {
-    return {
-      status: 'found',
-      requested,
-      level: 'bridge',
-      limitations: joined.limitations,
-      result: method,
-    };
-  }
+  const results = [...channelResults(joined), ...methodResults(joined)];
+  const exact = results.filter(
+    ({ subject }) => subject.qualifiedName === requested,
+  );
+  if (exact.length > 1) return ambiguousQuery(joined, requested, exact);
+  if (exact[0] !== undefined) return foundQuery(joined, requested, exact[0]);
+
+  const named = results.filter(({ subject }) => subject.name === requested);
+  if (named.length > 1) return ambiguousQuery(joined, requested, named);
+  if (named[0] !== undefined) return foundQuery(joined, requested, named[0]);
   return {
     status: 'notFound',
     requested,
     level: 'bridge',
     limitations: joined.limitations,
+  };
+}
+
+/** 유일하게 식별된 논리 키와 증거를 found 문서로 감싼다. */
+function foundQuery(
+  joined: BridgeJoinResult,
+  requested: string,
+  result: BridgeQueryResult,
+): BridgeQueryDocument {
+  return {
+    status: 'found',
+    requested,
+    level: 'bridge',
+    limitations: joined.limitations,
+    result,
   };
 }
 
@@ -99,23 +96,19 @@ function ambiguousQuery(
 /** 요청 문자열과 정확히 같은 논리 메서드 결과를 만든다. */
 function methodResults(
   joined: BridgeJoinResult,
-  requested: string,
 ): BridgeQueryResult[] {
   const matched = joined.matchedMethods
     .map(({ target, channel, method, invocations, handlers }) =>
       makeMethodResult(target, channel, method, invocations, handlers),
-    )
-    .filter((result) => matchesRequested(result, requested));
+    );
   const unhandled = joined.unhandledInvocations
     .map(({ target, channel, method, invocations }) =>
       makeMethodResult(target, channel, method, invocations, []),
-    )
-    .filter((result) => matchesRequested(result, requested));
+    );
   const handlers = joined.handlersWithoutInvocations
     .map(({ target, channel, method, handlers }) =>
       makeMethodResult(target, channel, method, [], handlers),
-    )
-    .filter((result) => matchesRequested(result, requested));
+    );
   return [...matched, ...unhandled, ...handlers];
 }
 
@@ -142,30 +135,16 @@ function makeMethodResult(
 /** 요청 문자열과 정확히 같은 논리 채널 결과를 만든다. */
 function channelResults(
   joined: BridgeJoinResult,
-  requested: string,
 ): BridgeQueryResult[] {
   const matched = joined.matchedChannels
     .map(({ target, channel, creations, registrations }) =>
       makeQueryResult(target, channel, 'channel', creations, registrations),
-    )
-    .filter((result) => matchesRequested(result, requested));
+    );
   const unregistered = joined.unregisteredChannelCreations
     .map(({ target, channel, creations }) =>
       makeQueryResult(target, channel, 'channel', creations, []),
-    )
-    .filter((result) => matchesRequested(result, requested));
+    );
   return [...matched, ...unregistered];
-}
-
-/** 짧은 이름 또는 모호성 해소용 qualifiedName과 정확히 일치하는지 확인한다. */
-function matchesRequested(
-  result: BridgeQueryResult,
-  requested: string,
-): boolean {
-  return (
-    result.subject.name === requested ||
-    result.subject.qualifiedName === requested
-  );
 }
 
 /** 조인 키와 양쪽 증거를 query result 골격으로 바꾼다. */

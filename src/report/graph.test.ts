@@ -7,6 +7,7 @@ import {
   type BridgeFactsDocument,
 } from '../exchange/parse.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
+import type { BridgeJoinResult } from '../join/join.ts';
 import {
   createBridgeGraph,
   renderBridgeGraph,
@@ -132,6 +133,65 @@ test('graph mermaid 형식은 외부 경로의 문법 제어 문자를 이스케
 
   assert.equal(output.includes('evil&quot;&#10;  attacker --&gt; victim'), true);
   assert.equal(output.includes('\n  attacker --> victim'), false);
+});
+
+test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으로 보존한다', () => {
+  const graph = {
+    ...createBridgeGraph(joinBridgeDocuments([dartDocument, swiftDocument])),
+    limitations: [
+      {
+        platform: 'dart' as const,
+        tool: 'test-tool',
+        message: 'dynamic-name:\nflowchart TD',
+      },
+    ],
+  };
+
+  const dot = renderBridgeGraph(graph, 'dot');
+  const mermaid = renderBridgeGraph(graph, 'mermaid');
+
+  assert.equal(
+    dot.includes('  // limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    true,
+  );
+  assert.equal(
+    mermaid.includes('  %% limitation: dart/test-tool: dynamic-name: flowchart TD\n'),
+    true,
+  );
+  assert.equal(dot.includes('\nflowchart TD'), false);
+  assert.equal(mermaid.includes('\nflowchart TD'), false);
+});
+
+test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {
+  const joined: BridgeJoinResult = {
+    matchedChannels: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/large',
+        creations: Array.from({ length: 317 }, (_, index) => ({
+          platform: 'dart',
+          location: { path: `lib/caller-${index}.dart`, line: 1, column: 1 },
+        })),
+        registrations: Array.from({ length: 317 }, (_, index) => ({
+          platform: 'swift',
+          location: { path: `ios/receiver-${index}.swift`, line: 1, column: 1 },
+        })),
+      },
+    ],
+    unregisteredChannelCreations: [],
+    matchedMethods: [],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  assert.throws(
+    () => createBridgeGraph(joined),
+    {
+      name: 'BridgeGraphLimitError',
+      message: 'Bridge graph exceeds the 100000 edge limit.',
+    },
+  );
 });
 
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */

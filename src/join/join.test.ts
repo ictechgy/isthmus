@@ -266,6 +266,21 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
   );
 });
 
+test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다', () => {
+  const otherProject = parseBridgeFactsDocument({
+    ...swiftDocument,
+    project: '/another-project',
+  });
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, otherProject]),
+    {
+      name: 'BridgeJoinValidationError',
+      message: 'Bridge documents must describe the same project.',
+    },
+  );
+});
+
 test('입력 생성 시각이 하루 넘게 다르면 신선도 한계를 추가한다', () => {
   const staleDartDocument = parseBridgeFactsDocument({
     ...dartDocument,

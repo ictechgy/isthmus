@@ -1,5 +1,8 @@
 import type { BridgePlatform, BridgeSymbol } from '../exchange/parse.ts';
-import type { BridgeJoinResult } from '../join/join.ts';
+import {
+  isBridgeJoinDeferred,
+  type BridgeJoinResult,
+} from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** cartograph가 보존할 Swift 선언 식별자다. */
@@ -37,6 +40,14 @@ export interface CartographRetentionsDocument {
   readonly retentions: readonly ExternalRetention[];
 }
 
+/** 불완전한 조인으로 보존 결정을 만들 수 없음을 나타낸다. */
+export class RetentionValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RetentionValidationError';
+  }
+}
+
 /** cartograph 보존 문서를 결정적인 JSON으로 인코딩한다. */
 export function encodeCartographRetentionsDocument(
   document: CartographRetentionsDocument,
@@ -50,6 +61,11 @@ export function createCartographRetentionsDocument(
   generatedAt: string,
   producerVersion: string,
 ): CartographRetentionsDocument {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new RetentionValidationError(
+      'Cannot create retentions from a deferred bridge join.',
+    );
+  }
   return {
     format: 'external-retentions',
     version: 0,
