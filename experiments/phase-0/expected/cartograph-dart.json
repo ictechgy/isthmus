@@ -1,0 +1,36 @@
+{
+  "facts": [
+    {
+      "channel": "com.example/camera",
+      "dynamic": false,
+      "kind": "channel-create",
+      "location": {
+        "column": 17,
+        "line": 3,
+        "path": "lib/camera.dart"
+      }
+    },
+    {
+      "channel": "com.example/camera",
+      "dynamic": false,
+      "kind": "method-invoke",
+      "location": {
+        "column": 21,
+        "line": 42,
+        "path": "lib/camera.dart"
+      },
+      "method": "takePhoto"
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-04T12:00:00Z",
+  "limitations": [],
+  "platform": "dart",
+  "project": "/fixture",
+  "target": "flutter",
+  "tool": {
+    "name": "isthmus-phase0-dart",
+    "version": "0.0.0"
+  },
+  "version": 1
+}
