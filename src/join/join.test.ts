@@ -311,6 +311,7 @@ test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보
     ' Mixed-Targets: multiple bridges',
     'MIXED-TARGETS multiple bridges',
     'mixed-targets',
+    'Detected mixed-targets: dart and swift facts',
   ];
 
   for (const message of messages) {
@@ -323,6 +324,41 @@ test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보
 
     assert.equal(result.deferred, true, message);
   }
+});
+
+test('channel null handler는 문자열 null 채널과 연결되지 않는다', () => {
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    limitations: [],
+    facts: [
+      {
+        kind: 'method-invoke',
+        channel: 'null',
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'lib/null_channel.dart', line: 1, column: 1 },
+      },
+    ],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    limitations: ['unattributed-method-handles: 1 handler has no channel'],
+    facts: [
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'ios/Detached.swift', line: 1, column: 1 },
+      },
+    ],
+  });
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(result.matchedMethods, []);
+  assert.equal(result.unhandledInvocations[0]?.channel, 'null');
+  assert.deepEqual(result.handlersWithoutInvocations, []);
 });
 
 test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다', () => {

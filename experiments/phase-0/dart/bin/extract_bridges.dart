@@ -99,7 +99,7 @@ bool _isProjectRelativePath(String value) {
   return !value.split(RegExp(r'[/\\]')).contains('..');
 }
 
-/// 비어 있지 않고 ASCII 제어 문자가 없는 문자열인지 확인한다.
+/// 비어 있지 않고 출력 문법을 깨뜨리는 제어 문자가 없는 문자열인지 확인한다.
 bool _isSafeNonEmptyString(String value) =>
     value.trim().isNotEmpty &&
     !RegExp(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]').hasMatch(value);

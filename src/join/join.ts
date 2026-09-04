@@ -171,7 +171,7 @@ function validateProjects(documents: readonly BridgeFactsDocument[]): void {
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */
 function hasMixedTargets(document: BridgeFactsDocument): boolean {
   return document.limitations.some((message) =>
-    /^mixed-targets(?::|\s|$)/i.test(message.trimStart()),
+    /mixed-targets(?::|\s|$)/i.test(message),
   );
 }
 

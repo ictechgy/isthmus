@@ -142,7 +142,7 @@ private func isProjectRelativePath(_ value: String) -> Bool {
     return !value.split(whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..")
 }
 
-/// 비어 있지 않고 ASCII 제어 문자가 없는 문자열인지 확인한다.
+/// 비어 있지 않고 출력 문법을 깨뜨리는 제어 문자가 없는 문자열인지 확인한다.
 private func isSafeNonEmptyString(_ value: String) -> Bool {
     !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && !value.unicodeScalars.contains {
