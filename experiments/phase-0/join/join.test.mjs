@@ -136,6 +136,51 @@ test('동적 사실은 조인하지 않고 양쪽 limitations를 보존한다', 
   ]);
 });
 
+test('채널을 모르는 핸들러는 호출 없음으로 판정하지 않는다', () => {
+  const swiftWithUnknownChannel = structuredClone(swiftDocument);
+  swiftWithUnknownChannel.facts.push({
+    kind: 'method-handle',
+    channel: null,
+    method: 'takePhotos',
+    dynamic: false,
+    location: {
+      path: 'ios/Runner/DetachedHandler.swift',
+      line: 4,
+      column: 10,
+    },
+  });
+
+  const report = joinBridgeFacts(dartDocument, swiftWithUnknownChannel);
+
+  assert.equal(
+    report.handlersWithoutInvocations.some((fact) => fact.channel === null),
+    false,
+  );
+});
+
+test('mixed-targets 문서는 불일치를 만들지 않고 조인을 보류한다', () => {
+  const mixedSwiftDocument = structuredClone(swiftDocument);
+  mixedSwiftDocument.limitations.push(
+    "mixed-targets: facts come from more than one bridge (flutter 5, react-native 2); 'target' is the majority",
+  );
+
+  const report = joinBridgeFacts(dartDocument, mixedSwiftDocument);
+
+  assert.deepEqual(report.matchedChannels, []);
+  assert.deepEqual(report.matchedMethods, []);
+  assert.deepEqual(report.unregisteredChannelCreations, []);
+  assert.deepEqual(report.unhandledInvocations, []);
+  assert.deepEqual(report.handlersWithoutInvocations, []);
+  assert.equal(
+    report.limitations.some(
+      (limitation) =>
+        limitation.platform === 'swift' &&
+        limitation.message.startsWith('mixed-targets:'),
+    ),
+    true,
+  );
+});
+
 test('CLI가 두 교환 문서를 손 조인 JSON으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     joinCliPath,

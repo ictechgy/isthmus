@@ -18,7 +18,7 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**Phase 0 형식 검증 중.** Dart·Swift 임시 추출기와 손 조인 코퍼스로 **교환 형식 버전 1**을 고정했다. 공개 Flutter 플러그인 도그푸딩과 cartograph `bridges` 구현이 다음 단계다. 작업을 이어가려면 [`CLAUDE.md`](CLAUDE.md)와 [`docs/PLAN.md`](docs/PLAN.md)를 먼저 읽는다.
+**Phase 0 형식 검증 핵심 완료.** Dart·Swift 임시 추출기와 손 조인 코퍼스로 **교환 형식 버전 1**을 고정했고, cartograph의 `bridges`와 `--external-retentions`도 PR #11로 구현됐다. 다음 단계는 TypeScript 골격과 `check`다. 작업을 이어가려면 [`CLAUDE.md`](CLAUDE.md)와 [`docs/PLAN.md`](docs/PLAN.md)를 먼저 읽는다.
 
 | 문서 | 내용 |
 |---|---|

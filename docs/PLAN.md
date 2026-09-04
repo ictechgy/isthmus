@@ -6,8 +6,8 @@
 
 | 저장소 | 작업 | 상태 |
 |---|---|---|
-| `../cartograph` | `bridges --format json` — SwiftSyntax 로 `FlutterMethodChannel(name:)` · `setMethodCallHandler` · `case "…"` · `RCT_EXPORT_MODULE/METHOD` · `@objc(…)` 리터럴 추출. 형식은 `docs/GRAPH-EXCHANGE.md` | 미착수 — **첫 번째로 할 일** |
-| `../cartograph` | `--external-retentions <path>` + `RetentionReason.externalBridge` + `--explain` 문장 | 미착수 |
+| `../cartograph` | `bridges --format json` — SwiftSyntax 로 `FlutterMethodChannel(name:)` · `setMethodCallHandler` · `case "…"` · `RCT_EXPORT_MODULE/METHOD` · `@objc(…)` 리터럴 추출. 형식은 `docs/GRAPH-EXCHANGE.md` | 완료 — PR #11 |
+| `../cartograph` | `--external-retentions <path>` + `RetentionReason.externalBridge` + `--explain` 문장 | 완료 — PR #11 |
 | `../dartograph` | `bridges --format json` — Phase 4 | dartograph 가 Phase 1 도 안 됨 |
 | `../kartograph` | `bridges --format json` — Phase 4 | v0.2 에서 필요 |
 
@@ -35,7 +35,7 @@
 - 두 JSON 을 `jq` 로 조인해 본다. 맞춰지는가 · 안 맞춰지는 것은 왜인가(동적 이름? 형식의 구멍?) · `case` 를 어느 심볼에 귀속시킬 것인가
 - 결과로 `GRAPH-EXCHANGE.md` 를 고쳐 버전 1. 미결 세 항목에 답을 적는다
 
-## Phase 1 — cartograph `bridges` (cartograph 저장소, 1 세션)
+## Phase 1 — cartograph `bridges` (완료, PR #11)
 
 - Phase 0 의 Swift 스크립트를 cartograph 의 `CartographSyntax` 모듈 안에 `BridgeFactScanner` 로. `bridges --format json` 명령
 - cartograph 의 규칙대로: 테스트 · 커버리지 · CLI 계약 · CHANGELOG · GLM 리뷰 · PR
@@ -79,9 +79,9 @@
 | Phase | 상태 | 비고 |
 |---|---|---|
 | 0 형식 검증 | 핵심 완료 | 합성 코퍼스 조인·형식 v1 완료. 공개 Flutter 플러그인 도그푸딩 남음 |
-| 1 cartograph `bridges` | 미착수 | cartograph 저장소 |
+| 1 cartograph `bridges` | 완료 | cartograph PR #11 |
 | 2 골격 + check | 미착수 | |
-| 3 되돌려 주기 | 미착수 | cartograph `--external-retentions` |
+| 3 되돌려 주기 | 부분 완료 | cartograph 입력은 PR #11 완료, isthmus `retentions` 남음 |
 | 4 query · graph · 릴리스 | 미착수 | |
 | 5 RN | 미착수 | v0.2 |
 | 6 Kotlin | 미착수 | kartograph 대기 |

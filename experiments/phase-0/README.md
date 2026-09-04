@@ -18,6 +18,8 @@
 - 오타 호출 `takePhotos`는 핸들러 없는 호출로 분리
 - `captureStill`, `recordVideo`는 호출 없는 핸들러로 분리
 - 보간 채널·동적 메서드는 조인하지 않고 `limitations`로 전달
+- `channel: null`인 핸들러는 불일치에서 제외
+- `mixed-targets` 문서는 사실별 메커니즘을 알 수 없어 조인을 보류
 - Swift `method-handle`은 `CameraPlugin.register`에 귀속. Phase 0은 USR을 만들 수 없어 `missing-handler-usrs`로 보고
 
 ## 실행

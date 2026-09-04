@@ -18,7 +18,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 신선도 판단용
   "platform": "dart" | "swift" | "kotlin" | "js",
-  "target": "flutter" | "react-native" | "capacitor",  // 브리지 메커니즘
+  "target": "flutter" | "react-native" | "capacitor" | null,  // 브리지 메커니즘
   "project": "/abs/path",
   "facts": [ Fact, ... ],
   "limitations": [ "dynamic-channel-names: 3 channel constructors use a non-literal name", ... ]
@@ -33,7 +33,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 {
   "kind": "channel-create" | "channel-register" | "method-invoke" | "method-handle"
         | "module-export" | "module-import" | "component-export" | "component-require",
-  "channel": "com.example/camera",     // 없으면 null. dynamic 이면 원문 표현식
+  "channel": "com.example/camera",     // 귀속할 수 없으면 null. dynamic 이면 원문 표현식
   "method": "takePhoto",               // method-* 에만
   "dynamic": false,
   "location": { "path": "lib/camera.dart", "line": 42, "column": 5 },
@@ -45,6 +45,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 ```
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
+
+`channel: null`은 "채널이 없다"가 아니라 생산자가 핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고, 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 `unattributed-method-handles` 같은 limitation으로 알려야 한다.
 
 ### 종류별 의미
 
@@ -66,9 +68,17 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
 - `module-import` ↔ `module-export`: `channel` (모듈 이름)
-- `dynamic: true` 인 사실은 조인하지 않고 `limitations` 로 센다
+- `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다
+- 위치는 증거이지 조인 키가 아니다. 같은 `(channel, method)` 사실이 여러 위치에 있어도 존재 여부는 키 집합으로 판단하고, 위치는 모두 증거로 보존한다
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
+
+### `target` 호환 규칙
+
+- 사실이 없으면 문서의 `target`은 `null`이다
+- 문서가 한 브리지 메커니즘만 담으면 그 값을 쓴다
+- 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이 함께 있으면 생산자는 결정적인 대표값을 쓰고 `mixed-targets` limitation을 반드시 추가한다
+- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류하고 limitation만 전달한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
 
 ## 되돌려 주는 형식: 외부 보존 근거
 
@@ -105,7 +115,9 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 | kartograph | `bridges --format json` | `MethodChannel(…)`, `setMethodCallHandler`, `when (call.method)`, `@ReactModule`, `@ReactMethod` | `--external-retentions` |
 | isthmus 내장 | `extract-js` | `NativeModules.*`, `TurboModuleRegistry.get`, `requireNativeComponent` | — |
 
-**cartograph 가 첫 번째다.** cartograph 는 이미 있고, `bridges` 는 SwiftSyntax 로 리터럴을 뽑는 작은 명령이다. cartograph 저장소에 이슈/PR 로 넣는다.
+**cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
+
+cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스토어를 요구한다. 인덱스가 없으면 불완전한 문서를 내보내지 않고 도구 실패(종료 코드 2)로 끝난다. 이는 문서 형식의 limitation이 아니라 생산 명령의 선행 조건이다.
 
 ## Phase 0 결정
 

@@ -6,6 +6,13 @@
  * @returns {Record<string, unknown>} Phase 0 손 조인 보고서
  */
 export function joinBridgeFacts(dartDocument, swiftDocument) {
+  const limitations = [
+    ...platformLimitations(dartDocument),
+    ...platformLimitations(swiftDocument),
+  ];
+  if (hasMixedTargets(dartDocument) || hasMixedTargets(swiftDocument)) {
+    return emptyJoinReport(limitations);
+  }
   const creations = staticFacts(dartDocument, 'channel-create');
   const registrations = staticFacts(swiftDocument, 'channel-register');
   const invocations = staticFacts(dartDocument, 'method-invoke');
@@ -63,10 +70,26 @@ export function joinBridgeFacts(dartDocument, swiftDocument) {
         handler: handler.location,
         handlerSymbol: handler.symbol,
       })),
-    limitations: [
-      ...platformLimitations(dartDocument),
-      ...platformLimitations(swiftDocument),
-    ],
+    limitations,
+  };
+}
+
+/** mixed-targets 문서는 사실별 메커니즘을 알 수 없어 안전하게 보류한다. */
+function hasMixedTargets(document) {
+  return document.limitations.some((message) =>
+    message.startsWith('mixed-targets:'),
+  );
+}
+
+/** 입력 한계만 보존하는 조인 보류 결과를 만든다. */
+function emptyJoinReport(limitations) {
+  return {
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations,
   };
 }
 
@@ -92,6 +115,10 @@ function sameMethod(left, right) {
  */
 function staticFacts(document, kind) {
   return document.facts.filter(
-    (fact) => fact.kind === kind && fact.dynamic === false,
+    (fact) =>
+      fact.kind === kind &&
+      fact.dynamic === false &&
+      typeof fact.channel === 'string' &&
+      fact.channel.length > 0,
   );
 }
