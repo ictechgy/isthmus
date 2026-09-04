@@ -51,6 +51,13 @@ npm run build
 node dist/cli/main.js check dart-bridges.json swift-bridges.json
 ```
 
+전체 명령과 현재 package 버전은 다음처럼 확인한다.
+
+```bash
+node dist/cli/main.js --help
+node dist/cli/main.js --version
+```
+
 CI에서 브리지 오류가 있으면 실패시키려면 `--strict`를 붙인다.
 
 ```bash
