@@ -4,6 +4,7 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
+import { encodeSortedJson } from './sorted-json.ts';
 
 /** check 결과 개수를 빠르게 판단할 요약이다. */
 export interface CheckSummary {
@@ -40,18 +41,7 @@ export interface CheckReport {
 
 /** check 문서를 결정적인 JSON 문자열로 인코딩한다. */
 export function encodeCheckReport(report: CheckReport): string {
-  return `${JSON.stringify(sortJson(report), null, 2)}\n`;
-}
-
-/** JSON 배열 순서는 보존하고 객체 키만 모든 깊이에서 정렬한다. */
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (typeof value !== 'object' || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, sortJson(item)]),
-  );
+  return encodeSortedJson(report);
 }
 
 /** 조인 결과를 정책 심각도가 포함된 check 문서로 바꾼다. */
