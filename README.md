@@ -104,9 +104,9 @@ cartograph dead --external-retentions external-retentions.json
 실제 공개 Flutter 플러그인에서 생산부터 소비까지 확인하려면 저장소 루트에서 다음 검증을
 실행한다. 스크립트는 `plus_plugins`의 고정 커밋을 sparse checkout하고 배터리 플러그인의
 원본 Dart·Swift 소스에서 세 메서드의 보존 근거를 확인한 뒤 임시 checkout을 지운다.
-네트워크, Git 2.26 이상, Swift 6, cartograph 0.5.3 이상, dartograph 0.1.0 이상이
-필요하다. isthmus는 현재 소스에서 자동으로 다시 빌드하며, 세 번째 인자로 별도
-isthmus JavaScript 산출물을 넘길 수도 있다.
+네트워크, Git 2.26 이상, Swift 6, cartograph 0.5.3 이상, dartograph 0.1.1 이상이
+필요하다. isthmus는 현재 소스에서 자동으로 다시 빌드하며, 세 번째 인자로 별도 isthmus
+JavaScript 산출물을 넘길 수도 있다.
 
 ```bash
 npm run build

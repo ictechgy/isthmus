@@ -74,6 +74,21 @@ test('최소 버전의 사전 릴리스 바이너리는 안정 릴리스로 인�
   }
 });
 
+test('isthmus 계약 이전 dartograph 바이너리는 거부한다', async () => {
+  const fixture = await makeFixture();
+  try {
+    const result = runVerifier(fixture, '0.5.3', {
+      dartographVersion: '0.1.0',
+    });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.includes('dartograph version'), true);
+    assert.equal(result.stderr.includes(fixture.root), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test('producer 실행 중 실패해도 임시 문서와 경로를 남기지 않는다', async () => {
   const fixture = await makeFixture();
   try {
@@ -94,7 +109,10 @@ test('producer 실행 중 실패해도 임시 문서와 경로를 남기지 않�
 function runVerifier(
   fixture: Awaited<ReturnType<typeof makeFixture>>,
   cartographVersion: string,
-  options: { readonly failBridges?: boolean } = {},
+  options: {
+    readonly dartographVersion?: string;
+    readonly failBridges?: boolean;
+  } = {},
 ) {
   return spawnSync(
     process.execPath,
@@ -111,6 +129,7 @@ function runVerifier(
         ...process.env,
         FAKE_CARTOGRAPH_VERSION: cartographVersion,
         FAKE_CARTOGRAPH_BRIDGES_STATUS: options.failBridges ? '1' : '0',
+        FAKE_DARTOGRAPH_VERSION: options.dartographVersion ?? '0.1.1',
         FAKE_MARKER_DIRECTORY: fixture.root,
         TMPDIR: fixture.root,
       },
@@ -175,7 +194,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
-  process.stdout.write('dartograph 0.1.0');
+  process.stdout.write('dartograph ' + process.env.FAKE_DARTOGRAPH_VERSION);
 } else if (args[0] === 'bridges') {
   writeFileSync(join(process.env.FAKE_MARKER_DIRECTORY, 'dartograph-bridges.called'), '');
   const project = args.at(-1);

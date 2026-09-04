@@ -64,7 +64,7 @@ node join-cli.mjs ../expected/dart.json ../expected/swift.json
 ```
 
 cartograph·dartograph의 실제 생산 출력과 컴파일러 인덱스 보존 근거 왕복은 저장소
-루트에서 실행한다. cartograph 0.5.3 이상과 dartograph 0.1.0 이상이 필요하다.
+루트에서 실행한다. cartograph 0.5.3 이상과 dartograph 0.1.1 이상이 필요하다.
 
 ```bash
 npm run build

@@ -8,7 +8,7 @@
 |---|---|---|
 | `../cartograph` | `bridges --format json` — SwiftSyntax 로 `FlutterMethodChannel(name:)` · `setMethodCallHandler` · `case "…"` · `RCT_EXPORT_MODULE/METHOD` · `@objc(…)` 리터럴 추출. 형식은 `docs/GRAPH-EXCHANGE.md` | 완료 — PR #11 |
 | `../cartograph` | `--external-retentions <path>` + `RetentionReason.externalBridge` + `--explain` 문장 | 완료 — PR #11 |
-| `../dartograph` | `bridges --format json` — Dart `MethodChannel` 생성·호출 추출 | 완료 — dartograph 0.1.0 |
+| `../dartograph` | `bridges --format json` — Dart `MethodChannel` 생성·호출 추출 | 완료 — dartograph 0.1.1 |
 | `../kartograph` | `bridges --format json` — Phase 4 | v0.2 에서 필요 |
 
 **dartograph 를 기다리지 않는 길**: Phase 0 에서 Dart 쪽 추출을 `package:analyzer` 기반 100 줄짜리 스크립트로 임시 구현해 형식을 검증한다. 그 스크립트가 나중에 dartograph `bridges` 의 초안이 된다.

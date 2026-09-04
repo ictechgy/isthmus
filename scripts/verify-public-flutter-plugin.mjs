@@ -47,7 +47,7 @@ const cartographVersion = verifyToolVersion(
 const dartographVersion = verifyToolVersion(
   dartographBinary,
   'dartograph',
-  '0.1.0',
+  '0.1.1',
 );
 const isthmusVersion = verifyNodeToolVersion(isthmusBinary, '0.1.3');
 
@@ -85,6 +85,7 @@ try {
     'bridges',
     '--format',
     'json',
+    '--',
     checkoutRoot,
   ]);
   verify(dartFacts.status === 0, 'dartograph bridges');

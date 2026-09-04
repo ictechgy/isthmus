@@ -24,7 +24,7 @@ const isthmusBinary = isthmusOverride
   ?? join(repositoryRoot, 'dist/cli/main.js');
 
 verifyToolVersion(cartographBinary, 'cartograph', '0.5.3');
-verifyToolVersion(dartographBinary, 'dartograph', '0.1.0');
+verifyToolVersion(dartographBinary, 'dartograph', '0.1.1');
 
 const roundtripDirectory = await mkdtemp(
   join(tmpdir(), 'isthmus-producer-roundtrip-'),
@@ -44,6 +44,7 @@ try {
     'bridges',
     '--format',
     'json',
+    '--',
     fixtureRoot,
   ]);
   verify(dartFacts.status === 0, 'dartograph bridges');
