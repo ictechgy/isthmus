@@ -20,6 +20,7 @@ test('retentions가 cartograph 외부 보존 JSON을 출력한다', async () => 
     ['retentions', dartPath, swiftPath, '--for', 'cartograph'],
     (path) => readFile(path, 'utf8'),
     () => new Date('2026-09-04T13:00:00Z'),
+    '0.0.0',
   );
 
   assert.equal(result.exitCode, 0);
@@ -41,6 +42,7 @@ test('지원하지 않는 retention 대상은 I/O 전에 종료 코드 64로 거
       return '';
     },
     () => new Date('2026-09-04T13:00:00Z'),
+    '0.0.0',
   );
 
   assert.equal(result.exitCode, 64);
@@ -59,6 +61,7 @@ test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환�
       throw new Error('private-dart.json could not be read');
     },
     () => new Date('2026-09-04T13:00:00Z'),
+    '0.0.0',
   );
 
   assert.deepEqual(result, {

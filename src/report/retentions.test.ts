@@ -36,12 +36,13 @@ test('매치된 Swift 심볼에 Dart 호출 근거를 붙여 보존 문서를 �
   const document = createCartographRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
+    '1.2.3',
   );
 
   assert.deepEqual(document, {
     format: 'external-retentions',
     version: 0,
-    producedBy: { name: 'isthmus', version: '0.0.0' },
+    producedBy: { name: 'isthmus', version: '1.2.3' },
     generatedAt: '2026-09-04T13:00:00Z',
     retentions: [
       {
@@ -96,7 +97,11 @@ test('같은 심볼의 여러 핸들러 위치를 보존 근거 하나로 합친
   });
   const joined = joinBridgeDocuments([dartDocument, swiftWithDuplicate]);
 
-  const document = createCartographRetentionsDocument(joined, '2026-09-04T13:00:00Z');
+  const document = createCartographRetentionsDocument(
+    joined,
+    '2026-09-04T13:00:00Z',
+    '0.0.0',
+  );
 
   assert.equal(document.retentions.length, 1);
 });
@@ -106,6 +111,7 @@ test('외부 보존 JSON 키를 재귀 정렬하고 마지막 개행을 붙인�
   const document = createCartographRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
+    '0.0.0',
   );
 
   const encoded = encodeCartographRetentionsDocument(document);

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const binaryPath = fileURLToPath(new URL('../dist/cli/main.js', import.meta.url));
@@ -8,8 +9,13 @@ const dartPath = fileURLToPath(
 const swiftPath = fileURLToPath(
   new URL('../experiments/phase-0/expected/swift.json', import.meta.url),
 );
+const packageDocument = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
 
 verifyUsageError();
+verifyHelp();
+verifyVersion();
 verifyInputError();
 verifySuccessfulCheck();
 verifyStrictFindings();
@@ -24,7 +30,23 @@ function verifyUsageError() {
   const result = run([]);
   verify(result.status === 64, 'usage exit code');
   verify(result.stdout === '', 'usage stdout');
-  verify(result.stderr.startsWith('Usage: isthmus check'), 'usage stderr');
+  verify(result.stderr.startsWith('Usage: isthmus <command>'), 'usage stderr');
+}
+
+/** 루트 도움말이 성공으로 출력되는지 검증한다. */
+function verifyHelp() {
+  const result = run(['--help']);
+  verify(result.status === 0, 'help exit code');
+  verify(result.stderr === '', 'help stderr');
+  verify(result.stdout.includes('retentions'), 'help stdout');
+}
+
+/** package metadata의 버전이 성공으로 출력되는지 검증한다. */
+function verifyVersion() {
+  const result = run(['--version']);
+  verify(result.status === 0, 'version exit code');
+  verify(result.stderr === '', 'version stderr');
+  verify(result.stdout === `${packageDocument.version}\n`, 'version stdout');
 }
 
 /** 읽을 수 없는 입력이 도구 실패 2인지 검증한다. */

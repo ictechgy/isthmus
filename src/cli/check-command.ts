@@ -1,3 +1,7 @@
+import { parseBridgeFactsDocument } from '../exchange/parse.ts';
+import { joinBridgeDocuments } from '../join/join.ts';
+import { createCheckReport, encodeCheckReport } from '../report/check-report.ts';
+
 /** 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다. */
 export type ReadTextFile = (path: string) => Promise<string>;
 
@@ -49,14 +53,12 @@ function inputError(): CommandResult {
 function usageError(): CommandResult {
   return {
     standardOutput: '',
-    standardError: `${usage}\n`,
+    standardError: `${checkUsage}\n`,
     exitCode: 64,
   };
 }
 
-const usage =
+/** check 명령의 한 줄 사용법이다. */
+export const checkUsage =
   'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
   + '[more...] [--strict]';
-import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
-import { createCheckReport, encodeCheckReport } from '../report/check-report.ts';

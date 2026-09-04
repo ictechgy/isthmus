@@ -54,6 +54,7 @@ function queryUsageError(): CommandResult {
   };
 }
 
-const queryUsage =
+/** query 명령의 한 줄 사용법이다. */
+export const queryUsage =
   'Usage: isthmus query <channel-or-method> <bridge-facts.json> '
   + '<bridge-facts.json> [more...]';

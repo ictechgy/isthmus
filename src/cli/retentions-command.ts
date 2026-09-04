@@ -14,6 +14,7 @@ export async function runRetentionsCommand(
   arguments_: readonly string[],
   readTextFile: ReadTextFile,
   now: Clock,
+  producerVersion: string,
 ): Promise<CommandResult> {
   const inputPaths = retentionInputPaths(arguments_);
   if (inputPaths === undefined) return retentionUsageError();
@@ -26,6 +27,7 @@ export async function runRetentionsCommand(
     const retentions = createCartographRetentionsDocument(
       joined,
       now().toISOString(),
+      producerVersion,
     );
     return {
       standardOutput: encodeCartographRetentionsDocument(retentions),
@@ -66,6 +68,7 @@ function retentionUsageError(): CommandResult {
   };
 }
 
-const retentionUsage =
+/** retentions 명령의 한 줄 사용법이다. */
+export const retentionUsage =
   'Usage: isthmus retentions <bridge-facts.json> <bridge-facts.json> '
   + '[more...] --for cartograph';

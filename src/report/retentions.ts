@@ -48,11 +48,12 @@ export function encodeCartographRetentionsDocument(
 export function createCartographRetentionsDocument(
   joined: BridgeJoinResult,
   generatedAt: string,
+  producerVersion: string,
 ): CartographRetentionsDocument {
   return {
     format: 'external-retentions',
     version: 0,
-    producedBy: { name: 'isthmus', version: '0.0.0' },
+    producedBy: { name: 'isthmus', version: producerVersion },
     generatedAt,
     retentions: collectCartographRetentions(joined),
   };

@@ -72,6 +72,7 @@ interface GraphOptions {
 
 type GraphFormat = 'json' | 'dot' | 'mermaid';
 
-const graphUsage =
+/** graph 명령의 한 줄 사용법이다. */
+export const graphUsage =
   'Usage: isthmus graph <bridge-facts.json> <bridge-facts.json> '
   + '[more...] [--format json|dot|mermaid]';

@@ -19,6 +19,44 @@ const checkPath = fileURLToPath(
 const queryPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/query.json', import.meta.url),
 );
+const packagePath = fileURLToPath(
+  new URL('../../package.json', import.meta.url),
+);
+
+test('실제 CLI 프로세스가 루트 도움말을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    '--help',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('Usage: isthmus <command> [options]\n'), true);
+  assert.equal(stdout.includes('graph'), true);
+  assert.equal(stdout.includes('retentions'), true);
+});
+
+test('실제 CLI 프로세스가 package 버전을 출력한다', async () => {
+  const packageDocument = JSON.parse(await readFile(packagePath, 'utf8'));
+
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    '--version',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout, `${packageDocument.version}\n`);
+});
+
+test('실제 CLI 프로세스가 명령별 도움말을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'graph',
+    '--help',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('Usage: isthmus graph'), true);
+});
 
 test('실제 CLI 프로세스가 check JSON을 stdout으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
