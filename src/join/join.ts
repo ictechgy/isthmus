@@ -1,0 +1,327 @@
+import type {
+  BridgeFactsDocument,
+  BridgeLocation,
+  BridgePlatform,
+  BridgeSymbol,
+  BridgeTarget,
+} from '../exchange/parse.ts';
+
+/** 한 언어 문서가 제공한 브리지 증거 위치다. */
+export interface BridgeEndpoint {
+  readonly platform: BridgePlatform;
+  readonly location: BridgeLocation;
+  readonly symbol?: BridgeSymbol;
+}
+
+/** 논리 채널 하나에 모인 양쪽 생성·등록 증거다. */
+export interface MatchedChannel {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly creations: readonly BridgeEndpoint[];
+  readonly registrations: readonly BridgeEndpoint[];
+}
+
+/** 등록을 찾지 못한 논리 채널과 모든 생성 증거다. */
+export interface UnregisteredChannelCreation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly creations: readonly BridgeEndpoint[];
+}
+
+/** 논리 메서드 하나에 모인 양쪽 호출·핸들러 증거다. */
+export interface MatchedMethod {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly method: string;
+  readonly invocations: readonly BridgeEndpoint[];
+  readonly handlers: readonly BridgeEndpoint[];
+}
+
+/** 핸들러를 찾지 못한 논리 호출과 모든 호출 증거다. */
+export interface UnhandledInvocation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly method: string;
+  readonly invocations: readonly BridgeEndpoint[];
+}
+
+/** 호출자를 찾지 못한 논리 핸들러와 모든 네이티브 증거다. */
+export interface HandlerWithoutInvocation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly method: string;
+  readonly handlers: readonly BridgeEndpoint[];
+}
+
+/** 생산 문서가 밝힌 분석 한계와 출처다. */
+export interface JoinLimitation {
+  readonly platform: BridgePlatform | 'cross-platform';
+  readonly tool: string;
+  readonly message: string;
+}
+
+/** 검증된 교환 문서들의 논리 조인 결과다. */
+export interface BridgeJoinResult {
+  readonly matchedChannels: readonly MatchedChannel[];
+  readonly unregisteredChannelCreations: readonly UnregisteredChannelCreation[];
+  readonly matchedMethods: readonly MatchedMethod[];
+  readonly unhandledInvocations: readonly UnhandledInvocation[];
+  readonly handlersWithoutInvocations: readonly HandlerWithoutInvocation[];
+  readonly limitations: readonly JoinLimitation[];
+}
+
+/** 위치가 아니라 문자열 키로 검증된 교환 문서를 조인한다. */
+export function joinBridgeDocuments(
+  documents: readonly BridgeFactsDocument[],
+): BridgeJoinResult {
+  const limitations = collectLimitations(documents);
+  if (documents.some(hasMixedTargets)) return emptyJoinResult(limitations);
+  const groups = collectChannelGroups(documents);
+  const matchedChannels = [...groups.values()]
+    .filter((group) => group.creations.length > 0 && group.registrations.length > 0)
+    .sort(compareChannels);
+  const unregisteredChannelCreations = [...groups.values()]
+    .filter((group) => group.creations.length > 0 && group.registrations.length === 0)
+    .map(({ target, channel, creations }) => ({ target, channel, creations }))
+    .sort(compareChannels);
+  const methodGroups = collectMethodGroups(documents);
+  const matchedMethods = [...methodGroups.values()]
+    .filter((group) => group.invocations.length > 0 && group.handlers.length > 0)
+    .sort(compareMethodKeys);
+  const unhandledInvocations = [...methodGroups.values()]
+    .filter((group) => group.invocations.length > 0 && group.handlers.length === 0)
+    .map(({ target, channel, method, invocations }) => ({
+      target,
+      channel,
+      method,
+      invocations,
+    }))
+    .sort(compareMethodKeys);
+  const handlersWithoutInvocations = [...methodGroups.values()]
+    .filter((group) => group.handlers.length > 0 && group.invocations.length === 0)
+    .map(({ target, channel, method, handlers }) => ({
+      target,
+      channel,
+      method,
+      handlers,
+    }))
+    .sort(compareMethodKeys);
+  return {
+    matchedChannels,
+    unregisteredChannelCreations,
+    matchedMethods,
+    unhandledInvocations,
+    handlersWithoutInvocations,
+    limitations,
+  };
+}
+
+/** 사실별 target이 없는 혼합 문서인지 확인한다. */
+function hasMixedTargets(document: BridgeFactsDocument): boolean {
+  return document.limitations.some((message) => message.startsWith('mixed-targets:'));
+}
+
+/** 안전하게 조인을 보류하면서 입력 한계만 전달한다. */
+function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResult {
+  return {
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations,
+  };
+}
+
+/** 입력 limitation에 생산 플랫폼과 도구 이름을 붙여 정렬한다. */
+function collectLimitations(
+  documents: readonly BridgeFactsDocument[],
+): JoinLimitation[] {
+  const limitations: JoinLimitation[] = documents.flatMap((document) =>
+    document.limitations.map((message) => ({
+      platform: document.platform,
+      tool: document.tool.name,
+      message,
+    })),
+  );
+  const freshness = freshnessLimitation(documents);
+  if (freshness !== undefined) limitations.push(freshness);
+  return limitations.sort(compareLimitations);
+}
+
+/** 생성 시각 차이가 하루를 넘을 때 교차 입력 한계를 만든다. */
+function freshnessLimitation(
+  documents: readonly BridgeFactsDocument[],
+): JoinLimitation | undefined {
+  if (documents.length < 2) return undefined;
+  const timestamps = documents.map((document) => Date.parse(document.generatedAt));
+  const difference = Math.max(...timestamps) - Math.min(...timestamps);
+  if (difference <= millisecondsPerDay) return undefined;
+  const hours = Math.round(difference / millisecondsPerHour);
+  return {
+    platform: 'cross-platform',
+    tool: 'isthmus',
+    message: `input-freshness: bridge documents differ by ${hours} hours`,
+  };
+}
+
+/** limitation을 플랫폼·도구·문장 순으로 고정한다. */
+function compareLimitations(left: JoinLimitation, right: JoinLimitation): number {
+  return (
+    left.platform.localeCompare(right.platform) ||
+    left.tool.localeCompare(right.tool) ||
+    left.message.localeCompare(right.message)
+  );
+}
+
+/** 메서드 키별로 호출과 핸들러 증거를 모은다. */
+function collectMethodGroups(
+  documents: readonly BridgeFactsDocument[],
+): Map<string, MutableMethodGroup> {
+  const groups = new Map<string, MutableMethodGroup>();
+  for (const document of documents) collectDocumentMethods(document, groups);
+  for (const group of groups.values()) {
+    group.invocations.sort(compareEndpoints);
+    group.handlers.sort(compareEndpoints);
+  }
+  return groups;
+}
+
+/** 증거 위치를 플랫폼·경로·줄·열 순으로 고정한다. */
+function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
+  return (
+    left.platform.localeCompare(right.platform) ||
+    left.location.path.localeCompare(right.location.path) ||
+    left.location.line - right.location.line ||
+    left.location.column - right.location.column
+  );
+}
+
+/** 문서 하나의 정적 메서드 사실을 그룹에 추가한다. */
+function collectDocumentMethods(
+  document: BridgeFactsDocument,
+  groups: Map<string, MutableMethodGroup>,
+): void {
+  if (document.target === null) return;
+  for (const fact of document.facts) {
+    if (!isStaticMethodFact(fact)) continue;
+    const key = `${document.target}\u0000${fact.channel}\u0000${fact.method}`;
+    const group = groups.get(key) ?? createMethodGroup(document.target, fact.channel, fact.method);
+    const endpoints = fact.kind === 'method-invoke' ? group.invocations : group.handlers;
+    endpoints.push(toEndpoint(document.platform, fact));
+    groups.set(key, group);
+  }
+}
+
+/** 조인 가능한 정적 메서드 호출·핸들러 사실인지 확인한다. */
+function isStaticMethodFact(
+  fact: BridgeFactsDocument['facts'][number],
+): fact is BridgeFactsDocument['facts'][number] & {
+  channel: string;
+  method: string;
+} {
+  return (
+    (fact.kind === 'method-invoke' || fact.kind === 'method-handle') &&
+    !fact.dynamic &&
+    fact.channel !== null &&
+    fact.method !== undefined
+  );
+}
+
+/** 빈 메서드 그룹을 만든다. */
+function createMethodGroup(
+  target: BridgeTarget,
+  channel: string,
+  method: string,
+): MutableMethodGroup {
+  return { target, channel, method, invocations: [], handlers: [] };
+}
+
+/** 채널 키별로 생성과 등록 증거를 모은다. */
+function collectChannelGroups(
+  documents: readonly BridgeFactsDocument[],
+): Map<string, MutableChannelGroup> {
+  const groups = new Map<string, MutableChannelGroup>();
+  for (const document of documents) collectDocumentChannels(document, groups);
+  return groups;
+}
+
+/** 문서 하나의 정적 채널 사실을 그룹에 추가한다. */
+function collectDocumentChannels(
+  document: BridgeFactsDocument,
+  groups: Map<string, MutableChannelGroup>,
+): void {
+  if (document.target === null) return;
+  for (const fact of document.facts) {
+    if (!isStaticChannelFact(fact)) continue;
+    const key = `${document.target}\u0000${fact.channel}`;
+    const group = groups.get(key) ?? createChannelGroup(document.target, fact.channel);
+    const endpoints = fact.kind === 'channel-create' ? group.creations : group.registrations;
+    endpoints.push(toEndpoint(document.platform, fact));
+    groups.set(key, group);
+  }
+}
+
+/** 조인 가능한 정적 채널 생성·등록 사실인지 확인한다. */
+function isStaticChannelFact(
+  fact: BridgeFactsDocument['facts'][number],
+): fact is BridgeFactsDocument['facts'][number] & { channel: string } {
+  return (
+    (fact.kind === 'channel-create' || fact.kind === 'channel-register') &&
+    !fact.dynamic &&
+    fact.channel !== null
+  );
+}
+
+/** 빈 채널 그룹을 만든다. */
+function createChannelGroup(
+  target: BridgeTarget,
+  channel: string,
+): MutableChannelGroup {
+  return { target, channel, creations: [], registrations: [] };
+}
+
+/** 사실을 플랫폼이 포함된 증거 위치로 바꾼다. */
+function toEndpoint(
+  platform: BridgePlatform,
+  fact: BridgeFactsDocument['facts'][number],
+): BridgeEndpoint {
+  return fact.symbol === undefined
+    ? { platform, location: fact.location }
+    : { platform, location: fact.location, symbol: fact.symbol };
+}
+
+/** 채널 결과를 target과 이름 순으로 고정한다. */
+function compareChannels(left: ChannelKey, right: ChannelKey): number {
+  return left.target.localeCompare(right.target) || left.channel.localeCompare(right.channel);
+}
+
+/** 결정적 정렬에 필요한 논리 채널 키다. */
+type ChannelKey = Pick<MatchedChannel, 'target' | 'channel'>;
+
+/** 메서드 결과를 target·채널·메서드 순으로 고정한다. */
+function compareMethodKeys(left: MethodKey, right: MethodKey): number {
+  return (
+    left.target.localeCompare(right.target) ||
+    left.channel.localeCompare(right.channel) ||
+    left.method.localeCompare(right.method)
+  );
+}
+
+/** 결정적 정렬에 필요한 논리 메서드 키다. */
+type MethodKey = Pick<MatchedMethod, 'target' | 'channel' | 'method'>;
+
+/** 조립 중인 채널 증거 그룹이다. */
+interface MutableChannelGroup extends MatchedChannel {
+  readonly creations: BridgeEndpoint[];
+  readonly registrations: BridgeEndpoint[];
+}
+
+/** 조립 중인 메서드 증거 그룹이다. */
+interface MutableMethodGroup extends MatchedMethod {
+  readonly invocations: BridgeEndpoint[];
+  readonly handlers: BridgeEndpoint[];
+}
+
+const millisecondsPerHour = 60 * 60 * 1_000;
+const millisecondsPerDay = 24 * millisecondsPerHour;
