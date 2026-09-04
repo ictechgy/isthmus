@@ -68,6 +68,11 @@ try {
     retentionResult.stdout,
     'isthmus retentions JSON',
   );
+  verify(
+    retentionDocument.format === 'external-retentions',
+    'isthmus retentions format',
+  );
+  verify(retentionDocument.version === 0, 'isthmus retentions version');
   await writePrivateFile(retentionPath, retentionResult.stdout);
 
   const before = unusedMessages(
@@ -100,7 +105,9 @@ try {
   ]);
   verify(explanation.status === 0, 'cartograph explain');
   verify(
-    explanation.stdout.includes(expectedEvidence(retentionDocument)),
+    explanation.stdout.includes(
+      expectedEvidence(retentionDocument, 'CameraBridge'),
+    ),
     'cartograph evidence',
   );
   process.stdout.write(
@@ -126,8 +133,11 @@ function verifyProducerDocument(text, platform) {
 }
 
 /** retentions 첫 근거를 cartograph explain의 계약 문장으로 바꾼다. */
-function expectedEvidence(document) {
-  const evidence = document.retentions?.[0]?.evidence;
+function expectedEvidence(document, symbolName) {
+  const retention = document.retentions?.find(({ symbol }) =>
+    symbol?.qualifiedName?.split('.').includes(symbolName),
+  );
+  const evidence = retention?.evidence;
   const caller = evidence?.caller;
   verify(caller !== undefined, 'retention caller evidence');
   return `evidence: ${caller.platform} ${caller.path}:${caller.line} `
@@ -147,9 +157,13 @@ function parseDocument(text, step) {
 function verifyToolVersion(binary, tool, minimum) {
   const result = run(binary, ['--version']);
   verify(result.status === 0, `${tool} version`);
-  const match = result.stdout.match(/\d+\.\d+\.\d+/u);
+  const output = result.stdout.trim();
+  const pattern = tool === 'cartograph'
+    ? /^(\d+\.\d+\.\d+)$/u
+    : /^dartograph (\d+\.\d+\.\d+)$/u;
+  const match = output.match(pattern);
   verify(match !== null, `${tool} version`);
-  verify(versionAtLeast(match[0], minimum), `${tool} version`);
+  verify(versionAtLeast(match[1], minimum), `${tool} version`);
 }
 
 /** 숫자 SemVer 세 부분을 사전 릴리스 없이 비교한다. */
@@ -181,6 +195,7 @@ function runCartograph(arguments_) {
 function unusedMessages(result) {
   verify(result.status === 0, 'cartograph dead');
   const document = parseDocument(result.stdout, 'cartograph dead JSON');
+  verify(Array.isArray(document.diagnostics), 'cartograph dead diagnostics');
   return document.diagnostics
     .filter((diagnostic) => diagnostic.ruleIdentifier === 'unused-symbol')
     .map((diagnostic) => diagnostic.message);

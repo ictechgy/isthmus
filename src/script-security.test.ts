@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { access, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -43,9 +50,51 @@ test('필수 기능 이전 cartograph 바이너리는 경로 노출 없이 거�
   }
 });
 
+test('버전 게이트는 다른 도구 버전처럼 보이는 숫자로 우회되지 않는다', async () => {
+  const fixture = await makeFixture();
+  try {
+    const result = runVerifier(fixture, 'Java 17.0.2; cartograph 0.5.2');
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.includes('cartograph version'), true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('최소 버전의 사전 릴리스 바이너리는 안정 릴리스로 인정하지 않는다', async () => {
+  const fixture = await makeFixture();
+  try {
+    const result = runVerifier(fixture, '0.5.3-beta.1');
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.includes('cartograph version'), true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('producer 실행 중 실패해도 임시 문서와 경로를 남기지 않는다', async () => {
+  const fixture = await makeFixture();
+  try {
+    const result = runVerifier(fixture, '0.5.3', { failBridges: true });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.includes(fixture.root), false);
+    const entries = await readdir(fixture.root);
+    assert.equal(
+      entries.some((entry) => entry.startsWith('isthmus-producer-roundtrip-')),
+      false,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 function runVerifier(
   fixture: Awaited<ReturnType<typeof makeFixture>>,
   cartographVersion: string,
+  options: { readonly failBridges?: boolean } = {},
 ) {
   return spawnSync(
     process.execPath,
@@ -61,7 +110,9 @@ function runVerifier(
       env: {
         ...process.env,
         FAKE_CARTOGRAPH_VERSION: cartographVersion,
+        FAKE_CARTOGRAPH_BRIDGES_STATUS: options.failBridges ? '1' : '0',
         FAKE_MARKER_DIRECTORY: fixture.root,
+        TMPDIR: fixture.root,
       },
     },
   );
@@ -93,6 +144,7 @@ if (args[0] === '--version') {
   process.stdout.write(process.env.FAKE_CARTOGRAPH_VERSION ?? '0.5.3');
 } else if (args[0] === 'bridges') {
   writeFileSync(join(process.env.FAKE_MARKER_DIRECTORY, 'cartograph-bridges.called'), '');
+  if (process.env.FAKE_CARTOGRAPH_BRIDGES_STATUS !== '0') process.exit(1);
   const project = args[args.indexOf('--project') + 1];
   process.stdout.write(JSON.stringify({
     format: 'bridge-facts', version: 1,
@@ -103,7 +155,7 @@ if (args[0] === '--version') {
         location: { path: 'Sources/Camera.swift', line: 3, column: 1 } },
       { kind: 'method-handle', channel: 'com.example/camera', method: 'takePhoto', dynamic: false,
         location: { path: 'Sources/Camera.swift', line: 5, column: 1 },
-        symbol: { qualifiedName: 'Camera.handle', usr: 's:Camera.handle' } }
+        symbol: { qualifiedName: 'CameraBridge.handle', usr: 's:CameraBridge.handle' } }
     ], limitations: []
   }));
 } else if (args[0] === 'dead' && args.includes('--explain')) {
@@ -123,7 +175,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
-  process.stdout.write('0.1.0');
+  process.stdout.write('dartograph 0.1.0');
 } else if (args[0] === 'bridges') {
   writeFileSync(join(process.env.FAKE_MARKER_DIRECTORY, 'dartograph-bridges.called'), '');
   const project = args.at(-1);
@@ -151,9 +203,15 @@ if (args[0] !== 'retentions' || caller.project !== receiver.project) process.exi
 process.stdout.write(JSON.stringify({
   format: 'external-retentions', version: 0,
   producedBy: { name: 'isthmus', version: 'test' }, generatedAt: '2026-09-05T00:00:01.000Z',
-  retentions: [{ symbol: receiver.facts[1].symbol, reason: 'bridge', evidence: {
-    channel: 'com.example/camera', method: 'takePhoto',
-    caller: { platform: 'dart', path: 'lib/camera.dart', line: 5 }
-  }}]
+  retentions: [
+    { symbol: { qualifiedName: 'Other.handle', usr: 's:Other.handle' }, reason: 'bridge', evidence: {
+      channel: 'com.example/other', method: 'ignore',
+      caller: { platform: 'dart', path: 'lib/other.dart', line: 1 }
+    }},
+    { symbol: receiver.facts[1].symbol, reason: 'bridge', evidence: {
+      channel: 'com.example/camera', method: 'takePhoto',
+      caller: { platform: 'dart', path: 'lib/camera.dart', line: 5 }
+    }}
+  ]
 }));
 `;
