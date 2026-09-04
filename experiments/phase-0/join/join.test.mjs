@@ -181,6 +181,44 @@ test('mixed-targets 문서는 불일치를 만들지 않고 조인을 보류한�
   );
 });
 
+test('서로 다른 target의 같은 문자열 키를 연결하지 않는다', () => {
+  const reactNativeSwift = structuredClone(swiftDocument);
+  reactNativeSwift.target = 'react-native';
+
+  const report = joinBridgeFacts(dartDocument, reactNativeSwift);
+
+  assert.deepEqual(report.matchedChannels, []);
+  assert.deepEqual(report.matchedMethods, []);
+});
+
+test('원시 교환 문서와 project 일치를 제품 계약으로 검증한다', () => {
+  assert.throws(
+    () => joinBridgeFacts({ ...dartDocument, facts: 'invalid' }, swiftDocument),
+    { name: 'BridgeFactsValidationError' },
+  );
+  assert.throws(
+    () => joinBridgeFacts(
+      dartDocument,
+      { ...swiftDocument, project: '/another-project' },
+    ),
+    { name: 'BridgeJoinValidationError' },
+  );
+});
+
+test('손 조인 출력은 입력 사실 순서와 중복에 무관하다', () => {
+  const expected = joinBridgeFacts(dartDocument, swiftDocument);
+  const duplicateDart = {
+    ...dartDocument,
+    facts: [...dartDocument.facts.toReversed(), ...dartDocument.facts],
+  };
+  const duplicateSwift = {
+    ...swiftDocument,
+    facts: [...swiftDocument.facts.toReversed(), ...swiftDocument.facts],
+  };
+
+  assert.deepEqual(joinBridgeFacts(duplicateDart, duplicateSwift), expected);
+});
+
 test('CLI가 두 교환 문서를 손 조인 JSON으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     joinCliPath,

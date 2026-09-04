@@ -195,6 +195,111 @@ test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한
   );
 });
 
+test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합하지 않는다', () => {
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'first',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/first.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+            symbol: { qualifiedName: 'FirstPlugin.handle' },
+          },
+        ],
+      },
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'second',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/second.dart', line: 1, column: 1 },
+          },
+        ],
+        handlers: [
+          {
+            platform: 'swift',
+            location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+            symbol: { qualifiedName: 'SecondPlugin.handle' },
+          },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  assert.throws(
+    () => createBridgeGraph(joined),
+    {
+      name: 'BridgeGraphValidationError',
+      message: 'Bridge graph node has conflicting symbols.',
+    },
+  );
+});
+
+test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', () => {
+  const receiver = {
+    platform: 'swift' as const,
+    location: { path: 'ios/Plugin.swift', line: 5, column: 7 },
+  };
+  const joined: BridgeJoinResult = {
+    deferred: false,
+    matchedChannels: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        creations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/plugin.dart', line: 1, column: 1 },
+          },
+        ],
+        registrations: [receiver],
+      },
+    ],
+    unregisteredChannelCreations: [],
+    matchedMethods: [
+      {
+        target: 'flutter',
+        channel: 'dev.isthmus/test',
+        method: 'invoke',
+        invocations: [
+          {
+            platform: 'dart',
+            location: { path: 'lib/plugin.dart', line: 2, column: 1 },
+          },
+        ],
+        handlers: [
+          { ...receiver, symbol: { qualifiedName: 'Plugin.handle' } },
+        ],
+      },
+    ],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    limitations: [],
+  };
+
+  const graph = createBridgeGraph(joined);
+  const receiverNode = graph.nodes.find(({ id }) => id.startsWith('swift:'));
+
+  assert.deepEqual(receiverNode?.symbol, { qualifiedName: 'Plugin.handle' });
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

@@ -50,6 +50,14 @@ export class BridgeGraphLimitError extends Error {
   }
 }
 
+/** 같은 위치 노드가 서로 모순된 심볼을 가졌음을 나타낸다. */
+export class BridgeGraphValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BridgeGraphValidationError';
+  }
+}
+
 /** 경계 그래프를 요청한 출력 형식으로 렌더링한다. */
 export function renderBridgeGraph(
   graph: BridgeGraphDocument,
@@ -228,7 +236,8 @@ function addNode(
   endpoint: BridgeEndpoint,
 ): string {
   const id = endpointId(endpoint);
-  if (!nodes.has(id)) {
+  const existing = nodes.get(id);
+  if (existing === undefined) {
     nodes.set(
       id,
       endpoint.symbol === undefined
@@ -238,10 +247,25 @@ function addNode(
             platform: endpoint.platform,
             location: endpoint.location,
             symbol: endpoint.symbol,
-          },
+      },
+    );
+  } else if (existing.symbol === undefined && endpoint.symbol !== undefined) {
+    nodes.set(id, { ...existing, symbol: endpoint.symbol });
+  } else if (
+    existing.symbol !== undefined &&
+    endpoint.symbol !== undefined &&
+    !sameSymbol(existing.symbol, endpoint.symbol)
+  ) {
+    throw new BridgeGraphValidationError(
+      'Bridge graph node has conflicting symbols.',
     );
   }
   return id;
+}
+
+/** 두 노드 심볼이 같은 선언 식별자를 가리키는지 확인한다. */
+function sameSymbol(left: BridgeSymbol, right: BridgeSymbol): boolean {
+  return left.qualifiedName === right.qualifiedName && left.usr === right.usr;
 }
 
 /** 플랫폼과 소스 위치로 실행 간 안정적인 노드 ID를 만든다. */

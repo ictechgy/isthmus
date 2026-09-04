@@ -45,7 +45,7 @@ cd experiments/phase-0/swift
 SWIFT_SYNTAX_PATH=/path/to/swift-syntax swift test
 ```
 
-두 고정 JSON의 손 조인은 Node.js 내장 기능만 사용한다.
+두 고정 JSON의 호환 조인은 제품의 교환 파서와 조인 구현을 사용하며 `npm run verify`에도 포함된다.
 
 ```bash
 cd experiments/phase-0/join
