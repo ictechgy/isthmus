@@ -63,6 +63,7 @@ export interface JoinLimitation {
 
 /** 검증된 교환 문서들의 논리 조인 결과다. */
 export interface BridgeJoinResult {
+  readonly deferred: boolean;
   readonly matchedChannels: readonly MatchedChannel[];
   readonly unregisteredChannelCreations: readonly UnregisteredChannelCreation[];
   readonly matchedMethods: readonly MatchedMethod[];
@@ -118,6 +119,7 @@ export function joinBridgeDocuments(
     }))
     .sort(compareMethodKeys);
   return {
+    deferred: false,
     matchedChannels,
     unregisteredChannelCreations,
     matchedMethods,
@@ -129,7 +131,7 @@ export function joinBridgeDocuments(
 
 /** 입력 한계 때문에 조인 전체가 보류된 결과인지 확인한다. */
 export function isBridgeJoinDeferred(joined: BridgeJoinResult): boolean {
-  return joined.limitations.some(({ message }) => message.startsWith('mixed-targets:'));
+  return joined.deferred;
 }
 
 /** 한 번의 조인 입력이 정확히 하나의 project를 기술하는지 검증한다. */
@@ -149,6 +151,7 @@ function hasMixedTargets(document: BridgeFactsDocument): boolean {
 /** 안전하게 조인을 보류하면서 입력 한계만 전달한다. */
 function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResult {
   return {
+    deferred: true,
     matchedChannels: [],
     unregisteredChannelCreations: [],
     matchedMethods: [],

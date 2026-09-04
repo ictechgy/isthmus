@@ -18,6 +18,7 @@ const swiftDocument = await loadDocument(
 test('채널 키 하나에 생성과 등록 위치를 모두 연결한다', () => {
   const result = joinBridgeDocuments([dartDocument, swiftDocument]);
 
+  assert.equal(result.deferred, false);
   assert.deepEqual(result.matchedChannels, [
     {
       target: 'flutter',
@@ -255,6 +256,7 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
 
   const result = joinBridgeDocuments([dartDocument, mixedSwiftDocument]);
 
+  assert.equal(result.deferred, true);
   assert.deepEqual(result.matchedChannels, []);
   assert.deepEqual(result.unregisteredChannelCreations, []);
   assert.deepEqual(result.matchedMethods, []);

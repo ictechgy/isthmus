@@ -126,6 +126,28 @@ test('플랫폼은 자기 역할의 fact kind만 생산할 수 있다', () => {
   }
 });
 
+test('method가 아닌 fact에는 method 필드를 허용하지 않는다', () => {
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      target: 'flutter',
+      facts: [
+        {
+          kind: 'channel-create',
+          channel: 'dev.isthmus/camera',
+          method: 'smuggled\nmethod',
+          dynamic: false,
+          location: { path: 'lib/camera.dart', line: 1, column: 2 },
+        },
+      ],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Unexpected method at index 0.',
+    },
+  );
+});
+
 test('객체가 아닌 JSON 루트를 안전한 검증 오류로 거부한다', () => {
   assert.throws(() => parseBridgeFactsDocument(null), {
     name: 'BridgeFactsValidationError',
@@ -168,6 +190,7 @@ test('잘못된 문서 메타데이터를 필드별 안전한 오류로 거부�
     [{ ...emptyDocument, platform: 'ruby' }, 'Unsupported bridge platform.'],
     [{ ...emptyDocument, target: 'cordova' }, 'Unsupported bridge target.'],
     [{ ...emptyDocument, project: '' }, 'Invalid project path.'],
+    [{ ...emptyDocument, project: '/fixture\u0000other' }, 'Invalid project path.'],
     [{ ...emptyDocument, facts: {} }, 'Facts must be an array.'],
     [{ ...emptyDocument, limitations: [1] }, 'Limitations must be strings.'],
   ];

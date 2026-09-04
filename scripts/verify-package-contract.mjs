@@ -38,12 +38,23 @@ for (const requiredPath of [
   verify(paths.has(requiredPath), `artifact file ${requiredPath}`);
 }
 verify([...paths].every((path) => !path.startsWith('src/')), 'source exclusion');
-for (const sourceMapPath of [...paths].filter((path) => path.endsWith('.js.map'))) {
+const sourceMapPaths = [...paths].filter((path) => path.endsWith('.js.map'));
+verify(
+  sourceMapPaths.length > 0 && paths.has('dist/cli/main.js.map'),
+  'source maps present',
+);
+for (const sourceMapPath of sourceMapPaths) {
   const sourceMap = JSON.parse(
     readFileSync(join(repositoryRoot, sourceMapPath), 'utf8'),
   );
   verify(
-    sourceMap.sourcesContent?.length === sourceMap.sources?.length,
+    Array.isArray(sourceMap.sources) &&
+      sourceMap.sources.length > 0 &&
+      Array.isArray(sourceMap.sourcesContent) &&
+      sourceMap.sourcesContent.length === sourceMap.sources.length &&
+      sourceMap.sourcesContent.every(
+        (source) => typeof source === 'string' && source.length > 0,
+      ),
     `inline source map ${sourceMapPath}`,
   );
 }

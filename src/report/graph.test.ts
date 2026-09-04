@@ -164,6 +164,7 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
 
 test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {
   const joined: BridgeJoinResult = {
+    deferred: false,
     matchedChannels: [
       {
         target: 'flutter',

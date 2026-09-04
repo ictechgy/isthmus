@@ -128,7 +128,7 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
-  if (!isNonEmptyString(document.project)) fail('Invalid project path.');
+  if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
   if (!Array.isArray(document.facts)) fail('Facts must be an array.');
   document.facts.forEach((fact, index) =>
     validateFact(fact, index, document.platform),
@@ -145,6 +145,9 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
   if (!isFactKindForPlatform(platform, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
+  }
+  if (!methodFactKinds.has(value.kind) && value.method !== undefined) {
+    fail(`Unexpected method at index ${index}.`);
   }
   if (value.channel !== null && !isSafeNonEmptyString(value.channel)) {
     fail(`Invalid fact channel at index ${index}.`);
