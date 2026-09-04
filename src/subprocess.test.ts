@@ -25,3 +25,14 @@ test('검증 자식 프로세스가 1MiB보다 큰 정상 출력을 수집한다
   assert.equal(result.error, undefined);
   assert.equal(result.stdout.length, outputLength);
 });
+
+test('검증 자식 프로세스에 격리된 환경을 전달할 수 있다', () => {
+  const result = runChild(
+    process.execPath,
+    ['-e', "process.stdout.write(process.env.ISOLATED_VALUE ?? 'missing')"],
+    { env: { ISOLATED_VALUE: 'present' } },
+  );
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'present');
+});

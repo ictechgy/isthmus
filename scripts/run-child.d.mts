@@ -2,6 +2,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 
 export interface RunChildOptions {
   readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
   readonly maxBuffer?: number;
   readonly timeout?: number;
   readonly stdio?: 'inherit';

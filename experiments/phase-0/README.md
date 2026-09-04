@@ -14,7 +14,13 @@
 - `expected/retentions.json`: 고정 시각과 `test-version`으로 만든 제품 `retentions --for cartograph` 결정적 JSON 출력
 - `expected/cartograph-*.json`: cartograph 실제 코퍼스 USR로 외부 보존 왕복을 검증하는 target별 입력·출력
 
-로컬에 Flutter SDK와 `flutter/packages`가 없어 소스 코퍼스를 직접 만들었다. 두 파서와 조인은 실행했지만 Flutter 앱 빌드는 검증하지 않았다. 공개 Flutter 플러그인 도그푸딩은 cartograph Phase 1에서 계속한다.
+Phase 0 당시에는 Flutter SDK와 공개 checkout이 없어 소스 코퍼스를 직접 만들었다. 현재는
+`scripts/verify-public-flutter-plugin.mjs`가 `fluttercommunity/plus_plugins`의 고정 커밋
+`13e170479b3c66c890fa401f5fdb3af141faf67a`에서 배터리 플러그인을 sparse checkout한다.
+Flutter SDK 대신 API 타입만 제공하는 SwiftPM 하네스로 원본 macOS Swift 구현을 컴파일러
+인덱싱하고, 원본 Dart 호출과 실제 cartograph·dartograph 출력부터 isthmus retention 및
+cartograph `--explain` 근거까지 검증한다. 공개 플러그인의 `addMethodCallDelegate` 경로와
+합성 코퍼스의 `setMethodCallHandler`·dead 억제 경로는 서로 보완한다.
 
 ## 확인된 결과
 
@@ -58,7 +64,7 @@ node join-cli.mjs ../expected/dart.json ../expected/swift.json
 ```
 
 cartograph·dartograph의 실제 생산 출력과 컴파일러 인덱스 보존 근거 왕복은 저장소
-루트에서 실행한다. cartograph 0.5.3 이상이 필요하다.
+루트에서 실행한다. cartograph 0.5.3 이상과 dartograph 0.1.0 이상이 필요하다.
 
 ```bash
 npm run build
@@ -66,4 +72,13 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/cartograph \
   /path/to/dartograph \
   /path/to/FalsePositiveCorpus
+```
+
+공개 Flutter 플러그인의 고정 소스로 같은 경계를 검증하려면 네트워크가 가능한 환경에서
+다음을 실행한다.
+
+```bash
+node scripts/verify-public-flutter-plugin.mjs \
+  /path/to/cartograph \
+  /path/to/dartograph
 ```
