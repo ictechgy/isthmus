@@ -14,6 +14,9 @@ import {
   runRetentionsCommand,
 } from './retentions-command.ts';
 
+process.stdout.on('error', handleStreamError);
+process.stderr.on('error', handleStreamError);
+
 const commandUsages = new Map([
   ['check', checkUsage],
   ['graph', graphUsage],
@@ -42,6 +45,15 @@ const result = informationalResult ?? await dispatchCommand(arguments_);
 process.stdout.write(result.standardOutput);
 process.stderr.write(result.standardError);
 process.exitCode = result.exitCode;
+
+/** 파이프 소비자가 먼저 닫힌 정상 상황만 조용히 종료한다. */
+function handleStreamError(error: NodeJS.ErrnoException): void {
+  if (error.code === 'EPIPE') {
+    process.exitCode = 0;
+    return;
+  }
+  throw error;
+}
 
 /** 도움말과 버전처럼 입력 문서가 필요 없는 명령을 실행한다. */
 async function runInformationalCommand(

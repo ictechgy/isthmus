@@ -54,6 +54,27 @@ test('지원하지 않는 retention 대상은 I/O 전에 종료 코드 64로 거
   );
 });
 
+test('retentions 입력 파일이 안전 상한을 넘으면 읽기 전에 거부한다', async () => {
+  let didReadFile = false;
+  const result = await runRetentionsCommand(
+    [
+      'retentions',
+      ...Array.from({ length: 257 }, (_, index) => `${index}.json`),
+      '--for',
+      'cartograph',
+    ],
+    async () => {
+      didReadFile = true;
+      return '';
+    },
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.1',
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(didReadFile, false);
+});
+
 test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
   const result = await runRetentionsCommand(
     ['retentions', 'private-dart.json', 'private-swift.json', '--for', 'cartograph'],
@@ -70,6 +91,39 @@ test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환�
       'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   });
+});
+
+test('retentions 내부 오류를 입력 오류와 구분한다', async () => {
+  const result = await runRetentionsCommand(
+    ['retentions', 'first.json', 'second.json', '--for', 'cartograph'],
+    async () => undefined as unknown as string,
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.1',
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError,
+    'Internal isthmus error; retry with a current version.\n',
+  );
+});
+
+test('retentions도 너무 큰 입력 뒤의 파일을 읽지 않는다', async () => {
+  const reads: string[] = [];
+  const result = await runRetentionsCommand(
+    ['retentions', 'large.json', 'later.json', '--for', 'cartograph'],
+    async (path) => {
+      reads.push(path);
+      return path === 'large.json'
+        ? ' '.repeat(16 * 1024 * 1024 + 1)
+        : '{}';
+    },
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.1',
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, ['large.json']);
 });
 
 test('mixed-targets로 전체 조인이 보류되면 retentions를 만들지 않는다', async () => {

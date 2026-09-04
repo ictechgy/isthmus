@@ -1,8 +1,9 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtemp, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { runChild } from './run-child.mjs';
 
 const [cartographBinary, cartographFixture] = process.argv.slice(2);
 if (cartographBinary === undefined || cartographFixture === undefined) {
@@ -93,7 +94,7 @@ function unusedMessages(result) {
 
 /** 자식 프로세스를 UTF-8 텍스트 모드로 실행한다. */
 function run(command, arguments_) {
-  return spawnSync(command, arguments_, { encoding: 'utf8' });
+  return runChild(command, arguments_, { timeout: 5 * 60_000 });
 }
 
 /** 검증 실패 시 경로나 자식 출력 없이 단계 이름만 보고한다. */

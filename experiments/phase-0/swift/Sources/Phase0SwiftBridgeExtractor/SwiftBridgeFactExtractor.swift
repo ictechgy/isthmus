@@ -86,6 +86,11 @@ public struct SwiftBridgeFactExtractor: Sendable {
         let importDetector = FlutterImportDetector()
         importDetector.walk(tree)
         guard importDetector.hasFlutterImport else { return [] }
+        let conditionalDetector = ConditionalFlutterBridgeDetector()
+        conditionalDetector.walk(tree)
+        guard !conditionalDetector.hasConditionalBridgeSyntax else {
+            throw SwiftBridgeExtractionError.conditionalCompilation
+        }
         let converter = SourceLocationConverter(fileName: relativePath, tree: tree)
         let collector = BridgeFactCollector(
             relativePath: relativePath,
@@ -99,6 +104,42 @@ public struct SwiftBridgeFactExtractor: Sendable {
 /// SwiftParser가 복구 노드를 만든 잘못된 소스를 나타낸다.
 public enum SwiftBridgeExtractionError: Error, Sendable {
     case invalidSyntax
+    case conditionalCompilation
+}
+
+/// 활성 컴파일 구성을 모르는 상태에서 조건부 브리지 구문을 오인하지 않게 한다.
+private final class ConditionalFlutterBridgeDetector: SyntaxVisitor {
+    private(set) var hasConditionalBridgeSyntax = false
+    private var conditionalDepth = 0
+
+    init() {
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: IfConfigDeclSyntax) -> SyntaxVisitorContinueKind {
+        conditionalDepth += 1
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: IfConfigDeclSyntax) {
+        conditionalDepth -= 1
+    }
+
+    override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
+        if conditionalDepth > 0, node.path.trimmedDescription == "Flutter" {
+            hasConditionalBridgeSyntax = true
+        }
+        return .skipChildren
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        guard conditionalDepth > 0 else { return .visitChildren }
+        let callee = node.calledExpression.trimmedDescription
+        if callee == "FlutterMethodChannel" || callee.hasSuffix(".setMethodCallHandler") {
+            hasConditionalBridgeSyntax = true
+        }
+        return .visitChildren
+    }
 }
 
 /// 파일이 실제 Flutter 모듈을 가져오는지 구문으로 확인한다.
@@ -419,6 +460,24 @@ private final class BridgeFactCollector: SyntaxVisitor {
         return .visitChildren
     }
 
+    /// 단순 변수와 self 프로퍼티 재할당의 최신 채널을 보존한다.
+    override func visit(_ node: InfixOperatorExprSyntax) -> SyntaxVisitorContinueKind {
+        if node.operator.as(AssignmentExprSyntax.self) != nil {
+            recordAssignment(left: node.leftOperand, right: node.rightOperand)
+        }
+        return .visitChildren
+    }
+
+    /// parser가 접지 않은 대입 sequence도 같은 바인딩 갱신으로 처리한다.
+    override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
+        let elements = Array(node.elements)
+        if elements.count == 3,
+           elements[1].as(AssignmentExprSyntax.self) != nil {
+            recordAssignment(left: elements[0], right: elements[2])
+        }
+        return .visitChildren
+    }
+
     /// 핸들러 호출에 들어갈 때 수신 채널 문맥을 쌓는다.
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         if let channel = handlerChannel(node) {
@@ -529,6 +588,27 @@ private final class BridgeFactCollector: SyntaxVisitor {
             return channelCreated(by: creation)
         }
         return nil
+    }
+
+    /// 재할당 좌변에서 단순 변수 또는 self 프로퍼티 이름을 얻는다.
+    private func assignedName(_ expression: ExprSyntax) -> String? {
+        if let reference = expression.as(DeclReferenceExprSyntax.self) {
+            return reference.baseName.text
+        }
+        guard let member = expression.as(MemberAccessExprSyntax.self),
+              let base = member.base?.as(DeclReferenceExprSyntax.self),
+              base.baseName.text == "self" || base.baseName.text == "Self"
+        else { return nil }
+        return member.declName.baseName.text
+    }
+
+    /// 대입 좌변의 가장 가까운 선언을 우변 채널 값으로 갱신한다.
+    private func recordAssignment(left: ExprSyntax, right: ExprSyntax) {
+        guard let name = assignedName(left) else { return }
+        let channel = right
+            .as(FunctionCallExprSyntax.self)
+            .flatMap(channelCreated)
+        assignChannel(name: name, channel: channel)
     }
 
     /// 실제 setMethodCallHandler 호출을 channel-register 사실로 만든다.
@@ -676,6 +756,15 @@ private final class BridgeFactCollector: SyntaxVisitor {
             if declaredNameScopes[index].contains(name) { return nil }
         }
         return nil
+    }
+
+    /// 선언된 가장 가까운 범위의 채널 바인딩을 갱신하거나 제거한다.
+    private func assignChannel(name: String, channel: BridgeName?) {
+        for index in channelScopes.indices.reversed() {
+            guard declaredNameScopes[index].contains(name) else { continue }
+            channelScopes[index][name] = channel
+            return
+        }
     }
 }
 

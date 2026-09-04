@@ -90,6 +90,7 @@ bool _isAbsoluteProjectPath(String value) =>
 /// 출력할 위치가 절대·상위 경로와 제어 문자를 포함하지 않는지 확인한다.
 bool _isProjectRelativePath(String value) {
   if (!_isSafeNonEmptyString(value) || File(value).isAbsolute) return false;
+  if (value.startsWith(r'\')) return false;
   if (RegExp(r'^[A-Za-z]:').hasMatch(value)) return false;
   return !value.split(RegExp(r'[/\\]')).contains('..');
 }

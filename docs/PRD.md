@@ -27,7 +27,10 @@ channel.setMethodCallHandler { call, result in
 2. **탐지 불가한 불일치**: Dart 가 `'takePhotos'` 로 오타를 내면 아무 도구도 빌드 전에 못 잡는다
 3. **진짜 미사용을 못 봄**: Swift 에 `'recordVideo'` 핸들러가 있는데 Dart 어디서도 안 부른다. 아무 도구도 말하지 않는다
 
-이 문제를 다루는 도구는 **없다** (`docs/RESEARCH.md`). 완화책은 도구가 아니라 코드 생성이다 — Flutter Pigeon, RN Turbo Modules codegen 은 문자열을 정적 참조로 바꾼다. 그러나 codegen 을 안 쓰는 코드가 훨씬 많고, codegen 을 써도 채널 이름 자체는 여전히 문자열이다.
+조사한 언어별 분석 도구에서는 이 교차 경계를 직접 다루는 기능을 찾지 못했다
+(`docs/RESEARCH.md`). 완화책은 도구가 아니라 코드 생성이다 — Flutter Pigeon,
+RN Turbo Modules codegen은 문자열을 정적 참조로 바꾼다. 그러나 codegen을 쓰지 않는
+코드가 많고, codegen을 써도 채널 이름 자체는 여전히 문자열이다.
 
 ## 사용자
 
@@ -37,7 +40,7 @@ channel.setMethodCallHandler { call, result in
 
 ## 범위
 
-### 반드시 (v0.1) — Flutter ↔ Swift
+### v0.1 목표 — Flutter ↔ Swift
 
 - 입력: dartograph `bridges` JSON + cartograph `bridges` JSON (형식: `docs/GRAPH-EXCHANGE.md`)
 - 조인: 채널 이름으로 등록 ↔ 생성을, (채널, 메서드) 로 호출 ↔ 핸들러 case 를 잇는다
@@ -47,7 +50,8 @@ channel.setMethodCallHandler { call, result in
 - `retentions --for cartograph` — cartograph 가 읽을 보존 근거 파일. "이 Swift 심볼은 `lib/x.dart:N` 이 채널 `c` 메서드 `m` 으로 부르므로 보존"
 - `limitations`: 동적 채널 이름 수, 동적 메서드 이름 수, 양쪽 입력의 신선도(생성 시각)
 - 종료 코드 계약, 베이스라인, JS/TS 없이도 동작
-- 오탐 코퍼스: 실제 Flutter 앱 + iOS 러너
+- 오탐 코퍼스: 합성 Dart·Swift 코퍼스와 실제 cartograph 인덱스 왕복은 완료했다.
+  공개 Flutter 앱 전체 도그푸딩은 후속 작업으로 남아 있다
 
 ### 다음 (v0.2)
 
@@ -84,7 +88,8 @@ cartograph 에 `--external-retentions <path>` 를 추가한다. 파일은 `{usr 
 
 ## 성공 기준
 
-- `flutter/packages` 의 플러그인 하나(예: `path_provider`)에서 Dart ↔ Swift 조인이 **모든** 메서드를 맞춘다(수동 검증)
+- [ ] `flutter/packages`의 Swift 플러그인 하나에서 Dart ↔ Swift 조인이 **모든** 메서드를
+  맞춘다(수동 검증, v0.1.1 이후 후속 작업)
 - 오타 픽스처(`'takePhotos'`)를 `check --strict` 가 1 로 잡는다
 - cartograph 에 retentions 를 넘기면 핸들러 오탐이 0 이 되고 `--explain` 이 Dart 쪽 위치를 말한다
 - 자기 검증: 코퍼스 양방향, 커버리지 90%, 종료 코드 계약

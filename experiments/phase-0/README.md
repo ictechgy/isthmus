@@ -26,6 +26,8 @@
 - `channel: null`인 핸들러는 불일치에서 제외
 - `mixed-targets` 문서는 사실별 메커니즘을 알 수 없어 조인을 보류
 - Swift `method-handle`은 `CameraPlugin.register`에 귀속. Phase 0은 USR을 만들 수 없어 `missing-handler-usrs`로 보고
+- 위치 열은 1부터 시작하는 UTF-8 바이트 기준이며 생성 시각은 UTC 밀리초 형식으로 정규화
+- 조건부 컴파일 안의 Swift Flutter 브리지 구문은 활성 구성을 추측하지 않고 compiler-indexed 추출이 필요하다고 실패
 
 ## 실행
 

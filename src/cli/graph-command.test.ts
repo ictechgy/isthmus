@@ -42,6 +42,20 @@ test('지원하지 않는 graph 형식은 I/O 전에 종료 코드 64로 거부�
   assert.equal(result.standardError.startsWith('Usage: isthmus graph'), true);
 });
 
+test('graph 입력 파일이 안전 상한을 넘으면 읽기 전에 거부한다', async () => {
+  let didReadFile = false;
+  const result = await runGraphCommand(
+    ['graph', ...Array.from({ length: 257 }, (_, index) => `${index}.json`)],
+    async () => {
+      didReadFile = true;
+      return '';
+    },
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(didReadFile, false);
+});
+
 test('graph 형식을 생략하면 JSON을 출력한다', async () => {
   const result = await runGraphCommand(
     ['graph', dartPath, swiftPath],
@@ -67,6 +81,35 @@ test('graph 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다
       'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   });
+});
+
+test('graph 내부 오류를 입력 오류와 구분한다', async () => {
+  const result = await runGraphCommand(
+    ['graph', 'first.json', 'second.json'],
+    async () => undefined as unknown as string,
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError,
+    'Internal isthmus error; retry with a current version.\n',
+  );
+});
+
+test('graph도 너무 큰 입력 뒤의 파일을 읽지 않는다', async () => {
+  const reads: string[] = [];
+  const result = await runGraphCommand(
+    ['graph', 'large.json', 'later.json'],
+    async (path) => {
+      reads.push(path);
+      return path === 'large.json'
+        ? ' '.repeat(16 * 1024 * 1024 + 1)
+        : '{}';
+    },
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, ['large.json']);
 });
 
 test('mixed-targets로 전체 조인이 보류되면 graph를 만들지 않는다', async () => {

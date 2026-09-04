@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-04
+
+### Changed
+
+- 아직 조인하지 않는 RN module·component fact를 0.1에서 fail-closed로 거부
+- 입력 문서·fact·텍스트 크기 상한과 Unicode 줄 구분자 검증 추가
+- clean `dist` 빌드와 검증 subprocess 제한시간·출력 버퍼 적용
+- 설치 예시, Phase 0 한계, agent skill의 실패 처리 안내 보강
+
+## [0.1.1] - 2026-09-04
+
+### Changed
+
+- bridge-facts의 추가 필드 제거, 실제 달력 시각·안전한 정수·platform 역할 검증
+- project 불일치와 `mixed-targets` 전체 조인을 fail-closed로 처리
+- query의 cross-kind 모호성·qualifiedName 우선순위와 graph 간선 상한·심볼 병합 보강
+- 임시 retention 파일과 배포 source map 계약 강화
+- Dart·Swift Phase 0 추출기의 경로·구문·어휘 범위·오탐 경계 보강
+- Phase 0 손 조인을 제품 파서와 동기화하고 표준 검증에 포함
+
 ## [0.1.0] - 2026-09-04
 
 ### Added

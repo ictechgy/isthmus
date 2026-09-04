@@ -14,6 +14,9 @@ test('배포 skill이 삭제 전 경계 조회와 한계 확인을 가르친다'
   assert.equal(markdown.includes('dependsOn'), true);
   assert.equal(markdown.includes('limitations'), true);
   assert.equal(markdown.includes('not permission to delete'), true);
+  assert.equal(markdown.includes('Do not fabricate a missing facts file'), true);
+  assert.equal(markdown.includes('test -s external-retentions.json &&'), true);
+  assert.equal(markdown.includes('Only continue when every command exits 0'), true);
 });
 
 test('npm 패키지가 검토 가능한 skill 원문을 포함한다', async () => {

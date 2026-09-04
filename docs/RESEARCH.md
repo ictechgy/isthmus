@@ -18,9 +18,10 @@
 - `GraphDocument` 의 정렬 키 · diff 가능 출력 관례 — 교환 형식이 같은 관례를 따른다
 - `query` 의 `limitations` 구조 — isthmus 의 동적 이름 카운트가 같은 자리에 들어간다
 
-### RN 프로젝트 현황 (바탕화면)
+### RN 프로젝트 범위
 
-- `~/Desktop/골목골목/mobile`: Expo, RN 0.86.2, **`ios/` 없음, Swift 0, ObjC 0**, TS 35 파일. managed 워크플로. 네이티브 코드가 없으므로 isthmus 대상이 아니다. `expo prebuild` 로 `ios/` 를 만들 수 있으나 그래도 브리지 코드는 Expo 모듈 안(node_modules)에 있다
+- Expo managed 워크플로처럼 `ios/`와 네이티브 브리지 소스가 없는 앱은 직접 분석 대상이
+  아니다. `expo prebuild` 뒤에도 실제 브리지 코드는 주로 Expo 모듈 의존성에 있다
 
 ## 확인 필요
 

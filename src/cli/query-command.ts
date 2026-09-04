@@ -1,8 +1,14 @@
-import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
+import {
+  isBridgeJoinDeferred,
+  joinBridgeDocuments,
+  MAX_DOCUMENTS_PER_JOIN,
+} from '../join/join.ts';
 import { createBridgeQuery, encodeBridgeQuery } from '../report/query.ts';
 import {
   bridgeJoinDeferredError,
+  internalError,
+  isExpectedInputError,
+  readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
 } from './check-command.ts';
@@ -19,15 +25,13 @@ export async function runQueryCommand(
     requested === undefined ||
     requested.trim().length === 0 ||
     inputPaths.length < 2 ||
+    inputPaths.length > MAX_DOCUMENTS_PER_JOIN ||
     inputPaths.some((path) => path.startsWith('-'))
   ) {
     return queryUsageError();
   }
   try {
-    const texts = await Promise.all(inputPaths.map(readTextFile));
-    const documents = texts.map((text) =>
-      parseBridgeFactsDocument(JSON.parse(text)),
-    );
+    const documents = await readBridgeDocuments(inputPaths, readTextFile);
     const joined = joinBridgeDocuments(documents);
     if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
     const query = createBridgeQuery(joined, requested);
@@ -36,8 +40,8 @@ export async function runQueryCommand(
       standardError: '',
       exitCode: query.status === 'found' ? 0 : 64,
     };
-  } catch {
-    return queryInputError();
+  } catch (error) {
+    return isExpectedInputError(error) ? queryInputError() : internalError();
   }
 }
 

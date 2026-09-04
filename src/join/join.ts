@@ -72,6 +72,9 @@ export interface BridgeJoinResult {
   readonly limitations: readonly JoinLimitation[];
 }
 
+/** 한 번의 조인에서 허용하는 최대 생산 문서 수다. */
+export const MAX_DOCUMENTS_PER_JOIN = 256;
+
 /** 함께 조인할 입력 문서 집합이 논리 계약을 위반했음을 나타낸다. */
 export class BridgeJoinValidationError extends Error {
   /** 입력 경로를 노출하지 않는 안전한 메시지를 보존한다. */
@@ -85,6 +88,11 @@ export class BridgeJoinValidationError extends Error {
 export function joinBridgeDocuments(
   documents: readonly BridgeFactsDocument[],
 ): BridgeJoinResult {
+  if (documents.length > MAX_DOCUMENTS_PER_JOIN) {
+    throw new BridgeJoinValidationError(
+      `Bridge join exceeds the ${MAX_DOCUMENTS_PER_JOIN} document limit.`,
+    );
+  }
   validateProjects(documents);
   const limitations = collectLimitations(documents);
   if (documents.some(hasMixedTargets)) return emptyJoinResult(limitations);
@@ -182,8 +190,14 @@ function freshnessLimitation(
   documents: readonly BridgeFactsDocument[],
 ): JoinLimitation | undefined {
   if (documents.length < 2) return undefined;
-  const timestamps = documents.map((document) => Date.parse(document.generatedAt));
-  const difference = Math.max(...timestamps) - Math.min(...timestamps);
+  let earliest = Number.POSITIVE_INFINITY;
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const document of documents) {
+    const timestamp = Date.parse(document.generatedAt);
+    earliest = Math.min(earliest, timestamp);
+    latest = Math.max(latest, timestamp);
+  }
+  const difference = latest - earliest;
   if (difference <= millisecondsPerDay) return undefined;
   const hours = Math.round(difference / millisecondsPerHour);
   return {
@@ -218,14 +232,21 @@ function collectMethodGroups(
 /** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
 function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
   endpoints.sort(compareEndpoints);
-  let previous: BridgeEndpoint | undefined;
-  const unique = endpoints.filter((endpoint) => {
-    const isDuplicate =
-      previous !== undefined && compareEndpoints(previous, endpoint) === 0;
-    previous = endpoint;
-    return !isDuplicate;
-  });
-  endpoints.splice(0, endpoints.length, ...unique);
+  if (endpoints.length < 2) return;
+  let writeIndex = 1;
+  for (let readIndex = 1; readIndex < endpoints.length; readIndex++) {
+    const previous = endpoints[writeIndex - 1];
+    const current = endpoints[readIndex];
+    if (
+      previous !== undefined &&
+      current !== undefined &&
+      compareEndpoints(previous, current) !== 0
+    ) {
+      endpoints[writeIndex] = current;
+      writeIndex++;
+    }
+  }
+  endpoints.length = writeIndex;
 }
 
 /** 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다. */

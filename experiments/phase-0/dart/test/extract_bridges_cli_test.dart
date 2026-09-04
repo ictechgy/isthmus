@@ -48,6 +48,7 @@ void main() {
       ('/fixture', '../private.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', '/private.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', r'C:\private.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', r'\server\private.dart', '2026-09-04T12:00:00Z'),
       ('/fixture', 'lib/source.dart', '2026-02-31T12:00:00Z'),
     ];
 

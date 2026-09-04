@@ -62,6 +62,20 @@ test('입력 파일이 두 개보다 적으면 종료 코드 64를 반환한다'
   assert.equal(result.standardError.startsWith('Usage: isthmus check'), true);
 });
 
+test('입력 파일이 안전 상한을 넘으면 읽기 전에 종료 코드 64로 거부한다', async () => {
+  let didReadFile = false;
+  const result = await runCheckCommand(
+    ['check', ...Array.from({ length: 257 }, (_, index) => `${index}.json`)],
+    async () => {
+      didReadFile = true;
+      return '';
+    },
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(didReadFile, false);
+});
+
 test('알 수 없는 옵션은 파일을 읽기 전에 종료 코드 64로 거부한다', async () => {
   let didReadFile = false;
   const result = await runCheckCommand(
@@ -92,6 +106,56 @@ test('입력 읽기 실패는 경로를 숨기고 종료 코드 2를 반환한�
   });
 });
 
+test('예상하지 못한 내부 오류는 입력 오류와 구분해 보고한다', async () => {
+  const result = await runCheckCommand(
+    ['check', 'first.json', 'second.json'],
+    async () => undefined as unknown as string,
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError: 'Internal isthmus error; retry with a current version.\n',
+    exitCode: 2,
+  });
+});
+
+test('너무 큰 입력은 다음 파일을 읽기 전에 종료 코드 2로 거부한다', async () => {
+  const reads: string[] = [];
+  const result = await runCheckCommand(
+    ['check', 'large.json', 'later.json'],
+    async (path) => {
+      reads.push(path);
+      return path === 'large.json'
+        ? ' '.repeat(16 * 1024 * 1024 + 1)
+        : '{}';
+    },
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, ['large.json']);
+});
+
+test('전체 입력 합계가 안전 상한을 넘으면 마지막 파일 파싱 전에 거부한다', async () => {
+  const document = JSON.parse(await readFile(dartPath, 'utf8'));
+  const largeDocument = JSON.stringify({
+    ...document,
+    padding: 'x'.repeat(13 * 1024 * 1024),
+  });
+  const paths = ['1.json', '2.json', '3.json', '4.json', '5.json'];
+  const reads: string[] = [];
+
+  const result = await runCheckCommand(
+    ['check', ...paths],
+    async (path) => {
+      reads.push(path);
+      return largeDocument;
+    },
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.deepEqual(reads, paths);
+});
+
 test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 않는다', async () => {
   const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
   const mixedSwift = JSON.stringify({
@@ -110,6 +174,92 @@ test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 �
     standardOutput: '',
     standardError:
       'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+    exitCode: 2,
+  });
+});
+
+test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한다', async () => {
+  const base = {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'test-tool', version: '1.0.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    target: 'react-native',
+    project: '/fixture',
+    limitations: [],
+  };
+  const inputs = new Map([
+    ['caller.json', JSON.stringify({
+      ...base,
+      platform: 'js',
+      facts: [
+        {
+          kind: 'module-import',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        },
+      ],
+    })],
+    ['receiver.json', JSON.stringify({
+      ...base,
+      platform: 'swift',
+      facts: [
+        {
+          kind: 'module-export',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+        },
+      ],
+    })],
+  ]);
+
+  const result = await runCheckCommand(
+    ['check', 'caller.json', 'receiver.json', '--strict'],
+    async (path) => inputs.get(path) ?? '',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Unable to read or validate bridge facts; check the input files.\n',
+    exitCode: 2,
+  });
+});
+
+test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류로 거부한다', async () => {
+  const receiver = JSON.stringify({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'test-tool', version: '1.0.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'swift',
+    target: 'react-native',
+    project: '/fixture',
+    facts: [
+      {
+        kind: 'module-export',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+      },
+    ],
+    limitations: [],
+  });
+
+  const result = await runCheckCommand(
+    ['check', dartPath, 'receiver.json'],
+    (path) =>
+      path === 'receiver.json'
+        ? Promise.resolve(receiver)
+        : readFile(path, 'utf8'),
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   });
 });

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { runChild } from './run-child.mjs';
 
 const coverageArguments = [
   '--experimental-test-coverage',
@@ -9,10 +9,10 @@ const coverageArguments = [
   "--test-coverage-exclude=src/**/*.test.ts",
 ];
 const testArguments = ['--test', ...coverageArguments, 'src/**/*.test.ts'];
-const result = spawnSync(
+const result = runChild(
   process.execPath,
   [...testArguments, ...process.argv.slice(2)],
-  { stdio: 'inherit' },
+  { stdio: 'inherit', timeout: 5 * 60_000 },
 );
 
 process.exit(result.status ?? 2);

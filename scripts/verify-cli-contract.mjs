@@ -1,6 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+import { runChild } from './run-child.mjs';
 
 const binaryPath = fileURLToPath(new URL('../dist/cli/main.js', import.meta.url));
 const dartPath = fileURLToPath(
@@ -121,9 +122,7 @@ function verifyGraph() {
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */
 function run(arguments_) {
-  return spawnSync(process.execPath, [binaryPath, ...arguments_], {
-    encoding: 'utf8',
-  });
+  return runChild(process.execPath, [binaryPath, ...arguments_]);
 }
 
 /** 계약 위반이면 민감정보 없는 검사 이름으로 실패한다. */
