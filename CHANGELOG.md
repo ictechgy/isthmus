@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-04
+
 ### Changed
 
 - 보류된 조인의 직접 report/query/graph 생성을 거부하고 retention dedup 키 공간 분리
