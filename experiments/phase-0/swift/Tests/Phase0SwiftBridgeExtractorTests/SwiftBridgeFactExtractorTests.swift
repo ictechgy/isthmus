@@ -395,6 +395,28 @@ func ignoresConditionalLookalikeWithoutFlutterImport() throws {
     #expect(facts.isEmpty)
 }
 
+@Test("Swift 소스 위치 column도 1부터 시작하는 UTF-8 바이트로 기록한다")
+func recordsSwiftUTF8ByteColumn() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        /* 😀 */ channel.setMethodCallHandler { _, _ in }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+    let registration = try #require(
+        facts.first { $0.kind == "channel-register" }
+    )
+
+    #expect(registration.location.line == 4)
+    #expect(registration.location.column == 24)
+}
+
 @Test("즉석 생성한 채널의 handler를 등록과 메서드에 연결한다")
 func resolvesInlineChannelReceiver() throws {
     let source = """

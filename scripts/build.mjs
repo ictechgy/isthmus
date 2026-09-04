@@ -23,6 +23,7 @@ const result = runChild(
   {
     cwd: repositoryRoot,
     stdio: 'inherit',
+    timeout: 5 * 60_000,
   },
 );
 if (result.error !== undefined) {

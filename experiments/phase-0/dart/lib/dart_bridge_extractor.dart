@@ -106,13 +106,20 @@ Map<String, Object?> createDartBridgeFactsDocument({
   'format': 'bridge-facts',
   'version': 1,
   'tool': {'name': 'isthmus-phase0-dart', 'version': '0.0.0'},
-  'generatedAt': generatedAt.toUtc().toIso8601String(),
+  'generatedAt': _utcMillisecondsTimestamp(generatedAt),
   'platform': 'dart',
   'target': facts.isEmpty ? null : 'flutter',
   'project': project,
   'facts': facts.map((fact) => fact.toJson()).toList(growable: false),
   'limitations': _dynamicLimitations(facts),
 };
+
+/// 생성 시각을 UTC 밀리초 세 자리의 결정적 ISO 8601 문자열로 만든다.
+String _utcMillisecondsTimestamp(DateTime value) =>
+    DateTime.fromMillisecondsSinceEpoch(
+      value.millisecondsSinceEpoch,
+      isUtc: true,
+    ).toIso8601String();
 
 /// 동적 채널과 메서드 사실을 종류별 한계 문장으로 센다.
 List<String> _dynamicLimitations(List<BridgeFact> facts) {

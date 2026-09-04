@@ -94,7 +94,7 @@ function unusedMessages(result) {
 
 /** 자식 프로세스를 UTF-8 텍스트 모드로 실행한다. */
 function run(command, arguments_) {
-  return runChild(command, arguments_);
+  return runChild(command, arguments_, { timeout: 5 * 60_000 });
 }
 
 /** 검증 실패 시 경로나 자식 출력 없이 단계 이름만 보고한다. */

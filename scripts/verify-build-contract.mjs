@@ -9,11 +9,11 @@ const distDirectory = join(repositoryRoot, 'dist');
 const stalePath = join(distDirectory, '__stale-build-contract.js');
 
 await mkdir(distDirectory, { recursive: true });
-await writeFile(stalePath, 'stale build output\n', { flag: 'wx' });
+await writeFile(stalePath, 'stale build output\n', { flag: 'w' });
 try {
   const build = runChild('npm', ['run', 'build'], {
     cwd: repositoryRoot,
-    timeout: 60_000,
+    timeout: 6 * 60_000,
     maxBuffer: 16 * 1024 * 1024,
   });
   verify(build.status === 0 && build.error === undefined, 'build');

@@ -266,8 +266,10 @@ void create() {
   test('Flutter import와 함께 있어도 로컬 MethodChannel 선언을 오인하지 않는다', () {
     const source = """
 import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' as services;
 void create() {
   MethodChannel('not-flutter');
+  services.MethodChannel('dev.isthmus/prefixed');
 }
 Object MethodChannel(String name) => Object();
 """;
@@ -277,7 +279,11 @@ Object MethodChannel(String name) => Object();
       relativePath: 'lib/shadowed_import.dart',
     );
 
-    expect(facts, isEmpty);
+    expect(facts, hasLength(1));
+    expect(
+      facts.single.toJson(),
+      containsPair('channel', 'dev.isthmus/prefixed'),
+    );
   });
 
   test('접두사로 가져온 Flutter MethodChannel을 추출한다', () {
@@ -509,6 +515,16 @@ void create() { /* 😀 */ MethodChannel('dev.isthmus/utf8'); }
     expect(document, containsPair('target', 'flutter'));
     expect(document, containsPair('project', '/fixture'));
     expect(document, containsPair('facts', [fact.toJson()]));
+  });
+
+  test('생성 시각을 UTC 밀리초 세 자리로 정규화한다', () {
+    final document = createDartBridgeFactsDocument(
+      facts: const [],
+      generatedAt: DateTime.parse('2026-09-04T21:00:00.123456+09:00'),
+      project: '/fixture',
+    );
+
+    expect(document['generatedAt'], '2026-09-04T12:00:00.123Z');
   });
 
   test('사실이 없는 문서는 target을 null로 기록한다', () {

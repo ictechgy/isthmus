@@ -227,3 +227,39 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
     exitCode: 2,
   });
 });
+
+test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류로 거부한다', async () => {
+  const receiver = JSON.stringify({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'test-tool', version: '1.0.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'swift',
+    target: 'react-native',
+    project: '/fixture',
+    facts: [
+      {
+        kind: 'module-export',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+      },
+    ],
+    limitations: [],
+  });
+
+  const result = await runCheckCommand(
+    ['check', dartPath, 'receiver.json'],
+    (path) =>
+      path === 'receiver.json'
+        ? Promise.resolve(receiver)
+        : readFile(path, 'utf8'),
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Unable to read or validate bridge facts; check the input files.\n',
+    exitCode: 2,
+  });
+});

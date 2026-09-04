@@ -40,11 +40,11 @@ test('표준 verify가 Phase 0 손 조인 회귀 테스트를 포함한다', asy
     'node scripts/verify-build-contract.mjs',
   );
   assert.equal(
-    packageDocument.scripts.verify.includes('npm run verify:build'),
-    true,
+    packageDocument.scripts['verify:cli'],
+    'npm run verify:build && node scripts/verify-cli-contract.mjs',
   );
   assert.equal(
-    packageDocument.scripts['verify:cli'],
-    'node scripts/verify-cli-contract.mjs',
+    packageDocument.scripts['verify:package'],
+    'npm run verify:build && node scripts/verify-package-contract.mjs',
   );
 });
