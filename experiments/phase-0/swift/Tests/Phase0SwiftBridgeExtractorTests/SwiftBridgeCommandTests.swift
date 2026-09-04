@@ -2,11 +2,20 @@ import Foundation
 import Phase0SwiftBridgeExtractor
 import Testing
 
+private let phase0Root = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+
 @Test("Swift 소스 파일을 bridge-facts JSON 문서로 변환한다")
 func convertsSwiftSourceToExchangeDocument() throws {
+    let sourcePath = phase0Root
+        .appendingPathComponent("fixture/ios/Runner/CameraPlugin.swift")
+        .path
     let result = try runSwiftBridgeCommand(
         arguments: [
-            "../fixture/ios/Runner/CameraPlugin.swift",
+            sourcePath,
             "--project", "/fixture",
             "--path", "ios/Runner/CameraPlugin.swift",
             "--generated-at", "2026-09-04T12:00:00.000Z",
@@ -24,7 +33,7 @@ func convertsSwiftSourceToExchangeDocument() throws {
     #expect(json["project"] as? String == "/fixture")
     #expect((json["facts"] as? [Any])?.count == 5)
     let expected = try String(
-        contentsOfFile: "../expected/swift.json",
+        contentsOf: phase0Root.appendingPathComponent("expected/swift.json"),
         encoding: .utf8
     )
     #expect(result.standardOutput == expected)
@@ -60,6 +69,8 @@ func rejectsUnsafeSwiftMetadata() {
         (project: "/fixture\nevil", path: "ios/Plugin.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "../private.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "\\server\\private.swift", generatedAt: "2026-09-04T12:00:00Z"),
+        (project: "/fixture", path: "C:/private.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "ios/Plugin\n.swift", generatedAt: "2026-09-04T12:00:00Z"),
         (project: "/fixture", path: "ios/Plugin.swift", generatedAt: "2026-02-31T12:00:00Z"),
     ]

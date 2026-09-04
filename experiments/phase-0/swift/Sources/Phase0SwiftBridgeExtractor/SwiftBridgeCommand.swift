@@ -31,7 +31,12 @@ public func runSwiftBridgeCommand(
     guard isValidSwiftBridgeArguments(arguments) else {
         return invalidSwiftBridgeArgumentsResult()
     }
-    let source = try readSource(arguments[0])
+    let source: String
+    do {
+        source = try readSource(arguments[0])
+    } catch {
+        throw SwiftBridgeCommandFailure.sourceRead
+    }
     let facts = try SwiftBridgeFactExtractor().extract(
         source: source,
         relativePath: arguments[4]
@@ -58,19 +63,36 @@ public func executeSwiftBridgeCommand(
             arguments: arguments,
             readSource: readSource
         )
+    } catch SwiftBridgeCommandFailure.sourceRead {
+        return SwiftBridgeCommandResult(
+            standardOutput: "",
+            standardError: "Unable to read the source file; check its path and permissions.\n",
+            exitCode: 2
+        )
     } catch is SwiftBridgeExtractionError {
         return SwiftBridgeCommandResult(
             standardOutput: "",
             standardError: "Unable to parse the source file; fix syntax errors and retry.\n",
             exitCode: 2
         )
+    } catch is EncodingError {
+        return SwiftBridgeCommandResult(
+            standardOutput: "",
+            standardError: "Unable to encode the bridge facts document; retry.\n",
+            exitCode: 2
+        )
     } catch {
         return SwiftBridgeCommandResult(
             standardOutput: "",
-            standardError: "Unable to read the source file; check its path and permissions.\n",
+            standardError: "Unable to extract bridge facts; retry.\n",
             exitCode: 2
         )
     }
+}
+
+/// 외부 파일 읽기 실패를 다른 추출·인코딩 오류와 구분한다.
+private enum SwiftBridgeCommandFailure: Error {
+    case sourceRead
 }
 
 /// 잘못된 공개 API·CLI 인자를 안전한 사용법 결과로 바꾼다.

@@ -231,9 +231,8 @@ public func makeSwiftBridgeFactsDocument(
     let dynamicMethods = facts.filter {
         $0.kind == "method-handle" && $0.dynamic
     }.count
-    let missingHandlerUSRs = facts.filter {
-        $0.kind == "method-handle" && $0.symbol?.usr == nil
-    }.count
+    // Phase 0 구문 실험은 컴파일러 인덱스가 없어 모든 handler USR이 비어 있다.
+    let missingHandlerUSRs = facts.filter { $0.kind == "method-handle" }.count
     var limitations: [String] = []
     if dynamicChannels > 0 {
         limitations.append(
@@ -483,11 +482,17 @@ private final class BridgeFactCollector: SyntaxVisitor {
     /// FlutterMethodChannel의 name 인자를 변수의 채널 값으로 보존한다.
     private func recordChannelCreation(variableName: String, expression: ExprSyntax) {
         guard let call = expression.as(FunctionCallExprSyntax.self),
-              isFlutterMethodChannel(call),
-              let argument = call.arguments.first(where: { $0.label?.text == "name" })
+              let channel = channelCreated(by: call)
         else { return }
-        let channel = bridgeName(argument.expression)
         channelScopes[channelScopes.count - 1][variableName] = channel
+    }
+
+    /// FlutterMethodChannel 생성 호출의 name 인자를 브리지 이름으로 바꾼다.
+    private func channelCreated(by call: FunctionCallExprSyntax) -> BridgeName? {
+        guard isFlutterMethodChannel(call),
+              let argument = call.arguments.first(where: { $0.label?.text == "name" })
+        else { return nil }
+        return bridgeName(argument.expression)
     }
 
     /// 호출 대상이 FlutterMethodChannel 생성자인지 구문으로 확인한다.
@@ -502,10 +507,28 @@ private final class BridgeFactCollector: SyntaxVisitor {
     ) -> (value: String, isDynamic: Bool)? {
         guard let member = call.calledExpression.as(MemberAccessExprSyntax.self),
               member.declName.baseName.text == "setMethodCallHandler",
+              call.trailingClosure != nil || call.arguments.first != nil,
               call.arguments.first?.expression.as(NilLiteralExprSyntax.self) == nil,
-              let receiver = member.base?.as(DeclReferenceExprSyntax.self)
+              let receiver = member.base,
+              let channel = channel(for: receiver)
         else { return nil }
-        return channel(named: receiver.baseName.text)
+        return channel
+    }
+
+    /// 단순 변수, self 프로퍼티, 즉석 생성자에서 채널을 해석한다.
+    private func channel(for receiver: ExprSyntax) -> BridgeName? {
+        if let reference = receiver.as(DeclReferenceExprSyntax.self) {
+            return channel(named: reference.baseName.text)
+        }
+        if let member = receiver.as(MemberAccessExprSyntax.self),
+           let base = member.base?.as(DeclReferenceExprSyntax.self),
+           base.baseName.text == "self" || base.baseName.text == "Self" {
+            return channel(named: member.declName.baseName.text)
+        }
+        if let creation = receiver.as(FunctionCallExprSyntax.self) {
+            return channelCreated(by: creation)
+        }
+        return nil
     }
 
     /// 실제 setMethodCallHandler 호출을 channel-register 사실로 만든다.
@@ -526,7 +549,8 @@ private final class BridgeFactCollector: SyntaxVisitor {
     private func handlerCallParameterName(_ call: FunctionCallExprSyntax) -> String? {
         let closure = call.trailingClosure
             ?? call.arguments.first?.expression.as(ClosureExprSyntax.self)
-        guard let parameters = closure?.signature?.parameterClause else { return nil }
+        guard let closure else { return nil }
+        guard let parameters = closure.signature?.parameterClause else { return "$0" }
         let name: String?
         switch parameters {
         case let .simpleInput(list):
