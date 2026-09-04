@@ -52,6 +52,41 @@ test('채널 질의가 생성 위치와 등록 위치를 양방향으로 답한�
   assert.deepEqual(document.limitations, joined.limitations);
 });
 
+test('생성 없는 등록-only 채널도 수신 위치를 질의할 수 있다', () => {
+  const receiverWithOrphan = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel: 'dev.isthmus/native-only',
+        dynamic: false,
+        location: {
+          path: 'ios/NativeOnlyPlugin.swift',
+          line: 4,
+          column: 9,
+        },
+      },
+    ],
+  });
+  const joined = joinBridgeDocuments([dartDocument, receiverWithOrphan]);
+
+  const document = createBridgeQuery(joined, 'dev.isthmus/native-only');
+
+  assert.equal(document.status, 'found');
+  assert.deepEqual(document.result?.usedBy, []);
+  assert.deepEqual(document.result?.dependsOn, [
+    {
+      platform: 'swift',
+      location: {
+        path: 'ios/NativeOnlyPlugin.swift',
+        line: 4,
+        column: 9,
+      },
+    },
+  ]);
+});
+
 test('메서드 질의가 호출 위치와 핸들러 위치를 양방향으로 답한다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
 
@@ -323,6 +358,21 @@ test('query JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () =
   assert.ok(encoded.indexOf('"result"') < encoded.indexOf('"status"'));
   assert.equal(encoded.endsWith('\n'), true);
   assert.equal(encoded, encodeBridgeQuery(document));
+});
+
+test('보류된 조인을 notFound query로 만들지 않는다', () => {
+  const joined = joinBridgeDocuments([
+    dartDocument,
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, 'mixed-targets: multiple bridges'],
+    }),
+  ]);
+
+  assert.throws(
+    () => createBridgeQuery(joined, 'takePhoto'),
+    /Cannot query a deferred bridge join\./,
+  );
 });
 
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */

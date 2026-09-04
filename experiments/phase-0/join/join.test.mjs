@@ -149,6 +149,9 @@ test('채널을 모르는 핸들러는 호출 없음으로 판정하지 않는�
       column: 10,
     },
   });
+  swiftWithUnknownChannel.limitations.push(
+    'unattributed-method-handles: 1 handler has no channel',
+  );
 
   const report = joinBridgeFacts(dartDocument, swiftWithUnknownChannel);
 

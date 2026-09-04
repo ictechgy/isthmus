@@ -186,6 +186,7 @@ test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한
       },
     ],
     unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
     matchedMethods: [],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
@@ -206,6 +207,7 @@ test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합
     deferred: false,
     matchedChannels: [],
     unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
     matchedMethods: [
       {
         target: 'flutter',
@@ -279,6 +281,7 @@ test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', (
       },
     ],
     unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
     matchedMethods: [
       {
         target: 'flutter',
@@ -312,6 +315,7 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
     deferred: false,
     matchedChannels: [],
     unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
     matchedMethods: [
       {
         target: 'flutter',
@@ -362,6 +366,21 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
     qualifiedName: 'Plugin.handle',
     usr: 's:Plugin.handle',
   });
+});
+
+test('보류된 조인을 빈 graph로 만들지 않는다', () => {
+  const joined = joinBridgeDocuments([
+    dartDocument,
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, 'mixed-targets: multiple bridges'],
+    }),
+  ]);
+
+  assert.throws(
+    () => createBridgeGraph(joined),
+    /Cannot create a graph from a deferred bridge join\./,
+  );
 });
 
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */

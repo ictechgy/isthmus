@@ -5,6 +5,7 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
+import { isBridgeJoinDeferred } from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** query가 식별한 채널 또는 메서드 키다. */
@@ -43,6 +44,9 @@ export function createBridgeQuery(
   joined: BridgeJoinResult,
   requested: string,
 ): BridgeQueryDocument {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot query a deferred bridge join.');
+  }
   const results = [...channelResults(joined), ...methodResults(joined)];
   const exact = results.filter(
     ({ subject }) => subject.qualifiedName === requested,
@@ -144,7 +148,11 @@ function channelResults(
     .map(({ target, channel, creations }) =>
       makeQueryResult(target, channel, 'channel', creations, []),
     );
-  return [...matched, ...unregistered];
+  const registrations = joined.registrationsWithoutCreations
+    .map(({ target, channel, registrations }) =>
+      makeQueryResult(target, channel, 'channel', [], registrations),
+    );
+  return [...matched, ...unregistered, ...registrations];
 }
 
 /** 조인 키와 양쪽 증거를 query result 골격으로 바꾼다. */

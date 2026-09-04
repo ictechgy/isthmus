@@ -195,6 +195,71 @@ test('method가 아닌 fact에는 method 필드를 허용하지 않는다', () =
   );
 });
 
+test('channel null은 귀속할 수 없는 method-handle에만 허용한다', () => {
+  const invalidFacts = [
+    { ...validMethodFact, channel: null },
+    {
+      kind: 'channel-create',
+      channel: null,
+      dynamic: false,
+      location: { path: 'lib/camera.dart', line: 1, column: 1 },
+    },
+    {
+      kind: 'channel-register',
+      channel: null,
+      dynamic: false,
+      location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+    },
+  ];
+
+  for (const fact of invalidFacts) {
+    const platform = fact.kind === 'channel-register' ? 'swift' : 'dart';
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform,
+        target: 'flutter',
+        facts: [fact],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Invalid fact channel at index 0.',
+      },
+    );
+  }
+});
+
+test('귀속할 수 없는 method-handle은 원인을 limitation으로 알려야 한다', () => {
+  const unattributedHandler = {
+    kind: 'method-handle',
+    channel: null,
+    method: 'takePhoto',
+    dynamic: false,
+    location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+  };
+
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'swift',
+      target: 'flutter',
+      facts: [unattributedHandler],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Unattributed method handles require a limitation.',
+    },
+  );
+
+  assert.doesNotThrow(() => parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'swift',
+    target: 'flutter',
+    facts: [unattributedHandler],
+    limitations: ['unattributed-method-handles: 1 handler has no channel'],
+  }));
+});
+
 test('객체가 아닌 JSON 루트를 안전한 검증 오류로 거부한다', () => {
   assert.throws(() => parseBridgeFactsDocument(null), {
     name: 'BridgeFactsValidationError',

@@ -29,6 +29,13 @@ export interface UnregisteredChannelCreation {
   readonly creations: readonly BridgeEndpoint[];
 }
 
+/** 생성을 찾지 못한 논리 채널과 모든 등록 증거다. */
+export interface RegistrationWithoutCreation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly registrations: readonly BridgeEndpoint[];
+}
+
 /** 논리 메서드 하나에 모인 양쪽 호출·핸들러 증거다. */
 export interface MatchedMethod {
   readonly target: BridgeTarget;
@@ -66,6 +73,7 @@ export interface BridgeJoinResult {
   readonly deferred: boolean;
   readonly matchedChannels: readonly MatchedChannel[];
   readonly unregisteredChannelCreations: readonly UnregisteredChannelCreation[];
+  readonly registrationsWithoutCreations: readonly RegistrationWithoutCreation[];
   readonly matchedMethods: readonly MatchedMethod[];
   readonly unhandledInvocations: readonly UnhandledInvocation[];
   readonly handlersWithoutInvocations: readonly HandlerWithoutInvocation[];
@@ -104,6 +112,14 @@ export function joinBridgeDocuments(
     .filter((group) => group.creations.length > 0 && group.registrations.length === 0)
     .map(({ target, channel, creations }) => ({ target, channel, creations }))
     .sort(compareChannels);
+  const registrationsWithoutCreations = [...groups.values()]
+    .filter((group) => group.registrations.length > 0 && group.creations.length === 0)
+    .map(({ target, channel, registrations }) => ({
+      target,
+      channel,
+      registrations,
+    }))
+    .sort(compareChannels);
   const methodGroups = collectMethodGroups(documents);
   const matchedMethods = [...methodGroups.values()]
     .filter((group) => group.invocations.length > 0 && group.handlers.length > 0)
@@ -130,6 +146,7 @@ export function joinBridgeDocuments(
     deferred: false,
     matchedChannels,
     unregisteredChannelCreations,
+    registrationsWithoutCreations,
     matchedMethods,
     unhandledInvocations,
     handlersWithoutInvocations,
@@ -153,7 +170,9 @@ function validateProjects(documents: readonly BridgeFactsDocument[]): void {
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */
 function hasMixedTargets(document: BridgeFactsDocument): boolean {
-  return document.limitations.some((message) => message.startsWith('mixed-targets:'));
+  return document.limitations.some((message) =>
+    /^mixed-targets(?::|\s|$)/i.test(message.trimStart()),
+  );
 }
 
 /** 안전하게 조인을 보류하면서 입력 한계만 전달한다. */
@@ -162,6 +181,7 @@ function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResu
     deferred: true,
     matchedChannels: [],
     unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
     matchedMethods: [],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],

@@ -106,6 +106,43 @@ test('같은 심볼의 여러 핸들러 위치를 보존 근거 하나로 합친
   assert.equal(document.retentions.length, 1);
 });
 
+test('USR과 qualifiedName dedup namespace가 충돌하지 않는다', () => {
+  const swiftWithCollidingSymbols = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'method-handle',
+        channel: 'dev.isthmus/camera',
+        method: 'takePhoto',
+        dynamic: false,
+        location: {
+          path: 'ios/Generated/OtherPlugin.swift',
+          line: 5,
+          column: 9,
+        },
+        symbol: {
+          qualifiedName: 'OtherPlugin.handle',
+          usr: 'name:CameraPlugin.register',
+        },
+      },
+    ],
+  });
+  const joined = joinBridgeDocuments([dartDocument, swiftWithCollidingSymbols]);
+
+  const document = createCartographRetentionsDocument(
+    joined,
+    '2026-09-04T13:00:00Z',
+    '0.0.0',
+  );
+
+  assert.equal(document.retentions.length, 2);
+  assert.deepEqual(
+    document.retentions.map(({ symbol }) => symbol.qualifiedName),
+    ['OtherPlugin.handle', 'CameraPlugin.register'],
+  );
+});
+
 test('외부 보존 JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
   const document = createCartographRetentionsDocument(
