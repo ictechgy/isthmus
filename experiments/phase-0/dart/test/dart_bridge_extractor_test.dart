@@ -166,6 +166,70 @@ void ping() {
     ]);
   });
 
+  test('동적 이름으로 만든 채널의 메서드 호출을 동적 사실로 보존한다', () {
+    const source = """
+import 'package:flutter/services.dart';
+void invoke(String channelName) {
+  final channel = MethodChannel(channelName);
+  channel.invokeMethod('send');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/dynamic_channel.dart',
+    );
+    final method = facts
+        .map((fact) => fact.toJson())
+        .singleWhere((fact) => fact['kind'] == 'method-invoke');
+
+    expect(method, containsPair('channel', 'channelName'));
+    expect(method, containsPair('method', 'send'));
+    expect(method, containsPair('dynamic', true));
+  });
+
+  test('재할당된 채널 변수는 최신 생성자 이름으로 호출을 연결한다', () {
+    const source = """
+import 'package:flutter/services.dart';
+void invoke() {
+  var channel = MethodChannel('dev.isthmus/first');
+  channel = MethodChannel('dev.isthmus/second');
+  channel.invokeMethod('send');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/reassigned.dart',
+    );
+    final method = facts
+        .map((fact) => fact.toJson())
+        .singleWhere((fact) => fact['kind'] == 'method-invoke');
+
+    expect(method, containsPair('channel', 'dev.isthmus/second'));
+  });
+
+  test('채널이 아닌 값으로 재할당하면 이전 연결을 제거한다', () {
+    const source = """
+import 'package:flutter/services.dart';
+void invoke(Object replacement) {
+  var channel = MethodChannel('dev.isthmus/first');
+  channel = replacement;
+  channel.invokeMethod('notAChannelCall');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/reassigned.dart',
+    );
+
+    expect(
+      facts.map((fact) => fact.toJson()),
+      isNot(contains(containsPair('kind', 'method-invoke'))),
+    );
+  });
+
   test('Flutter services import 없는 같은 이름 호출을 브리지로 오인하지 않는다', () {
     const source = """
 Object MethodChannel(String name) => Object();
@@ -180,6 +244,51 @@ void create() {
     );
 
     expect(facts, isEmpty);
+  });
+
+  test('MethodChannel을 숨긴 Flutter import는 provenance로 인정하지 않는다', () {
+    const source = """
+import 'package:flutter/services.dart' hide MethodChannel;
+Object MethodChannel(String name) => Object();
+void create() {
+  MethodChannel('not-flutter');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/hidden.dart',
+    );
+
+    expect(facts, isEmpty);
+  });
+
+  test('접두사로 가져온 Flutter MethodChannel을 추출한다', () {
+    const source = """
+import 'package:flutter/services.dart' as services;
+final channel = services.MethodChannel('dev.isthmus/prefixed');
+void invoke() {
+  channel.invokeMethod('send');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/prefixed.dart',
+    );
+    final methods = facts
+        .map((fact) => fact.toJson())
+        .where((fact) => fact['kind'] == 'method-invoke');
+
+    expect(
+      methods,
+      contains(
+        allOf(
+          containsPair('channel', 'dev.isthmus/prefixed'),
+          containsPair('method', 'send'),
+        ),
+      ),
+    );
   });
 
   test('다른 함수의 같은 변수 이름을 채널 호출로 연결하지 않는다', () {
@@ -222,6 +331,33 @@ void unrelated(Object channel) {
       facts.map((fact) => fact.toJson()),
       isNot(contains(containsPair('kind', 'method-invoke'))),
     );
+  });
+
+  test('catch·for-in·지역 함수 이름은 바깥 채널 변수를 가린다', () {
+    const source = """
+import 'package:flutter/services.dart';
+final channel = MethodChannel('dev.isthmus/test');
+void shadows(Iterable<Object> channels) {
+  try {} catch (channel) {
+    channel.invokeMethod('catchCall');
+  }
+  for (final channel in channels) {
+    channel.invokeMethod('loopCall');
+  }
+  void channel() {}
+  channel.invokeMethod('functionCall');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/shadows.dart',
+    );
+    final methods = facts
+        .map((fact) => fact.toJson())
+        .where((fact) => fact['kind'] == 'method-invoke');
+
+    expect(methods, isEmpty);
   });
 
   test('다른 클래스의 같은 필드 이름을 채널 호출로 연결하지 않는다', () {

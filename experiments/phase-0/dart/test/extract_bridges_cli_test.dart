@@ -115,4 +115,36 @@ void main() {
     expect(result.stderr, isNot(contains('invalid_dart.txt')));
     expect(result.stderr, isNot(contains('package:analyzer')));
   });
+
+  test('UTF-8이 아닌 소스도 스택과 경로 없는 종료 코드 2로 보고한다', () async {
+    final temporaryDirectory = await Directory.systemTemp.createTemp(
+      'isthmus-phase0-dart-',
+    );
+    final sourceFile = File('${temporaryDirectory.path}/private.dart');
+    try {
+      await sourceFile.writeAsBytes([0xff], flush: true);
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'bin/extract_bridges.dart',
+        sourceFile.path,
+        '--project',
+        '/fixture',
+        '--path',
+        'lib/private_source.dart',
+        '--generated-at',
+        '2026-09-04T12:00:00Z',
+      ]);
+
+      expect(result.exitCode, 2);
+      expect(result.stdout, isEmpty);
+      expect(
+        result.stderr,
+        'Unable to read the source file; check its path and permissions.\n',
+      );
+      expect(result.stderr, isNot(contains(sourceFile.path)));
+      expect(result.stderr, isNot(contains('FormatException')));
+    } finally {
+      await temporaryDirectory.delete(recursive: true);
+    }
+  });
 }

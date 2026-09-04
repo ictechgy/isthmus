@@ -41,18 +41,42 @@ List<BridgeFact> extractDartBridgeFacts({
   required String relativePath,
 }) {
   final parseResult = parseString(content: source, throwIfDiagnostics: true);
-  if (!_importsFlutterServices(parseResult.unit)) return const [];
-  final visitor = _BridgeFactVisitor(relativePath, parseResult.lineInfo);
+  final flutterPrefixes = _flutterServicesPrefixes(parseResult.unit);
+  if (flutterPrefixes.isEmpty) return const [];
+  final visitor = _BridgeFactVisitor(
+    relativePath,
+    parseResult.lineInfo,
+    flutterPrefixes,
+  );
   parseResult.unit.accept(visitor);
   return List.unmodifiable(visitor.facts);
 }
 
-/// 파일이 실제 Flutter services 라이브러리를 가져오는지 확인한다.
-bool _importsFlutterServices(CompilationUnit unit) =>
-    unit.directives.whereType<ImportDirective>().any(
+/// Flutter services가 MethodChannel을 노출하는 import 접두사를 모은다.
+Set<String?> _flutterServicesPrefixes(CompilationUnit unit) => unit.directives
+    .whereType<ImportDirective>()
+    .where(
       (directive) =>
-          directive.uri.stringValue == 'package:flutter/services.dart',
-    );
+          directive.uri.stringValue == 'package:flutter/services.dart' &&
+          _exposesMethodChannel(directive.combinators),
+    )
+    .map((directive) => directive.prefix?.name)
+    .toSet();
+
+/// import 조합자가 MethodChannel 이름을 현재 파일에 노출하는지 확인한다.
+bool _exposesMethodChannel(NodeList<Combinator> combinators) {
+  final hidesMethodChannel = combinators.whereType<HideCombinator>().any(
+    (combinator) =>
+        combinator.hiddenNames.any((name) => name.name == 'MethodChannel'),
+  );
+  if (hidesMethodChannel) return false;
+  final showCombinators = combinators.whereType<ShowCombinator>();
+  return showCombinators.isEmpty ||
+      showCombinators.any(
+        (combinator) =>
+            combinator.shownNames.any((name) => name.name == 'MethodChannel'),
+      );
+}
 
 /// 추출 사실을 GRAPH-EXCHANGE 문서로 감싼다.
 Map<String, Object?> createDartBridgeFactsDocument({
@@ -92,7 +116,7 @@ int _dynamicCount(List<BridgeFact> facts, String kind) => facts
 /// MethodChannel 생성 지점을 방문해 사실로 바꾼다.
 final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 파일 위치를 포함하는 방문자를 만든다.
-  _BridgeFactVisitor(this.relativePath, this.lineInfo);
+  _BridgeFactVisitor(this.relativePath, this.lineInfo, this.flutterPrefixes);
 
   /// 공개 가능한 프로젝트 상대 경로다.
   final String relativePath;
@@ -100,11 +124,14 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 소스 오프셋을 줄과 열로 바꾼다.
   final LineInfo lineInfo;
 
+  /// MethodChannel을 노출하는 Flutter import 접두사다.
+  final Set<String?> flutterPrefixes;
+
   /// 소스에서 찾은 브리지 사실이다.
   final List<BridgeFact> facts = [];
 
   /// 어휘 범위별 변수 이름과 리터럴 채널 이름이다.
-  final List<Map<String, String>> _channelScopes = [{}];
+  final List<Map<String, _BridgeName>> _channelScopes = [{}];
 
   /// 어휘 범위별 한 단계 문자열 상수다.
   final List<Map<String, String>> _stringConstantScopes = [{}];
@@ -128,7 +155,49 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   void visitBlock(Block node) {
     _pushScope();
     try {
+      for (final statement in node.statements) {
+        if (statement is FunctionDeclarationStatement) {
+          _declare(statement.functionDeclaration.name.lexeme);
+        }
+      }
       super.visitBlock(node);
+    } finally {
+      _popScope();
+    }
+  }
+
+  /// 지역 함수 이름을 현재 범위에 선언한다.
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    _declare(node.name.lexeme);
+    super.visitFunctionDeclaration(node);
+  }
+
+  /// catch 매개변수를 해당 절의 어휘 범위에 선언한다.
+  @override
+  void visitCatchClause(CatchClause node) {
+    _pushScope();
+    try {
+      final exceptionName = node.exceptionParameter?.name.lexeme;
+      final stackTraceName = node.stackTraceParameter?.name.lexeme;
+      if (exceptionName != null) _declare(exceptionName);
+      if (stackTraceName != null) _declare(stackTraceName);
+      super.visitCatchClause(node);
+    } finally {
+      _popScope();
+    }
+  }
+
+  /// for 문의 선언 변수를 루프 범위에만 둔다.
+  @override
+  void visitForStatement(ForStatement node) {
+    _pushScope();
+    try {
+      final parts = node.forLoopParts;
+      if (parts is ForEachPartsWithDeclaration) {
+        _declare(parts.loopVariable.name.lexeme);
+      }
+      super.visitForStatement(node);
     } finally {
       _popScope();
     }
@@ -165,6 +234,16 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     super.visitVariableDeclaration(node);
   }
 
+  /// 단순 변수 재할당은 최신 채널 생성으로 갱신하거나 기존 연결을 지운다.
+  @override
+  void visitAssignmentExpression(AssignmentExpression node) {
+    final left = node.leftHandSide;
+    if (node.operator.lexeme == '=' && left is SimpleIdentifier) {
+      _assignChannel(left.name, _channelCreatedBy(node.rightHandSide));
+    }
+    super.visitAssignmentExpression(node);
+  }
+
   /// 리터럴 문자열 상수만 이름으로 보존한다.
   void _recordStringConstant(VariableDeclaration declaration) {
     final initializer = declaration.initializer;
@@ -194,11 +273,19 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
 
   /// 생성자 타입이 Flutter MethodChannel인지 확인한다.
   bool _isMethodChannel(InstanceCreationExpression node) =>
-      node.constructorName.type.name.lexeme == 'MethodChannel';
+      node.constructorName.type.name.lexeme == 'MethodChannel' &&
+      flutterPrefixes.contains(
+        node.constructorName.type.importPrefix?.name.lexeme,
+      );
 
   /// 대상 없는 MethodChannel 호출이 미해석 생성자 표현인지 확인한다.
   bool _isUnresolvedMethodChannel(MethodInvocation node) =>
-      node.target == null && node.methodName.name == 'MethodChannel';
+      node.methodName.name == 'MethodChannel' &&
+      (node.target == null && flutterPrefixes.contains(null) ||
+          node.target is SimpleIdentifier &&
+              flutterPrefixes.contains(
+                (node.target! as SimpleIdentifier).name,
+              ));
 
   /// 변수 선언의 채널 이름이 리터럴이면 후속 호출을 위해 보존한다.
   void _recordChannelVariable(
@@ -207,8 +294,23 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   ) {
     if (arguments.arguments.isEmpty) return;
     final channel = _bridgeName(arguments.arguments.first);
-    if (channel.isDynamic) return;
-    _channelScopes.last[declaration.name.lexeme] = channel.value;
+    _channelScopes.last[declaration.name.lexeme] = channel;
+  }
+
+  /// 생성자 표현식이면 첫 인자의 채널 이름을 반환한다.
+  _BridgeName? _channelCreatedBy(Expression expression) {
+    final ArgumentList? arguments;
+    if (expression is MethodInvocation &&
+        _isUnresolvedMethodChannel(expression)) {
+      arguments = expression.argumentList;
+    } else if (expression is InstanceCreationExpression &&
+        _isMethodChannel(expression)) {
+      arguments = expression.argumentList;
+    } else {
+      return null;
+    }
+    if (arguments.arguments.isEmpty) return null;
+    return _bridgeName(arguments.arguments.first);
   }
 
   /// 첫 인자가 리터럴일 때 채널 생성 사실을 추가한다.
@@ -246,9 +348,9 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
       _fact(
         node.methodName.offset,
         'method-invoke',
-        channel,
+        channel.value,
         method: method.value,
-        isDynamic: method.isDynamic,
+        isDynamic: channel.isDynamic || method.isDynamic,
       ),
     );
   }
@@ -317,8 +419,21 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 현재 범위에 이름을 선언해 바깥 바인딩을 가린다.
   void _declare(String name) => _declaredNameScopes.last.add(name);
 
+  /// 선언된 가장 가까운 범위의 채널 바인딩을 갱신한다.
+  void _assignChannel(String name, _BridgeName? channel) {
+    for (var index = _channelScopes.length - 1; index >= 0; index--) {
+      if (!_declaredNameScopes[index].contains(name)) continue;
+      if (channel == null) {
+        _channelScopes[index].remove(name);
+      } else {
+        _channelScopes[index][name] = channel;
+      }
+      return;
+    }
+  }
+
   /// 가장 가까운 선언 범위에서 채널 변수를 찾는다.
-  String? _channel({required String named}) {
+  _BridgeName? _channel({required String named}) {
     for (var index = _channelScopes.length - 1; index >= 0; index--) {
       final value = _channelScopes[index][named];
       if (value != null) return value;
@@ -337,3 +452,6 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     return null;
   }
 }
+
+/// 정적 값 또는 동적 원문을 함께 보존하는 브리지 이름이다.
+typedef _BridgeName = ({String value, bool isDynamic});
