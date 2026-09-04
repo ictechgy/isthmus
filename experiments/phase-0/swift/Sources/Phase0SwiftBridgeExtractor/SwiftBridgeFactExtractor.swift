@@ -80,8 +80,12 @@ public struct SwiftBridgeFactExtractor: Sendable {
     public init() {}
 
     /// Swift 소스 하나에서 브리지 사실을 찾는다.
-    public func extract(source: String, relativePath: String) -> [BridgeFact] {
+    public func extract(source: String, relativePath: String) throws -> [BridgeFact] {
         let tree = Parser.parse(source: source)
+        guard !tree.hasError else { throw SwiftBridgeExtractionError.invalidSyntax }
+        let importDetector = FlutterImportDetector()
+        importDetector.walk(tree)
+        guard importDetector.hasFlutterImport else { return [] }
         let converter = SourceLocationConverter(fileName: relativePath, tree: tree)
         let collector = BridgeFactCollector(
             relativePath: relativePath,
@@ -89,6 +93,27 @@ public struct SwiftBridgeFactExtractor: Sendable {
         )
         collector.walk(tree)
         return collector.facts
+    }
+}
+
+/// SwiftParser가 복구 노드를 만든 잘못된 소스를 나타낸다.
+public enum SwiftBridgeExtractionError: Error, Sendable {
+    case invalidSyntax
+}
+
+/// 파일이 실제 Flutter 모듈을 가져오는지 구문으로 확인한다.
+private final class FlutterImportDetector: SyntaxVisitor {
+    private(set) var hasFlutterImport = false
+
+    init() {
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: ImportDeclSyntax) -> SyntaxVisitorContinueKind {
+        if node.path.trimmedDescription == "Flutter" {
+            hasFlutterImport = true
+        }
+        return .skipChildren
     }
 }
 
@@ -104,6 +129,7 @@ public struct BridgeFactsDocument: Encodable, Sendable {
         self.generatedAt = generatedAt
         self.project = project
         self.facts = facts
+        self.target = facts.isEmpty ? nil : "flutter"
         self.limitations = limitations
     }
 
@@ -125,8 +151,8 @@ public struct BridgeFactsDocument: Encodable, Sendable {
     /// 추출한 소스 플랫폼이다.
     public let platform = "swift"
 
-    /// 검증 중인 브리지 메커니즘이다.
-    public let target = "flutter"
+    /// 사실이 있을 때 검증 중인 브리지 메커니즘이다.
+    public let target: String?
 
     /// 분석 대상의 절대 경로다.
     public let project: String
@@ -136,6 +162,36 @@ public struct BridgeFactsDocument: Encodable, Sendable {
 
     /// 동적 이름으로 생긴 분석 한계다.
     public let limitations: [String]
+
+    /// 선택 target도 빈 문서에서는 명시적인 JSON null로 인코딩한다.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(format, forKey: .format)
+        try container.encode(version, forKey: .version)
+        try container.encode(tool, forKey: .tool)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encode(platform, forKey: .platform)
+        if let target {
+            try container.encode(target, forKey: .target)
+        } else {
+            try container.encodeNil(forKey: .target)
+        }
+        try container.encode(project, forKey: .project)
+        try container.encode(facts, forKey: .facts)
+        try container.encode(limitations, forKey: .limitations)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case format
+        case version
+        case tool
+        case generatedAt
+        case platform
+        case target
+        case project
+        case facts
+        case limitations
+    }
 }
 
 /// 교환 문서를 만든 도구의 신원이다.
@@ -172,6 +228,9 @@ public func makeSwiftBridgeFactsDocument(
     let dynamicChannels = facts.filter {
         $0.kind == "channel-register" && $0.dynamic
     }.count
+    let dynamicMethods = facts.filter {
+        $0.kind == "method-handle" && $0.dynamic
+    }.count
     let missingHandlerUSRs = facts.filter {
         $0.kind == "method-handle" && $0.symbol?.usr == nil
     }.count
@@ -179,6 +238,11 @@ public func makeSwiftBridgeFactsDocument(
     if dynamicChannels > 0 {
         limitations.append(
             "dynamic-channel-names: \(dynamicChannels) channel constructors use a non-literal name"
+        )
+    }
+    if dynamicMethods > 0 {
+        limitations.append(
+            "dynamic-method-names: \(dynamicMethods) method handlers use a non-literal name"
         )
     }
     if missingHandlerUSRs > 0 {
@@ -206,14 +270,17 @@ private final class BridgeFactCollector: SyntaxVisitor {
     /// 추출된 브리지 사실이다.
     private(set) var facts: [BridgeFact] = []
 
-    /// 한 단계 추적할 문자열 상수다.
-    private var stringConstants: [String: String] = [:]
+    /// 어휘 범위별 한 단계 문자열 상수다.
+    private var stringConstantScopes: [[String: String]] = [[:]]
 
-    /// 변수 이름별 채널 값과 동적 여부다.
-    private var channelsByVariable: [String: (value: String, isDynamic: Bool)] = [:]
+    /// 어휘 범위별 채널 변수의 값과 동적 여부다.
+    private var channelScopes: [[String: BridgeName]] = [[:]]
 
-    /// 현재 순회 중인 setMethodCallHandler의 채널 문맥이다.
-    private var handlerChannels: [(value: String, isDynamic: Bool)] = []
+    /// 바깥 범위의 같은 이름을 가리는 선언 이름이다.
+    private var declaredNameScopes: [Set<String>] = [[]]
+
+    /// 현재 순회 중인 setMethodCallHandler의 채널·호출 매개변수 문맥이다.
+    private var handlerContexts: [HandlerContext] = []
 
     /// 중첩 switch가 call.method를 대상으로 하는지 보존한다.
     private var methodSwitches: [Bool] = []
@@ -230,34 +297,123 @@ private final class BridgeFactCollector: SyntaxVisitor {
     /// 클래스 이름을 하위 사실의 선언 문맥에 추가한다.
     override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
         declarationNames.append(node.name.text)
+        pushScope()
         return .visitChildren
     }
 
     /// 클래스 순회가 끝나면 선언 문맥을 제거한다.
     override func visitPost(_ node: ClassDeclSyntax) {
+        popScope()
+        declarationNames.removeLast()
+    }
+
+    /// 구조체 이름을 하위 사실의 선언 문맥에 추가한다.
+    override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationNames.append(node.name.text)
+        pushScope()
+        return .visitChildren
+    }
+
+    /// 구조체 순회가 끝나면 선언 문맥을 제거한다.
+    override func visitPost(_ node: StructDeclSyntax) {
+        popScope()
+        declarationNames.removeLast()
+    }
+
+    /// 열거형 이름을 하위 사실의 선언 문맥에 추가한다.
+    override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationNames.append(node.name.text)
+        pushScope()
+        return .visitChildren
+    }
+
+    /// 열거형 순회가 끝나면 선언 문맥을 제거한다.
+    override func visitPost(_ node: EnumDeclSyntax) {
+        popScope()
+        declarationNames.removeLast()
+    }
+
+    /// actor 이름을 하위 사실의 선언 문맥에 추가한다.
+    override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationNames.append(node.name.text)
+        pushScope()
+        return .visitChildren
+    }
+
+    /// actor 순회가 끝나면 선언 문맥을 제거한다.
+    override func visitPost(_ node: ActorDeclSyntax) {
+        popScope()
+        declarationNames.removeLast()
+    }
+
+    /// 확장 대상 타입을 하위 사실의 선언 문맥에 추가한다.
+    override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationNames.append(node.extendedType.trimmedDescription)
+        pushScope()
+        return .visitChildren
+    }
+
+    /// extension 순회가 끝나면 선언 문맥을 제거한다.
+    override func visitPost(_ node: ExtensionDeclSyntax) {
+        popScope()
         declarationNames.removeLast()
     }
 
     /// 함수 이름을 하위 사실의 선언 문맥에 추가한다.
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
         declarationNames.append(node.name.text)
+        pushScope()
+        for parameter in node.signature.parameterClause.parameters {
+            declare((parameter.secondName ?? parameter.firstName).text)
+        }
         return .visitChildren
     }
 
     /// 함수 순회가 끝나면 선언 문맥을 제거한다.
     override func visitPost(_ node: FunctionDeclSyntax) {
+        popScope()
         declarationNames.removeLast()
+    }
+
+    /// 중첩 코드 블록의 지역 이름을 바깥 범위와 분리한다.
+    override func visit(_ node: CodeBlockSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        return .visitChildren
+    }
+
+    /// 코드 블록을 벗어나면 지역 이름을 제거한다.
+    override func visitPost(_ node: CodeBlockSyntax) {
+        popScope()
+    }
+
+    /// 클로저 매개변수와 지역 선언을 독립된 범위에 둔다.
+    override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+        pushScope()
+        declareClosureParameters(node)
+        return .visitChildren
+    }
+
+    /// 클로저를 벗어나면 그 범위를 제거한다.
+    override func visitPost(_ node: ClosureExprSyntax) {
+        popScope()
     }
 
     /// 문자열 상수와 채널 생성 변수를 소스 순서대로 기록한다.
     override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
         for binding in node.bindings {
-            guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                  let initializer = binding.initializer?.value
-            else { continue }
-            recordConstant(name: pattern.identifier.text, expression: initializer)
+            guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
+                continue
+            }
+            let name = pattern.identifier.text
+            declare(name)
+            guard let initializer = binding.initializer?.value else { continue }
+            recordConstant(
+                name: name,
+                expression: initializer,
+                isImmutable: node.bindingSpecifier.text == "let"
+            )
             recordChannelCreation(
-                variableName: pattern.identifier.text,
+                variableName: name,
                 expression: initializer
             )
         }
@@ -268,19 +424,29 @@ private final class BridgeFactCollector: SyntaxVisitor {
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         if let channel = handlerChannel(node) {
             recordChannelRegistration(node, channel: channel)
-            handlerChannels.append(channel)
+            handlerContexts.append(HandlerContext(
+                channel: channel,
+                callParameterName: handlerCallParameterName(node)
+            ))
         }
         return .visitChildren
     }
 
     /// 핸들러 호출 순회가 끝나면 해당 채널 문맥을 제거한다.
     override func visitPost(_ node: FunctionCallExprSyntax) {
-        if handlerChannel(node) != nil { handlerChannels.removeLast() }
+        if handlerChannel(node) != nil { handlerContexts.removeLast() }
     }
 
     /// call.method switch 여부를 중첩 문맥에 기록한다.
     override func visit(_ node: SwitchExprSyntax) -> SyntaxVisitorContinueKind {
-        methodSwitches.append(!handlerChannels.isEmpty && isMethodSubject(node.subject))
+        methodSwitches.append(
+            handlerContexts.last.map {
+                isMethodSubject(
+                    node.subject,
+                    callParameterName: $0.callParameterName
+                )
+            } ?? false
+        )
         return .visitChildren
     }
 
@@ -292,7 +458,7 @@ private final class BridgeFactCollector: SyntaxVisitor {
     /// call.method의 문자열 case를 method-handle 사실로 기록한다.
     override func visit(_ node: SwitchCaseSyntax) -> SyntaxVisitorContinueKind {
         guard methodSwitches.last == true,
-              let channel = handlerChannels.last,
+              let channel = handlerContexts.last?.channel,
               case let .case(label) = node.label
         else { return .visitChildren }
         for item in label.caseItems {
@@ -302,11 +468,16 @@ private final class BridgeFactCollector: SyntaxVisitor {
     }
 
     /// 보간 없는 문자열 선언만 상수 후보로 보존한다.
-    private func recordConstant(name: String, expression: ExprSyntax) {
-        guard let literal = expression.as(StringLiteralExprSyntax.self),
+    private func recordConstant(
+        name: String,
+        expression: ExprSyntax,
+        isImmutable: Bool
+    ) {
+        guard isImmutable,
+              let literal = expression.as(StringLiteralExprSyntax.self),
               let value = literal.representedLiteralValue
         else { return }
-        stringConstants[name] = value
+        stringConstantScopes[stringConstantScopes.count - 1][name] = value
     }
 
     /// FlutterMethodChannel의 name 인자를 변수의 채널 값으로 보존한다.
@@ -316,7 +487,7 @@ private final class BridgeFactCollector: SyntaxVisitor {
               let argument = call.arguments.first(where: { $0.label?.text == "name" })
         else { return }
         let channel = bridgeName(argument.expression)
-        channelsByVariable[variableName] = channel
+        channelScopes[channelScopes.count - 1][variableName] = channel
     }
 
     /// 호출 대상이 FlutterMethodChannel 생성자인지 구문으로 확인한다.
@@ -331,9 +502,10 @@ private final class BridgeFactCollector: SyntaxVisitor {
     ) -> (value: String, isDynamic: Bool)? {
         guard let member = call.calledExpression.as(MemberAccessExprSyntax.self),
               member.declName.baseName.text == "setMethodCallHandler",
+              call.arguments.first?.expression.as(NilLiteralExprSyntax.self) == nil,
               let receiver = member.base?.as(DeclReferenceExprSyntax.self)
         else { return nil }
-        return channelsByVariable[receiver.baseName.text]
+        return channel(named: receiver.baseName.text)
     }
 
     /// 실제 setMethodCallHandler 호출을 channel-register 사실로 만든다.
@@ -350,9 +522,32 @@ private final class BridgeFactCollector: SyntaxVisitor {
         ))
     }
 
-    /// switch 대상이 call.method 형태인지 확인한다.
-    private func isMethodSubject(_ subject: ExprSyntax) -> Bool {
-        subject.as(MemberAccessExprSyntax.self)?.declName.baseName.text == "method"
+    /// 핸들러 클로저의 첫 번째 호출 매개변수 이름을 얻는다.
+    private func handlerCallParameterName(_ call: FunctionCallExprSyntax) -> String? {
+        let closure = call.trailingClosure
+            ?? call.arguments.first?.expression.as(ClosureExprSyntax.self)
+        guard let parameters = closure?.signature?.parameterClause else { return nil }
+        let name: String?
+        switch parameters {
+        case let .simpleInput(list):
+            name = list.first?.name.text
+        case let .parameterClause(clause):
+            name = clause.parameters.first.map { ($0.secondName ?? $0.firstName).text }
+        }
+        return name == "_" ? nil : name
+    }
+
+    /// switch 대상이 해당 핸들러 매개변수의 method인지 확인한다.
+    private func isMethodSubject(
+        _ subject: ExprSyntax,
+        callParameterName: String?
+    ) -> Bool {
+        guard let callParameterName,
+              let member = subject.as(MemberAccessExprSyntax.self),
+              member.declName.baseName.text == "method",
+              let receiver = member.base?.as(DeclReferenceExprSyntax.self)
+        else { return false }
+        return receiver.baseName.text == callParameterName
     }
 
     /// 문자열 case 하나를 현재 채널의 처리 사실로 바꾼다.
@@ -362,12 +557,11 @@ private final class BridgeFactCollector: SyntaxVisitor {
     ) {
         guard let expression = pattern.as(ExpressionPatternSyntax.self)?.expression else { return }
         let method = bridgeName(expression)
-        guard !method.isDynamic else { return }
         facts.append(BridgeFact(
             kind: "method-handle",
             channel: channel.value,
             method: method.value,
-            dynamic: channel.isDynamic,
+            dynamic: channel.isDynamic || method.isDynamic,
             location: location(of: expression),
             symbol: enclosingSymbol()
         ))
@@ -385,7 +579,7 @@ private final class BridgeFactCollector: SyntaxVisitor {
            let value = literal.representedLiteralValue {
             return (value, false)
         }
-        if let name = referencedName(expression), let value = stringConstants[name] {
+        if let name = referencedName(expression), let value = stringConstant(named: name) {
             return (value, false)
         }
         return (expression.trimmedDescription, true)
@@ -408,4 +602,64 @@ private final class BridgeFactCollector: SyntaxVisitor {
             column: sourceLocation.column
         )
     }
+
+    /// 새 어휘 범위를 만든다.
+    private func pushScope() {
+        stringConstantScopes.append([:])
+        channelScopes.append([:])
+        declaredNameScopes.append([])
+    }
+
+    /// 현재 어휘 범위를 제거한다.
+    private func popScope() {
+        stringConstantScopes.removeLast()
+        channelScopes.removeLast()
+        declaredNameScopes.removeLast()
+    }
+
+    /// 현재 범위에 이름을 선언해 바깥 바인딩을 가린다.
+    private func declare(_ name: String) {
+        guard name != "_" else { return }
+        declaredNameScopes[declaredNameScopes.count - 1].insert(name)
+    }
+
+    /// 클로저의 명시적 매개변수 이름을 현재 범위에 선언한다.
+    private func declareClosureParameters(_ closure: ClosureExprSyntax) {
+        guard let parameters = closure.signature?.parameterClause else { return }
+        switch parameters {
+        case let .simpleInput(list):
+            for parameter in list { declare(parameter.name.text) }
+        case let .parameterClause(clause):
+            for parameter in clause.parameters {
+                declare((parameter.secondName ?? parameter.firstName).text)
+            }
+        }
+    }
+
+    /// 가장 가까운 선언 범위에서 문자열 상수를 찾는다.
+    private func stringConstant(named name: String) -> String? {
+        for index in stringConstantScopes.indices.reversed() {
+            if let value = stringConstantScopes[index][name] { return value }
+            if declaredNameScopes[index].contains(name) { return nil }
+        }
+        return nil
+    }
+
+    /// 가장 가까운 선언 범위에서 채널 변수를 찾는다.
+    private func channel(named name: String) -> BridgeName? {
+        for index in channelScopes.indices.reversed() {
+            if let value = channelScopes[index][name] { return value }
+            if declaredNameScopes[index].contains(name) { return nil }
+        }
+        return nil
+    }
 }
+
+/// 인라인 핸들러를 채널과 첫 번째 호출 매개변수에 묶는 문맥이다.
+private struct HandlerContext {
+    let channel: BridgeName
+    let callParameterName: String?
+}
+
+/// 정적 값 또는 동적 원문을 함께 보존하는 브리지 이름이다.
+private typealias BridgeName = (value: String, isDynamic: Bool)
