@@ -117,7 +117,7 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 {
   "format": "external-retentions",
   "version": 0,
-  "producedBy": { "name": "isthmus", "version": "0.1.1" },
+  "producedBy": { "name": "isthmus", "version": "0.1.2" },
   "generatedAt": "…",
   "retentions": [
     {

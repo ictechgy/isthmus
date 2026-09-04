@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-04
+
 ### Changed
 
 - 아직 조인하지 않는 RN module·component fact를 0.1에서 fail-closed로 거부

@@ -8,9 +8,11 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageDocument = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 );
+const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
+const latestRelease = /^## \[(\d+\.\d+\.\d+)\] -/m.exec(changelog)?.[1];
 
 verify(packageDocument.name === 'isthmus-cli', 'package name');
-verify(packageDocument.version === '0.1.1', 'package version');
+verify(packageDocument.version === latestRelease, 'package version');
 verify(packageDocument.license === 'MIT', 'license');
 verify(packageDocument.bin?.isthmus === 'dist/cli/main.js', 'binary');
 verify(packageDocument.publishConfig?.access === 'public', 'public access');
@@ -27,7 +29,10 @@ const pack = runChild(
 );
 verify(pack.status === 0, 'npm pack');
 const [artifact] = JSON.parse(pack.stdout);
-verify(artifact?.id === 'isthmus-cli@0.1.1', 'artifact identity');
+verify(
+  artifact?.id === `${packageDocument.name}@${packageDocument.version}`,
+  'artifact identity',
+);
 const paths = new Set(artifact.files.map(({ path }) => path));
 for (const requiredPath of [
   'LICENSE',
@@ -60,7 +65,9 @@ for (const sourceMapPath of sourceMapPaths) {
   );
 }
 
-process.stdout.write('Package contract verified: isthmus-cli@0.1.1\n');
+process.stdout.write(
+  `Package contract verified: ${packageDocument.name}@${packageDocument.version}\n`,
+);
 
 /** 패키지 계약 위반을 민감정보 없는 검사 이름으로 보고한다. */
 function verify(condition, name) {
