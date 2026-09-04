@@ -46,6 +46,41 @@ test('채널 키 하나에 생성과 등록 위치를 모두 연결한다', () =
   ]);
 });
 
+test('채널 증거는 입력 순서와 중복에 무관하게 정렬한다', () => {
+  const extraCreation = {
+    kind: 'channel-create',
+    channel: 'dev.isthmus/camera',
+    dynamic: false,
+    location: { path: 'lib/a_bridge.dart', line: 2, column: 7 },
+  };
+  const extraRegistration = {
+    kind: 'channel-register',
+    channel: 'dev.isthmus/camera',
+    dynamic: false,
+    location: { path: 'ios/APlugin.swift', line: 4, column: 9 },
+  };
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [...dartDocument.facts, extraCreation, extraCreation],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [...swiftDocument.facts, extraRegistration, extraRegistration],
+  });
+
+  const result = joinBridgeDocuments([receiver, caller]);
+  const channel = result.matchedChannels[0];
+
+  assert.deepEqual(channel?.creations.map(({ location }) => location.path), [
+    'lib/a_bridge.dart',
+    'lib/camera_bridge.dart',
+  ]);
+  assert.deepEqual(channel?.registrations.map(({ location }) => location.path), [
+    'ios/APlugin.swift',
+    'ios/Runner/CameraPlugin.swift',
+  ]);
+});
+
 test('메서드 키 하나에 호출과 핸들러 위치를 모두 연결한다', () => {
   const result = joinBridgeDocuments([dartDocument, swiftDocument]);
 

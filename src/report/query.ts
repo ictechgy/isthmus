@@ -1,4 +1,5 @@
 import type { BridgeTarget } from '../exchange/parse.ts';
+import { compareStrings } from '../compare.ts';
 import type {
   BridgeEndpoint,
   BridgeJoinResult,
@@ -91,7 +92,7 @@ function ambiguousQuery(
     limitations: joined.limitations,
     candidates: results
       .map(({ subject }) => ({ qualifiedName: subject.qualifiedName }))
-      .sort((left, right) => left.qualifiedName.localeCompare(right.qualifiedName)),
+      .sort((left, right) => compareStrings(left.qualifiedName, right.qualifiedName)),
   };
 }
 
@@ -129,7 +130,8 @@ function makeMethodResult(
   return {
     subject: {
       name: method,
-      qualifiedName: `${target}:${channel}#${method}`,
+      qualifiedName:
+        `${target}:${encodeSubjectComponent(channel)}#${encodeSubjectComponent(method)}`,
       kind: 'method',
     },
     usedBy,
@@ -177,10 +179,15 @@ function makeQueryResult(
   return {
     subject: {
       name,
-      qualifiedName: `${target}:${name}`,
+      qualifiedName: `${target}:${encodeSubjectComponent(name)}`,
       kind,
     },
     usedBy,
     dependsOn,
   };
+}
+
+/** qualifiedName 구분자와 이스케이프 문자를 가역적인 퍼센트 표기로 바꾼다. */
+function encodeSubjectComponent(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('#', '%23');
 }

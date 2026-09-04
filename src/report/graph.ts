@@ -9,6 +9,7 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
+import { compareStrings } from '../compare.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** 소스 위치 하나를 나타내는 경계 그래프 노드다. */
@@ -122,7 +123,7 @@ export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument
   return {
     format: 'isthmus-graph',
     version: 1,
-    nodes: [...nodes.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    nodes: [...nodes.values()].sort((left, right) => compareStrings(left.id, right.id)),
     edges: edges.sort(compareEdges),
     limitations: joined.limitations,
   };
@@ -206,8 +207,8 @@ function endpointId(endpoint: BridgeEndpoint): string {
 /** 간선을 종류·from·to 순으로 고정한다. */
 function compareEdges(left: BridgeGraphEdge, right: BridgeGraphEdge): number {
   return (
-    left.kind.localeCompare(right.kind) ||
-    left.from.localeCompare(right.from) ||
-    left.to.localeCompare(right.to)
+    compareStrings(left.kind, right.kind) ||
+    compareStrings(left.from, right.from) ||
+    compareStrings(left.to, right.to)
   );
 }

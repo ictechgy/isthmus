@@ -61,6 +61,10 @@ test('잘못된 문서 메타데이터를 필드별 안전한 오류로 거부�
   const invalidCases: ReadonlyArray<readonly [unknown, string]> = [
     [{ ...emptyDocument, tool: { name: '', version: '0.1.0' } }, 'Invalid tool metadata.'],
     [{ ...emptyDocument, generatedAt: 'not-a-date' }, 'Invalid generatedAt timestamp.'],
+    [
+      { ...emptyDocument, generatedAt: '2026-09-04T12:00:00' },
+      'Invalid generatedAt timestamp.',
+    ],
     [{ ...emptyDocument, platform: 'ruby' }, 'Unsupported bridge platform.'],
     [{ ...emptyDocument, target: 'cordova' }, 'Unsupported bridge target.'],
     [{ ...emptyDocument, project: '' }, 'Invalid project path.'],
@@ -82,7 +86,15 @@ test('잘못된 사실을 필드별 검증 오류로 거부한다', () => {
     [{ ...validMethodFact, kind: 'unknown' }, 'Invalid fact kind at index 0.'],
     [{ ...validMethodFact, channel: '' }, 'Invalid fact channel at index 0.'],
     [
+      { ...validMethodFact, channel: 'dev.isthmus/\u0000camera' },
+      'Invalid fact channel at index 0.',
+    ],
+    [
       { ...validMethodFact, method: undefined },
+      'Method fact at index 0 requires a method name.',
+    ],
+    [
+      { ...validMethodFact, method: 'take\nPhoto' },
       'Method fact at index 0 requires a method name.',
     ],
     [{ ...validMethodFact, dynamic: 'no' }, 'Invalid dynamic flag at index 0.'],
@@ -120,6 +132,17 @@ test('잘못된 사실을 필드별 검증 오류로 거부한다', () => {
     ],
     [
       { ...validMethodFact, symbol: { qualifiedName: '' } },
+      'Invalid fact symbol at index 0.',
+    ],
+    [
+      { ...validMethodFact, symbol: { qualifiedName: 'Camera\u0000Plugin' } },
+      'Invalid fact symbol at index 0.',
+    ],
+    [
+      {
+        ...validMethodFact,
+        symbol: { qualifiedName: 'CameraPlugin.register', usr: 's:\rregister' },
+      },
       'Invalid fact symbol at index 0.',
     ],
   ];

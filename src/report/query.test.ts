@@ -180,6 +180,47 @@ test('같은 채널이 여러 target에 있으면 후보를 주고 qualifiedName
   );
 });
 
+test('qualifiedName은 채널의 구분 문자를 이스케이프해 메서드와 충돌하지 않는다', () => {
+  const channel = 'dev.isthmus/camera#takePhoto';
+  const caller = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [
+      ...dartDocument.facts,
+      {
+        kind: 'channel-create',
+        channel,
+        dynamic: false,
+        location: { path: 'lib/hash_bridge.dart', line: 2, column: 7 },
+      },
+    ],
+  });
+  const receiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel,
+        dynamic: false,
+        location: { path: 'ios/HashPlugin.swift', line: 4, column: 9 },
+      },
+    ],
+  });
+  const joined = joinBridgeDocuments([caller, receiver]);
+
+  const method = createBridgeQuery(
+    joined,
+    'flutter:dev.isthmus/camera#takePhoto',
+  );
+  const escapedChannel = createBridgeQuery(
+    joined,
+    'flutter:dev.isthmus/camera%23takePhoto',
+  );
+
+  assert.equal(method.result?.subject.kind, 'method');
+  assert.equal(escapedChannel.result?.subject.kind, 'channel');
+});
+
 test('query JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
   const document = createBridgeQuery(joined, 'takePhoto');

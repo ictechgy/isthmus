@@ -5,6 +5,7 @@ import type {
   BridgeSymbol,
   BridgeTarget,
 } from '../exchange/parse.ts';
+import { compareStrings } from '../compare.ts';
 
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
@@ -168,9 +169,9 @@ function freshnessLimitation(
 /** limitation을 플랫폼·도구·문장 순으로 고정한다. */
 function compareLimitations(left: JoinLimitation, right: JoinLimitation): number {
   return (
-    left.platform.localeCompare(right.platform) ||
-    left.tool.localeCompare(right.tool) ||
-    left.message.localeCompare(right.message)
+    compareStrings(left.platform, right.platform) ||
+    compareStrings(left.tool, right.tool) ||
+    compareStrings(left.message, right.message)
   );
 }
 
@@ -181,20 +182,49 @@ function collectMethodGroups(
   const groups = new Map<string, MutableMethodGroup>();
   for (const document of documents) collectDocumentMethods(document, groups);
   for (const group of groups.values()) {
-    group.invocations.sort(compareEndpoints);
-    group.handlers.sort(compareEndpoints);
+    sortUniqueEndpoints(group.invocations);
+    sortUniqueEndpoints(group.handlers);
   }
   return groups;
 }
 
-/** 증거 위치를 플랫폼·경로·줄·열 순으로 고정한다. */
+/** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
+function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
+  endpoints.sort(compareEndpoints);
+  let previous: BridgeEndpoint | undefined;
+  const unique = endpoints.filter((endpoint) => {
+    const isDuplicate =
+      previous !== undefined && compareEndpoints(previous, endpoint) === 0;
+    previous = endpoint;
+    return !isDuplicate;
+  });
+  endpoints.splice(0, endpoints.length, ...unique);
+}
+
+/** 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다. */
 function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
-  return (
-    left.platform.localeCompare(right.platform) ||
-    left.location.path.localeCompare(right.location.path) ||
+  const locationOrder =
+    compareStrings(left.platform, right.platform) ||
+    compareStrings(left.location.path, right.location.path) ||
     left.location.line - right.location.line ||
-    left.location.column - right.location.column
+    left.location.column - right.location.column;
+  if (locationOrder !== 0) return locationOrder;
+  if (left.symbol === undefined) return right.symbol === undefined ? 0 : 1;
+  if (right.symbol === undefined) return -1;
+  return (
+    compareStrings(left.symbol.qualifiedName, right.symbol.qualifiedName) ||
+    compareOptionalStrings(left.symbol.usr, right.symbol.usr)
   );
+}
+
+/** 존재하는 선택 문자열을 없는 값보다 먼저 두고 비교한다. */
+function compareOptionalStrings(
+  left: string | undefined,
+  right: string | undefined,
+): number {
+  if (left === undefined) return right === undefined ? 0 : 1;
+  if (right === undefined) return -1;
+  return compareStrings(left, right);
 }
 
 /** 문서 하나의 정적 메서드 사실을 그룹에 추가한다. */
@@ -243,6 +273,10 @@ function collectChannelGroups(
 ): Map<string, MutableChannelGroup> {
   const groups = new Map<string, MutableChannelGroup>();
   for (const document of documents) collectDocumentChannels(document, groups);
+  for (const group of groups.values()) {
+    sortUniqueEndpoints(group.creations);
+    sortUniqueEndpoints(group.registrations);
+  }
   return groups;
 }
 
@@ -293,7 +327,10 @@ function toEndpoint(
 
 /** 채널 결과를 target과 이름 순으로 고정한다. */
 function compareChannels(left: ChannelKey, right: ChannelKey): number {
-  return left.target.localeCompare(right.target) || left.channel.localeCompare(right.channel);
+  return (
+    compareStrings(left.target, right.target) ||
+    compareStrings(left.channel, right.channel)
+  );
 }
 
 /** 결정적 정렬에 필요한 논리 채널 키다. */
@@ -302,9 +339,9 @@ type ChannelKey = Pick<MatchedChannel, 'target' | 'channel'>;
 /** 메서드 결과를 target·채널·메서드 순으로 고정한다. */
 function compareMethodKeys(left: MethodKey, right: MethodKey): number {
   return (
-    left.target.localeCompare(right.target) ||
-    left.channel.localeCompare(right.channel) ||
-    left.method.localeCompare(right.method)
+    compareStrings(left.target, right.target) ||
+    compareStrings(left.channel, right.channel) ||
+    compareStrings(left.method, right.method)
   );
 }
 

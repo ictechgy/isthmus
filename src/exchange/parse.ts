@@ -99,10 +99,10 @@ function validateDocumentMetadata(
 function validateFact(value: unknown, index: number): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
-  if (value.channel !== null && !isNonEmptyString(value.channel)) {
+  if (value.channel !== null && !isSafeNonEmptyString(value.channel)) {
     fail(`Invalid fact channel at index ${index}.`);
   }
-  if (methodFactKinds.has(value.kind) && !isNonEmptyString(value.method)) {
+  if (methodFactKinds.has(value.kind) && !isSafeNonEmptyString(value.method)) {
     fail(`Method fact at index ${index} requires a method name.`);
   }
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
@@ -135,8 +135,8 @@ function validateSymbol(value: unknown, index: number): void {
   if (value === undefined) return;
   if (
     !isJsonObject(value) ||
-    !isNonEmptyString(value.qualifiedName) ||
-    (value.usr !== undefined && !isNonEmptyString(value.usr))
+    !isSafeNonEmptyString(value.qualifiedName) ||
+    (value.usr !== undefined && !isSafeNonEmptyString(value.usr))
   ) {
     fail(`Invalid fact symbol at index ${index}.`);
   }
@@ -155,12 +155,21 @@ function validateTool(value: unknown): void {
 
 /** ISO 계열 생성 시각으로 해석할 수 있는지 확인한다. */
 function isTimestamp(value: unknown): value is string {
-  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+  return (
+    typeof value === 'string' &&
+    timestampPattern.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  );
 }
 
 /** 공백만 있지 않은 문자열인지 확인한다. */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** 조인 키를 깨뜨리는 제어 문자가 없는 비어 있지 않은 문자열인지 확인한다. */
+function isSafeNonEmptyString(value: unknown): value is string {
+  return isNonEmptyString(value) && !controlCharacterPattern.test(value);
 }
 
 /** 모든 원소가 문자열인 배열인지 확인한다. */
@@ -202,6 +211,10 @@ const bridgeFactKinds = new Set<unknown>([
 
 /** method 필드가 필수인 사실 종류다. */
 const methodFactKinds = new Set<unknown>(['method-invoke', 'method-handle']);
+
+const timestampPattern =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
+const controlCharacterPattern = /[\u0000-\u001f\u007f]/u;
 
 /** 배열과 null을 제외한 JSON 객체인지 확인한다. */
 function isJsonObject(value: unknown): value is Record<string, unknown> {

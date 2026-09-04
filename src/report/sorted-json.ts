@@ -1,3 +1,5 @@
+import { compareStrings } from '../compare.ts';
+
 /** JSON 객체 키를 모든 깊이에서 정렬하고 마지막 개행을 붙인다. */
 export function encodeSortedJson(value: unknown): string {
   return `${JSON.stringify(sortJson(value), null, 2)}\n`;
@@ -9,7 +11,7 @@ function sortJson(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
   return Object.fromEntries(
     Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareStrings(left, right))
       .map(([key, item]) => [key, sortJson(item)]),
   );
 }
