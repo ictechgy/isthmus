@@ -8,26 +8,30 @@ Future<void> main(List<String> arguments) async {
   if (options == null) return;
   final source = await _readSourceOrReport(options.sourcePath);
   if (source == null) return;
-  final facts = _extractFactsOrReport(
+  final extraction = _extractFactsOrReport(
     source: source,
     relativePath: options.relativePath,
   );
-  if (facts == null) return;
+  if (extraction == null) return;
   final document = createDartBridgeFactsDocument(
-    facts: facts,
+    facts: extraction.facts,
     generatedAt: options.generatedAt,
     project: options.project,
+    extractionLimitations: extraction.limitations,
   );
   stdout.write(encodeBridgeFactsJson(document));
 }
 
 /// 구문·추출 오류를 스택과 경로 없는 종료 코드 2로 변환한다.
-List<BridgeFact>? _extractFactsOrReport({
+DartBridgeExtraction? _extractFactsOrReport({
   required String source,
   required String relativePath,
 }) {
   try {
-    return extractDartBridgeFacts(source: source, relativePath: relativePath);
+    return extractDartBridgeAnalysis(
+      source: source,
+      relativePath: relativePath,
+    );
   } on Object {
     stderr.writeln(
       'Unable to parse the source file; fix syntax errors and retry.',
@@ -97,7 +101,8 @@ bool _isProjectRelativePath(String value) {
 
 /// 비어 있지 않고 ASCII 제어 문자가 없는 문자열인지 확인한다.
 bool _isSafeNonEmptyString(String value) =>
-    value.trim().isNotEmpty && !RegExp(r'[\x00-\x1f\x7f]').hasMatch(value);
+    value.trim().isNotEmpty &&
+    !RegExp(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]').hasMatch(value);
 
 /// 실제 달력 날짜와 명시적 timezone을 갖는 ISO 8601 시각인지 확인한다.
 bool _isTimestamp(String value) {

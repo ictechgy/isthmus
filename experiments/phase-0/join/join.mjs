@@ -32,6 +32,13 @@ export function joinBridgeFacts(dartDocument, swiftDocument) {
           creator: legacyLocation(creation.location),
         })),
     ),
+    registrationsWithoutCreations: joined.registrationsWithoutCreations.flatMap(
+      (unregistered) =>
+        unregistered.registrations.map((registration) => ({
+          channel: unregistered.channel,
+          registration: legacyLocation(registration.location),
+        })),
+    ),
     matchedMethods: joined.matchedMethods.flatMap((match) =>
       match.invocations.flatMap((invocation) =>
         match.handlers.map((handler) => ({

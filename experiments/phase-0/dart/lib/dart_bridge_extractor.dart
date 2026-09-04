@@ -39,10 +39,19 @@ final class BridgeFact {
 List<BridgeFact> extractDartBridgeFacts({
   required String source,
   required String relativePath,
+}) =>
+    extractDartBridgeAnalysis(source: source, relativePath: relativePath).facts;
+
+/// 사실과 함께 구문만으로 해석하지 못한 후보 수를 반환한다.
+DartBridgeExtraction extractDartBridgeAnalysis({
+  required String source,
+  required String relativePath,
 }) {
   final parseResult = parseString(content: source, throwIfDiagnostics: true);
   final flutterPrefixes = _flutterServicesPrefixes(parseResult.unit);
-  if (flutterPrefixes.isEmpty) return const [];
+  if (flutterPrefixes.isEmpty) {
+    return const DartBridgeExtraction(facts: [], limitations: []);
+  }
   final visitor = _BridgeFactVisitor(
     relativePath,
     source,
@@ -51,8 +60,44 @@ List<BridgeFact> extractDartBridgeFacts({
     _topLevelDeclaredNames(parseResult.unit),
   );
   parseResult.unit.accept(visitor);
-  return List.unmodifiable(visitor.facts);
+  final facts = List<BridgeFact>.unmodifiable(visitor.facts);
+  if (!_isSafeBridgeString(relativePath) || facts.any(_hasUnsafeBridgeValue)) {
+    throw const FormatException('Unsafe bridge fact value.');
+  }
+  final limitations = [
+    if (visitor.unresolvedReceiverInvocations > 0)
+      'unresolved-receiver-invocations: ${visitor.unresolvedReceiverInvocations} '
+          '${visitor.unresolvedReceiverInvocations == 1 ? 'invokeMethod call has' : 'invokeMethod calls have'} '
+          'an unresolved receiver',
+  ];
+  return DartBridgeExtraction(
+    facts: facts,
+    limitations: List.unmodifiable(limitations),
+  );
 }
+
+/// Phase 0 추출 사실과 해석하지 못한 후보 limitation이다.
+final class DartBridgeExtraction {
+  /// 불변 사실과 limitation을 보존한다.
+  const DartBridgeExtraction({required this.facts, required this.limitations});
+
+  /// 교환 문서에 넣을 브리지 사실이다.
+  final List<BridgeFact> facts;
+
+  /// 누락을 정상 부재와 구분하는 분석 한계다.
+  final List<String> limitations;
+}
+
+/// 위치와 사실 문자열이 교환 계약의 출력 안전 문자를 따르는지 확인한다.
+bool _hasUnsafeBridgeValue(BridgeFact fact) => [
+  fact.fields['channel'],
+  fact.fields['method'],
+].whereType<String>().any((value) => !_isSafeBridgeString(value));
+
+/// 비어 있지 않고 출력 문법을 깨뜨리는 제어 문자가 없는 문자열인지 확인한다.
+bool _isSafeBridgeString(String value) =>
+    value.trim().isNotEmpty &&
+    !RegExp(r'[\x00-\x1f\x7f-\x9f\u2028\u2029]').hasMatch(value);
 
 /// 소스 순서와 무관하게 import 이름을 가리는 top-level 선언을 모은다.
 Set<String> _topLevelDeclaredNames(CompilationUnit unit) {
@@ -102,6 +147,7 @@ Map<String, Object?> createDartBridgeFactsDocument({
   required List<BridgeFact> facts,
   required DateTime generatedAt,
   required String project,
+  List<String> extractionLimitations = const [],
 }) => {
   'format': 'bridge-facts',
   'version': 1,
@@ -111,7 +157,7 @@ Map<String, Object?> createDartBridgeFactsDocument({
   'target': facts.isEmpty ? null : 'flutter',
   'project': project,
   'facts': facts.map((fact) => fact.toJson()).toList(growable: false),
-  'limitations': _dynamicLimitations(facts),
+  'limitations': [..._dynamicLimitations(facts), ...extractionLimitations],
 };
 
 /// 생성 시각을 UTC 밀리초 세 자리의 결정적 ISO 8601 문자열로 만든다.
@@ -164,6 +210,9 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
 
   /// 소스에서 찾은 브리지 사실이다.
   final List<BridgeFact> facts = [];
+
+  /// 수신 채널을 구문만으로 연결하지 못한 invokeMethod 후보 수다.
+  int unresolvedReceiverInvocations = 0;
 
   /// 어휘 범위별 변수 이름과 리터럴 채널 이름이다.
   final List<Map<String, _BridgeName>> _channelScopes = [{}];
@@ -238,16 +287,45 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     }
   }
 
+  /// 클래스 메서드 매개변수를 필드와 분리된 범위에 둔다.
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    _visitParameterScope(
+      node.parameters,
+      () => super.visitMethodDeclaration(node),
+    );
+  }
+
+  /// 생성자 매개변수를 클래스 필드와 분리된 범위에 둔다.
+  @override
+  void visitConstructorDeclaration(ConstructorDeclaration node) {
+    _visitParameterScope(
+      node.parameters,
+      () => super.visitConstructorDeclaration(node),
+    );
+  }
+
   /// 함수·클로저 매개변수와 지역 이름을 독립된 범위에 둔다.
   @override
   void visitFunctionExpression(FunctionExpression node) {
+    _visitParameterScope(
+      node.parameters,
+      () => super.visitFunctionExpression(node),
+    );
+  }
+
+  /// 매개변수 이름을 선언한 임시 어휘 범위에서 노드를 순회한다.
+  void _visitParameterScope(
+    FormalParameterList? parameters,
+    void Function() visitChildren,
+  ) {
     _pushScope();
     try {
-      for (final parameter in node.parameters?.parameters ?? const []) {
+      for (final parameter in parameters?.parameters ?? const []) {
         final name = parameter.name?.lexeme;
         if (name != null) _declare(name);
       }
-      super.visitFunctionExpression(node);
+      visitChildren();
     } finally {
       _popScope();
     }
@@ -380,7 +458,10 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     final channel = target is SimpleIdentifier
         ? _channel(named: target.name)
         : _channelCreatedBy(target);
-    if (channel == null) return;
+    if (channel == null) {
+      unresolvedReceiverInvocations++;
+      return;
+    }
     final method = _bridgeName(arguments.first);
     facts.add(
       _fact(

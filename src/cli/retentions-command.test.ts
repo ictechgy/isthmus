@@ -20,7 +20,7 @@ test('retentions가 cartograph 외부 보존 JSON을 출력한다', async () => 
     ['retentions', dartPath, swiftPath, '--for', 'cartograph'],
     (path) => readFile(path, 'utf8'),
     () => new Date('2026-09-04T13:00:00Z'),
-    '0.1.0',
+    'test-version',
   );
 
   assert.equal(result.exitCode, 0);

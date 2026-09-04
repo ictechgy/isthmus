@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 보류된 조인의 직접 report/query/graph 생성을 거부하고 retention dedup 키 공간 분리
+- 생성 없는 채널 등록 경고와 null-channel handler limitation 계약 추가
+- Phase 0 Dart·Swift scope/provenance/조건부 컴파일/금지 문자 경계 보강
+- 해석하지 못한 Dart receiver와 Swift named-function handler를 limitation으로 보고
+
 ## [0.1.2] - 2026-09-04
 
 ### Changed

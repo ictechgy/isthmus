@@ -11,7 +11,7 @@
 - `expected/check.json`: 제품 `check` 명령의 결정적 JSON 출력
 - `expected/query.json`: 제품 `query takePhoto` 명령의 결정적 JSON 출력
 - `expected/graph.json`: 제품 `graph` 명령의 결정적 JSON 출력
-- `expected/retentions.json`: 제품 `retentions --for cartograph` 명령의 결정적 JSON 출력
+- `expected/retentions.json`: 고정 시각과 `test-version`으로 만든 제품 `retentions --for cartograph` 결정적 JSON 출력
 - `expected/cartograph-*.json`: cartograph 실제 코퍼스 USR로 외부 보존 왕복을 검증하는 target별 입력·출력
 
 로컬에 Flutter SDK와 `flutter/packages`가 없어 소스 코퍼스를 직접 만들었다. 두 파서와 조인은 실행했지만 Flutter 앱 빌드는 검증하지 않았다. 공개 Flutter 플러그인 도그푸딩은 cartograph Phase 1에서 계속한다.
@@ -28,6 +28,8 @@
 - Swift `method-handle`은 `CameraPlugin.register`에 귀속. Phase 0은 USR을 만들 수 없어 `missing-handler-usrs`로 보고
 - 위치 열은 1부터 시작하는 UTF-8 바이트 기준이며 생성 시각은 UTC 밀리초 형식으로 정규화
 - 조건부 컴파일 안의 Swift Flutter 브리지 구문은 활성 구성을 추측하지 않고 compiler-indexed 추출이 필요하다고 실패
+- Flutter import 파일의 Swift 조건부 컴파일은 부분 사실을 만들지 않고 전체를 fail-closed 처리
+- 해석하지 못한 Dart receiver, Swift named-function handler, 로컬 `FlutterMethodChannel` shadow는 각각 `unresolved-receiver-invocations`, `opaque-handler-bodies`, `shadowed-flutter-method-channel` limitation으로 보고
 
 ## 실행
 
