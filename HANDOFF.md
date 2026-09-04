@@ -10,7 +10,7 @@ _Last updated: 2026-09-05 01:52 KST by Codex_
 
 ## Current Status
 
-- `main`의 기준 커밋은 `30e0396`(PR #4 squash merge)다.
+- 실제 producer 통합 기준은 `30e0396`(PR #4)이며, 이 문서는 PR #5로 그 위에 merge됐다.
 - isthmus package는 `isthmus-cli` 0.1.3이며 이번 변경은 제품 런타임이 아니라 실제 producer
   integration/release gate를 추가했다.
 - cartograph 0.5.3과 dartograph 0.1.1을 사용하는 실제 왕복이 통과한다.
