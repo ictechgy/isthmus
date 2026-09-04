@@ -42,6 +42,35 @@ void main() {
     expect(result.stderr, isNot(contains(Directory.current.path)));
   });
 
+  test('안전하지 않은 프로젝트·상대 경로·생성 시각은 읽기 전에 거부한다', () async {
+    final invalidMetadata = [
+      ('relative', 'lib/source.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', '../private.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', '/private.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', r'C:\private.dart', '2026-09-04T12:00:00Z'),
+      ('/fixture', 'lib/source.dart', '2026-02-31T12:00:00Z'),
+    ];
+
+    for (final (project, relativePath, generatedAt) in invalidMetadata) {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'bin/extract_bridges.dart',
+        'does-not-exist.dart',
+        '--project',
+        project,
+        '--path',
+        relativePath,
+        '--generated-at',
+        generatedAt,
+      ]);
+
+      expect(result.exitCode, 64);
+      expect(result.stdout, isEmpty);
+      expect(result.stderr, startsWith('Usage: extract_bridges.dart'));
+      expect(result.stderr, isNot(contains('does-not-exist.dart')));
+    }
+  });
+
   test('읽을 수 없는 소스는 경로를 노출하지 않고 종료 코드 2를 낸다', () async {
     final result = await Process.run(Platform.resolvedExecutable, [
       'run',
@@ -62,5 +91,28 @@ void main() {
       'Unable to read the source file; check its path and permissions.\n',
     );
     expect(result.stderr, isNot(contains('does-not-exist.dart')));
+  });
+
+  test('Dart 구문 오류는 스택과 경로 없는 종료 코드 2로 보고한다', () async {
+    final result = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'bin/extract_bridges.dart',
+      'test/fixtures/invalid_dart.txt',
+      '--project',
+      '/fixture',
+      '--path',
+      'lib/private_source.dart',
+      '--generated-at',
+      '2026-09-04T12:00:00Z',
+    ]);
+
+    expect(result.exitCode, 2);
+    expect(result.stdout, isEmpty);
+    expect(
+      result.stderr,
+      'Unable to parse the source file; fix syntax errors and retry.\n',
+    );
+    expect(result.stderr, isNot(contains('invalid_dart.txt')));
+    expect(result.stderr, isNot(contains('package:analyzer')));
   });
 }

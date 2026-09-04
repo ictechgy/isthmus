@@ -41,10 +41,18 @@ List<BridgeFact> extractDartBridgeFacts({
   required String relativePath,
 }) {
   final parseResult = parseString(content: source, throwIfDiagnostics: true);
+  if (!_importsFlutterServices(parseResult.unit)) return const [];
   final visitor = _BridgeFactVisitor(relativePath, parseResult.lineInfo);
   parseResult.unit.accept(visitor);
   return List.unmodifiable(visitor.facts);
 }
+
+/// 파일이 실제 Flutter services 라이브러리를 가져오는지 확인한다.
+bool _importsFlutterServices(CompilationUnit unit) =>
+    unit.directives.whereType<ImportDirective>().any(
+      (directive) =>
+          directive.uri.stringValue == 'package:flutter/services.dart',
+    );
 
 /// 추출 사실을 GRAPH-EXCHANGE 문서로 감싼다.
 Map<String, Object?> createDartBridgeFactsDocument({
@@ -57,7 +65,7 @@ Map<String, Object?> createDartBridgeFactsDocument({
   'tool': {'name': 'isthmus-phase0-dart', 'version': '0.0.0'},
   'generatedAt': generatedAt.toUtc().toIso8601String(),
   'platform': 'dart',
-  'target': 'flutter',
+  'target': facts.isEmpty ? null : 'flutter',
   'project': project,
   'facts': facts.map((fact) => fact.toJson()).toList(growable: false),
   'limitations': _dynamicLimitations(facts),
@@ -95,20 +103,64 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 소스에서 찾은 브리지 사실이다.
   final List<BridgeFact> facts = [];
 
-  /// 변수 이름별 리터럴 채널 이름이다.
-  final Map<String, String> channelByVariable = {};
+  /// 어휘 범위별 변수 이름과 리터럴 채널 이름이다.
+  final List<Map<String, String>> _channelScopes = [{}];
 
-  /// 한 단계 추적할 문자열 상수다.
-  final Map<String, String> stringConstantByVariable = {};
+  /// 어휘 범위별 한 단계 문자열 상수다.
+  final List<Map<String, String>> _stringConstantScopes = [{}];
+
+  /// 바깥 범위의 같은 이름을 가리는 선언 이름이다.
+  final List<Set<String>> _declaredNameScopes = [{}];
+
+  /// 클래스 필드를 다른 타입의 같은 이름과 분리한다.
+  @override
+  void visitClassDeclaration(ClassDeclaration node) {
+    _pushScope();
+    try {
+      super.visitClassDeclaration(node);
+    } finally {
+      _popScope();
+    }
+  }
+
+  /// 중첩 블록의 지역 이름을 바깥 범위와 분리한다.
+  @override
+  void visitBlock(Block node) {
+    _pushScope();
+    try {
+      super.visitBlock(node);
+    } finally {
+      _popScope();
+    }
+  }
+
+  /// 함수·클로저 매개변수와 지역 이름을 독립된 범위에 둔다.
+  @override
+  void visitFunctionExpression(FunctionExpression node) {
+    _pushScope();
+    try {
+      for (final parameter in node.parameters?.parameters ?? const []) {
+        final name = parameter.name?.lexeme;
+        if (name != null) _declare(name);
+      }
+      super.visitFunctionExpression(node);
+    } finally {
+      _popScope();
+    }
+  }
 
   /// MethodChannel을 담는 변수와 리터럴 이름을 연결한다.
   @override
   void visitVariableDeclaration(VariableDeclaration node) {
+    _declare(node.name.lexeme);
     _recordStringConstant(node);
     final initializer = node.initializer;
     if (initializer is MethodInvocation &&
         _isUnresolvedMethodChannel(initializer)) {
-      _recordChannelVariable(node, initializer);
+      _recordChannelVariable(node, initializer.argumentList);
+    } else if (initializer is InstanceCreationExpression &&
+        _isMethodChannel(initializer)) {
+      _recordChannelVariable(node, initializer.argumentList);
     }
     super.visitVariableDeclaration(node);
   }
@@ -117,7 +169,7 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   void _recordStringConstant(VariableDeclaration declaration) {
     final initializer = declaration.initializer;
     if (!declaration.isConst || initializer is! SimpleStringLiteral) return;
-    stringConstantByVariable[declaration.name.lexeme] = initializer.value;
+    _stringConstantScopes.last[declaration.name.lexeme] = initializer.value;
   }
 
   /// 리터럴 MethodChannel 생성만 Phase 0 사실로 기록한다.
@@ -151,13 +203,12 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 변수 선언의 채널 이름이 리터럴이면 후속 호출을 위해 보존한다.
   void _recordChannelVariable(
     VariableDeclaration declaration,
-    MethodInvocation initializer,
+    ArgumentList arguments,
   ) {
-    final arguments = initializer.argumentList.arguments;
-    if (arguments.isEmpty) return;
-    final channel = _bridgeName(arguments.first);
+    if (arguments.arguments.isEmpty) return;
+    final channel = _bridgeName(arguments.arguments.first);
     if (channel.isDynamic) return;
-    channelByVariable[declaration.name.lexeme] = channel.value;
+    _channelScopes.last[declaration.name.lexeme] = channel.value;
   }
 
   /// 첫 인자가 리터럴일 때 채널 생성 사실을 추가한다.
@@ -188,7 +239,7 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     final target = node.target;
     final arguments = node.argumentList.arguments;
     if (target is! SimpleIdentifier || arguments.isEmpty) return;
-    final channel = channelByVariable[target.name];
+    final channel = _channel(named: target.name);
     if (channel == null) return;
     final method = _bridgeName(arguments.first);
     facts.add(
@@ -221,7 +272,7 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
       return (value: argument.value, isDynamic: false);
     }
     if (argument is SimpleIdentifier) {
-      final value = stringConstantByVariable[argument.name];
+      final value = _stringConstant(named: argument.name);
       if (value != null) return (value: value, isDynamic: false);
     }
     return (value: argument.toSource(), isDynamic: true);
@@ -247,5 +298,42 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
         'column': location.columnNumber,
       },
     });
+  }
+
+  /// 새 어휘 범위를 만든다.
+  void _pushScope() {
+    _channelScopes.add({});
+    _stringConstantScopes.add({});
+    _declaredNameScopes.add({});
+  }
+
+  /// 현재 어휘 범위를 제거한다.
+  void _popScope() {
+    _channelScopes.removeLast();
+    _stringConstantScopes.removeLast();
+    _declaredNameScopes.removeLast();
+  }
+
+  /// 현재 범위에 이름을 선언해 바깥 바인딩을 가린다.
+  void _declare(String name) => _declaredNameScopes.last.add(name);
+
+  /// 가장 가까운 선언 범위에서 채널 변수를 찾는다.
+  String? _channel({required String named}) {
+    for (var index = _channelScopes.length - 1; index >= 0; index--) {
+      final value = _channelScopes[index][named];
+      if (value != null) return value;
+      if (_declaredNameScopes[index].contains(named)) return null;
+    }
+    return null;
+  }
+
+  /// 가장 가까운 선언 범위에서 문자열 상수를 찾는다.
+  String? _stringConstant({required String named}) {
+    for (var index = _stringConstantScopes.length - 1; index >= 0; index--) {
+      final value = _stringConstantScopes[index][named];
+      if (value != null) return value;
+      if (_declaredNameScopes[index].contains(named)) return null;
+    }
+    return null;
   }
 }

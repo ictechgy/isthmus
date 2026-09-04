@@ -8,16 +8,33 @@ Future<void> main(List<String> arguments) async {
   if (options == null) return;
   final source = await _readSourceOrReport(options.sourcePath);
   if (source == null) return;
-  final facts = extractDartBridgeFacts(
+  final facts = _extractFactsOrReport(
     source: source,
     relativePath: options.relativePath,
   );
+  if (facts == null) return;
   final document = createDartBridgeFactsDocument(
     facts: facts,
     generatedAt: options.generatedAt,
     project: options.project,
   );
   stdout.write(encodeBridgeFactsJson(document));
+}
+
+/// 구문·추출 오류를 스택과 경로 없는 종료 코드 2로 변환한다.
+List<BridgeFact>? _extractFactsOrReport({
+  required String source,
+  required String relativePath,
+}) {
+  try {
+    return extractDartBridgeFacts(source: source, relativePath: relativePath);
+  } on Object {
+    stderr.writeln(
+      'Unable to parse the source file; fix syntax errors and retry.',
+    );
+    exitCode = 2;
+    return null;
+  }
 }
 
 /// 파일 오류를 경로 없는 메시지와 종료 코드 2로 변환한다.
@@ -52,8 +69,12 @@ _ExtractionOptions _parseArguments(List<String> arguments) {
       arguments[5] != '--generated-at') {
     throw const FormatException();
   }
-  final generatedAt = DateTime.tryParse(arguments[6]);
-  if (generatedAt == null || !generatedAt.isUtc) throw const FormatException();
+  if (!_isAbsoluteProjectPath(arguments[2]) ||
+      !_isProjectRelativePath(arguments[4]) ||
+      !_isTimestamp(arguments[6])) {
+    throw const FormatException();
+  }
+  final generatedAt = DateTime.parse(arguments[6]);
   return _ExtractionOptions(
     sourcePath: arguments[0],
     project: arguments[2],
@@ -61,6 +82,58 @@ _ExtractionOptions _parseArguments(List<String> arguments) {
     generatedAt: generatedAt,
   );
 }
+
+/// 프로젝트 경로가 제어 문자 없는 현재 플랫폼의 절대 경로인지 확인한다.
+bool _isAbsoluteProjectPath(String value) =>
+    _isSafeNonEmptyString(value) && Directory(value).isAbsolute;
+
+/// 출력할 위치가 절대·상위 경로와 제어 문자를 포함하지 않는지 확인한다.
+bool _isProjectRelativePath(String value) {
+  if (!_isSafeNonEmptyString(value) || File(value).isAbsolute) return false;
+  if (RegExp(r'^[A-Za-z]:').hasMatch(value)) return false;
+  return !value.split(RegExp(r'[/\\]')).contains('..');
+}
+
+/// 비어 있지 않고 ASCII 제어 문자가 없는 문자열인지 확인한다.
+bool _isSafeNonEmptyString(String value) =>
+    value.trim().isNotEmpty && !RegExp(r'[\x00-\x1f\x7f]').hasMatch(value);
+
+/// 실제 달력 날짜와 명시적 timezone을 갖는 ISO 8601 시각인지 확인한다.
+bool _isTimestamp(String value) {
+  final match = _timestampPattern.firstMatch(value);
+  if (match == null || DateTime.tryParse(value) == null) return false;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final hour = int.parse(match.group(4)!);
+  final minute = int.parse(match.group(5)!);
+  final second = int.parse(match.group(6)!);
+  final offsetHour = int.tryParse(match.group(7) ?? '0') ?? 24;
+  final offsetMinute = int.tryParse(match.group(8) ?? '0') ?? 60;
+  return month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= _daysInMonth(year, month) &&
+      hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      offsetHour <= 23 &&
+      offsetMinute <= 59;
+}
+
+/// 윤년을 포함한 달의 실제 일수를 반환한다.
+int _daysInMonth(int year, int month) {
+  if (month == 2) {
+    final isLeapYear = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    return isLeapYear ? 29 : 28;
+  }
+  return const [4, 6, 9, 11].contains(month) ? 30 : 31;
+}
+
+final _timestampPattern = RegExp(
+  r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})'
+  r'(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$',
+);
 
 /// CLI에서 검증을 마친 추출 입력이다.
 final class _ExtractionOptions {
