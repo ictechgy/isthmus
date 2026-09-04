@@ -1,6 +1,6 @@
 {
   "name": "isthmus-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Join bridge facts across cross-platform application boundaries.",
   "keywords": [
     "flutter",

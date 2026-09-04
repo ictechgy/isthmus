@@ -54,13 +54,14 @@
 - cartograph `--external-retentions` + `RetentionReason.externalBridge` + `--explain`
 - 검증: 코퍼스의 iOS 러너에서 cartograph `dead` 가 핸들러를 보고하다가, retentions 를 넘기면 보고하지 않고 `--explain` 이 Dart 위치를 말한다. **이 테스트가 isthmus 의 존재 이유를 증명한다**
 
-## Phase 4 — `query` · `graph` · 릴리스 (진행 중)
+## Phase 4 — `query` · `graph` · 릴리스 (완료)
 
 - [x] `query <channel|method>` — cartograph 스키마 골격
 - [x] `graph` — 경계 간선 DOT/Mermaid/JSON
 - [x] `skill` — 짧다:
   "네이티브 핸들러를 지우기 전에 `isthmus query` 로 Dart/JS 쪽 호출자를 봐라"
 - [x] npm package 이름 `isthmus-cli` 결정. 0.1.0 공개 발행
+- [x] 0.1.1 입력 계약·추출 경계 hardening 릴리스 준비
 
 ## Phase 5 — RN (v0.2)
 
@@ -83,6 +84,6 @@
 | 1 cartograph `bridges` | 완료 | cartograph PR #11 |
 | 2 골격 + check | 핵심 완료 | 파서·조인·JSON 보고·CLI 0/1/2/64 구현. 실제 Flutter 플러그인 도그푸딩 남음 |
 | 3 되돌려 주기 | 핵심 완료 | 실제 cartograph 인덱스 코퍼스에서 dead·explain 왕복 검증. Flutter 앱 도그푸딩 남음 |
-| 4 query · graph · 릴리스 | 완료 | `isthmus-cli` 0.1.0, CLI 이름은 `isthmus` |
+| 4 query · graph · 릴리스 | 완료 | `isthmus-cli` 0.1.1, CLI 이름은 `isthmus` |
 | 5 RN | 미착수 | v0.2 |
 | 6 Kotlin | 미착수 | kartograph 대기 |

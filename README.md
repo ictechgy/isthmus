@@ -18,9 +18,10 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**0.1.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
-cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과
-React Native 지원이다.
+**0.1.1.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
+Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
+도그푸딩과 React Native 지원이다.
 
 | 문서 | 내용 |
 |---|---|
