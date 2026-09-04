@@ -1,9 +1,25 @@
 {
-  "name": "isthmus",
-  "version": "0.0.0",
+  "name": "isthmus-cli",
+  "version": "0.1.0",
   "description": "Join bridge facts across cross-platform application boundaries.",
+  "keywords": [
+    "flutter",
+    "react-native",
+    "platform-channel",
+    "bridge",
+    "static-analysis",
+    "dead-code"
+  ],
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ictechgy/isthmus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ictechgy/isthmus/issues"
+  },
+  "homepage": "https://github.com/ictechgy/isthmus#readme",
   "engines": {
     "node": ">=22.18.0"
   },
@@ -16,12 +32,16 @@
     "LICENSE",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
     "verify:cli": "npm run build && node scripts/verify-cli-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run verify:cli",
+    "verify:package": "node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && npm test && npm run verify:cli && npm run verify:package",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

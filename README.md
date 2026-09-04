@@ -18,9 +18,9 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**Phase 4 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+**0.1.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
 cartograph용 외부 보존 근거 왕복을 구현했다. 다음 단계는 실제 Flutter 앱 도그푸딩과
-0.1.0 릴리스다.
+React Native 지원이다.
 
 | 문서 | 내용 |
 |---|---|
@@ -40,6 +40,23 @@ JS/TS 추출기 ─bridges──┘
 ```
 
 isthmus 자체는 작다. 무거운 일(각 언어의 해석)은 자매 도구가 한다.
+
+## 설치
+
+전역 설치 후 CLI 이름 `isthmus`로 실행한다.
+
+```bash
+npm install --global isthmus-cli
+isthmus --help
+```
+
+설치 없이 한 번 실행할 때는 package 이름을 명시한다.
+
+```bash
+npx isthmus-cli --help
+```
+
+`npx isthmus`는 이름이 같은 다른 package를 설치하므로 사용하지 않는다.
 
 ## 개발 빌드에서 사용
 

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-04
+
 ### Added
 
 - bridge-facts 버전 1 계약과 Dart·Swift Phase 0 추출 코퍼스
