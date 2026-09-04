@@ -263,6 +263,23 @@ void create() {
     expect(facts, isEmpty);
   });
 
+  test('Flutter import와 함께 있어도 로컬 MethodChannel 선언을 오인하지 않는다', () {
+    const source = """
+import 'package:flutter/services.dart';
+void create() {
+  MethodChannel('not-flutter');
+}
+Object MethodChannel(String name) => Object();
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/shadowed_import.dart',
+    );
+
+    expect(facts, isEmpty);
+  });
+
   test('접두사로 가져온 Flutter MethodChannel을 추출한다', () {
     const source = """
 import 'package:flutter/services.dart' as services;
@@ -409,6 +426,47 @@ class Plugin {
         ),
       ),
     );
+  });
+
+  test('cascade invokeMethod를 변수와 즉석 채널에 연결한다', () {
+    const source = """
+import 'package:flutter/services.dart';
+final channel = MethodChannel('dev.isthmus/variable');
+void invoke() {
+  channel..invokeMethod('variableCall');
+  MethodChannel('dev.isthmus/inline')..invokeMethod('inlineCall');
+}
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/cascades.dart',
+    );
+    final methods = facts
+        .map((fact) => fact.toJson())
+        .where((fact) => fact['kind'] == 'method-invoke')
+        .map((fact) => (fact['channel'], fact['method']))
+        .toList();
+
+    expect(methods, [
+      ('dev.isthmus/variable', 'variableCall'),
+      ('dev.isthmus/inline', 'inlineCall'),
+    ]);
+  });
+
+  test('소스 위치 column을 1부터 시작하는 UTF-8 바이트로 기록한다', () {
+    const source = """
+import 'package:flutter/services.dart';
+void create() { /* 😀 */ MethodChannel('dev.isthmus/utf8'); }
+""";
+
+    final facts = extractDartBridgeFacts(
+      source: source,
+      relativePath: 'lib/utf8.dart',
+    );
+    final location = facts.single.toJson()['location'];
+
+    expect(location, {'path': 'lib/utf8.dart', 'line': 2, 'column': 28});
   });
 
   test('문서가 동적 이름 개수를 limitations에 기록한다', () async {

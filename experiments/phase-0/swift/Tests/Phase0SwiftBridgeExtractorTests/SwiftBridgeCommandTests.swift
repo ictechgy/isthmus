@@ -95,6 +95,33 @@ func rejectsUnsafeSwiftMetadata() {
     }
 }
 
+@Test("timezone offset과 짧은 소수 초를 UTC 밀리초 형식으로 정규화한다")
+func normalizesSwiftGeneratedAt() throws {
+    let cases = [
+        (input: "2026-09-04T21:00:00+09:00", expected: "2026-09-04T12:00:00.000Z"),
+        (input: "2026-09-04T12:00:00.5Z", expected: "2026-09-04T12:00:00.500Z"),
+    ]
+
+    for item in cases {
+        let result = try runSwiftBridgeCommand(
+            arguments: [
+                "source.swift",
+                "--project", "/fixture",
+                "--path", "ios/Plugin.swift",
+                "--generated-at", item.input,
+            ],
+            readSource: { _ in "import Flutter\n" }
+        )
+        let data = try #require(result.standardOutput.data(using: .utf8))
+        let document = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        #expect(result.exitCode == 0)
+        #expect(document["generatedAt"] as? String == item.expected)
+    }
+}
+
 @Test("읽기 실패는 경로를 노출하지 않고 종료 코드 2를 반환한다")
 func reportsSwiftSourceReadFailure() throws {
     let result = executeSwiftBridgeCommand(
@@ -133,6 +160,29 @@ func reportsSwiftParseFailure() {
     #expect(
         result.standardError
             == "Unable to parse the source file; fix syntax errors and retry.\n"
+    )
+    #expect(!result.standardError.contains("private-source.swift"))
+}
+
+@Test("조건부 Flutter 브리지는 compiler-indexed 추출 안내와 함께 실패한다")
+func reportsConditionalSwiftBridgeFailure() {
+    let result = executeSwiftBridgeCommand(
+        arguments: [
+            "private-source.swift",
+            "--project", "/fixture",
+            "--path", "ios/Runner/Plugin.swift",
+            "--generated-at", "2026-09-04T12:00:00.000Z",
+        ],
+        readSource: { _ in
+            "#if ENABLE_FLUTTER\nimport Flutter\n#endif\n"
+        }
+    )
+
+    #expect(result.exitCode == 2)
+    #expect(result.standardOutput.isEmpty)
+    #expect(
+        result.standardError
+            == "Unable to analyze conditional Flutter bridge source; use compiler-indexed extraction.\n"
     )
     #expect(!result.standardError.contains("private-source.swift"))
 }

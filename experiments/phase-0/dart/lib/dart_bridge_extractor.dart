@@ -45,11 +45,30 @@ List<BridgeFact> extractDartBridgeFacts({
   if (flutterPrefixes.isEmpty) return const [];
   final visitor = _BridgeFactVisitor(
     relativePath,
+    source,
     parseResult.lineInfo,
     flutterPrefixes,
+    _topLevelDeclaredNames(parseResult.unit),
   );
   parseResult.unit.accept(visitor);
   return List.unmodifiable(visitor.facts);
+}
+
+/// 소스 순서와 무관하게 import 이름을 가리는 top-level 선언을 모은다.
+Set<String> _topLevelDeclaredNames(CompilationUnit unit) {
+  final names = <String>{};
+  for (final declaration in unit.declarations) {
+    if (declaration is FunctionDeclaration) {
+      names.add(declaration.name.lexeme);
+    } else if (declaration is ClassDeclaration) {
+      names.add(declaration.namePart.typeName.lexeme);
+    } else if (declaration is TopLevelVariableDeclaration) {
+      names.addAll(
+        declaration.variables.variables.map((variable) => variable.name.lexeme),
+      );
+    }
+  }
+  return names;
 }
 
 /// Flutter services가 MethodChannel을 노출하는 import 접두사를 모은다.
@@ -116,10 +135,19 @@ int _dynamicCount(List<BridgeFact> facts, String kind) => facts
 /// MethodChannel 생성 지점을 방문해 사실로 바꾼다.
 final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 파일 위치를 포함하는 방문자를 만든다.
-  _BridgeFactVisitor(this.relativePath, this.lineInfo, this.flutterPrefixes);
+  _BridgeFactVisitor(
+    this.relativePath,
+    this.source,
+    this.lineInfo,
+    this.flutterPrefixes,
+    Set<String> rootDeclaredNames,
+  ) : _declaredNameScopes = [rootDeclaredNames];
 
   /// 공개 가능한 프로젝트 상대 경로다.
   final String relativePath;
+
+  /// UTF-8 열을 계산할 원본 소스다.
+  final String source;
 
   /// 소스 오프셋을 줄과 열로 바꾼다.
   final LineInfo lineInfo;
@@ -137,7 +165,7 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   final List<Map<String, String>> _stringConstantScopes = [{}];
 
   /// 바깥 범위의 같은 이름을 가리는 선언 이름이다.
-  final List<Set<String>> _declaredNameScopes = [{}];
+  final List<Set<String>> _declaredNameScopes;
 
   /// 클래스 필드를 다른 타입의 같은 이름과 분리한다.
   @override
@@ -274,18 +302,19 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
   /// 생성자 타입이 Flutter MethodChannel인지 확인한다.
   bool _isMethodChannel(InstanceCreationExpression node) =>
       node.constructorName.type.name.lexeme == 'MethodChannel' &&
-      flutterPrefixes.contains(
-        node.constructorName.type.importPrefix?.name.lexeme,
-      );
+      _isFlutterPrefix(node.constructorName.type.importPrefix?.name.lexeme);
 
   /// 대상 없는 MethodChannel 호출이 미해석 생성자 표현인지 확인한다.
   bool _isUnresolvedMethodChannel(MethodInvocation node) =>
       node.methodName.name == 'MethodChannel' &&
-      (node.target == null && flutterPrefixes.contains(null) ||
+      (node.target == null && _isFlutterPrefix(null) ||
           node.target is SimpleIdentifier &&
-              flutterPrefixes.contains(
-                (node.target! as SimpleIdentifier).name,
-              ));
+              _isFlutterPrefix((node.target! as SimpleIdentifier).name));
+
+  /// 명시적 Flutter prefix이거나 shadow되지 않은 unprefixed import인지 확인한다.
+  bool _isFlutterPrefix(String? prefix) =>
+      flutterPrefixes.contains(prefix) &&
+      (prefix != null || !_isDeclared('MethodChannel'));
 
   /// 변수 선언의 채널 이름이 리터럴이면 후속 호출을 위해 보존한다.
   void _recordChannelVariable(
@@ -338,10 +367,12 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
 
   /// 리터럴 메서드 호출을 수신 변수의 채널과 연결한다.
   void _recordMethodInvocation(MethodInvocation node) {
-    final target = node.target;
+    final target = node.realTarget;
     final arguments = node.argumentList.arguments;
-    if (target is! SimpleIdentifier || arguments.isEmpty) return;
-    final channel = _channel(named: target.name);
+    if (target == null || arguments.isEmpty) return;
+    final channel = target is SimpleIdentifier
+        ? _channel(named: target.name)
+        : _channelCreatedBy(target);
     if (channel == null) return;
     final method = _bridgeName(arguments.first);
     facts.add(
@@ -389,6 +420,9 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
     bool isDynamic = false,
   }) {
     final location = lineInfo.getLocation(offset);
+    final lineOffset = lineInfo.getOffsetOfLine(location.lineNumber - 1);
+    final utf8Column =
+        utf8.encode(source.substring(lineOffset, offset)).length + 1;
     return BridgeFact({
       'kind': kind,
       'channel': channel,
@@ -397,7 +431,7 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
       'location': {
         'path': relativePath,
         'line': location.lineNumber,
-        'column': location.columnNumber,
+        'column': utf8Column,
       },
     });
   }
@@ -418,6 +452,10 @@ final class _BridgeFactVisitor extends RecursiveAstVisitor<void> {
 
   /// 현재 범위에 이름을 선언해 바깥 바인딩을 가린다.
   void _declare(String name) => _declaredNameScopes.last.add(name);
+
+  /// 가장 가까운 범위 중 하나가 이름을 선언했는지 확인한다.
+  bool _isDeclared(String name) =>
+      _declaredNameScopes.reversed.any((scope) => scope.contains(name));
 
   /// 선언된 가장 가까운 범위의 채널 바인딩을 갱신한다.
   void _assignChannel(String name, _BridgeName? channel) {

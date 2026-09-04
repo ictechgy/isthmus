@@ -306,6 +306,95 @@ func resolvesSelfChannelReceiver() throws {
     #expect(facts.contains { $0.kind == "method-handle" && $0.method == "takePhoto" })
 }
 
+@Test("재할당된 Swift 채널 변수는 최신 이름으로 handler를 연결한다")
+func tracksReassignedSwiftChannel() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        var channel = FlutterMethodChannel(name: "dev.isthmus/first", binaryMessenger: messenger)
+        channel = FlutterMethodChannel(name: "dev.isthmus/second", binaryMessenger: messenger)
+        channel.setMethodCallHandler { call, result in
+            switch call.method {
+            case "takePhoto": result(nil)
+            default: break
+            }
+        }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+    let registration = try #require(
+        facts.first { $0.kind == "channel-register" }
+    )
+
+    #expect(registration.channel == "dev.isthmus/second")
+}
+
+@Test("다른 객체로 재할당된 Swift 변수는 채널 연결을 제거한다")
+func clearsReassignedSwiftChannel() throws {
+    let source = """
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        var channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel = OtherChannel()
+        channel.setMethodCallHandler { _, _ in }
+    }
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "ios/Plugin.swift"
+    )
+
+    #expect(!facts.contains { $0.kind == "channel-register" })
+}
+
+@Test("조건부 컴파일 안의 Flutter 브리지는 활성 구성을 추측하지 않는다")
+func rejectsConditionalFlutterBridgeSyntax() {
+    let source = """
+    #if ENABLE_FLUTTER
+    import Flutter
+    func register(with messenger: FlutterBinaryMessenger) {
+        let channel = FlutterMethodChannel(name: "dev.isthmus/test", binaryMessenger: messenger)
+        channel.setMethodCallHandler { _, _ in }
+    }
+    #endif
+    """
+
+    do {
+        _ = try SwiftBridgeFactExtractor().extract(
+            source: source,
+            relativePath: "ios/Plugin.swift"
+        )
+        Issue.record("조건부 Flutter 브리지는 compiler-indexed 추출이 필요하다")
+    } catch SwiftBridgeExtractionError.conditionalCompilation {
+        // 기대한 안전한 실패다.
+    } catch {
+        Issue.record("예상하지 못한 오류: \(error)")
+    }
+}
+
+@Test("Flutter import 없는 조건부 유사 API는 브리지로 오인하지 않는다")
+func ignoresConditionalLookalikeWithoutFlutterImport() throws {
+    let source = """
+    #if DEBUG
+    func register() {
+        other.setMethodCallHandler { _, _ in }
+    }
+    #endif
+    """
+
+    let facts = try SwiftBridgeFactExtractor().extract(
+        source: source,
+        relativePath: "Sources/Lookalike.swift"
+    )
+
+    #expect(facts.isEmpty)
+}
+
 @Test("즉석 생성한 채널의 handler를 등록과 메서드에 연결한다")
 func resolvesInlineChannelReceiver() throws {
     let source = """

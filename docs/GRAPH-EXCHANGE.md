@@ -47,10 +47,14 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
 `location.path`는 프로젝트 루트 기준 상대 경로다. 절대 경로, `..` 상위 이동, 제어 문자를 넣지 않는다.
+`location.line`과 `location.column`은 1부터 시작하며, `column`은 해당 줄의 UTF-8 바이트
+오프셋에 1을 더한 값이다. 생산자는 언어 런타임의 UTF-16 또는 Unicode scalar 열을 그대로
+내보내지 않는다.
 소비자는 이 조건을 어긴 문서를 거부해 로컬 경로 노출과 후속 출력 문법 오염을 막는다.
 프로젝트 경로와 채널·메서드·심볼 이름에도 제어 문자를 넣지 않는다.
 NEL(U+0085)과 Unicode 줄·문단 구분자(U+2028/U+2029)도 허용하지 않는다.
-`generatedAt`은 timezone이 명시된 ISO 8601 날짜·시각이어야 한다.
+`generatedAt`은 timezone이 명시된 ISO 8601 날짜·시각이어야 한다. 생산자는 입력 offset을
+UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으로 정규화한다.
 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
 제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
 
@@ -113,7 +117,7 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 {
   "format": "external-retentions",
   "version": 0,
-  "producedBy": { "name": "isthmus", "version": "0.1.0" },
+  "producedBy": { "name": "isthmus", "version": "0.1.1" },
   "generatedAt": "…",
   "retentions": [
     {
