@@ -1,7 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { runChild } from './run-child.mjs';
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageDocument = JSON.parse(
@@ -19,10 +20,10 @@ verify(
   'repository URL',
 );
 
-const pack = spawnSync(
+const pack = runChild(
   'npm',
   ['pack', '--dry-run', '--json', '--ignore-scripts'],
-  { cwd: repositoryRoot, encoding: 'utf8' },
+  { cwd: repositoryRoot },
 );
 verify(pack.status === 0, 'npm pack');
 const [artifact] = JSON.parse(pack.stdout);

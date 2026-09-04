@@ -36,13 +36,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
     "test:phase0:join": "node --test experiments/phase-0/join/join.test.mjs",
-    "verify:cli": "npm run build && node scripts/verify-cli-contract.mjs",
+    "verify:build": "node scripts/verify-build-contract.mjs",
+    "verify:cli": "node scripts/verify-cli-contract.mjs",
     "verify:package": "node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:cli && npm run verify:package",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && npm run verify:cli && npm run verify:package",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
