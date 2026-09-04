@@ -18,7 +18,7 @@ isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 ·
 
 ## 상태
 
-**Phase 0 형식 검증 핵심 완료.** Dart·Swift 임시 추출기와 손 조인 코퍼스로 **교환 형식 버전 1**을 고정했고, cartograph의 `bridges`와 `--external-retentions`도 PR #11로 구현됐다. 다음 단계는 TypeScript 골격과 `check`다. 작업을 이어가려면 [`CLAUDE.md`](CLAUDE.md)와 [`docs/PLAN.md`](docs/PLAN.md)를 먼저 읽는다.
+**Phase 2 `check` 핵심 구현 완료, 아직 npm 미발행.** bridge-facts 버전 1 파서와 문자열 키 조인, 결정적 JSON 보고서, 종료 코드 계약을 구현했다. cartograph의 `bridges`와 `--external-retentions`도 PR #11로 준비돼 있다. 다음 단계는 실제 Flutter 플러그인 도그푸딩과 `retentions --for cartograph`다.
 
 | 문서 | 내용 |
 |---|---|
@@ -38,6 +38,43 @@ JS/TS 추출기 ─bridges──┘
 ```
 
 isthmus 자체는 작다. 무거운 일(각 언어의 해석)은 자매 도구가 한다.
+
+## 개발 빌드에서 사용
+
+isthmus는 자매 도구를 직접 실행하지 않는다. 각 도구가 만든 JSON 파일을 전달한다.
+
+```bash
+npm ci
+npm run build
+node dist/cli/main.js check dart-bridges.json swift-bridges.json
+```
+
+CI에서 브리지 오류가 있으면 실패시키려면 `--strict`를 붙인다.
+
+```bash
+node dist/cli/main.js check dart-bridges.json swift-bridges.json --strict
+```
+
+출력은 `isthmus-check` 버전 1 JSON이며 다음 세 사실을 보고한다.
+
+- `unhandled-invocation` (error): 호출은 있지만 네이티브 핸들러가 없음
+- `unregistered-channel-creation` (error): 호출 측 채널 생성은 있지만 네이티브 등록이 없음
+- `handler-without-invocation` (warning): 네이티브 핸들러는 있지만 호출 측 사용이 없음
+
+모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께 남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
+
+| 종료 코드 | 의미 |
+|---|---|
+| `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
+| `1` | `--strict`에서 error 이슈를 발견함 |
+| `2` | 파일 읽기, JSON, 교환 계약 등 도구 실패 |
+| `64` | 잘못된 명령, 옵션, 입력 개수 |
+
+개발 검증은 타입 체크, 제품 코드 90% 커버리지, 빌드, 실제 CLI 계약을 함께 실행한다.
+
+```bash
+npm run verify
+```
 
 ## 라이선스
 
