@@ -9,10 +9,13 @@
 - 제품은 TypeScript CLI다. npm 패키지는 `isthmus-cli`, 실행 파일은 `isthmus`다.
   설치 없이 실행할 때는 `npx isthmus-cli`를 사용한다.
 - 현재 Flutter Dart ↔ Swift를 지원한다. RN·Kotlin·추가 채널 종류는 계획과 구현을 구분해 설명한다.
+- Capacitor·Cordova·Kotlin Multiplatform은 v0.1 범위 밖이다. 별도 요청과 계약 합의 없이 확장하지 않는다.
 - Swift·Dart·Kotlin 해석은 자매 도구의 몫이다. JS/TS 직접 추출만 향후 예외로 허용한다.
   같은 파일의 한 단계 상수 추적도 해당 언어 producer가 책임진다.
 - 제품 명령은 JSON 파일을 입력·출력하며 자매 도구를 셸로 실행하지 않는다.
   실제 producer를 실행하는 integration 검증은 `scripts/`에서 수행한다.
+- `isthmus retentions <files...> --for cartograph`가 보존 근거를 만들고,
+  `cartograph dead --external-retentions <path>`가 이를 소비한다. 연동에는 양쪽 지원이 필요하다.
 - 자매 도구의 전체 그래프를 읽지 않는다. 브리지 사실만 조인한다.
 - 삭제 가능 판정·자동 삭제·자동 수정은 제공하지 않는다. 모든 결과에 근거와 분석 한계를 남긴다.
   `notFound`, 빈 결과, 종료 코드 0은 안전한 삭제의 증명이 아니다.
