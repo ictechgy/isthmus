@@ -6,6 +6,7 @@ import type {
   BridgeTarget,
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
+import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
 
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
@@ -102,6 +103,7 @@ export function joinBridgeDocuments(
     );
   }
   validateProjects(documents);
+  validatePlatformComposition(documents);
   const limitations = collectLimitations(documents);
   if (documents.some(hasMixedTargets)) return emptyJoinResult(limitations);
   const groups = collectChannelGroups(documents);
@@ -163,7 +165,23 @@ export function isBridgeJoinDeferred(joined: BridgeJoinResult): boolean {
 function validateProjects(documents: readonly BridgeFactsDocument[]): void {
   if (new Set(documents.map(({ project }) => project)).size > 1) {
     throw new BridgeJoinValidationError(
-      'Bridge documents must describe the same project.',
+      'Bridge documents must describe the same project; regenerate them from one project root.',
+    );
+  }
+}
+
+/** 호출 측·수신 측 문서가 모두 있어야 경계 사실로 조인할 수 있다. */
+function validatePlatformComposition(
+  documents: readonly BridgeFactsDocument[],
+): void {
+  const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
+  const hasReceiver = documents.some(({ platform }) =>
+    isReceiverPlatform(platform),
+  );
+  if (!hasCaller || !hasReceiver) {
+    throw new BridgeJoinValidationError(
+      'Bridge documents must include at least one caller platform (dart, js) document '
+      + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
     );
   }
 }

@@ -18,6 +18,7 @@ verifyUsageError();
 verifyHelp();
 verifyVersion();
 verifyInputError();
+verifyCompositionError();
 verifySuccessfulCheck();
 verifyStrictFindings();
 verifyRetentions();
@@ -51,12 +52,26 @@ function verifyVersion() {
   verify(result.stdout === `${packageDocument.version}\n`, 'version stdout');
 }
 
-/** 읽을 수 없는 입력이 도구 실패 2인지 검증한다. */
+/** 읽을 수 없는 입력이 원인별 메시지와 도구 실패 2인지 검증한다. */
 function verifyInputError() {
   const result = run(['check', 'missing-dart.json', swiftPath]);
   verify(result.status === 2, 'input exit code');
   verify(result.stdout === '', 'input stdout');
-  verify(result.stderr.startsWith('Unable to read or validate'), 'input stderr');
+  verify(
+    result.stderr.startsWith('Unable to read bridge facts input 1'),
+    'input stderr',
+  );
+}
+
+/** 호출 측 문서만 있는 입력이 조인 거부 2인지 검증한다. */
+function verifyCompositionError() {
+  const result = run(['check', dartPath, dartPath]);
+  verify(result.status === 2, 'composition exit code');
+  verify(result.stdout === '', 'composition stdout');
+  verify(
+    result.stderr.startsWith('Bridge documents must include'),
+    'composition stderr',
+  );
 }
 
 /** 기본 check가 보고서와 성공 0을 내는지 검증한다. */
@@ -129,6 +144,11 @@ function verifyDiff() {
   const document = JSON.parse(result.stdout);
   verify(document.format === 'isthmus-diff', 'diff format');
   verify(document.summary.introducedErrors === 0, 'diff existing errors');
+  verify(
+    run(['diff', '--strict', '--before', dartPath, swiftPath, '--after', dartPath, swiftPath])
+      .status === 0,
+    'diff leading strict',
+  );
   verify(run(['diff', '--help']).status === 0, 'diff help');
   verify(run(['diff']).status === 64, 'diff usage');
   verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,

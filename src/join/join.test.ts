@@ -373,9 +373,44 @@ test('서로 다른 project 문서는 같은 브리지로 조인하지 않는다
     () => joinBridgeDocuments([dartDocument, otherProject]),
     {
       name: 'BridgeJoinValidationError',
-      message: 'Bridge documents must describe the same project.',
+      message:
+        'Bridge documents must describe the same project; regenerate them from one project root.',
     },
   );
+});
+
+test('호출 측 문서만 있는 조인은 한쪽 관찰을 불일치로 보고하지 않는다', () => {
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, dartDocument]),
+    {
+      name: 'BridgeJoinValidationError',
+      message:
+        'Bridge documents must include at least one caller platform (dart, js) document '
+        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
+    },
+  );
+});
+
+test('수신 측 문서만 있는 조인도 같은 이유로 거부한다', () => {
+  assert.throws(
+    () => joinBridgeDocuments([swiftDocument, swiftDocument]),
+    {
+      name: 'BridgeJoinValidationError',
+    },
+  );
+});
+
+test('사실이 없는 수신 측 문서도 플랫폼 구성 요건을 충족한다', () => {
+  const emptyReceiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    target: null,
+    facts: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, emptyReceiver]);
+
+  assert.equal(result.deferred, false);
+  assert.equal(result.unhandledInvocations.length >= 1, true);
 });
 
 test('조인 문서 수가 안전 상한을 넘으면 그룹 생성 전에 거부한다', () => {
@@ -406,10 +441,16 @@ test('한 그룹의 대량 endpoint를 호출 인자 spread 없이 중복 제거
       },
     })),
   });
+  const emptyReceiver: BridgeFactsDocument = {
+    ...swiftDocument,
+    target: null,
+    facts: [],
+  };
 
   const result = joinBridgeDocuments([
     makeDocument(1),
     makeDocument(70_001),
+    emptyReceiver,
   ]);
 
   assert.equal(result.unhandledInvocations[0]?.invocations.length, 140_000);

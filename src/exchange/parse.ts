@@ -188,9 +188,21 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
 
 /** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */
 function isFactKindForPlatform(platform: unknown, kind: unknown): boolean {
-  return platform === 'dart' || platform === 'js'
+  return isCallerPlatform(platform)
     ? callerFactKinds.has(kind)
     : receiverFactKinds.has(kind);
+}
+
+/** 브리지 호출 측 사실을 생산하는 플랫폼인지 확인한다. */
+export function isCallerPlatform(platform: unknown): platform is 'dart' | 'js' {
+  return platform === 'dart' || platform === 'js';
+}
+
+/** 브리지 수신 측 사실을 생산하는 플랫폼인지 확인한다. */
+export function isReceiverPlatform(
+  platform: unknown,
+): platform is 'swift' | 'kotlin' {
+  return platform === 'swift' || platform === 'kotlin';
 }
 
 /** 사실 위치가 상대 경로와 1부터 시작하는 줄·열을 갖는지 검증한다. */

@@ -51,7 +51,7 @@ export async function runCheckCommand(
       exitCode: isStrict && report.summary.errors > 0 ? 1 : 0,
     };
   } catch (error) {
-    return isExpectedInputError(error) ? inputError() : internalError();
+    return inputFailureResult(error) ?? internalError();
   }
 }
 
@@ -62,28 +62,29 @@ export async function readBridgeDocuments(
 ): Promise<BridgeFactsDocument[]> {
   const documents: BridgeFactsDocument[] = [];
   let totalTextLength = 0;
-  for (const path of inputPaths) {
+  for (const [index, path] of inputPaths.entries()) {
+    const inputPosition = index + 1;
     let text: string;
     try {
       text = await readTextFile(path);
     } catch {
-      throw new BridgeInputError();
+      throw new BridgeInputReadError(inputPosition);
     }
     totalTextLength += text.length;
     if (
       text.length > MAX_INPUT_TEXT_LENGTH ||
       totalTextLength > MAX_TOTAL_INPUT_TEXT_LENGTH
     ) {
-      throw new BridgeInputLimitError();
+      throw new BridgeInputLimitError(inputPosition);
     }
     try {
       documents.push(parseBridgeFactsDocument(JSON.parse(text)));
     } catch (error) {
-      if (
-        error instanceof SyntaxError ||
-        error instanceof BridgeFactsValidationError
-      ) {
-        throw new BridgeInputError();
+      if (error instanceof SyntaxError) {
+        throw new BridgeInputJsonError(inputPosition);
+      }
+      if (error instanceof BridgeFactsValidationError) {
+        throw new BridgeInputContractError(inputPosition, error.message);
       }
       throw error;
     }
@@ -91,15 +92,83 @@ export async function readBridgeDocuments(
   return documents;
 }
 
-/** 입력 텍스트가 CLI 메모리 예산을 넘었음을 나타낸다. */
-class BridgeInputError extends Error {}
+/** 실패한 입력의 1부터 시작하는 순서를 보존하는 입력 오류다. */
+class BridgeInputError extends Error {
+  readonly inputPosition: number;
+
+  constructor(name: string, inputPosition: number) {
+    super(`${name} at input ${inputPosition}`);
+    this.name = name;
+    this.inputPosition = inputPosition;
+  }
+}
+
+/** 입력 파일을 읽지 못한 경우를 구분한다. */
+class BridgeInputReadError extends BridgeInputError {
+  constructor(inputPosition: number) {
+    super('BridgeInputReadError', inputPosition);
+  }
+}
+
+/** 입력 텍스트가 JSON이 아닌 경우를 구분한다. */
+class BridgeInputJsonError extends BridgeInputError {
+  constructor(inputPosition: number) {
+    super('BridgeInputJsonError', inputPosition);
+  }
+}
+
+/** 입력 문서가 교환 계약을 어긴 경우와 그 이유를 구분한다. */
+class BridgeInputContractError extends BridgeInputError {
+  readonly reason: string;
+
+  constructor(inputPosition: number, reason: string) {
+    super('BridgeInputContractError', inputPosition);
+    this.reason = reason;
+  }
+}
 
 /** 입력 텍스트의 크기만 계약을 넘은 경우를 구분한다. */
-class BridgeInputLimitError extends BridgeInputError {}
+class BridgeInputLimitError extends BridgeInputError {
+  constructor(inputPosition: number) {
+    super('BridgeInputLimitError', inputPosition);
+  }
+}
 
-/** 외부 입력에서 기대하는 실패 종류인지 확인한다. */
-export function isExpectedInputError(error: unknown): boolean {
-  return error instanceof BridgeInputError || error instanceof BridgeJoinValidationError;
+/** 알려진 입력·조인 실패를 원인별 해결 방향을 담은 코드 2 결과로 바꾼다. */
+export function inputFailureResult(error: unknown): CommandResult | undefined {
+  if (error instanceof BridgeInputReadError) {
+    return inputFailure(
+      `Unable to read bridge facts input ${error.inputPosition}; `
+      + 'check that the file exists and is readable.\n',
+    );
+  }
+  if (error instanceof BridgeInputJsonError) {
+    return inputFailure(
+      `Bridge facts input ${error.inputPosition} is not valid JSON; `
+      + 'regenerate it with a bridge-facts producer.\n',
+    );
+  }
+  if (error instanceof BridgeInputContractError) {
+    return inputFailure(
+      `Bridge facts input ${error.inputPosition} violates the bridge-facts `
+      + `contract: ${error.reason}\n`,
+    );
+  }
+  if (error instanceof BridgeInputLimitError) {
+    return inputFailure(
+      `Bridge facts input ${error.inputPosition} exceeds the input size limits; `
+      + 'split the extraction into smaller documents.\n',
+    );
+  }
+  if (error instanceof BridgeJoinValidationError) {
+    return inputFailure(`${error.message}\n`);
+  }
+  return undefined;
+}
+
+/** 원인 메시지만 stdout 없이 코드 2로 내보낸다. */
+function inputFailure(standardError: string): CommandResult {
+  return { standardOutput: '', standardError, exitCode: 2 };
 }
 
 /** 전체 조인 보류를 깨끗한 결과와 구분하는 코드 2 결과로 바꾼다. */
@@ -108,16 +177,6 @@ export function bridgeJoinDeferredError(): CommandResult {
     standardOutput: '',
     standardError:
       'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
-    exitCode: 2,
-  };
-}
-
-/** 파일·JSON·계약 오류를 민감정보 없는 코드 2 결과로 바꾼다. */
-function inputError(): CommandResult {
-  return {
-    standardOutput: '',
-    standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
     exitCode: 2,
   };
 }

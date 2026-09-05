@@ -12,7 +12,7 @@ import {
 import {
   bridgeJoinDeferredError,
   internalError,
-  isExpectedInputError,
+  inputFailureResult,
   readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
@@ -36,11 +36,17 @@ export async function runGraphCommand(
       exitCode: 0,
     };
   } catch (error) {
-    return isExpectedInputError(error) ||
+    if (
       error instanceof BridgeGraphLimitError ||
       error instanceof BridgeGraphValidationError
-      ? graphInputError()
-      : internalError();
+    ) {
+      return {
+        standardOutput: '',
+        standardError: `${error.message}\n`,
+        exitCode: 2,
+      };
+    }
+    return inputFailureResult(error) ?? internalError();
   }
 }
 
@@ -73,16 +79,6 @@ function graphUsageError(): CommandResult {
     standardOutput: '',
     standardError: `${graphUsage}\n`,
     exitCode: 64,
-  };
-}
-
-/** graph 입력 실패를 경로 없는 코드 2로 바꾼다. */
-function graphInputError(): CommandResult {
-  return {
-    standardOutput: '',
-    standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
-    exitCode: 2,
   };
 }
 

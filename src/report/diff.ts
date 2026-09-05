@@ -12,7 +12,9 @@ export function createBridgeDiff(
   const oldJoin = joinBridgeDocuments(before);
   const newJoin = joinBridgeDocuments(after);
   if (isBridgeJoinDeferred(oldJoin) || isBridgeJoinDeferred(newJoin)) {
-    throw new BridgeJoinValidationError('Cannot compare deferred bridge joins.');
+    throw new BridgeJoinValidationError(
+      'Cannot compare deferred bridge joins; split mixed bridge targets and retry.',
+    );
   }
   const oldReport = createCheckReport(oldJoin);
   const newReport = createCheckReport(newJoin);
@@ -53,7 +55,10 @@ function validateSnapshots(before: readonly BridgeFactsDocument[], after: readon
     JSON.stringify(producerInventory(before)) !== JSON.stringify(producerInventory(after)) ||
     all.some((doc) => (doc.platform !== 'dart' && doc.platform !== 'swift') ||
       (doc.target !== null && doc.target !== 'flutter'))) {
-    throw new BridgeJoinValidationError('Diff requires matching Flutter producer inventories and project roots.');
+    throw new BridgeJoinValidationError(
+      'Diff requires the same project and matching Flutter dart/swift producer '
+      + 'inventories in both snapshots; rebuild both snapshots from one checkout.',
+    );
   }
 }
 

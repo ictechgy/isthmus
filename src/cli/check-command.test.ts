@@ -90,7 +90,7 @@ test('알 수 없는 옵션은 파일을 읽기 전에 종료 코드 64로 거�
   assert.equal(didReadFile, false);
 });
 
-test('입력 읽기 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
+test('입력 읽기 실패는 경로를 숨기고 원인과 입력 순서를 보고한다', async () => {
   const result = await runCheckCommand(
     ['check', 'private-dart.json', 'private-swift.json'],
     async () => {
@@ -101,9 +101,212 @@ test('입력 읽기 실패는 경로를 숨기고 종료 코드 2를 반환한�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Unable to read bridge facts input 1; check that the file exists and is readable.\n',
     exitCode: 2,
   });
+});
+
+test('JSON이 아닌 입력은 파싱 오류 본문 없이 원인과 순서를 보고한다', async () => {
+  const result = await runCheckCommand(
+    ['check', 'broken.json', 'later.json'],
+    async () => '{not json',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Bridge facts input 1 is not valid JSON; regenerate it with a bridge-facts producer.\n',
+    exitCode: 2,
+  });
+});
+
+test('교환 계약 위반은 위반 이유를 입력 본문 없이 보고한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, 'invalid.json'],
+    (path) =>
+      path === 'invalid.json'
+        ? Promise.resolve(JSON.stringify({ format: 'other' }))
+        : readFile(path, 'utf8'),
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Bridge facts input 2 violates the bridge-facts contract: '
+      + 'Expected format "bridge-facts".\n',
+    exitCode: 2,
+  });
+});
+
+test('contract 위반 메시지는 어떤 검증 분기에서도 입력 값을 담지 않는다', async () => {
+  const base = {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'marker-tool', version: 'MARKER-VERSION' },
+    generatedAt: '2026-09-05T00:00:00.000Z',
+    platform: 'dart',
+    target: 'flutter',
+    project: '/marker-fixture',
+    facts: [],
+    limitations: [],
+  };
+  const markerFact = {
+    kind: 'channel-create',
+    channel: 'MARKER-CHANNEL',
+    dynamic: false,
+    location: { path: 'lib/marker.dart', line: 1, column: 1 },
+  };
+  const cases: ReadonlyArray<readonly [unknown, string]> = [
+    ['null', 'Bridge facts must be a JSON object.'],
+    [{ ...base, format: 'other' }, 'Expected format "bridge-facts".'],
+    [
+      { ...base, version: 2 },
+      'Unsupported bridge-facts version; expected version 1.',
+    ],
+    [{ ...base, tool: { name: '', version: 'MARKER' } }, 'Invalid tool metadata.'],
+    [{ ...base, generatedAt: 'MARKER-TIMESTAMP' }, 'Invalid generatedAt timestamp.'],
+    [{ ...base, platform: 'MARKER-PLATFORM' }, 'Unsupported bridge platform.'],
+    [{ ...base, target: 'MARKER-TARGET' }, 'Unsupported bridge target.'],
+    [{ ...base, project: 'MARKER\u0000PROJECT' }, 'Invalid project path.'],
+    [{ ...base, facts: {} }, 'Facts must be an array.'],
+    [
+      { ...base, target: null, limitations: [1] },
+      'Limitations must be strings.',
+    ],
+    [
+      { ...base, target: null, facts: [markerFact] },
+      'Target must be set exactly when facts are present.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'MARKER-KIND' }] },
+      'Invalid fact kind at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'channel-register' }] },
+      'Fact kind is not valid for platform at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'module-import' }] },
+      'Fact kind is reserved but not supported in isthmus 0.1 at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, method: 'MARKER-METHOD' }] },
+      'Unexpected method at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, channel: '' }] },
+      'Invalid fact channel at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'method-invoke' }] },
+      'Method fact at index 0 requires a method name.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, dynamic: 'MARKER' }] },
+      'Invalid dynamic flag at index 0.',
+    ],
+    [
+      {
+        ...base,
+        facts: [
+          {
+            ...markerFact,
+            location: { path: '/secret/MARKER/path.dart', line: 1, column: 1 },
+          },
+        ],
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...base,
+        facts: [
+          {
+            ...markerFact,
+            kind: 'method-invoke',
+            method: 'MARKER-METHOD',
+            symbol: { qualifiedName: 'MARKER-SYMBOL', usr: '' },
+          },
+        ],
+      },
+      'Invalid fact symbol at index 0.',
+    ],
+  ];
+
+  for (const [invalidDocument, reason] of cases) {
+    const text = typeof invalidDocument === 'string'
+      ? invalidDocument
+      : JSON.stringify(invalidDocument);
+    const result = await runCheckCommand(
+      ['check', 'invalid.json', swiftPath],
+      (path) =>
+        path === 'invalid.json'
+          ? Promise.resolve(text)
+          : readFile(path, 'utf8'),
+    );
+
+    assert.deepEqual(
+      result,
+      {
+        standardOutput: '',
+        standardError:
+          'Bridge facts input 1 violates the bridge-facts contract: '
+          + `${reason}\n`,
+        exitCode: 2,
+      },
+      reason,
+    );
+  }
+});
+
+test('project 불일치는 일반 입력 오류와 다른 원인 메시지를 낸다', async () => {
+  const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
+  const otherProject = JSON.stringify({
+    ...swiftDocument,
+    project: '/another-project',
+  });
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath],
+    (path) =>
+      path === swiftPath
+        ? Promise.resolve(otherProject)
+        : readFile(path, 'utf8'),
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Bridge documents must describe the same project; regenerate them from one project root.\n',
+    exitCode: 2,
+  });
+});
+
+test('호출 측 문서만 받은 check는 한쪽 관찰을 오류로 보고하지 않는다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, dartPath, '--strict'],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.equal(
+    result.standardError,
+    'Bridge documents must include at least one caller platform (dart, js) document '
+    + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.\n',
+  );
+});
+
+test('수신 측 문서만 받은 check도 같은 이유로 거부한다', async () => {
+  const result = await runCheckCommand(
+    ['check', swiftPath, swiftPath],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError.startsWith('Bridge documents must include'),
+    true,
+  );
 });
 
 test('예상하지 못한 내부 오류는 입력 오류와 구분해 보고한다', async () => {
@@ -133,6 +336,11 @@ test('너무 큰 입력은 다음 파일을 읽기 전에 종료 코드 2로 거
 
   assert.equal(result.exitCode, 2);
   assert.deepEqual(reads, ['large.json']);
+  assert.equal(
+    result.standardError,
+    'Bridge facts input 1 exceeds the input size limits; '
+    + 'split the extraction into smaller documents.\n',
+  );
 });
 
 test('전체 입력 합계가 안전 상한을 넘으면 마지막 파일 파싱 전에 거부한다', async () => {
@@ -154,6 +362,11 @@ test('전체 입력 합계가 안전 상한을 넘으면 마지막 파일 파싱
 
   assert.equal(result.exitCode, 2);
   assert.deepEqual(reads, paths);
+  assert.equal(
+    result.standardError,
+    'Bridge facts input 5 exceeds the input size limits; '
+    + 'split the extraction into smaller documents.\n',
+  );
 });
 
 test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 않는다', async () => {
@@ -223,7 +436,8 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Bridge facts input 1 violates the bridge-facts contract: '
+      + 'Fact kind is reserved but not supported in isthmus 0.1 at index 0.\n',
     exitCode: 2,
   });
 });
@@ -259,7 +473,8 @@ test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Bridge facts input 2 violates the bridge-facts contract: '
+      + 'Fact kind is reserved but not supported in isthmus 0.1 at index 0.\n',
     exitCode: 2,
   });
 });
