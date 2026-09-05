@@ -22,7 +22,7 @@ isthmus는 조사한 도구들이 언어별로 나눠 보던 이 교차 경계�
 
 ## 상태
 
-**0.1.3.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`,
+**0.1.4.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
 cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
 Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
 도그푸딩과 React Native 지원이다.
@@ -178,13 +178,12 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/FalsePositiveCorpus
 ```
 
-## 변경 전후 비교 (개발 브랜치, npm 0.1.3에는 미포함)
+## 변경 전후 비교 (0.1.4 이상)
 
 같은 프로젝트의 변경 전후 Dart·Swift 교환 파일을 비교하려면:
 
 ```bash
-npm run build
-node dist/cli/main.js diff \
+isthmus diff \
   --before before-dart.json before-swift.json \
   --after after-dart.json after-swift.json --strict
 ```
