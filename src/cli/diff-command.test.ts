@@ -149,6 +149,29 @@ test('다른 수신 플랫폼이 Swift 핸들러 삭제를 가리지 않도록 �
   assert.equal(result.standardOutput, '');
 });
 
+test('--strict은 마지막이 아닌 인자 위치에서도 새 오류를 실패로 만든다', async () => {
+  const before = [document('dart'), document('swift')];
+  const after = [document('dart'), document('swift', false)];
+  const contents = new Map(['old-dart', 'old-swift', 'new-dart', 'new-swift']
+    .map((path, index) => [path, JSON.stringify([...before, ...after][index])]));
+  const result = await runDiffCommand(
+    ['diff', '--strict', '--before', 'old-dart', 'old-swift', '--after', 'new-dart', 'new-swift'],
+    async (path) => contents.get(path)!,
+  );
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.standardOutput).summary.introducedErrors, 1);
+});
+
+test('project 불일치는 diff 전용 구성 오류와 다른 원인 메시지를 낸다', async () => {
+  const before = [document('dart'), document('swift')];
+  const after = [{ ...document('dart'), project: '/other' }, document('swift')];
+  const contents = new Map(['old-dart', 'old-swift', 'new-dart', 'new-swift']
+    .map((path, index) => [path, JSON.stringify([...before, ...after][index])]));
+  const result = await runDiffCommand(diffArgs, async (path) => contents.get(path)!);
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.standardError.startsWith('Diff requires the same project'));
+});
+
 test('잘못된 diff 인자와 총 파일 수 초과는 읽기 전에 거부한다', async () => {
   for (const args of [[], ['check', ...diffArgs.slice(1)], ['diff'],
     ['diff', '--before', 'one', '--after', 'two', 'three'],
@@ -159,15 +182,21 @@ test('잘못된 diff 인자와 총 파일 수 초과는 읽기 전에 거부한�
   }
 });
 
-test('읽기·JSON 실패는 민감한 경로를 출력하지 않고 내부 오류를 구분한다', async () => {
-  for (const read of [async () => { throw new Error('/secret/path'); }, async () => '{private']) {
-    const result = await runDiffCommand(diffArgs, read);
-    assert.equal(result.exitCode, 2);
-    assert.equal(result.standardOutput, '');
-    assert.equal(result.standardError.includes('private'), false);
-    assert.equal(result.standardError.includes('/secret'), false);
-    assert.ok(result.standardError.startsWith('Unable to read or validate'));
-  }
+test('읽기·JSON 실패는 민감한 경로를 출력하지 않고 원인을 구분한다', async () => {
+  const readFailure = await runDiffCommand(diffArgs, async () => {
+    throw new Error('/secret/path');
+  });
+  assert.equal(readFailure.exitCode, 2);
+  assert.equal(readFailure.standardOutput, '');
+  assert.equal(readFailure.standardError.includes('/secret'), false);
+  assert.ok(readFailure.standardError.startsWith('Unable to read bridge facts input 1'));
+
+  const jsonFailure = await runDiffCommand(diffArgs, async () => '{private');
+  assert.equal(jsonFailure.exitCode, 2);
+  assert.equal(jsonFailure.standardOutput, '');
+  assert.equal(jsonFailure.standardError.includes('private'), false);
+  assert.ok(jsonFailure.standardError.startsWith('Bridge facts input 1 is not valid JSON'));
+
   const result = await runDiffCommand(diffArgs, async () => undefined as unknown as string);
   assert.equal(result.exitCode, 2);
   assert.ok(result.standardError.startsWith('Internal'));

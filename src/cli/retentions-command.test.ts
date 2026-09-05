@@ -75,7 +75,7 @@ test('retentions 입력 파일이 안전 상한을 넘으면 읽기 전에 거�
   assert.equal(didReadFile, false);
 });
 
-test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
+test('retentions 입력 실패는 경로를 숨기고 원인과 입력 순서를 보고한다', async () => {
   const result = await runRetentionsCommand(
     ['retentions', 'private-dart.json', 'private-swift.json', '--for', 'cartograph'],
     async () => {
@@ -88,7 +88,7 @@ test('retentions 입력 실패는 경로를 숨기고 종료 코드 2를 반환�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Unable to read bridge facts input 1; check that the file exists and is readable.\n',
     exitCode: 2,
   });
 });
@@ -124,6 +124,23 @@ test('retentions도 너무 큰 입력 뒤의 파일을 읽지 않는다', async 
 
   assert.equal(result.exitCode, 2);
   assert.deepEqual(reads, ['large.json']);
+});
+
+test('호출 측 문서만 받은 retentions는 빈 보존 문서를 조용히 내지 않는다', async () => {
+  const result = await runRetentionsCommand(
+    ['retentions', dartPath, dartPath, '--for', 'cartograph'],
+    (path) => readFile(path, 'utf8'),
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.1',
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.equal(
+    result.standardError,
+    'Bridge documents must include at least one caller platform (dart, js) document '
+    + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.\n',
+  );
 });
 
 test('mixed-targets로 전체 조인이 보류되면 retentions를 만들지 않는다', async () => {

@@ -58,7 +58,7 @@ test('query 입력 파일이 안전 상한을 넘으면 읽기 전에 거부한�
   assert.equal(didReadFile, false);
 });
 
-test('query 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
+test('query 입력 실패는 경로를 숨기고 원인과 입력 순서를 보고한다', async () => {
   const result = await runQueryCommand(
     ['query', 'takePhoto', 'private-dart.json', 'private-swift.json'],
     async () => {
@@ -69,7 +69,7 @@ test('query 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Unable to read bridge facts input 1; check that the file exists and is readable.\n',
     exitCode: 2,
   });
 });

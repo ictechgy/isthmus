@@ -7,7 +7,7 @@ import { createBridgeQuery, encodeBridgeQuery } from '../report/query.ts';
 import {
   bridgeJoinDeferredError,
   internalError,
-  isExpectedInputError,
+  inputFailureResult,
   readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
@@ -41,18 +41,8 @@ export async function runQueryCommand(
       exitCode: query.status === 'found' ? 0 : 64,
     };
   } catch (error) {
-    return isExpectedInputError(error) ? queryInputError() : internalError();
+    return inputFailureResult(error) ?? internalError();
   }
-}
-
-/** 입력 실패를 경로 없는 도구 실패 2로 바꾼다. */
-function queryInputError(): CommandResult {
-  return {
-    standardOutput: '',
-    standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
-    exitCode: 2,
-  };
 }
 
 /** 잘못된 query 호출을 사용법과 코드 64로 바꾼다. */

@@ -11,7 +11,7 @@ import {
 import {
   bridgeJoinDeferredError,
   internalError,
-  isExpectedInputError,
+  inputFailureResult,
   readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
@@ -44,20 +44,15 @@ export async function runRetentionsCommand(
       exitCode: 0,
     };
   } catch (error) {
-    return isExpectedInputError(error) || error instanceof RetentionValidationError
-      ? retentionInputError()
-      : internalError();
+    if (error instanceof RetentionValidationError) {
+      return {
+        standardOutput: '',
+        standardError: `${error.message}\n`,
+        exitCode: 2,
+      };
+    }
+    return inputFailureResult(error) ?? internalError();
   }
-}
-
-/** 입력 실패를 경로 없는 도구 실패 2로 바꾼다. */
-function retentionInputError(): CommandResult {
-  return {
-    standardOutput: '',
-    standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
-    exitCode: 2,
-  };
 }
 
 /** 지원 대상과 최소 입력 수를 검증해 파일 경로만 돌려준다. */

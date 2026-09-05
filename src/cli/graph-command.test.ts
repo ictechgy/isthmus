@@ -67,7 +67,7 @@ test('graph 형식을 생략하면 JSON을 출력한다', async () => {
   assert.equal(result.standardOutput, await readFile(graphPath, 'utf8'));
 });
 
-test('graph 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다', async () => {
+test('graph 입력 실패는 경로를 숨기고 원인과 입력 순서를 보고한다', async () => {
   const result = await runGraphCommand(
     ['graph', 'private-dart.json', 'private-swift.json'],
     async () => {
@@ -78,7 +78,7 @@ test('graph 입력 실패는 경로를 숨기고 종료 코드 2를 반환한다
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Unable to read or validate bridge facts; check the input files.\n',
+      'Unable to read bridge facts input 1; check that the file exists and is readable.\n',
     exitCode: 2,
   });
 });
@@ -133,3 +133,98 @@ test('mixed-targets로 전체 조인이 보류되면 graph를 만들지 않는�
     exitCode: 2,
   });
 });
+
+test('간선 상한을 넘은 graph는 상한 메시지를 그대로 보고한다', async () => {
+  const contents = new Map([
+    ['caller.json', largeDocument('dart', 'method-invoke')],
+    ['receiver.json', largeDocument('swift', 'method-handle')],
+  ]);
+
+  const result = await runGraphCommand(
+    ['graph', 'caller.json', 'receiver.json'],
+    async (path) => contents.get(path) ?? '',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError: 'Bridge graph exceeds the 100000 edge limit.\n',
+    exitCode: 2,
+  });
+});
+
+test('같은 위치에 충돌하는 심볼이 있으면 graph 입력 오류로 보고한다', async () => {
+  const contents = new Map([
+    ['caller.json', JSON.stringify({
+      ...bridgeDocument('dart'),
+      facts: [
+        {
+          kind: 'method-invoke',
+          channel: 'camera',
+          method: 'capture',
+          dynamic: false,
+          location: { path: 'lib/camera.dart', line: 1, column: 1 },
+        },
+      ],
+    })],
+    ['receiver.json', JSON.stringify({
+      ...bridgeDocument('swift'),
+      facts: ['A.handle', 'B.handle'].map((qualifiedName) => ({
+        kind: 'method-handle',
+        channel: 'camera',
+        method: 'capture',
+        dynamic: false,
+        location: { path: 'Camera.swift', line: 1, column: 1 },
+        symbol: { qualifiedName },
+      })),
+    })],
+  ]);
+
+  const result = await runGraphCommand(
+    ['graph', 'caller.json', 'receiver.json'],
+    async (path) => contents.get(path) ?? '',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError: 'Bridge graph node has conflicting symbols.\n',
+    exitCode: 2,
+  });
+});
+
+/** 간선 상한을 넘는 Cartesian 곱을 만드는 플랫폼별 대량 문서다. */
+function largeDocument(
+  platform: 'dart' | 'swift',
+  kind: 'method-invoke' | 'method-handle',
+): string {
+  return JSON.stringify({
+    ...bridgeDocument(platform),
+    facts: Array.from({ length: 400 }, (_, index) => ({
+      kind,
+      channel: 'camera',
+      method: 'capture',
+      dynamic: false,
+      location: {
+        path: platform === 'dart' ? 'lib/camera.dart' : 'Camera.swift',
+        line: index + 1,
+        column: 1,
+      },
+    })),
+  });
+}
+
+/** 최소 메타데이터를 갖춘 bridge-facts 문서 골격이다. */
+function bridgeDocument(platform: 'dart' | 'swift') {
+  return {
+    format: 'bridge-facts',
+    version: 1,
+    platform,
+    target: 'flutter',
+    project: '/fixture',
+    tool: {
+      name: platform === 'dart' ? 'dartograph' : 'cartograph',
+      version: '1.0.0',
+    },
+    generatedAt: '2026-09-05T00:00:00.000Z',
+    limitations: [],
+  };
+}
