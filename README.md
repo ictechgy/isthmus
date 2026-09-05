@@ -27,8 +27,8 @@ cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합
 Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
 도그푸딩과 React Native 지원이다.
 
-현재 cartograph는 Swift fact를 생산하지만 Dart producer는 아직 정식 릴리스 전이다.
-저장소의 Phase 0 Dart 추출기는 형식 검증용 임시 구현이며 운영 도구로 배포되지 않는다.
+정식 producer는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상이다. 두 도구의 실제 출력과
+공개 battery 플러그인의 Swift USR·Dart 호출 근거 왕복을 검증했다.
 
 | 문서 | 내용 |
 |---|---|
@@ -177,6 +177,34 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/dartograph \
   /path/to/FalsePositiveCorpus
 ```
+
+## 변경 전후 비교 (개발 브랜치, npm 0.1.3에는 미포함)
+
+같은 프로젝트의 변경 전후 Dart·Swift 교환 파일을 비교하려면:
+
+```bash
+npm run build
+node dist/cli/main.js diff \
+  --before before-dart.json before-swift.json \
+  --after after-dart.json after-swift.json --strict
+```
+
+`isthmus-diff` v1은 추가·제거된 논리 메서드 연결, 새로 관찰된 불일치와 사라진 불일치,
+양 시점의 분석 한계와 그 차이, producer 버전·생성 시각을 JSON으로 출력한다. 연결에는 호출자와
+핸들러 위치가 포함된다. 줄 이동은 연결 변경으로 세지 않으며 rename은 추측하지 않는다.
+같은 논리 키의 호출자·핸들러 교체나 개별 호출 위치 증감은 이번 비교 범위에 포함하지 않는다.
+
+`--strict`는 새로 관찰된 error가 있을 때만 1이다. 기존 오류·경고·분석 한계만 있으면 0이므로
+성공 코드가 삭제 안전성이나 완전한 분석을 뜻하지 않는다. `resolvedIssues`도 이전 불일치가
+더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를 함께 확인해야 한다.
+
+현재 diff는 Flutter의 Dart·Swift 문서만 받는다. 각 시점에 두 플랫폼이 모두 필요하며,
+양 시점의 `project`와 플랫폼·도구별 문서 개수가
+같아야 한다. 한 checkout의 같은 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만
+추출한 결과와 전체 결과를 비교하지 말고 같은 분석 설정을 사용한다. 입력 파일은 합계 256개,
+텍스트 길이 제한은 기존 CLI와 동일하다. 혼합 target이나 비교 불가능한 입력은 코드 2로 거부한다.
+`generatedAt`은 fact 추출 시각이며 revision 순서가 아니다. 비교 방향은 `--before`와
+`--after` 인자로 결정되므로 사용자가 올바른 revision의 파일을 지정해야 한다.
 
 ## 코딩 에이전트 skill
 

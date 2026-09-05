@@ -8,6 +8,7 @@ import {
   type CommandResult,
 } from './check-command.ts';
 import { graphUsage, runGraphCommand } from './graph-command.ts';
+import { diffUsage, runDiffCommand } from './diff-command.ts';
 import { queryUsage, runQueryCommand } from './query-command.ts';
 import {
   retentionUsage,
@@ -20,6 +21,7 @@ process.stderr.on('error', handleStreamError);
 const commandUsages = new Map([
   ['check', checkUsage],
   ['graph', graphUsage],
+  ['diff', diffUsage],
   ['query', queryUsage],
   ['retentions', retentionUsage],
 ]);
@@ -30,6 +32,7 @@ Commands:
   check        Report unmatched bridge calls and handlers
   query        Find both sides of a channel or method
   graph        Render matched boundary edges
+  diff         Compare bridge observations before and after a change
   retentions   Produce external retention evidence
 
 Options:
@@ -88,6 +91,8 @@ async function dispatchCommand(
       return runCheckCommand(commandArguments, readTextFile);
     case 'graph':
       return runGraphCommand(commandArguments, readTextFile);
+    case 'diff':
+      return runDiffCommand(commandArguments, readTextFile);
     case 'query':
       return runQueryCommand(commandArguments, readTextFile);
     case 'retentions': {

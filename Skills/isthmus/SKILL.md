@@ -15,8 +15,9 @@ another platform may call.
 
 Obtain current `bridge-facts` JSON from both sides, then run:
 
-As of isthmus 0.1.1, cartograph produces the Swift facts. The Dart producer is not yet
-released; use the repository's Phase 0 extractor only as an interim source.
+Use cartograph 0.5.3 or later for Swift and dartograph 0.1.1 or later for Dart.
+Build the Swift project first to create its compiler index. Run both producers against
+the same project root and select `cartograph bridges --target flutter --format json`.
 Do not fabricate a missing facts file or treat an older file as current evidence.
 
 ```bash

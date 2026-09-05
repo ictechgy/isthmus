@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `diff --before <files...> --after <files...> [--strict]`: 논리 연결·불일치·분석 한계의
+  전후 비교와 새 오류에 한정한 CI 종료 코드
+
 ### Changed
 
 - 실제 cartograph·dartograph `bridges` 출력을 isthmus와 cartograph 보존 근거까지 왕복 검증
