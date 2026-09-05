@@ -211,6 +211,10 @@ isthmus diff \
 확인하도록 가르치는 skill 원문을 [`Skills/isthmus/SKILL.md`](Skills/isthmus/SKILL.md)에 제공한다.
 사용하는 에이전트의 프로젝트 skill 디렉터리에 이 파일을 복사해 사용할 수 있다.
 
+Codex는 이 checkout의 `.agents/skills/isthmus` 링크로 같은 원문을 발견한다.
+`Skills/isthmus/SKILL.md` 한 곳만 편집하며, npm 패키지에는 이 원문이 포함된다.
+스킬 내용 검증과 모델별 지침 조정 근거는 [에이전트 감사 기록](docs/AGENT-AUDIT.md)에 있다.
+
 ## 라이선스
 
 [MIT](LICENSE). 상업적 사용을 포함해 영구 무료다.
