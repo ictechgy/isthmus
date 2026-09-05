@@ -4,7 +4,6 @@
   "description": "Join bridge facts across cross-platform application boundaries.",
   "keywords": [
     "flutter",
-    "react-native",
     "platform-channel",
     "bridge",
     "static-analysis",
@@ -43,7 +42,7 @@
     "verify:build": "node scripts/verify-build-contract.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:cli && npm run verify:package",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

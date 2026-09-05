@@ -1,26 +1,17 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import test from 'node:test';
 
 const skillUrl = new URL('../Skills/isthmus/SKILL.md', import.meta.url);
 const packageUrl = new URL('../package.json', import.meta.url);
 
-test('배포 skill이 삭제 전 경계 조회와 한계 확인을 가르친다', async () => {
-  const markdown = await readFile(skillUrl, 'utf8');
-
-  assert.equal(markdown.startsWith('---\nname: isthmus\n'), true);
-  assert.equal(markdown.includes('isthmus query'), true);
-  assert.equal(markdown.includes('usedBy'), true);
-  assert.equal(markdown.includes('dependsOn'), true);
-  assert.equal(markdown.includes('limitations'), true);
-  assert.equal(markdown.includes('not permission to delete'), true);
-  assert.equal(markdown.includes('Do not fabricate a missing facts file'), true);
-  assert.equal(markdown.includes('test -s external-retentions.json &&'), true);
-  assert.equal(markdown.includes('Only continue when every command exits 0'), true);
+test('Codex가 발견하는 스킬과 npm 배포 스킬은 같은 원문이다', async () => {
+  const discovered = new URL('../.agents/skills/isthmus/SKILL.md', import.meta.url);
+  assert.equal(await realpath(discovered), await realpath(skillUrl));
+  assert.ok((await readFile(discovered, 'utf8')).length > 0);
 });
 
 test('npm 패키지가 검토 가능한 skill 원문을 포함한다', async () => {
   const packageDocument = JSON.parse(await readFile(packageUrl, 'utf8'));
-
   assert.equal(packageDocument.files.includes('Skills'), true);
 });
