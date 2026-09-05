@@ -138,6 +138,127 @@ test('교환 계약 위반은 위반 이유를 입력 본문 없이 보고한다
   });
 });
 
+test('contract 위반 메시지는 어떤 검증 분기에서도 입력 값을 담지 않는다', async () => {
+  const base = {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'marker-tool', version: 'MARKER-VERSION' },
+    generatedAt: '2026-09-05T00:00:00.000Z',
+    platform: 'dart',
+    target: 'flutter',
+    project: '/marker-fixture',
+    facts: [],
+    limitations: [],
+  };
+  const markerFact = {
+    kind: 'channel-create',
+    channel: 'MARKER-CHANNEL',
+    dynamic: false,
+    location: { path: 'lib/marker.dart', line: 1, column: 1 },
+  };
+  const cases: ReadonlyArray<readonly [unknown, string]> = [
+    ['null', 'Bridge facts must be a JSON object.'],
+    [{ ...base, format: 'other' }, 'Expected format "bridge-facts".'],
+    [
+      { ...base, version: 2 },
+      'Unsupported bridge-facts version; expected version 1.',
+    ],
+    [{ ...base, tool: { name: '', version: 'MARKER' } }, 'Invalid tool metadata.'],
+    [{ ...base, generatedAt: 'MARKER-TIMESTAMP' }, 'Invalid generatedAt timestamp.'],
+    [{ ...base, platform: 'MARKER-PLATFORM' }, 'Unsupported bridge platform.'],
+    [{ ...base, target: 'MARKER-TARGET' }, 'Unsupported bridge target.'],
+    [{ ...base, project: 'MARKER\u0000PROJECT' }, 'Invalid project path.'],
+    [{ ...base, facts: {} }, 'Facts must be an array.'],
+    [
+      { ...base, target: null, limitations: [1] },
+      'Limitations must be strings.',
+    ],
+    [
+      { ...base, target: null, facts: [markerFact] },
+      'Target must be set exactly when facts are present.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'MARKER-KIND' }] },
+      'Invalid fact kind at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'channel-register' }] },
+      'Fact kind is not valid for platform at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'module-import' }] },
+      'Fact kind is reserved but not supported in isthmus 0.1 at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, method: 'MARKER-METHOD' }] },
+      'Unexpected method at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, channel: '' }] },
+      'Invalid fact channel at index 0.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, kind: 'method-invoke' }] },
+      'Method fact at index 0 requires a method name.',
+    ],
+    [
+      { ...base, facts: [{ ...markerFact, dynamic: 'MARKER' }] },
+      'Invalid dynamic flag at index 0.',
+    ],
+    [
+      {
+        ...base,
+        facts: [
+          {
+            ...markerFact,
+            location: { path: '/secret/MARKER/path.dart', line: 1, column: 1 },
+          },
+        ],
+      },
+      'Invalid fact location at index 0.',
+    ],
+    [
+      {
+        ...base,
+        facts: [
+          {
+            ...markerFact,
+            kind: 'method-invoke',
+            method: 'MARKER-METHOD',
+            symbol: { qualifiedName: 'MARKER-SYMBOL', usr: '' },
+          },
+        ],
+      },
+      'Invalid fact symbol at index 0.',
+    ],
+  ];
+
+  for (const [invalidDocument, reason] of cases) {
+    const text = typeof invalidDocument === 'string'
+      ? invalidDocument
+      : JSON.stringify(invalidDocument);
+    const result = await runCheckCommand(
+      ['check', 'invalid.json', swiftPath],
+      (path) =>
+        path === 'invalid.json'
+          ? Promise.resolve(text)
+          : readFile(path, 'utf8'),
+    );
+
+    assert.deepEqual(
+      result,
+      {
+        standardOutput: '',
+        standardError:
+          'Bridge facts input 1 violates the bridge-facts contract: '
+          + `${reason}\n`,
+        exitCode: 2,
+      },
+      reason,
+    );
+  }
+});
+
 test('project 불일치는 일반 입력 오류와 다른 원인 메시지를 낸다', async () => {
   const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
   const otherProject = JSON.stringify({

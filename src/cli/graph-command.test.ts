@@ -134,6 +134,20 @@ test('mixed-targets로 전체 조인이 보류되면 graph를 만들지 않는�
   });
 });
 
+test('호출 측 문서만 받은 graph는 구성 거부 이유로 실패한다', async () => {
+  const result = await runGraphCommand(
+    ['graph', dartPath, dartPath],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.equal(
+    result.standardError.startsWith('Bridge documents must include'),
+    true,
+  );
+});
+
 test('간선 상한을 넘은 graph는 상한 메시지를 그대로 보고한다', async () => {
   const contents = new Map([
     ['caller.json', largeDocument('dart', 'method-invoke')],

@@ -172,6 +172,18 @@ test('project 불일치는 diff 전용 구성 오류와 다른 원인 메시지�
   assert.ok(result.standardError.startsWith('Diff requires the same project'));
 });
 
+test('mixed-targets diff는 보류된 조인 메시지로 진단한다', async () => {
+  const before = [document('dart'), document('swift')];
+  const after = [document('dart'),
+    { ...document('swift'), limitations: ['mixed-targets: flutter and react-native'] }];
+  const contents = new Map(['old-dart', 'old-swift', 'new-dart', 'new-swift']
+    .map((path, index) => [path, JSON.stringify([...before, ...after][index])]));
+  const result = await runDiffCommand(diffArgs, async (path) => contents.get(path)!);
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.ok(result.standardError.startsWith('Cannot compare deferred bridge joins'));
+});
+
 test('잘못된 diff 인자와 총 파일 수 초과는 읽기 전에 거부한다', async () => {
   for (const args of [[], ['check', ...diffArgs.slice(1)], ['diff'],
     ['diff', '--before', 'one', '--after', 'two', 'three'],

@@ -74,6 +74,20 @@ test('query 입력 실패는 경로를 숨기고 원인과 입력 순서를 보�
   });
 });
 
+test('호출 측 문서만 받은 query는 구성 거부 이유로 실패한다', async () => {
+  const result = await runQueryCommand(
+    ['query', 'takePhoto', dartPath, dartPath],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.equal(
+    result.standardError.startsWith('Bridge documents must include'),
+    true,
+  );
+});
+
 test('query 내부 오류를 입력 오류와 구분한다', async () => {
   const result = await runQueryCommand(
     ['query', 'takePhoto', 'first.json', 'second.json'],
