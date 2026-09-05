@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-05
+
 ### Added
 
 - `diff --before <files...> --after <files...> [--strict]`: 논리 연결·불일치·분석 한계의

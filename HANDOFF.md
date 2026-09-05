@@ -10,13 +10,13 @@ _Last updated: 2026-09-05 01:52 KST by Codex_
 
 ## Current Status
 
-- 다음 개발 변경: `feat/bridge-diff`의 `diff --before ... --after ... [--strict]`.
-  논리 연결·불일치·분석 한계 비교이며 npm 0.1.3에는 아직 포함되지 않는다.
+- PR #7(`e08ad85`)로 `diff --before ... --after ... [--strict]`를 merge했다.
+  논리 연결·불일치·분석 한계 비교이며 0.1.4 릴리스에 포함한다.
   같은 키의 endpoint 교체나 rename 추론은 지원하지 않는다. README에 실행법과 한계를 기록했다.
 
 - 실제 producer 통합 기준은 `30e0396`(PR #4)이며, 이 문서는 PR #5로 그 위에 merge됐다.
-- isthmus package는 `isthmus-cli` 0.1.3이며 이번 변경은 제품 런타임이 아니라 실제 producer
-  integration/release gate를 추가했다.
+- isthmus package는 `isthmus-cli` 0.1.4 릴리스 준비 상태다. npm 발행 결과는 registry에서
+  확인한다. 0.1.4에는 실제 producer integration gate와 제품 `diff` 명령을 함께 담았다.
 - cartograph 0.5.3과 dartograph 0.1.1을 사용하는 실제 왕복이 통과한다.
 - 필수 후속 구현이나 배포 blocker는 없다.
 - 로컬의 `.gitignore`, `CLAUDE.md`, `AGENTS.md` 변경은 사용자 소유이며 이번 PR들에 넣지 않았다.
