@@ -24,6 +24,7 @@ verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
 verifyGraph();
+verifyDiff();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
@@ -118,6 +119,20 @@ function verifyGraph() {
   verify(result.status === 0, 'graph exit code');
   verify(result.stderr === '', 'graph stderr');
   verify(result.stdout.startsWith('flowchart LR\n'), 'graph Mermaid');
+}
+
+/** 같은 snapshot의 기존 오류는 diff strict에서 새 오류로 세지 않는다. */
+function verifyDiff() {
+  const result = run(['diff', '--before', dartPath, swiftPath, '--after', dartPath, swiftPath, '--strict']);
+  verify(result.status === 0, 'diff unchanged exit code');
+  verify(result.stderr === '', 'diff stderr');
+  const document = JSON.parse(result.stdout);
+  verify(document.format === 'isthmus-diff', 'diff format');
+  verify(document.summary.introducedErrors === 0, 'diff existing errors');
+  verify(run(['diff', '--help']).status === 0, 'diff help');
+  verify(run(['diff']).status === 64, 'diff usage');
+  verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,
+    'diff input failure');
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */
