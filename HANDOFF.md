@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-06 21:20 KST by Claude (Claude Code)_
+_Last updated: 2026-09-06 21:55 KST by Claude (Claude Code)_
 
 ## Goal
 
@@ -9,13 +9,15 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- `main`과 `origin/main`은 `8b1c285`(PR #13 squash)에서 일치한다.
-- **npm 발행이 남았다.** package/CHANGELOG/README는 0.1.5지만 registry latest는 아직 0.1.4다.
-  이 환경의 npm이 인증되어 있지 않아(`npm whoami` → E401) `npm publish`를 실행하지 못했다.
-  `npm publish --dry-run`은 통과했다(isthmus-cli@0.1.5, 49개 파일 63.2kB).
+- `main`과 `origin/main`은 `bc497d2`(PR #16 squash)에서 일치한다.
+- npm `isthmus-cli@0.1.6`이 최신 발행본이고 registry latest도 0.1.6이다. 발행본 `dist`와
+  README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했다.
+- **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
+  않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
+  0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
 - 로컬 `.gitignore` 미커밋 수정은 사용자 소유로 보존한다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 - 이전 세션이 남긴 plus_plugins 조사 메모 두 건을 **이번 세션에 실제 producer로 재현했다.**
-  아래 Blockers에서 미검증 제안이 아니라 확인된 사실로 승격했다.
+  ObjC 항목은 재현 뒤 수정까지 끝났고, 경로 정규화 항목은 아래 Blockers에 남았다.
 
 ## Completed
 
@@ -31,7 +33,14 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
     규칙으로 한 번만 세고, dynamic이면서 미귀속인 핸들러는 dynamic으로만 센다.
   - `retentions --for cartograph`가 수신 측 Swift 문서를 요구하고, 호출자가 있는데도 `symbol`이
     없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 부분 문서 대신 종료 코드 2로 실패한다.
-- PR #13 `8b1c285`(이번 세션): 0.1.5 버전·CHANGELOG·README 상태 갱신. 발행은 미완료.
+- PR #13 `8b1c285`(이번 세션): 0.1.5 버전·CHANGELOG·README 상태 갱신.
+- PR #15 `9029a4e`(이번 세션): 수신 측이 신고한 분석 공백을 심각도에 반영한다.
+  Objective-C로 쓰인 Flutter 핸들러처럼 수신 측 분석에 나타날 수 없는 코드가 있으면
+  "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 `-unverified` 경고로 낸다.
+  증거와 한계는 그대로 남기고 `--strict`를 실패시키지 않는다. 공백의 종류를 나눠 채널
+  진단과 메서드 진단을 따로 판단하고, 호출 측 한계는 심각도를 바꾸지 않으며, 알려진
+  접두사만 인정한다.
+- PR #16 `bc497d2`(이번 세션): 0.1.6 준비와 발행 사고 정정. npm 발행 완료.
 
 ## Key Files & State
 
@@ -41,6 +50,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   플랫폼별로 센다. 키를 JSON으로 만드는 이유는 `channel`이 null일 수 있어서다(주석 참조).
 - `src/report/retentions.ts`: `validateCartographRetentionInputs`(Swift 문서 요구)와
   `rejectUnresolvedSwiftHandlers`(심볼 없는 매치 핸들러 거부).
+- `src/report/check-report.ts`: `receiverCoverageGaps`가 수신 측 한계를 "핸들러를 가리는
+  공백"과 "등록을 가리는 공백"으로 나눈다. 접두사 목록은 닫혀 있고 계약이다.
 - `src/cli/check-command.ts`: typed 입력 오류 4종과 공유 매퍼 `inputFailureResult`.
   보간값은 숫자 `inputPosition`과 parse.ts의 정적 `reason`뿐이다(이번 세션에 재확인).
 - `experiments/phase-0/expected/{check,graph,query,join}.json`: 새 limitation 세 줄이 늘었다.
@@ -63,47 +74,46 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 ## Verification
 
 이번 세션에서 직접 확인한 결과:
-- `npm run verify`: 제품 166개(신규 11), Phase 0 조인 15개 통과; 라인 98.89%, 분기 95.55%,
-  함수 98.47%. `Package contract verified: isthmus-cli@0.1.5`.
-- PR #12·#13 모두 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
+- `npm run verify`: 제품 178개(신규 23), Phase 0 조인 15개 통과; 라인 98.92%, 분기 95.67%,
+  함수 98.53%. `Package contract verified: isthmus-cli@0.1.6`.
+- PR #12·#13·#14·#15·#16 모두 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
+- 발행본 검증: registry latest 0.1.6, `diff -r dist <tarball>/dist` 완전 일치, README 일치.
+  발행본 CLI로 phase-0은 `unhandled-invocation` error(코드 1), 실제 ObjC 플러그인은
+  `unhandled-invocation-unverified` 경고(코드 0)를 내는 것을 확인했다.
 - `verify-cartograph-roundtrip.mjs`: cartograph 0.6.0·dartograph 0.2.0으로 통과(변경 후 재실행).
-- `verify-public-flutter-plugin.mjs`: 고정 커밋 `13e17047`에서 **0.1.5 산출물로** 통과.
+- `verify-public-flutter-plugin.mjs`: 고정 커밋 `13e17047`에서 **0.1.6 산출물로** 통과.
 - 빌드된 CLI로 결함 시나리오 재현 확인: 생산자 신고 없는 dynamic 사실 → 한계 3줄,
   symbol 없는 매치 핸들러 → 코드 2, kotlin 수신 문서만 → 코드 2, 정상 경로는 retention 1건.
-- GLM 리뷰(effort=high): 지적 9건 중 2건 채택, 1건은 코드로 클린 확인, 나머지는 반증하거나
-  기존 추적 항목으로 분류했다. 근거는 PR #12 본문에 남겼다.
+- GLM 리뷰 두 번(effort=high). #12는 9건 중 2건 채택, #15는 테스트 공백 7건 채택. 수신
+  문서에 caller kind가 섞여 완화가 번진다는 지적 2건은 `parse.ts`의 platform/kind 검증으로
+  반증했다. 근거는 각 PR 본문과 코멘트에 남겼다.
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. npm 발행만 인증 문제로 대기 중이다.
+배포 blocker는 없다. 0.1.6까지 발행을 마쳤다.
 
-1. **ObjC 사각지대 — 재현 완료, 진단 정책 결정 필요.** 이전 세션 메모를 실제 producer로
-   재현했다. 공개 `plus_plugins` 고정 커밋 `13e17047`의 `package_info_plus`는 iOS·macOS 핸들러가
-   모두 Objective-C(`FPPPackageInfoPlusPlugin.m`)다. cartograph 0.6.0은 facts 0개·`target: null`
-   문서와 함께 `objective-c-sources: 2 Objective-C file(s) were read only for React Native export
-   macros, so a Flutter handler written in Objective-C cannot appear here`를 낸다.
-   그런데 isthmus는 그 한계를 `limitations`에 복사만 하고 심각도에 쓰지 않아,
-   `check --strict`가 **errors 2 / 종료 코드 1**을 낸다(`unhandled-invocation getAll`,
-   `unregistered-channel-creation`). 핸들러는 `.m` 파일에 실제로 있다.
-   cartograph 소스(`Sources/CartographKit/BridgeFacts.swift`)에도 "이것을 세지 않으면 isthmus는
-   '핸들러 없는 호출'을 오류로 낸다"는 주석이 있다. 즉 생산자는 알려줬고 소비자가 안 읽는다.
-   `src/report/check-report.ts`는 limitations를 심각도 계산에 전혀 쓰지 않는다.
-   결정해야 할 것: (a) 수신 측이 커버리지 공백을 신고하면 error를 별도 code·warning으로 낮출지,
-   (b) 판단 불가로 보고 코드 2로 거부할지, (c) cartograph에 파일·채널 단위 귀속을 요청할지.
-   (a)는 무관한 `.m` 파일 하나가 프로젝트 전체의 error를 무르게 하는 위험이 있고,
-   (c)는 계약 변경이라 자매 저장소 합의가 필요하다. 관련 한계가 하나 더 있다:
-   `objective-c-handlers: N ... carry no USR, so a retention for them cannot be applied`.
-2. **모노레포 project 기준 — `/tmp` 절반은 재현 완료.** 두 producer가 macOS 심볼릭 링크를
+1. **한계의 완화 단위와 target 귀속.** `receiverCoverageGaps`의 완화는 조인 전체에 적용된다.
+   limitation 문법에 파일·채널 범위가 없어 개별 진단에 귀속할 수 없기 때문이다. 그 결과
+   무관한 `.m` 파일 하나가 같은 조인의 다른 채널 진단까지 경고로 낮춘다. GLM 리뷰가 짚은
+   변형도 있다: `JoinLimitation`에 target이 없어, 다른 target의 수신 문서가 신고한 공백이
+   현재 target 진단의 심각도를 바꾼다. 사실은 target별로만 조인되므로 이건 비논리적 완화다.
+   고치려면 `JoinLimitation`에 target을 더해야 하고, 이는 check·query·graph·diff의 출력
+   형태 변경이다. 범위 있는 limitation 문법은 GRAPH-EXCHANGE 변경이라 자매 저장소 합의가 필요하다.
+2. **ObjC 핸들러의 retention**: `objective-c-handlers: N ... carry no USR, so a retention for
+   them cannot be applied by --external-retentions`. 핸들러는 보이지만 USR이 없어 보존 근거로
+   쓸 수 없다. check 쪽은 #15로 닫혔지만 retentions 쪽은 남아 있다. external-retentions 형식
+   논의가 필요하다.
+3. **모노레포 project 기준 — `/tmp` 절반은 재현 완료.** 두 producer가 macOS 심볼릭 링크를
    **반대 방향으로** 정규화한다. 같은 디렉터리를 주어도 cartograph는 `/tmp/...`, dartograph는
    `/private/tmp/...`를 낸다. cartograph에 `/private/tmp/...`를 명시해도 `/tmp/...`로 바꿔 낸다.
    isthmus는 정확한 문자열 일치를 요구하므로 코드 2로 거부한다(설계대로). 사용자 쪽 플래그로
    맞출 방법이 없으므로 자매 저장소의 정규화 합의가 필요하다. `/tmp` 밖 경로에서는 문제없다.
    기존 통합 스크립트가 이 문제를 만나지 않는 이유는 저장소 아래나 `~` 아래 경로를 쓰기 때문이다.
    `*_platform_interface`와 plugin의 producer root가 다른 절반은 아직 재현하지 않았다.
-3. **check 베이스라인**: PRD v0.1 목표의 "베이스라인"이 미구현이다.
-4. **retentions 대표 증거**: `invocations[0]`만 evidence로 실린다. external-retentions v0 형식
+4. **check 베이스라인**: PRD v0.1 목표의 "베이스라인"이 미구현이다.
+5. **retentions 대표 증거**: `invocations[0]`만 evidence로 실린다. external-retentions v0 형식
    변경이라 cartograph 합의가 필요하다.
-5. **관찰량 미노출**: `isthmus-check`의 `summary`에 입력 fact 수·한계 수가 없어, "브리지가 없는
+6. **관찰량 미노출**: `isthmus-check`의 `summary`에 입력 fact 수·한계 수가 없어, "브리지가 없는
    프로젝트"와 "아무것도 관찰하지 못한 실행"이 같은 출력을 낸다. isthmus 소유 형식이라 국지적으로
    고칠 수 있다.
 
@@ -122,7 +132,11 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## What Did Not Work / Avoid
 
-- 리뷰 지적을 검증 없이 반영하지 않는다. 이번에도 9건 중 2건만 유효했다.
+- **발행 전에 브랜치와 `git status`를 확인한다.** 0.1.5는 작업 트리가 기능 브랜치일 때
+   발행돼 미출시 코드가 나갔다. `npm publish`는 checkout 상태를 그대로 담는다.
+- npm 발행은 `PUT 202`로 끝나고 registry 반영은 비동기다. 직후 조회로 실패를 단정하지 않는다.
+  npm 계정에 2FA가 걸려 있어 `--otp`가 필요하고, 코드가 30초면 만료되므로 사용자가 직접 실행한다.
+- 리뷰 지적을 검증 없이 반영하지 않는다. #12는 9건 중 2건, #15는 지적 2건을 코드로 반증했다.
 - `packet-ask-safe`(보호 런처)의 GLM provider가 실패한다. `doctor`는 정상이고 offline
   `inspect`·`--preview`도 되지만 실제 호출은 290바이트 요청도 `PROVIDER_FAILED`(종료 코드 21)다.
   같은 패킷이 `packet-ask`로는 성공한다. 자격증명·모델·allowlist를 고쳐 우회하지 않았다.
@@ -134,19 +148,21 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **0.1.5 발행**: npm 인증 후 `npm publish`, 이어서 registry와 설치본을 검증한다.
-   태그·GitHub release가 필요한지는 이전 릴리스 관행을 확인한다(0.1.4에는 태그가 없다).
-2. **ObjC 진단 정책**: 위 Blockers 1의 (a)/(b)/(c) 중 하나를 정한다. 재현은 끝났으므로 결정만
-   내리면 구현할 수 있다. 재현 절차는 `package_info_plus`를 고정 커밋으로 sparse checkout하고,
-   인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌리는 것이다.
-   경로는 `/tmp` 밖이어야 한다(Blockers 2).
-3. **project 정규화**: cartograph·dartograph 중 어느 쪽을 바꿀지 자매 저장소에서 합의한다.
-   isthmus 쪽 완화는 다른 프로젝트를 잘못 연결할 수 있으므로 마지막 수단이다.
-4. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+1. **완화 단위 좁히기**(Blockers 1): `JoinLimitation`에 target을 더할지 결정한다. 출력 형태
+   변경이므로 소비자 영향을 먼저 정리한다.
+2. **project 정규화**(Blockers 3): cartograph·dartograph 중 어느 쪽을 바꿀지 자매 저장소에서
+   합의한다. isthmus 쪽 완화는 다른 프로젝트를 잘못 연결할 수 있으므로 마지막 수단이다.
+3. **ObjC retention**(Blockers 2): USR 없는 ObjC 핸들러의 보존 근거를 어떻게 다룰지 정한다.
+4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.1.6 모두 태그가 없다).
+5. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+
+ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
+인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 경로는 `/tmp`
+밖이어야 한다(Blockers 3).
 
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-PR #12(관찰 손실 차단)와 #13(0.1.5 준비)이 `8b1c285`로 머지됐지만 npm 발행은 인증 문제로
-남아 있어. 로컬 .gitignore 미커밋 수정을 보존해줘. 발행을 요청하면 npm 인증부터 확인하고,
-ObjC 작업을 요청하면 재현은 끝났으니 진단 정책 결정부터 시작해줘.
+0.1.6까지 발행을 마쳤고 `main`은 `bc497d2`야. 로컬 .gitignore 미커밋 수정을 보존해줘.
+발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘.
+후속 작업은 한계의 완화 단위(target 귀속)와 producer 경로 정규화가 우선이야.
