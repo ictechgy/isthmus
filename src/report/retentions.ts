@@ -1,4 +1,8 @@
-import type { BridgePlatform, BridgeSymbol } from '../exchange/parse.ts';
+import type {
+  BridgeFactsDocument,
+  BridgePlatform,
+  BridgeSymbol,
+} from '../exchange/parse.ts';
 import {
   isBridgeJoinDeferred,
   type BridgeJoinResult,
@@ -48,6 +52,23 @@ export class RetentionValidationError extends Error {
   }
 }
 
+/**
+ * cartograph가 소비할 수 있는 수신 측 문서가 입력에 있는지 검증한다.
+ *
+ * cartograph는 Swift 심볼만 보존한다. Swift 문서가 없는 입력은 조인 자체는
+ * 성공하므로, 검증하지 않으면 보존할 근거가 없다는 사실이 빈 목록과 코드 0으로
+ * 사라진다. 사실이 없는 Swift 문서도 그 플랫폼을 분석했다는 근거로 인정한다.
+ */
+export function validateCartographRetentionInputs(
+  documents: readonly BridgeFactsDocument[],
+): void {
+  if (documents.some(({ platform }) => platform === 'swift')) return;
+  throw new RetentionValidationError(
+    'Retentions for cartograph require at least one swift bridge facts document; '
+    + 'run a swift producer for the receiver side.',
+  );
+}
+
 /** cartograph 보존 문서를 결정적인 JSON으로 인코딩한다. */
 export function encodeCartographRetentionsDocument(
   document: CartographRetentionsDocument,
@@ -66,6 +87,7 @@ export function createCartographRetentionsDocument(
       'Cannot create retentions from a deferred bridge join.',
     );
   }
+  rejectUnresolvedSwiftHandlers(joined);
   return {
     format: 'external-retentions',
     version: 0,
@@ -73,6 +95,30 @@ export function createCartographRetentionsDocument(
     generatedAt,
     retentions: collectCartographRetentions(joined),
   };
+}
+
+/**
+ * 심볼이 없어 보존 근거로 바꿀 수 없는 매치 Swift 핸들러를 거부한다.
+ *
+ * 교환 계약에서 `symbol`은 선택 필드다. 호출자가 있는데도 근거를 만들지 못한
+ * 핸들러를 조용히 빼면 cartograph는 그 핸들러를 계속 미사용으로 보고하고,
+ * 소비자는 살아 있는 코드를 지운다. 부분 보존 문서 대신 실패를 돌려준다.
+ */
+function rejectUnresolvedSwiftHandlers(joined: BridgeJoinResult): void {
+  const unresolved = new Set<string>();
+  for (const method of joined.matchedMethods) {
+    for (const handler of method.handlers) {
+      if (handler.platform !== 'swift' || handler.symbol !== undefined) continue;
+      const { path, line, column } = handler.location;
+      unresolved.add(`${path}\u0000${line}\u0000${column}`);
+    }
+  }
+  if (unresolved.size === 0) return;
+  throw new RetentionValidationError(
+    `Cannot produce retention evidence for ${unresolved.size} matched swift `
+    + 'handlers without a symbol; regenerate the swift document with a producer '
+    + 'that attaches handler symbols.',
+  );
 }
 
 /** 매치별 Dart 호출자와 Swift 심볼을 cartograph 근거로 결합한다. */

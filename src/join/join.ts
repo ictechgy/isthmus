@@ -1,4 +1,5 @@
 import type {
+  BridgeFact,
   BridgeFactsDocument,
   BridgeLocation,
   BridgePlatform,
@@ -207,7 +208,7 @@ function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResu
   };
 }
 
-/** 입력 limitation에 생산 플랫폼과 도구 이름을 붙여 정렬한다. */
+/** 입력 limitation에 생산 플랫폼과 도구 이름을 붙이고 조인하지 못한 사실을 함께 센다. */
 function collectLimitations(
   documents: readonly BridgeFactsDocument[],
 ): JoinLimitation[] {
@@ -218,9 +219,118 @@ function collectLimitations(
       message,
     })),
   );
+  limitations.push(...unjoinedFactLimitations(documents));
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
   return limitations.sort(compareLimitations);
+}
+
+/**
+ * 조인에서 제외한 사실을 isthmus 자신의 관찰 한계로 남긴다.
+ *
+ * 생산자가 같은 사실을 limitation으로 신고하지 않아도, 또는 신고한 개수가 실제와
+ * 달라도 관찰 공백이 보고서에서 사라지지 않아야 한다. 교환 계약은 이 사실들을
+ * 세도록 요구하지만 문서의 limitation 문자열은 생산자의 자발적인 신고라
+ * 소비자가 신뢰의 근거로 삼을 수 없다.
+ */
+function unjoinedFactLimitations(
+  documents: readonly BridgeFactsDocument[],
+): JoinLimitation[] {
+  return [
+    ...unjoinedLimitations(
+      documents,
+      isUnjoinedDynamicChannel,
+      'unjoined-dynamic-channels',
+      'channel facts with a non-literal name',
+    ),
+    ...unjoinedLimitations(
+      documents,
+      isUnjoinedDynamicMethod,
+      'unjoined-dynamic-methods',
+      'method facts with a non-literal name',
+    ),
+    ...unjoinedLimitations(
+      documents,
+      isUnattributedHandler,
+      'unjoined-unattributed-handlers',
+      'method handler facts without a channel',
+    ),
+  ];
+}
+
+/** 조건에 맞는 사실 수를 플랫폼별로 세어 한계 문장으로 바꾼다. */
+function unjoinedLimitations(
+  documents: readonly BridgeFactsDocument[],
+  matchesFact: (fact: BridgeFact) => boolean,
+  prefix: string,
+  subject: string,
+): JoinLimitation[] {
+  return [...countFactsByPlatform(documents, matchesFact)].map(
+    ([platform, count]) => ({
+      platform,
+      tool: 'isthmus',
+      message: `${prefix}: ${count} ${subject} were not joined`,
+    }),
+  );
+}
+
+/** 주어진 조건의 서로 다른 사실 수를 생산 플랫폼별로 모은다. */
+function countFactsByPlatform(
+  documents: readonly BridgeFactsDocument[],
+  matchesFact: (fact: BridgeFact) => boolean,
+): Map<BridgePlatform, number> {
+  const distinctFacts = new Map<BridgePlatform, Set<string>>();
+  for (const document of documents) {
+    for (const fact of document.facts) {
+      if (!matchesFact(fact)) continue;
+      const keys = distinctFacts.get(document.platform) ?? new Set<string>();
+      distinctFacts.set(document.platform, keys.add(unjoinedFactKey(fact)));
+    }
+  }
+  return new Map([...distinctFacts].map(([platform, keys]) => [platform, keys.size]));
+}
+
+/**
+ * 증거 dedup과 같게 같은 위치의 중복 사실을 한 번만 세는 키를 만든다.
+ *
+ * `channel`은 null일 수 있어 구분자 결합 대신 JSON으로 만든다. 그래야 미귀속
+ * 핸들러와 이름이 `null`인 채널의 사실이 같은 키로 합쳐지지 않는다.
+ */
+function unjoinedFactKey(fact: BridgeFact): string {
+  const { path, line, column } = fact.location;
+  return JSON.stringify([
+    fact.kind,
+    fact.channel,
+    fact.method ?? null,
+    path,
+    line,
+    column,
+  ]);
+}
+
+/** 이름이 리터럴이 아니어서 조인하지 못한 채널 사실인지 확인한다. */
+function isUnjoinedDynamicChannel(fact: BridgeFact): boolean {
+  return (
+    fact.dynamic &&
+    (fact.kind === 'channel-create' || fact.kind === 'channel-register')
+  );
+}
+
+/** 이름이 리터럴이 아니어서 조인하지 못한 메서드 사실인지 확인한다. */
+function isUnjoinedDynamicMethod(fact: BridgeFact): boolean {
+  return (
+    fact.dynamic &&
+    (fact.kind === 'method-invoke' || fact.kind === 'method-handle')
+  );
+}
+
+/**
+ * 어느 채널에 속하는지 몰라 조인하지 못한 핸들러 사실인지 확인한다.
+ *
+ * dynamic 사실은 위에서 이미 세므로 여기서 다시 세지 않는다.
+ */
+function isUnattributedHandler(fact: BridgeFact): boolean {
+  return fact.kind === 'method-handle' && fact.channel === null && !fact.dynamic;
 }
 
 /** 생성 시각 차이가 하루를 넘을 때 교차 입력 한계를 만든다. */

@@ -258,6 +258,18 @@ test('입력 limitations를 플랫폼과 생산 도구 출처와 함께 전달�
   assert.deepEqual(result.limitations, [
     {
       platform: 'dart',
+      tool: 'isthmus',
+      message:
+        'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+    },
+    {
+      platform: 'dart',
+      tool: 'isthmus',
+      message:
+        'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+    },
+    {
+      platform: 'dart',
       tool: 'isthmus-phase0-dart',
       message:
         'dynamic-channel-names: 1 channel constructors use a non-literal name',
@@ -267,6 +279,12 @@ test('입력 limitations를 플랫폼과 생산 도구 출처와 함께 전달�
       tool: 'isthmus-phase0-dart',
       message:
         'dynamic-method-names: 1 method invocations use a non-literal name',
+    },
+    {
+      platform: 'swift',
+      tool: 'isthmus',
+      message:
+        'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
     {
       platform: 'swift',
@@ -281,6 +299,246 @@ test('입력 limitations를 플랫폼과 생산 도구 출처와 함께 전달�
         'missing-handler-usrs: 3 method handlers have only a qualified name',
     },
   ]);
+});
+
+test('생산자가 신고하지 않아도 조인하지 못한 dynamic 사실을 센다', () => {
+  const silentDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    limitations: [],
+  });
+  const silentSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    limitations: swiftDocument.limitations.filter(
+      (message) => !message.startsWith('dynamic-'),
+    ),
+  });
+
+  const result = joinBridgeDocuments([silentDart, silentSwift]);
+
+  assert.deepEqual(
+    result.limitations.filter(({ tool }) => tool === 'isthmus'),
+    [
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'swift',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('같은 플랫폼 문서 여러 개의 dynamic 사실을 한 한계로 합산한다', () => {
+  const dynamicInvocation = {
+    kind: 'method-invoke',
+    channel: 'dev.isthmus/camera',
+    method: 'method',
+    dynamic: true,
+    location: { path: 'lib/other_bridge.dart', line: 9, column: 3 },
+  };
+  const secondDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [dynamicInvocation],
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, secondDart, swiftDocument]);
+
+  assert.deepEqual(
+    result.limitations.filter(
+      ({ tool, platform }) => tool === 'isthmus' && platform === 'dart',
+    ),
+    [
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 2 method facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('같은 위치의 중복 dynamic 사실을 한 번만 센다', () => {
+  const duplicatedDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [...dartDocument.facts].reverse().concat([...dartDocument.facts]),
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([duplicatedDart, swiftDocument]);
+
+  assert.deepEqual(
+    result.limitations.filter(
+      ({ tool, platform }) => tool === 'isthmus' && platform === 'dart',
+    ),
+    [
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('서로 다른 문서의 같은 위치 dynamic 사실도 한 번만 센다', () => {
+  const sameDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: dartDocument.facts.filter((fact) => fact.dynamic),
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, sameDart, swiftDocument]);
+
+  assert.deepEqual(
+    result.limitations.filter(
+      ({ tool, platform }) => tool === 'isthmus' && platform === 'dart',
+    ),
+    [
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'dart',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('생산자가 신고한 개수와 무관하게 미귀속 핸들러를 직접 센다', () => {
+  const unattributedSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'takePhotos',
+        dynamic: false,
+        location: { path: 'ios/Runner/DetachedHandler.swift', line: 4, column: 10 },
+      },
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'recordVideo',
+        dynamic: false,
+        location: { path: 'ios/Runner/DetachedHandler.swift', line: 9, column: 10 },
+      },
+    ],
+    limitations: [
+      ...swiftDocument.limitations,
+      'unattributed-method-handles: 1 handler has no channel',
+    ],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, unattributedSwift]);
+
+  assert.deepEqual(
+    result.limitations.filter(({ message }) =>
+      message.startsWith('unjoined-unattributed-handlers:'),
+    ),
+    [
+      {
+        platform: 'swift',
+        tool: 'isthmus',
+        message:
+          'unjoined-unattributed-handlers: 2 method handler facts without a channel were not joined',
+      },
+    ],
+  );
+});
+
+test('미귀속이면서 dynamic인 핸들러를 두 번 세지 않는다', () => {
+  const dynamicUnattributedSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: [
+      ...swiftDocument.facts,
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'takePhotos',
+        dynamic: true,
+        location: { path: 'ios/Runner/DetachedHandler.swift', line: 4, column: 10 },
+      },
+    ],
+    limitations: [
+      ...swiftDocument.limitations,
+      'unattributed-method-handles: 1 handler has no channel',
+    ],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, dynamicUnattributedSwift]);
+
+  assert.equal(
+    result.limitations.some(({ message }) =>
+      message.startsWith('unjoined-unattributed-handlers:'),
+    ),
+    false,
+  );
+  assert.deepEqual(
+    result.limitations.filter(
+      ({ message, platform }) =>
+        platform === 'swift' &&
+        message.startsWith('unjoined-dynamic-methods:'),
+    ),
+    [
+      {
+        platform: 'swift',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('정적 사실만 있는 입력에는 dynamic 한계를 만들지 않는다', () => {
+  const staticDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: dartDocument.facts.filter((fact) => !fact.dynamic),
+    limitations: [],
+  });
+  const staticSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: swiftDocument.facts.filter((fact) => !fact.dynamic),
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([staticDart, staticSwift]);
+
+  assert.deepEqual(result.limitations, []);
 });
 
 test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다', () => {
