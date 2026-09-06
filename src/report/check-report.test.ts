@@ -330,6 +330,180 @@ test('채널 이름을 가리는 공백은 메서드 진단을 낮추지 않는�
   );
 });
 
+test('핸들러 본문을 가리는 공백은 등록 진단까지 낮추지 않는다', () => {
+  const opaqueSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: ['opaque-handler-bodies: 2 named-function handlers are not read'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartWithOrphanChannel(), opaqueSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+  ]);
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation',
+  ]);
+});
+
+test('isthmus가 직접 센 핸들러 공백도 판정 불가 근거로 쓴다', () => {
+  const dynamicHandlerSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [
+      ...fullyObservedSwiftDocument.facts,
+      {
+        kind: 'method-handle',
+        channel: 'dev.isthmus/camera',
+        method: 'takePhoto',
+        dynamic: true,
+        location: { path: 'ios/Runner/CameraPlugin.swift', line: 21, column: 18 },
+      },
+    ],
+  });
+  const unattributedSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [
+      ...fullyObservedSwiftDocument.facts,
+      {
+        kind: 'method-handle',
+        channel: null,
+        method: 'takePhotos',
+        dynamic: false,
+        location: { path: 'ios/Runner/Detached.swift', line: 4, column: 10 },
+      },
+    ],
+    limitations: ['unattributed-method-handles: 1 handler has no channel'],
+  });
+
+  for (const receiver of [dynamicHandlerSwift, unattributedSwift]) {
+    const report = createCheckReport(
+      joinBridgeDocuments([dartDocument, receiver]),
+    );
+
+    assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+      'unhandled-invocation-unverified',
+    ]);
+  }
+});
+
+test('채널 이름을 가리는 공백은 등록 진단을 판정 불가로 낮춘다', () => {
+  const dynamicChannelSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [
+      ...fullyObservedSwiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel: 'dev.isthmus/$feature',
+        dynamic: true,
+        location: { path: 'ios/Runner/CameraPlugin.swift', line: 31, column: 17 },
+      },
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartWithOrphanChannel(), dynamicChannelSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation-unverified',
+  ]);
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation',
+  ]);
+});
+
+test('사실 생성을 보류한 공백은 등록과 핸들러를 모두 낮춘다', () => {
+  const shadowedSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: [
+      'shadowed-flutter-method-channel: 1 local declaration shadows the import',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartWithOrphanChannel(), shadowedSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation-unverified',
+  ]);
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+  ]);
+});
+
+test('kotlin 수신 문서가 신고한 공백도 같은 규칙으로 인정한다', () => {
+  const kotlinReceiver = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    platform: 'kotlin',
+    tool: { name: 'kartograph', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'method-handle',
+        channel: 'dev.isthmus/camera',
+        method: 'takePhoto',
+        dynamic: true,
+        location: { path: 'android/src/CameraPlugin.kt', line: 21, column: 18 },
+      },
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, kotlinReceiver]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+    'unhandled-invocation-unverified',
+  ]);
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation',
+  ]);
+});
+
+test('한계 문구의 접두사가 정확히 맞을 때만 공백으로 본다', () => {
+  for (const message of [
+    'see objective-c-sources: 2 file(s) are not analysed',
+    'objective-c-sources-extended: 2 file(s) are not analysed',
+  ]) {
+    const nearMissSwift = parseBridgeFactsDocument({
+      ...fullyObservedSwiftDocument,
+      limitations: [message],
+    });
+
+    const report = createCheckReport(
+      joinBridgeDocuments([dartDocument, nearMissSwift]),
+    );
+
+    assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+      'unhandled-invocation',
+    ]);
+  }
+});
+
+test('부분 관측에서 매치된 연결은 그대로 두고 나머지만 낮춘다', () => {
+  const partiallyObservedSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: ['objective-c-sources: 2 file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, partiallyObservedSwift]),
+  );
+
+  assert.equal(report.summary.matchedMethods, 1);
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+  ]);
+  assert.equal(
+    report.issues.some(({ code }) => code === 'handler-without-invocation'),
+    true,
+  );
+});
+
 test('알려지지 않은 수신 측 한계는 공백으로 넓게 해석하지 않는다', () => {
   const unknownLimitationSwift = parseBridgeFactsDocument({
     ...fullyObservedSwiftDocument,
@@ -346,6 +520,32 @@ test('알려지지 않은 수신 측 한계는 공백으로 넓게 해석하지 
   );
   assert.equal(report.summary.errors > 0, true);
 });
+
+/** 등록되지 않은 채널 생성을 하나 더 가진 호출 측 문서를 만든다. */
+function dartWithOrphanChannel(): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [
+      ...dartDocument.facts,
+      {
+        kind: 'channel-create',
+        channel: 'dev.isthmus/orphan',
+        dynamic: false,
+        location: { path: 'lib/orphan_bridge.dart', line: 2, column: 17 },
+      },
+    ],
+  });
+}
+
+/** 한 진단 계열에서 실제로 보고된 code만 추린다. */
+function codesOf(
+  report: ReturnType<typeof createCheckReport>,
+  prefix: string,
+): string[] {
+  return report.issues
+    .map(({ code }) => code)
+    .filter((code) => code.startsWith(prefix));
+}
 
 /** 실제 Phase 0 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
