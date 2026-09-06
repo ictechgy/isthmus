@@ -16,6 +16,15 @@ const swiftDocument = await loadDocument(
   '../../experiments/phase-0/expected/swift.json',
 );
 
+/** 수신 측 관찰 공백이 없는 Swift 문서다. 판정 가능한 경로를 검사할 때 쓴다. */
+const fullyObservedSwiftDocument = parseBridgeFactsDocument({
+  ...swiftDocument,
+  facts: swiftDocument.facts.filter((fact) => !fact.dynamic),
+  limitations: swiftDocument.limitations.filter(
+    (message) => !message.startsWith('dynamic-'),
+  ),
+});
+
 test('조인 결과의 오류·경고·정상 연결 수를 요약한다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
 
@@ -108,7 +117,10 @@ test('등록 없는 채널 생성을 method 없는 오류로 보고한다', () =
       },
     ],
   });
-  const joined = joinBridgeDocuments([documentWithOrphan, swiftDocument]);
+  const joined = joinBridgeDocuments([
+    documentWithOrphan,
+    fullyObservedSwiftDocument,
+  ]);
 
   const report = createCheckReport(joined);
 
@@ -217,6 +229,122 @@ test('check JSON 객체 키를 재귀 정렬하고 마지막 개행을 붙인다
   assert.ok(summaryIndex < versionIndex);
   assert.equal(encoded.endsWith('\n'), true);
   assert.equal(encoded, encodeCheckReport(report));
+});
+
+test('수신 측이 소스 분석 공백을 신고하면 오류 대신 판정 불가로 보고한다', () => {
+  const objectiveCSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [],
+    target: null,
+    limitations: [
+      'objective-c-sources: 2 Objective-C file(s) were read only for React Native '
+      + 'export macros, so a Flutter handler written in Objective-C cannot appear here',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, objectiveCSwift]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(
+    report.issues.map(({ code, severity }) => [code, severity]),
+    [
+      ['unhandled-invocation-unverified', 'warning'],
+      ['unhandled-invocation-unverified', 'warning'],
+      ['unregistered-channel-creation-unverified', 'warning'],
+    ],
+  );
+});
+
+test('판정 불가로 낮춰도 증거와 한계는 그대로 남긴다', () => {
+  const objectiveCSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [],
+    target: null,
+    limitations: ['objective-c-sources: 2 file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, objectiveCSwift]),
+  );
+
+  const unverified = report.issues.find(
+    ({ code }) => code === 'unhandled-invocation-unverified',
+  );
+  assert.equal(unverified?.evidence[0]?.platform, 'dart');
+  assert.equal(
+    report.limitations.some(({ message }) =>
+      message.startsWith('objective-c-sources:'),
+    ),
+    true,
+  );
+});
+
+test('호출 측 한계는 네이티브 핸들러를 가리지 않으므로 심각도를 낮추지 않는다', () => {
+  const callerLimitedDart = parseBridgeFactsDocument({
+    ...dartDocument,
+    limitations: [
+      ...dartDocument.limitations,
+      'opaque-handler-bodies: 2 handlers are not read',
+      'objective-c-sources: 2 file(s) are not analysed',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([callerLimitedDart, fullyObservedSwiftDocument]),
+  );
+
+  assert.equal(
+    report.issues.some(({ code }) => code === 'unhandled-invocation'),
+    true,
+  );
+  assert.equal(report.summary.errors > 0, true);
+});
+
+test('채널 이름을 가리는 공백은 메서드 진단을 낮추지 않는다', () => {
+  const dynamicChannelSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [
+      ...fullyObservedSwiftDocument.facts,
+      {
+        kind: 'channel-register',
+        channel: 'dev.isthmus/$feature',
+        dynamic: true,
+        location: { path: 'ios/Runner/CameraPlugin.swift', line: 31, column: 17 },
+      },
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, dynamicChannelSwift]),
+  );
+
+  assert.equal(
+    report.issues.some(({ code }) => code === 'unhandled-invocation'),
+    true,
+  );
+  assert.equal(
+    report.issues.some(({ code }) => code === 'unhandled-invocation-unverified'),
+    false,
+  );
+});
+
+test('알려지지 않은 수신 측 한계는 공백으로 넓게 해석하지 않는다', () => {
+  const unknownLimitationSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: ['some-future-limitation: 3 things happened'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, unknownLimitationSwift]),
+  );
+
+  assert.equal(
+    report.issues.some(({ code }) => code === 'unhandled-invocation'),
+    true,
+  );
+  assert.equal(report.summary.errors > 0, true);
 });
 
 /** 실제 Phase 0 JSON을 제품 파서로 검증한다. */
