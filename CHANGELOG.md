@@ -4,12 +4,19 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-06
+
 ### Changed
 
 - 수신 측이 분석 공백을 신고하면 "핸들러 없는 호출"·"등록 없는 채널 생성"을 error가 아니라
   `unhandled-invocation-unverified`·`unregistered-channel-creation-unverified` 경고로 보고.
   Flutter 핸들러가 Objective-C로 쓰인 플러그인에서 `check --strict`가 거짓 실패하지 않는다.
   사실과 증거, 한계는 그대로 보고하며 공백의 종류에 따라 채널·메서드 진단을 따로 판단한다
+
+### Fixed
+
+- 발행 사고 정정: npm에 올라간 0.1.5 tarball에는 위 변경이 이미 들어가 있었다. 저장소의
+  0.1.5 태그 시점 코드와 달랐으므로 0.1.6이 두 상태를 다시 일치시킨다
 
 ## [0.1.5] - 2026-09-06
 
