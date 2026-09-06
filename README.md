@@ -22,10 +22,11 @@ isthmus는 조사한 도구들이 언어별로 나눠 보던 이 교차 경계�
 
 ## 상태
 
-**0.1.4.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
+**0.1.5.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
 cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
-Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했다. 다음 단계는 실제 Flutter 앱
-도그푸딩과 React Native 지원이다.
+Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했고, 조인하지 못한 사실과 근거를
+만들지 못한 보존 대상이 조용히 사라지지 않도록 소비자 쪽에서 다시 센다. 다음 단계는
+실제 Flutter 앱 도그푸딩과 React Native 지원이다.
 
 정식 producer는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상이다. 두 도구의 실제 출력과
 공개 battery 플러그인의 Swift USR·Dart 호출 근거 왕복을 검증했다.
