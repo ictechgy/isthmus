@@ -143,6 +143,36 @@ test('호출 측 문서만 받은 retentions는 빈 보존 문서를 조용히 �
   );
 });
 
+test('수신 측이 kotlin뿐이면 빈 cartograph 보존 문서를 내지 않는다', async () => {
+  const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
+  const kotlinDocument = JSON.stringify({
+    ...swiftDocument,
+    platform: 'kotlin',
+    tool: { name: 'kartograph', version: '0.1.0' },
+    facts: swiftDocument.facts.map((fact: { location: { path: string } }) => ({
+      ...fact,
+      location: { ...fact.location, path: 'android/src/CameraPlugin.kt' },
+    })),
+  });
+
+  const result = await runRetentionsCommand(
+    ['retentions', dartPath, swiftPath, '--for', 'cartograph'],
+    (path) => path === swiftPath
+      ? Promise.resolve(kotlinDocument)
+      : readFile(path, 'utf8'),
+    () => new Date('2026-09-04T13:00:00Z'),
+    '0.1.1',
+  );
+
+  assert.deepEqual(result, {
+    standardOutput: '',
+    standardError:
+      'Retentions for cartograph require at least one swift bridge facts '
+      + 'document; run a swift producer for the receiver side.\n',
+    exitCode: 2,
+  });
+});
+
 test('mixed-targets로 전체 조인이 보류되면 retentions를 만들지 않는다', async () => {
   const swiftDocument = JSON.parse(await readFile(swiftPath, 'utf8'));
   const mixedSwift = JSON.stringify({

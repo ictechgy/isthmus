@@ -2,6 +2,16 @@
   "level": "bridge",
   "limitations": [
     {
+      "message": "unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined",
+      "platform": "dart",
+      "tool": "isthmus"
+    },
+    {
+      "message": "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+      "platform": "dart",
+      "tool": "isthmus"
+    },
+    {
       "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",
       "platform": "dart",
       "tool": "isthmus-phase0-dart"
@@ -10,6 +20,11 @@
       "message": "dynamic-method-names: 1 method invocations use a non-literal name",
       "platform": "dart",
       "tool": "isthmus-phase0-dart"
+    },
+    {
+      "message": "unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined",
+      "platform": "swift",
+      "tool": "isthmus"
     },
     {
       "message": "dynamic-channel-names: 1 channel constructors use a non-literal name",

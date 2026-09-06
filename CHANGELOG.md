@@ -8,9 +8,15 @@
 
 - 호출 측(dart·js)·수신 측(swift·kotlin) 플랫폼 문서가 모두 없는 조인 입력을 거부하는
   fail-closed 플랫폼 구성 검증. 한쪽 관찰이 경계 불일치 오류나 빈 보존 근거로 오독되지 않는다
+- 조인하지 않은 사실을 isthmus가 직접 세어 `unjoined-dynamic-channels`·
+  `unjoined-dynamic-methods`·`unjoined-unattributed-handlers` limitation으로 보고.
+  생산자가 신고하지 않거나 신고한 개수가 실제와 달라도 관찰 공백이 보고서에서 사라지지 않는다
 
 ### Changed
 
+- `retentions --for cartograph`가 수신 측 Swift 문서를 요구하고, 호출자가 있는데도
+  `symbol`이 없어 근거를 만들 수 없는 매치 핸들러가 있으면 부분 보존 문서 대신 종료 코드 2로
+  실패. 빈 보존 파일이 살아 있는 핸들러의 삭제 근거로 쓰이지 않는다
 - 입력 실패 메시지를 원인(읽기·JSON·교환 계약 위반·project 불일치·크기 상한)과 입력 순서,
   해결 방향으로 구분. contract 위반은 입력 본문을 담지 않는 검증 이유를 함께 전달
 - `diff --strict`을 임의의 인자 위치에서 인식하고 중복 `--strict`은 사용 오류로 거부

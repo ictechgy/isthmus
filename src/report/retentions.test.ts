@@ -10,6 +10,7 @@ import { joinBridgeDocuments } from '../join/join.ts';
 import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
+  validateCartographRetentionInputs,
 } from './retentions.ts';
 
 const dartDocument = await loadDocument(
@@ -177,6 +178,70 @@ test('조인이 보류된 결과로 빈 보존 문서를 만들지 않는다', (
       '0.0.0',
     ),
     /Cannot create retentions from a deferred bridge join\./,
+  );
+});
+
+test('심볼 없는 매치 Swift 핸들러를 조용히 빼지 않는다', () => {
+  const swiftWithoutSymbols = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: swiftDocument.facts.map(({ symbol: _symbol, ...fact }) => fact),
+    limitations: swiftDocument.limitations.filter(
+      (message) => !message.startsWith('missing-handler-usrs:'),
+    ),
+  });
+  const joined = joinBridgeDocuments([dartDocument, swiftWithoutSymbols]);
+
+  assert.equal(joined.matchedMethods.length, 1);
+  assert.throws(
+    () => createCartographRetentionsDocument(
+      joined,
+      '2026-09-04T13:00:00Z',
+      '0.0.0',
+    ),
+    /Cannot produce retention evidence for 1 matched swift handlers without a symbol; regenerate the swift document with a producer that attaches handler symbols\./,
+  );
+});
+
+test('호출자 없는 핸들러는 심볼이 없어도 보존 실패로 보지 않는다', () => {
+  const swiftWithoutSymbols = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: swiftDocument.facts.map((fact) =>
+      fact.kind === 'method-handle' && fact.method === 'takePhoto'
+        ? fact
+        : Object.fromEntries(
+            Object.entries(fact).filter(([key]) => key !== 'symbol'),
+          ),
+    ),
+  });
+  const joined = joinBridgeDocuments([dartDocument, swiftWithoutSymbols]);
+
+  const document = createCartographRetentionsDocument(
+    joined,
+    '2026-09-04T13:00:00Z',
+    '0.0.0',
+  );
+
+  assert.equal(document.retentions.length, 1);
+});
+
+test('cartograph 보존은 수신 측 Swift 문서를 요구한다', () => {
+  const kotlinDocument = parseBridgeFactsDocument({
+    ...swiftDocument,
+    platform: 'kotlin',
+    tool: { name: 'kartograph', version: '0.1.0' },
+    facts: swiftDocument.facts.map((fact) => ({
+      ...fact,
+      location: { ...fact.location, path: 'android/src/CameraPlugin.kt' },
+    })),
+  });
+
+  assert.throws(
+    () => validateCartographRetentionInputs([dartDocument, kotlinDocument]),
+    /Retentions for cartograph require at least one swift bridge facts document; run a swift producer for the receiver side\./,
+  );
+  assert.equal(
+    validateCartographRetentionInputs([dartDocument, swiftDocument]),
+    undefined,
   );
 });
 

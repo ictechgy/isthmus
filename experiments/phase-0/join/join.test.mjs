@@ -144,12 +144,27 @@ test('동적 사실은 조인하지 않고 양쪽 limitations를 보존한다', 
     {
       platform: 'dart',
       message:
+        'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
+    },
+    {
+      platform: 'dart',
+      message:
+        'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+    },
+    {
+      platform: 'dart',
+      message:
         'dynamic-channel-names: 1 channel constructors use a non-literal name',
     },
     {
       platform: 'dart',
       message:
         'dynamic-method-names: 1 method invocations use a non-literal name',
+    },
+    {
+      platform: 'swift',
+      message:
+        'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
     {
       platform: 'swift',

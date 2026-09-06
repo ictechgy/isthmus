@@ -7,6 +7,7 @@ import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
   RetentionValidationError,
+  validateCartographRetentionInputs,
 } from '../report/retentions.ts';
 import {
   bridgeJoinDeferredError,
@@ -33,6 +34,7 @@ export async function runRetentionsCommand(
     const documents = await readBridgeDocuments(inputPaths, readTextFile);
     const joined = joinBridgeDocuments(documents);
     if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
+    validateCartographRetentionInputs(documents);
     const retentions = createCartographRetentionsDocument(
       joined,
       now().toISOString(),

@@ -101,6 +101,8 @@ cartograph dead --external-retentions external-retentions.json
 
 `retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
 
+cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소 하나 요구하고, 없으면 빈 보존 문서 대신 종료 코드 2로 거부한다. 호출자가 있는데도 `symbol`이 없어 보존 근거로 바꿀 수 없는 Swift 핸들러가 있으면 부분 문서를 만들지 않고 같은 코드로 실패한다. 근거가 빠진 보존 파일은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다.
+
 모든 소비 명령은 호출 측(dart)과 수신 측(swift) 플랫폼 문서를 최소 하나씩 요구한다. 한쪽만 있으면 한쪽 관찰을 경계 불일치로 오독하지 않고 종료 코드 2로 거부한다. 입력 실패 메시지는 원인(읽기 실패, JSON 오류, 교환 계약 위반, project 불일치, 플랫폼 구성 누락, 크기 상한)과 입력 순서, 해결 방향을 구분해 전달하며 입력 본문과 경로는 노출하지 않는다.
 
 실제 공개 Flutter 플러그인에서 생산부터 소비까지 확인하려면 저장소 루트에서 다음 검증을
@@ -153,6 +155,16 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
 handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께
 남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
+
+`limitations`에는 생산자가 신고한 한계와 isthmus가 직접 센 한계가 함께 들어간다.
+`tool`이 `isthmus`인 항목은 조인 단계에서 관찰한 것이다. 조인하지 못한 사실은 생산자의
+신고나 그 개수와 무관하게 플랫폼별로 다시 센다.
+
+- `unjoined-dynamic-channels`: 이름이 리터럴이 아닌 채널 생성·등록 사실
+- `unjoined-dynamic-methods`: 이름이 리터럴이 아닌 호출·핸들러 사실
+- `unjoined-unattributed-handlers`: 어느 채널에 속하는지 모르는 핸들러 사실
+
+같은 위치의 중복 사실은 한 번만 센다. dynamic이면서 미귀속인 핸들러는 dynamic으로만 센다.
 
 | 종료 코드 | 의미 |
 |---|---|
