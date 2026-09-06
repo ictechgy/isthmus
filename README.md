@@ -152,6 +152,17 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 - `unregistered-channel-creation` (error): 호출 측 채널 생성은 있지만 네이티브 등록이 없음
 - `registration-without-creation` (warning): 네이티브 채널 등록은 있지만 호출 측 생성이 없음
 - `handler-without-invocation` (warning): 네이티브 핸들러는 있지만 호출 측 사용이 없음
+- `unhandled-invocation-unverified` (warning): 위 첫 항목과 같은 사실이지만, 수신 측이
+  핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
+- `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
+
+`-unverified` 종류는 수신 측 문서의 한계에서 나온다. 예를 들어 Flutter 핸들러가
+Objective-C로 쓰인 플러그인에서 cartograph는 `objective-c-sources:`를 신고하고 핸들러 사실을
+내지 못한다. 이때 "핸들러 없는 호출"을 error로 단정하면 이 도구가 없애려던 오탐을 이 도구가
+만든다. 사실과 증거는 그대로 보고하되 `--strict`를 실패시키지 않는다. 공백의 종류는 구분해서,
+이름이 리터럴이 아닌 채널 등록은 채널 진단만 낮추고 메서드 진단은 낮추지 않는다. 호출 측
+한계는 네이티브 코드를 가리지 않으므로 심각도에 영향을 주지 않으며, 알려지지 않은 한계
+문구는 공백으로 해석하지 않는다.
 
 모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
 handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께
@@ -170,7 +181,7 @@ handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limit
 | 종료 코드 | 의미 |
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
-| `1` | `--strict`에서 error 이슈를 발견함 |
+| `1` | `--strict`에서 error 이슈를 발견함. `-unverified` 경고는 실패시키지 않음 |
 | `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
 
