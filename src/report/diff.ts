@@ -82,8 +82,8 @@ function issueKey(item: Parameters<typeof logicalKey>[0] & { readonly code: stri
   return JSON.stringify([item.code, logicalKey(item)]);
 }
 
-function limitationKey(item: { readonly platform: string; readonly tool: string; readonly message: string }): string {
-  return JSON.stringify([item.platform, item.tool, item.message]);
+function limitationKey(item: { readonly platform: string; readonly target: string | null; readonly tool: string; readonly message: string }): string {
+  return JSON.stringify([item.platform, item.target, item.tool, item.message]);
 }
 
 /** 키 집합 차이를 안정적으로 정렬하고 원래 증거를 보존한다. */

@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- check·query·graph·diff 출력의 `limitations` 항목에 `target` 필드 추가. 생산 문서의 한계는
+  그 문서의 target으로 귀속되고, isthmus가 직접 세는 조인 제외 사실은 플랫폼·target별로
+  따로 센다. 텍스트 그래프(DOT·Mermaid)의 한계 주석도 `platform/target/tool` 형태가 된다
+
+### Fixed
+
+- 다른 target의 수신 문서가 신고한 분석 공백이 현재 target의 "핸들러 없는 호출"·
+  "등록 없는 채널 생성"까지 경고로 낮추던 문제. 사실은 target별로만 조인되므로 완화
+  단위를 진단의 target으로 좁혔다. 사실이 없는(`target: null`) 수신 문서의 공백은
+  귀속 근거가 없어 종전대로 모든 target에 적용한다
+
 ## [0.1.6] - 2026-09-06
 
 ### Changed

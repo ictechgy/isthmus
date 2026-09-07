@@ -62,8 +62,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
   const gaps = receiverCoverageGaps(joined.limitations);
   const issues: CheckIssue[] = [
     ...joined.unhandledInvocations.map<CheckIssue>((item) => ({
-      severity: gaps.hidesHandlers ? 'warning' : 'error',
-      code: gaps.hidesHandlers
+      severity: gaps.hidesHandlers(item.target) ? 'warning' : 'error',
+      code: gaps.hidesHandlers(item.target)
         ? 'unhandled-invocation-unverified'
         : 'unhandled-invocation',
       target: item.target,
@@ -72,8 +72,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       evidence: item.invocations,
     })),
     ...joined.unregisteredChannelCreations.map<CheckIssue>((item) => ({
-      severity: gaps.hidesRegistrations ? 'warning' : 'error',
-      code: gaps.hidesRegistrations
+      severity: gaps.hidesRegistrations(item.target) ? 'warning' : 'error',
+      code: gaps.hidesRegistrations(item.target)
         ? 'unregistered-channel-creation-unverified'
         : 'unregistered-channel-creation',
       target: item.target,
@@ -110,14 +110,14 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
   };
 }
 
-/** 수신 측이 스스로 알린 분석 공백이 무엇을 가리는지 나눈 결과다. */
+/** 수신 측이 스스로 알린 분석 공백이 target별로 무엇을 가리는지 나타낸다. */
 interface ReceiverCoverageGaps {
-  readonly hidesHandlers: boolean;
-  readonly hidesRegistrations: boolean;
+  hidesHandlers(target: BridgeTarget): boolean;
+  hidesRegistrations(target: BridgeTarget): boolean;
 }
 
 /**
- * 수신 측이 핸들러나 등록을 놓쳤을 수 있다고 스스로 알렸는지 확인한다.
+ * 수신 측이 핸들러나 등록을 놓쳤을 수 있다고 스스로 알렸는지 target별로 확인한다.
  *
  * 이때 "핸들러 없는 호출"은 경계 불일치가 아니라 판정 불가다. Objective-C로 쓰인
  * Flutter 핸들러처럼 수신 측 분석에 아예 나타나지 않는 코드가 실제로 있어서,
@@ -126,18 +126,42 @@ interface ReceiverCoverageGaps {
  * 공백의 종류는 구분한다. 이름이 리터럴이 아닌 채널 등록 하나가 무관한 메서드
  * 진단까지 무르게 하면 안 된다. 호출 측 한계는 네이티브 코드를 가리지 않으므로
  * 수신 측 플랫폼의 한계만 본다.
+ *
+ * 완화 단위는 진단의 target이다. 사실은 target별로만 조인되므로, 다른 target의
+ * 수신 문서가 신고한 공백은 현재 target의 핸들러를 가릴 수 없다. target이 없는
+ * (사실이 없는) 수신 문서는 어느 target을 분석했는지 특정할 수 없어 모든 target에
+ * 적용한다. 그 공백이 가리는 핸들러를 target에 귀속시킬 근거가 없기 때문이다.
  */
 function receiverCoverageGaps(
   limitations: readonly JoinLimitation[],
 ): ReceiverCoverageGaps {
-  const messages = limitations
-    .filter(({ platform }) => isReceiverPlatform(platform))
-    .map(({ message }) => message);
+  const receiverLimitations = limitations.filter(({ platform }) =>
+    isReceiverPlatform(platform),
+  );
+  const memoized = new Map<
+    BridgeTarget,
+    { handlers: boolean; registrations: boolean }
+  >();
+  const gapsFor = (target: BridgeTarget) => {
+    const existing = memoized.get(target);
+    if (existing !== undefined) return existing;
+    const messages = receiverLimitations
+      .filter(
+        ({ target: gapTarget }) => gapTarget === null || gapTarget === target,
+      )
+      .map(({ message }) => message);
+    const gaps = {
+      handlers: messages.some(startsWithAny(handlerCoverageGapPrefixes)),
+      registrations: messages.some(
+        startsWithAny(registrationCoverageGapPrefixes),
+      ),
+    };
+    memoized.set(target, gaps);
+    return gaps;
+  };
   return {
-    hidesHandlers: messages.some(startsWithAny(handlerCoverageGapPrefixes)),
-    hidesRegistrations: messages.some(
-      startsWithAny(registrationCoverageGapPrefixes),
-    ),
+    hidesHandlers: (target) => gapsFor(target).handlers,
+    hidesRegistrations: (target) => gapsFor(target).registrations,
   };
 }
 

@@ -63,9 +63,17 @@ export interface HandlerWithoutInvocation {
   readonly handlers: readonly BridgeEndpoint[];
 }
 
-/** 생산 문서가 밝힌 분석 한계와 출처다. */
+/**
+ * 생산 문서가 밝힌 분석 한계와 출처다.
+ *
+ * `target`은 이 한계를 신고한 문서의 브리지 메커니즘이다. 사실은 target별로만
+ * 조인되므로, 보고서는 이 값으로 한계를 해당 target의 진단에만 귀속시킨다.
+ * 사실이 없는 문서(`target: null`)의 한계와 교차 입력 한계는 어느 target이
+ * 가려졌는지 특정할 수 없어 `null`이다.
+ */
 export interface JoinLimitation {
   readonly platform: BridgePlatform | 'cross-platform';
+  readonly target: BridgeTarget | null;
   readonly tool: string;
   readonly message: string;
 }
@@ -215,6 +223,7 @@ function collectLimitations(
   const limitations: JoinLimitation[] = documents.flatMap((document) =>
     document.limitations.map((message) => ({
       platform: document.platform,
+      target: document.target,
       tool: document.tool.name,
       message,
     })),
@@ -258,36 +267,57 @@ function unjoinedFactLimitations(
   ];
 }
 
-/** 조건에 맞는 사실 수를 플랫폼별로 세어 한계 문장으로 바꾼다. */
+/** 조건에 맞는 사실 수를 플랫폼·target별로 세어 한계 문장으로 바꾼다. */
 function unjoinedLimitations(
   documents: readonly BridgeFactsDocument[],
   matchesFact: (fact: BridgeFact) => boolean,
   prefix: string,
   subject: string,
 ): JoinLimitation[] {
-  return [...countFactsByPlatform(documents, matchesFact)].map(
-    ([platform, count]) => ({
+  return countFactsByPlatformTarget(documents, matchesFact).map(
+    ({ platform, target, count }) => ({
       platform,
+      target,
       tool: 'isthmus',
       message: `${prefix}: ${count} ${subject} were not joined`,
     }),
   );
 }
 
-/** 주어진 조건의 서로 다른 사실 수를 생산 플랫폼별로 모은다. */
-function countFactsByPlatform(
+/**
+ * 주어진 조건의 서로 다른 사실 수를 생산 플랫폼·target별로 모은다.
+ *
+ * 사실은 target별로만 조인되므로 다른 target의 사실을 한 한계로 합산하면
+ * 관찰 공백의 귀속이 사라진다. 사실이 있는 문서는 항상 target을 가지므로
+ * (교환 계약이 강제) 여기서 target은 null이 아니다.
+ */
+function countFactsByPlatformTarget(
   documents: readonly BridgeFactsDocument[],
   matchesFact: (fact: BridgeFact) => boolean,
-): Map<BridgePlatform, number> {
-  const distinctFacts = new Map<BridgePlatform, Set<string>>();
+): Array<{ platform: BridgePlatform; target: BridgeTarget; count: number }> {
+  const distinctFacts = new Map<
+    string,
+    { platform: BridgePlatform; target: BridgeTarget; keys: Set<string> }
+  >();
   for (const document of documents) {
+    if (document.target === null) continue;
+    const groupKey = `${document.platform}\u0000${document.target}`;
     for (const fact of document.facts) {
       if (!matchesFact(fact)) continue;
-      const keys = distinctFacts.get(document.platform) ?? new Set<string>();
-      distinctFacts.set(document.platform, keys.add(unjoinedFactKey(fact)));
+      const group = distinctFacts.get(groupKey) ?? {
+        platform: document.platform,
+        target: document.target,
+        keys: new Set<string>(),
+      };
+      group.keys.add(unjoinedFactKey(fact));
+      distinctFacts.set(groupKey, group);
     }
   }
-  return new Map([...distinctFacts].map(([platform, keys]) => [platform, keys.size]));
+  return [...distinctFacts.values()].map(({ platform, target, keys }) => ({
+    platform,
+    target,
+    count: keys.size,
+  }));
 }
 
 /**
@@ -350,18 +380,31 @@ function freshnessLimitation(
   const hours = Math.round(difference / millisecondsPerHour);
   return {
     platform: 'cross-platform',
+    target: null,
     tool: 'isthmus',
     message: `input-freshness: bridge documents differ by ${hours} hours`,
   };
 }
 
-/** limitation을 플랫폼·도구·문장 순으로 고정한다. */
+/** limitation을 플랫폼·target·도구·문장 순으로 고정한다. */
 function compareLimitations(left: JoinLimitation, right: JoinLimitation): number {
   return (
     compareStrings(left.platform, right.platform) ||
+    compareTargets(left.target, right.target) ||
     compareStrings(left.tool, right.tool) ||
     compareStrings(left.message, right.message)
   );
+}
+
+/** target을 문자열 순으로 고정하고 귀속이 없는(null) 한계를 뒤에 둔다. */
+function compareTargets(
+  left: BridgeTarget | null,
+  right: BridgeTarget | null,
+): number {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return compareStrings(left, right);
 }
 
 /** 메서드 키별로 호출과 핸들러 증거를 모은다. */
