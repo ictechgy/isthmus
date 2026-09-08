@@ -148,7 +148,7 @@ function validateDocumentMetadata(
   document: Record<string, unknown>,
 ): asserts document is Record<string, unknown> & BridgeFactsDocument {
   validateTool(document.tool);
-  if (!isTimestamp(document.generatedAt)) fail('Invalid generatedAt timestamp.');
+  if (!isBridgeTimestamp(document.generatedAt)) fail('Invalid generatedAt timestamp.');
   if (!bridgePlatforms.has(document.platform)) fail('Unsupported bridge platform.');
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
@@ -256,6 +256,16 @@ export function isReceiverPlatform(
   return platform === 'swift' || platform === 'kotlin';
 }
 
+/** 값이 계약이 정한 브리지 메커니즘 이름인지 확인한다. */
+export function isBridgeTarget(value: unknown): value is BridgeTarget {
+  return bridgeTargets.has(value);
+}
+
+/** 조인 키를 깨뜨리는 제어 문자가 없는 비어 있지 않은 문자열인지 확인한다. */
+export function isSafeNonEmptyString(value: unknown): value is string {
+  return isNonEmptyString(value) && !controlCharacterPattern.test(value);
+}
+
 /** 사실 위치가 상대 경로와 1부터 시작하는 줄·열을 갖는지 검증한다. */
 function validateLocation(value: unknown, index: number): void {
   if (
@@ -300,7 +310,7 @@ function validateTool(value: unknown): void {
 }
 
 /** ISO 계열 생성 시각으로 해석할 수 있는지 확인한다. */
-function isTimestamp(value: unknown): value is string {
+export function isBridgeTimestamp(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const match = timestampPattern.exec(value);
   if (match === null || Number.isNaN(Date.parse(value))) return false;
@@ -333,11 +343,6 @@ function daysInMonth(year: number, month: number): number {
 /** 공백만 있지 않은 문자열인지 확인한다. */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-/** 조인 키를 깨뜨리는 제어 문자가 없는 비어 있지 않은 문자열인지 확인한다. */
-function isSafeNonEmptyString(value: unknown): value is string {
-  return isNonEmptyString(value) && !controlCharacterPattern.test(value);
 }
 
 /** 모든 원소가 문자열인 배열인지 확인한다. */
@@ -405,7 +410,7 @@ const timestampPattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 
-/** 배열과 null을 제외한 JSON 객체인지 확인한다. */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
+/** 배열과 null을 제외한 JSON 객체인지 확인한다. isthmus 소유 문서 검증도 재사용한다. */
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -21,6 +21,13 @@ If inputs are missing, identify the required files and proceed with independent 
 
 ## Choose the requested operation
 
+- Audit the boundary: `isthmus check <dart.json> <swift.json> [--strict]`.
+  Read `summary`, each `issues[].code/severity/evidence`, and `limitations`.
+  `-unverified` codes are undecidable findings, not clean results.
+  To accept current findings, run once with `--update-baseline <file>`; apply it
+  later with `--baseline <file>`. Suppressed issues keep their evidence and only
+  leave the summary counts and `--strict` failures; report `staleBaselineEntries`
+  as resolved items to prune on the next update.
 - Trace callers: `isthmus query <channel-or-method> <dart.json> <swift.json>`.
   Read `usedBy`, `dependsOn`, symbol evidence, and `limitations`.
   `ambiguous` returns qualified-name candidates; disambiguate from context or ask when necessary.
