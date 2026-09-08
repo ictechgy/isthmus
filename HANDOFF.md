@@ -1,11 +1,16 @@
 # Handoff
 
-## 2026-09-08 — 0.2.0 배포 준비
+## 2026-09-08 — 0.2.0 발행 완료
 
-PR #25가 `5fded38`로 병합됐다. 선택적 v1 채널 스코프·Objective-C 구현 범위·제외 계수와
-소비자 origin 검증을 0.2.0으로 배포한다. Cartograph 0.9.0 생산자보다 먼저 발행해야 한다.
-제품 검증과 실제 왕복·공개 플러그인 검증은 #25에 기록했다. 기존 `.gitignore` 변경은 사용자 소유다.
+PR #25(계약 확장)와 #26(릴리스)은 병합됐다. 릴리스 소스는 `06aa96d`다.
+npm `isthmus-cli@0.2.0`과 latest 0.2.0을 확인했고, 공개 tarball의 SHA-512가 검증한 배포
+파일과 일치했다. 공개 CLI와 설치본 모두 실제 Dart→Swift 보존 왕복을 통과했다.
+설치본 49개 파일도 공개 tarball과 바이트 단위로 일치한다. npm 2단계 인증은 완료됐으며
+소비자 선행 배포 조건을 충족했다. 자세한 검증 기록은 [PR #26](https://github.com/ictechgy/isthmus/pull/26)에 있다.
 
+Cartograph 0.9.0 연계 변경과 배포 기록은 [cartograph #67](https://github.com/ictechgy/cartograph/pull/67)을 본다.
+함수 간 값 전파는 아직 구현하지 않았으며, 심볼 도달성과 구분한 재현/설계 검토가 포함됐다.
+기존 `.gitignore` 변경은 사용자 소유로 계속 보존한다.
 
 
 ## 2026-09-08 — issue #64 브리지 범위 확장 (리뷰 준비)
@@ -19,7 +24,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-08 12:50 KST by opencode_
+_Last updated: 2026-09-08 (0.2.0 발행 및 설치 검증 완료)_
 
 ## Goal
 
@@ -28,11 +33,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- `main`과 `origin/main`은 `a60ebe9`(PR #22 squash)에서 일치한다. 이 문서의 이후 갱신은
-  그 위에 쌓인다.
-- npm `isthmus-cli@0.1.7`이 최신 발행본이고 registry latest도 0.1.7이다. 발행본 `dist`와
-  README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI로 phase-0
-  check(코드 0)·`--strict`(코드 1)·limitations의 `target` 필드를 확인했다.
+- 0.2.0 릴리스 소스는 `06aa96d`(PR #26)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- npm `isthmus-cli@0.2.0`이 최신 발행본이고 registry latest도 0.2.0이다. 발행본 `dist`와
+  README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI의 버전과 실제
+  Dart→Swift 외부 보존 왕복을 확인했고, 설치본 49개 파일도 공개 tarball과 일치했다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
   않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
