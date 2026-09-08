@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-08
+
 ### Added
 
 - bridge-facts v1의 선택적 `limitationScopes`를 검증하고 특정 한계 전체의 채널 상한으로
