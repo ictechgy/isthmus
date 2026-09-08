@@ -13,6 +13,9 @@ const dartSourcePath =
 const swiftSourcePath =
   'packages/battery_plus/battery_plus/macos/battery_plus/Sources/'
   + 'battery_plus/BatteryPlusMacosPlugin.swift';
+const objectiveCSourcePath =
+  'packages/battery_plus/battery_plus/ios/battery_plus/Sources/'
+  + 'battery_plus/FPPBatteryPlusPlugin.m';
 const batteryMethods = [
   'getBatteryLevel',
   'getBatteryState',
@@ -115,6 +118,13 @@ try {
     'isthmus retentions JSON',
   );
   const retentions = verifyBatteryRetentions(retentionDocument);
+  const objectiveCHandlers = swiftDocument.facts.filter((fact) =>
+    fact.kind === 'method-handle' && fact.channel === batteryChannel && fact.sourceLanguage === 'objective-c',
+  ).length;
+  if (swiftDocument.facts.some((fact) => fact.sourceLanguage === 'objective-c')) {
+    verify(objectiveCHandlers === batteryMethods.length, 'complete supported Objective-C battery methods');
+  }
+  verify((retentionDocument.omittedObjectiveCHandlers ?? 0) === objectiveCHandlers, 'Objective-C omission count');
   await writePrivateFile(retentionsPath, retentionResult.stdout);
 
   const consumerResult = run(cartographBinary, [
@@ -127,7 +137,12 @@ try {
     'json',
   ]);
   verify(consumerResult.status === 0, 'cartograph retention consumer');
-  parseDocument(consumerResult.stdout, 'cartograph dead JSON');
+  const consumed = parseDocument(consumerResult.stdout, 'cartograph dead JSON');
+  if (objectiveCHandlers > 0) {
+    verify(consumed.limitations?.some((message) =>
+      message.startsWith(`external-retentions-objective-c: ${objectiveCHandlers} `)),
+    'cartograph Objective-C omission visibility');
+  }
 
   const retainedSymbol = retentions.get(batteryMethods[0]).symbol;
   const subject = retainedSymbol.usr ?? retainedSymbol.qualifiedName;
@@ -255,11 +270,14 @@ function verifyBatteryFacts(document, kind, expectedPath) {
         && fact.channel === batteryChannel
         && fact.method === method,
     );
-    verify(matches.length === 1, `${document.platform} ${method}`);
-    verify(
-      matches[0].location?.path === expectedPath,
-      `${document.platform} ${method} provenance`,
-    );
+    const expected = matches.filter((fact) => fact.location?.path === expectedPath);
+    verify(expected.length === 1, `${document.platform} ${method}`);
+    const others = matches.filter((fact) => fact.location?.path !== expectedPath);
+    // 새 ObjC 관찰을 지워 통과시키지 않고 별도 구현의 위치·언어·보존 대상 구분을 검증한다.
+    verify(others.length <= 1 && others.every((fact) =>
+      document.platform === 'swift' && fact.location?.path === objectiveCSourcePath
+        && fact.sourceLanguage === 'objective-c' && (fact.symbol === undefined || fact.symbol.usr?.startsWith('c:')) && fact.dynamic === false),
+    `${document.platform} ${method} additional implementation provenance`);
   }
   verify(
     document.facts.every((fact) =>

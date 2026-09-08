@@ -62,12 +62,14 @@
   "limitations": [
     {
       "message": "unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined",
+      "origin": "consumer",
       "platform": "dart",
       "target": "flutter",
       "tool": "isthmus"
     },
     {
       "message": "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+      "origin": "consumer",
       "platform": "dart",
       "target": "flutter",
       "tool": "isthmus"
@@ -86,6 +88,7 @@
     },
     {
       "message": "unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined",
+      "origin": "consumer",
       "platform": "swift",
       "target": "flutter",
       "tool": "isthmus"

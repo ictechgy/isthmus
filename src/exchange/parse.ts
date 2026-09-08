@@ -4,6 +4,19 @@ export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js';
 /** 언어 경계를 잇는 메커니즘이다. */
 export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor';
 
+/** Swift 플랫폼 문서에 실린 Objective-C 구현을 Swift 보존 대상과 구분한다. */
+export type BridgeSourceLanguage = 'objective-c';
+
+/** 특정 한계 전체의 영향을 포함하는 채널 집합. 일부 발견 목록이 아니다. */
+export interface BridgeLimitationScope {
+  readonly limitationIndex: number;
+  readonly channels: readonly string[];
+}
+
+/** 확장 메타데이터가 입력 자원 상한을 우회하지 못하게 한다. */
+export const MAX_LIMITATION_SCOPES = 1_000;
+export const MAX_SCOPED_CHANNELS = 10_000;
+
 /** 교환 형식의 사실 종류다. */
 export type BridgeFactKind =
   | 'channel-create'
@@ -39,6 +52,7 @@ export interface BridgeFact {
   readonly dynamic: boolean;
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
+  readonly sourceLanguage?: BridgeSourceLanguage;
 }
 
 /** bridge-facts 버전 1 문서다. */
@@ -52,6 +66,7 @@ export interface BridgeFactsDocument {
   readonly project: string;
   readonly facts: readonly BridgeFact[];
   readonly limitations: readonly string[];
+  readonly limitationScopes?: readonly BridgeLimitationScope[];
 }
 
 /** 외부 교환 문서가 v1 계약을 어겼음을 나타낸다. */
@@ -94,6 +109,12 @@ function normalizeDocument(document: BridgeFactsDocument): BridgeFactsDocument {
     project: document.project,
     facts: document.facts.map(normalizeFact),
     limitations: [...document.limitations],
+    ...(document.limitationScopes === undefined ? {} : {
+      limitationScopes: document.limitationScopes.map((scope) => ({
+        limitationIndex: scope.limitationIndex,
+        channels: [...new Set(scope.channels)].sort(),
+      })).sort((a, b) => a.limitationIndex - b.limitationIndex),
+    }),
   };
 }
 
@@ -118,6 +139,7 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
       column: fact.location.column,
     },
     ...symbol,
+    ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
   };
 }
 
@@ -143,6 +165,7 @@ function validateDocumentMetadata(
     fail('Target must be set exactly when facts are present.');
   }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
+  validateLimitationScopes(document.limitationScopes, document.limitations.length);
   const hasUnattributedHandler = document.facts.some(
     (fact) =>
       isJsonObject(fact) &&
@@ -155,6 +178,30 @@ function validateDocumentMetadata(
       message.startsWith('unattributed-method-handles:'))
   ) {
     fail('Unattributed method handles require a limitation.');
+  }
+}
+
+/** 잘못된 범위를 무시하면 거짓 error가 생기므로 입력 단계에서 명시적으로 거부한다. */
+function validateLimitationScopes(value: unknown, limitationCount: number): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > MAX_LIMITATION_SCOPES) {
+    fail('Invalid limitation scopes array.');
+  }
+  const indices = new Set<number>();
+  let channelCount = 0;
+  for (const entry of value) {
+    if (!isJsonObject(entry) || !Number.isSafeInteger(entry.limitationIndex) ||
+      typeof entry.limitationIndex !== 'number' || entry.limitationIndex < 0 ||
+      entry.limitationIndex >= limitationCount || indices.has(entry.limitationIndex)) {
+      fail('Invalid or duplicate limitation scope index.');
+    }
+    if (!Array.isArray(entry.channels) || entry.channels.length === 0 ||
+      !entry.channels.every(isSafeNonEmptyString)) {
+      fail('Limitation scope channels must be non-empty safe strings.');
+    }
+    channelCount += entry.channels.length;
+    if (channelCount > MAX_SCOPED_CHANNELS) fail('Too many scoped channels.');
+    indices.add(entry.limitationIndex);
   }
 }
 
@@ -184,6 +231,10 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
   validateLocation(value.location, index);
   validateSymbol(value.symbol, index);
+  if (value.sourceLanguage !== undefined && (
+    value.sourceLanguage !== 'objective-c' || platform !== 'swift' ||
+    !/\.(?:m|mm)$/u.test((value.location as BridgeLocation).path) || (value.symbol !== undefined && !(value.symbol as BridgeSymbol).usr?.startsWith('c:'))
+  )) fail(`Invalid source language at index ${index}.`);
 }
 
 /** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */

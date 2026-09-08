@@ -62,8 +62,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
   const gaps = receiverCoverageGaps(joined.limitations);
   const issues: CheckIssue[] = [
     ...joined.unhandledInvocations.map<CheckIssue>((item) => ({
-      severity: gaps.hidesHandlers(item.target) ? 'warning' : 'error',
-      code: gaps.hidesHandlers(item.target)
+      severity: gaps.hidesHandlers(item.target, item.channel) ? 'warning' : 'error',
+      code: gaps.hidesHandlers(item.target, item.channel)
         ? 'unhandled-invocation-unverified'
         : 'unhandled-invocation',
       target: item.target,
@@ -72,8 +72,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       evidence: item.invocations,
     })),
     ...joined.unregisteredChannelCreations.map<CheckIssue>((item) => ({
-      severity: gaps.hidesRegistrations(item.target) ? 'warning' : 'error',
-      code: gaps.hidesRegistrations(item.target)
+      severity: gaps.hidesRegistrations(item.target, item.channel) ? 'warning' : 'error',
+      code: gaps.hidesRegistrations(item.target, item.channel)
         ? 'unregistered-channel-creation-unverified'
         : 'unregistered-channel-creation',
       target: item.target,
@@ -112,8 +112,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
 
 /** 수신 측이 스스로 알린 분석 공백이 target별로 무엇을 가리는지 나타낸다. */
 interface ReceiverCoverageGaps {
-  hidesHandlers(target: BridgeTarget): boolean;
-  hidesRegistrations(target: BridgeTarget): boolean;
+  hidesHandlers(target: BridgeTarget, channel: string): boolean;
+  hidesRegistrations(target: BridgeTarget, channel: string): boolean;
 }
 
 /**
@@ -144,36 +144,46 @@ function receiverCoverageGaps(
   const receiverLimitations = limitations.filter(({ platform }) =>
     isReceiverPlatform(platform),
   );
-  const memoized = new Map<
-    BridgeTarget,
-    { handlers: boolean; registrations: boolean }
-  >();
+  const memoized = new Map<BridgeTarget, {
+    allHandlers: boolean; allRegistrations: boolean;
+    handlerChannels: Set<string>; registrationChannels: Set<string>;
+  }>();
   const gapsFor = (target: BridgeTarget) => {
     const existing = memoized.get(target);
     if (existing !== undefined) return existing;
-    const relevant = receiverLimitations.filter(
-      ({ target: gapTarget }) => gapTarget === null || gapTarget === target,
-    );
     const gaps = {
-      handlers: relevant.some(
-        ({ tool, message }) =>
-          startsWithAny(producerHandlerGapPrefixes)(message) ||
-          (tool === 'isthmus' &&
-            startsWithAny(isthmusHandlerGapPrefixes)(message)),
-      ),
-      registrations: relevant.some(
-        ({ tool, message }) =>
-          startsWithAny(sourceCoverageGapPrefixes)(message) ||
-          (tool === 'isthmus' &&
-            startsWithAny(isthmusRegistrationGapPrefixes)(message)),
-      ),
+      allHandlers: false, allRegistrations: false,
+      handlerChannels: new Set<string>(), registrationChannels: new Set<string>(),
     };
+    for (const { target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
+      if (gapTarget !== null && gapTarget !== target) continue;
+      const handlers = startsWithAny(producerHandlerGapPrefixes)(message) ||
+        (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
+      const registrations = startsWithAny(sourceCoverageGapPrefixes)(message) ||
+        (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusRegistrationGapPrefixes)(message));
+      // 하나라도 범위가 불명확한 공백이 있으면 같은 target의 좁은 범위로 덮지 않는다.
+      if (channels === undefined) {
+        gaps.allHandlers ||= handlers;
+        gaps.allRegistrations ||= registrations;
+      } else {
+        for (const channel of channels) {
+          if (handlers) gaps.handlerChannels.add(channel);
+          if (registrations) gaps.registrationChannels.add(channel);
+        }
+      }
+    }
     memoized.set(target, gaps);
     return gaps;
   };
   return {
-    hidesHandlers: (target) => gapsFor(target).handlers,
-    hidesRegistrations: (target) => gapsFor(target).registrations,
+    hidesHandlers: (target, channel) => {
+      const gaps = gapsFor(target);
+      return gaps.allHandlers || gaps.handlerChannels.has(channel);
+    },
+    hidesRegistrations: (target, channel) => {
+      const gaps = gapsFor(target);
+      return gaps.allRegistrations || gaps.registrationChannels.has(channel);
+    },
   };
 }
 

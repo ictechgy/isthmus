@@ -2,6 +2,7 @@ import type {
   BridgeLocation,
   BridgePlatform,
   BridgeSymbol,
+  BridgeSourceLanguage,
   BridgeTarget,
 } from '../exchange/parse.ts';
 import type {
@@ -19,6 +20,7 @@ export interface BridgeGraphNode {
   readonly platform: BridgePlatform;
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
+  readonly sourceLanguage?: BridgeSourceLanguage;
 }
 
 /** 호출 측 위치에서 수신 측 위치로 향하는 경계 간선이다. */
@@ -79,7 +81,7 @@ function renderMermaid(graph: BridgeGraphDocument): string {
     lines.push(`  %% limitation: ${limitationComment(limitation)}`);
   }
   for (const node of graph.nodes) {
-    const label = `${mermaidText(node.platform)}<br/>${mermaidText(locationLabel(node.location))}`;
+    const label = `${mermaidText(node.sourceLanguage ?? node.platform)}<br/>${mermaidText(locationLabel(node.location))}`;
     lines.push(`  ${identifiers.get(node.id)}["${label}"]`);
   }
   for (const edge of graph.edges) {
@@ -109,7 +111,7 @@ function renderDot(graph: BridgeGraphDocument): string {
     lines.push(`  // limitation: ${limitationComment(limitation)}`);
   }
   for (const node of graph.nodes) {
-    const label = `${node.platform}\n${locationLabel(node.location)}`;
+    const label = `${node.sourceLanguage ?? node.platform}\n${locationLabel(node.location)}`;
     lines.push(`  ${dotString(node.id)} [label=${dotString(label)}];`);
   }
   for (const edge of graph.edges) {
@@ -126,7 +128,9 @@ function renderDot(graph: BridgeGraphDocument): string {
 function limitationComment(limitation: JoinLimitation): string {
   const text =
     `${limitation.platform}/${limitation.target}/${limitation.tool}: `
-    + limitation.message;
+    + limitation.message
+    + (limitation.origin === undefined ? '' : ' [origin: consumer]')
+    + (limitation.channels === undefined ? '' : ` [channels: ${JSON.stringify(limitation.channels)}]`);
   return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ');
 }
 
@@ -244,17 +248,7 @@ function addNode(
   const id = endpointId(endpoint);
   const existing = nodes.get(id);
   if (existing === undefined) {
-    nodes.set(
-      id,
-      endpoint.symbol === undefined
-        ? { id, platform: endpoint.platform, location: endpoint.location }
-        : {
-            id,
-            platform: endpoint.platform,
-            location: endpoint.location,
-            symbol: endpoint.symbol,
-      },
-    );
+    nodes.set(id, { id, ...endpoint });
   } else if (endpoint.symbol !== undefined) {
     const symbol = mergeSymbols(existing.symbol, endpoint.symbol);
     if (symbol === undefined) {
@@ -286,7 +280,8 @@ function mergeSymbols(
 /** 플랫폼과 소스 위치로 실행 간 안정적인 노드 ID를 만든다. */
 function endpointId(endpoint: BridgeEndpoint): string {
   const { path, line, column } = endpoint.location;
-  return `${endpoint.platform}:${path}:${line}:${column}`;
+  const suffix = endpoint.sourceLanguage === undefined ? '' : `:${endpoint.sourceLanguage}`;
+  return `${endpoint.platform}:${path}:${line}:${column}${suffix}`;
 }
 
 /** 간선을 종류·from·to 순으로 고정한다. */

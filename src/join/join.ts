@@ -4,6 +4,7 @@ import type {
   BridgeLocation,
   BridgePlatform,
   BridgeSymbol,
+  BridgeSourceLanguage,
   BridgeTarget,
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
@@ -14,6 +15,7 @@ export interface BridgeEndpoint {
   readonly platform: BridgePlatform;
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
+  readonly sourceLanguage?: BridgeSourceLanguage;
 }
 
 /** 논리 채널 하나에 모인 양쪽 생성·등록 증거다. */
@@ -76,6 +78,9 @@ export interface JoinLimitation {
   readonly target: BridgeTarget | null;
   readonly tool: string;
   readonly message: string;
+  readonly channels?: readonly string[];
+  /** 소비자가 직접 센 한계에만 부여하며 생산 문서에서는 복사하지 않는다. */
+  readonly origin?: 'consumer';
 }
 
 /** 검증된 교환 문서들의 논리 조인 결과다. */
@@ -231,14 +236,19 @@ function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResu
 function collectLimitations(
   documents: readonly BridgeFactsDocument[],
 ): JoinLimitation[] {
-  const limitations: JoinLimitation[] = documents.flatMap((document) =>
-    document.limitations.map((message) => ({
-      platform: document.platform,
-      target: limitationTarget(document),
-      tool: document.tool.name,
-      message,
-    })),
-  );
+  const limitations: JoinLimitation[] = documents.flatMap((document) => {
+    const scopes = new Map(document.limitationScopes?.map((scope) => [scope.limitationIndex, scope.channels]));
+    return document.limitations.map((message, index) => {
+      const channels = scopes.get(index);
+      return {
+        platform: document.platform,
+        target: limitationTarget(document),
+        tool: document.tool.name,
+        message,
+        ...(channels === undefined ? {} : { channels }),
+      };
+    });
+  });
   limitations.push(...unjoinedFactLimitations(documents));
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
@@ -290,6 +300,7 @@ function unjoinedLimitations(
       platform,
       target,
       tool: 'isthmus',
+      origin: 'consumer',
       message: `${prefix}: ${count} ${subject} were not joined`,
     }),
   );
@@ -405,6 +416,7 @@ function freshnessLimitation(
     platform: 'cross-platform',
     target: null,
     tool: 'isthmus',
+    origin: 'consumer',
     message: `input-freshness: bridge documents differ by ${hours} hours`,
   };
 }
@@ -415,7 +427,9 @@ function compareLimitations(left: JoinLimitation, right: JoinLimitation): number
     compareStrings(left.platform, right.platform) ||
     compareTargets(left.target, right.target) ||
     compareStrings(left.tool, right.tool) ||
-    compareStrings(left.message, right.message)
+    compareStrings(left.message, right.message) ||
+    compareOptionalStrings(left.origin, right.origin) ||
+    compareStrings(JSON.stringify(left.channels ?? null), JSON.stringify(right.channels ?? null))
   );
 }
 
@@ -471,6 +485,8 @@ function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
     left.location.line - right.location.line ||
     left.location.column - right.location.column;
   if (locationOrder !== 0) return locationOrder;
+  const languageOrder = compareOptionalStrings(left.sourceLanguage, right.sourceLanguage);
+  if (languageOrder !== 0) return languageOrder;
   if (left.symbol === undefined) return right.symbol === undefined ? 0 : 1;
   if (right.symbol === undefined) return -1;
   return (
@@ -582,9 +598,11 @@ function toEndpoint(
   platform: BridgePlatform,
   fact: BridgeFactsDocument['facts'][number],
 ): BridgeEndpoint {
-  return fact.symbol === undefined
-    ? { platform, location: fact.location }
-    : { platform, location: fact.location, symbol: fact.symbol };
+  return {
+    platform, location: fact.location,
+    ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
+    ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
+  };
 }
 
 /** 채널 결과를 target과 이름 순으로 고정한다. */

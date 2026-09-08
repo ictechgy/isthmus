@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- bridge-facts v1의 선택적 `limitationScopes`를 검증하고 특정 한계 전체의 채널 상한으로
+  사용한다. 범위 불명 공백은 기존 target 전체 완화를 유지하고, 잘못된 범위는 입력 오류다.
+  범위는 query/check/graph/diff에 보존되며 범위만 바뀌어도 diff에 나타난다.
+- `.m`/`.mm` 구현의 `sourceLanguage: objective-c`를 조인 증거로 보존한다. Swift 그래프
+  보존 대상에서 제외한 매치는 `omittedObjectiveCHandlers`로 세고, 표식 없는 Swift 핸들러의
+  symbol 누락은 계속 실패한다. 실제 Clang `c:` USR은 증거에 보존하되 Swift 그래프
+  포함 여부와 구분한다. 생산자보다 이 소비자 확장을 먼저 배포해야 한다.
+
+### Fixed
+
+- 생산자 tool 이름을 isthmus로 적어 자체 `unjoined-*` 계수를 사칭하는 경로를 막는다.
+  소비자 내부에서만 붙인 `origin: consumer`로 직접 계수를 구분한다.
+- flutter_local_notifications의 보존된 20건 중 분류 합계가 19건이라는 근거 한계를 정정한다.
+
 ## [0.1.7] - 2026-09-08
 
 ### Changed
