@@ -114,6 +114,79 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
 4. B를 v1 문자열 접미사가 아니라 bridge-facts v2의 구조화 limitation(독립 필드)으로
    할 것인가? v2는 깔끔하지만 네 저장소 동시 버전 인상과 이행 기간 비용이 있다.
 
+## 다른 오픈소스에서 흡수할 장점 (2026-09-08)
+
+열린 Blockers와 완화 범위 제안(cartograph#64)에 대한 흡수 후보다. 전부 1차 출처를
+직접 확인했다. GitHub 검색 재확인 결과 "flutter platform channel" 관련 저장소는 전부
+예제 앱이고 크로스 언어 브리지 조인 도구는 여전히 없다(2026-09-04 판단 재확인).
+
+### Blockers 4 (check 베이스라인) — ESLint bulk suppressions와 detekt baseline
+
+- ESLint(`eslint/eslint` `docs/src/use/command-line-interface.md`): `--suppress-all`·
+  `--suppress-rule`이 현재 위반을 `eslint-suppressions.json`에 저장해 이후 실행에서는
+  새 위반만 보고한다. `--prune-suppressions`로 해결된 억제를 정리하고,
+  `--pass-on-unpruned-suppressions`로 오래된 억제의 통과 여부를 선택한다.
+  카운트 기반·자기 정리·기본 엄격이 한 세트로 있다.
+- detekt(`detekt/detekt` `website/docs/introduction/baseline.mdx`): `baseline.xml`이
+  `CurrentIssues`(자동 베이스라인 — 이후 새 항목만 출력)와 `ManuallySuppressedIssues`
+  (오탐 기록)를 분리한다. 항목 ID는 `RuleID:Finding_Signature` 서명이다.
+- isthmus 흡수면: `src/report/diff.ts`의 `issueKey`(code+target+channel+method)가 이미
+  안정 서명이라 베이스라인 ID로 재사용된다. 설계 후보는 `check --baseline <file>` +
+  베이스라인 갱신 플래그, 해결 항목 자동 prune, "베이스라인 등록"과 "오탐 억제" 분리.
+  isthmus 소유 출력이라 계약 변경이 없다.
+
+### Blockers 2 (ObjC retention) — ObjC USR은 인덱스 스토어에 존재한다
+
+- `swiftlang/indexstore-db` README: "Raw index data can be produced by compilers such as
+  **Apple Clang** and Swift using the `-index-store-path` option." xcodebuild 인덱스
+  스토어에는 ObjC 심볼의 clang 인덱스 유닛(USR 포함)이 들어간다.
+- cartograph의 `objective-c-handlers: … carry no USR`는 `.m`을 인덱스 없이 텍스트로
+  스캔하는 현재 파이프라인의 한계지 생태계 한계가 아니다. 방향 A(ObjC Flutter 핸들러
+  사실화)에 clang 인덱스 유닛을 결합하면 USR 있는 retention 왕복이 가능할 수 있다 —
+  cartograph#64의 순서 의존 논의에 이 사실을 보탠다. 인덱스 없이 빌드된 환경의
+  fallback 신원으로는 SCIP 문법이 후보다.
+- SCIP(`sourcegraph/scip` `scip.proto`): `<symbol> ::= <scheme> ' ' <package> ' '
+  (<descriptor>)+ | 'local ' <local-id>`. 공백은 이중 공백으로 이스케이프하고,
+  식별자 문자(`_-+$`·영숫자) 밖의 이름은 백틱으로 감싼다(내부 백틱은 이중 백틱).
+  크로스 언어 안정 심볼 문법의 확립된 선행例다.
+
+### 완화 범위 제안(cartograph#64) 보강
+
+- 접미사 이스케이프 선행: SCIP 백틱 방식과 isthmus query의 기존 퍼센트 표기
+  (`src/report/query.ts`의 `encodeSubjectComponent`: %→%25, #→%23)가 있다.
+  `[channels: …]` 값 문법은 isthmus가 이미 발행하는 퍼센트 표기를 재사용하는 쪽이
+  내부 일관성에 좋다.
+- 방향 A의 파싱 옵션: `tree-sitter-grammars/tree-sitter-objc`(존재 확인)나
+  `ast-grep/ast-grep` 류 구조 파싱, 또는 cartograph 기존 상태 기계 텍스트 스캔 확장
+  (주석·문자열 처리 완비). 고정 형태 매크로는 텍스트 스캔으로 정확하지만 Flutter ObjC
+  핸들러 형태(블록 인자, `isEqualToString:` 분기)는 구조 파싱이 견고하다.
+- `kythe/kythe`: 플러그형 크로스 언어 사실 교환 생태계 — bridge-facts의 건축 선행.
+  v2의 구조화 limitation·심볼 설계 참고(방향 B 질문 4).
+- clang USR 근거와 퍼센트 표기 재사용 제안은 cartograph#64 코멘트로 전달했다
+  (2026-09-08, 사용자 등록 — 세션 토큰은 자매 저장소 쓰기 403).
+
+### CI 통합 — SARIF 리포터
+
+- `oasis-tcs/sarif-spec`. cartograph는 이미 dead/cycles/rules를 SARIF·github-actions
+  형식으로 내보낸다(그쪽 HANDOFF #35 기록). isthmus `check`에 SARIF 리포터를 추가하면
+  GitHub code scanning·PR annotation으로 결과가 흐른다. additive이고 isthmus 소유라
+  JSON 계약과 독립이다.
+
+### Blockers 3 (project 정규화) — realpath 선행
+
+- cartograph 자신이 심볼 매칭 내부에서 `resolvingSymlinksInPath` +
+  `standardizedFileURL`을 쓴다(`BridgeFacts.swift`의 `canonical()`). POSIX realpath과
+  각 언어 stdlib(Node `fs.realpathSync`, Python `os.path.realpath`)이 같은 표준이다.
+  합의 방향은 "생산자가 realpath로 정규화한 `project`를 낸다"며, 가족 내 선행이 있다.
+
+### 흡수하지 않기로 한 것
+
+- knip `--fix`(미사용 파일 자동 삭제): isthmus 제품 규칙(자동 수정·자동 삭제 없음)의
+  정반대다.
+- Periphery의 assign-only 검출: cartograph 그래프 쪽 주제(그쪽 감사에 G202로 기록됨),
+  isthmus의 것이 아니다.
+- cargo-machete·depcheck 등 의존성 공간 도구: 브리지 조인 범위 밖.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위
