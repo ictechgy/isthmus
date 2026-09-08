@@ -187,6 +187,63 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
   isthmus의 것이 아니다.
 - cargo-machete·depcheck 등 의존성 공간 도구: 브리지 조인 범위 밖.
 
+## 2차 흡수 조사 (2026-09-08, 0.2.0 이후)
+
+1차 조사(위 섹션)의 일부는 0.2.0에 흡수됐다: Clang USR 근거(indexstore-db)가
+`sourceLanguage: objective-c` + 실제 `c:` USR 보존으로 구현됐다. 이 섹션은 남은 과제와
+새 흡수 후보를 기록한다. 출처는 전부 2026-09-08에 원문(raw/API)으로 직접 확인했다.
+
+### Blockers 4 (check 베이스라인) — 만료 기한과 두 종류의 베이스라인
+
+- Trivy(`aquasecurity/trivy` `docs/guide/configuration/filtering.md`): `.trivyignore`
+  항목에 `CVE-… exp:2023-01-01` 형태로 **만료일**을 붙인다. 베이스라인 항목이 영구적이
+  않아야 한다는 위생 규칙의 선행이다.
+- Semgrep(`semgrep/semgrep` `cli/src/semgrep/commands/scan.py`): `--baseline-commit`이
+  baseline 이후 findings만 보고한다. isthmus에는 스냅샷 비교 `diff --before/--after`가
+  이미 있으므로, PRD의 "베이스라인"은 git-diff 방식보다 **지속 suppressions 파일**에
+  가깝다.
+- 1차 조사의 ESLint bulk suppressions(카운트 기반·자동 prune·기본 엄격)과 detekt
+  baseline(자동 베이스라인/오탐 기록 분리, 서명 ID)을 합친 설계 방향: `issueKey`
+  (code+target+channel+method, `src/report/diff.ts`에 이미 존재) 기반 suppressions
+  파일, 해결 항목 자동 prune, 수동 오탐의 별도 구분, 선택적 만료일. isthmus 소유
+  출력이라 계약 변경이 없다.
+
+### Blockers 3 (모노레포 project root) — Pub Workspaces가 언어 네이티브 표준
+
+- Melos(`invertase/melos`, Apache-2.0, `docs/getting-started.mdx`): 워크스페이스는 루트
+  `pubspec.yaml`이 있는 디렉터리이며, 현재 **Dart Pub Workspaces**(Dart 언어 네이티브
+  모노레포 표준) 위에 있다. Blockers 3의 분쟁 대상인 plus_plugins가 바로 pub
+  workspace다.
+- 합의 방향: 생산자가 `project`를 **pub workspace 루트**로 해석해 realpath 정규화
+  문자열로 낸다. 그러면 Blockers 3의 두 절반(`/tmp` 별칭, `*_platform_interface`와
+  plugin의 root 불일치)이 같은 기준으로 해결된다. cartograph 내부의 `canonical()`
+  (`resolvingSymlinksInPath`)이 가족 내 선행이다.
+
+### 미래 `extract-js` — 파서 엔진과 의존 예산
+
+- 계약은 isthmus 내장 `extract-js`를 예약해 두었다(RN `NativeModules.*`,
+  `TurboModuleRegistry.get`, `requireNativeComponent`). 후보 엔진: oxc
+  (`oxc-project/oxc`, MIT), tree-sitter-typescript(MIT), 플러그인 구성의 선행은
+  knip(`webpro-nl/knip`, ISC, `packages/knip/src/plugins` 186개).
+- 긴장점: isthmus는 현재 **런타임 의존 0**(package.json에 dependencies가 없다).
+  네이티브/WASM 파서 바인딩은 첫 런타임 의존이라 package 계약(설치 면적·크기)
+  결정이 먼저다.
+- 반대 가설: RN 세 형태는 고정 형태 문자열이라 파서 없이 텍스트/토큰 스캔으로
+  가능하다(cartograph `ReactNativeMacroScanner`가 주석·문자열 상태 기계로 증명한
+  방식). 고정 형태를 넘는 문법이 필요해지는 시점에 실측으로 결정한다.
+
+### CodeQL — 개념은 흡수, 엔진은 비흡수
+
+- `github/codeql` 저장소는 MIT(쿼리·라이브러리)지만 CodeQL CLI는 GitHub 별도
+ 라이선스다. 프레임워크 브리지를 데이터로 모델링하는 사상(model packs 개념)은
+  bridge-facts의 선행 사례지만, 컴파일러급 데이터플로 엔진은 JSON 파일만 읽는 CLI의
+  범위 밖이다. 검토·비흡수로 기록한다.
+
+### 생태계 재확인
+
+- 새 검색어(flutter unused native code, platform channel dead code)로도 브리지 조인
+  도구는 나오지 않는다(2026-09-08). 2026-09-04 판단의 재확인.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위
@@ -197,3 +254,4 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
 - cartograph `Sources/CartographKit/BridgeFacts.swift`·`Sources/CartographSyntax/ReactNativeMacroScanner.swift`
   (0.8.2, main) — limitation 생산 지점과 `.m` 텍스트 스캐닝 구현을 직접 읽었다
 - isthmus PR #18 — target별 완화 단위와 `unjoined-*` tool 검증
+- 2차 흡수 조사 원문(2026-09-08): trivy `docs/guide/configuration/filtering.md`, semgrep `cli/src/semgrep/commands/scan.py`, melos `docs/getting-started.mdx`, knip·oxc·tree-sitter-typescript·github/codeql 저장소 메타(라이선스·플러그인 수)
