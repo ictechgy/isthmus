@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-08
+
 ### Changed
 
 - check·query·graph·diff 출력의 `limitations` 항목에 `target` 필드 추가. 생산 문서의 한계는
