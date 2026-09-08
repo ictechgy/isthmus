@@ -141,8 +141,15 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
     limitations: [
       {
         platform: 'dart' as const,
+        target: 'flutter' as const,
         tool: 'test-tool',
         message: 'dynamic-name:\nflowchart TD\u0085subgraph X',
+      },
+      {
+        platform: 'swift' as const,
+        target: null,
+        tool: 'test-tool',
+        message: 'objective-c-sources: 2 file(s)',
       },
     ],
   };
@@ -152,13 +159,19 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
 
   assert.equal(
     dot.includes(
-      '  // limitation: dart/test-tool: dynamic-name: flowchart TD subgraph X\n',
+      '  // limitation: dart/flutter/test-tool: dynamic-name: flowchart TD subgraph X\n',
+    ),
+    true,
+  );
+  assert.equal(
+    dot.includes(
+      '  // limitation: swift/null/test-tool: objective-c-sources: 2 file(s)\n',
     ),
     true,
   );
   assert.equal(
     mermaid.includes(
-      '  %% limitation: dart/test-tool: dynamic-name: flowchart TD subgraph X\n',
+      '  %% limitation: dart/flutter/test-tool: dynamic-name: flowchart TD subgraph X\n',
     ),
     true,
   );

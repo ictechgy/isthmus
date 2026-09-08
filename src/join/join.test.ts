@@ -252,48 +252,55 @@ test('생성 없는 채널 등록을 논리 채널과 모든 등록 위치로 �
   ]);
 });
 
-test('입력 limitations를 플랫폼과 생산 도구 출처와 함께 전달한다', () => {
+test('입력 limitations를 플랫폼·target·생산 도구 출처와 함께 전달한다', () => {
   const result = joinBridgeDocuments([dartDocument, swiftDocument]);
 
   assert.deepEqual(result.limitations, [
     {
       platform: 'dart',
+      target: 'flutter',
       tool: 'isthmus',
       message:
         'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
     {
       platform: 'dart',
+      target: 'flutter',
       tool: 'isthmus',
       message:
         'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
     },
     {
       platform: 'dart',
+      target: 'flutter',
       tool: 'isthmus-phase0-dart',
       message:
         'dynamic-channel-names: 1 channel constructors use a non-literal name',
     },
     {
       platform: 'dart',
+      target: 'flutter',
       tool: 'isthmus-phase0-dart',
       message:
         'dynamic-method-names: 1 method invocations use a non-literal name',
     },
     {
       platform: 'swift',
+      target: 'flutter',
       tool: 'isthmus',
       message:
         'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
     {
       platform: 'swift',
+      target: 'flutter',
       tool: 'isthmus-phase0-swift',
       message:
         'dynamic-channel-names: 1 channel constructors use a non-literal name',
     },
     {
       platform: 'swift',
+      target: 'flutter',
       tool: 'isthmus-phase0-swift',
       message:
         'missing-handler-usrs: 3 method handlers have only a qualified name',
@@ -320,18 +327,21 @@ test('생산자가 신고하지 않아도 조인하지 못한 dynamic 사실을 
     [
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
       {
         platform: 'swift',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
@@ -363,12 +373,14 @@ test('같은 플랫폼 문서 여러 개의 dynamic 사실을 한 한계로 합�
     [
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-methods: 2 method facts with a non-literal name were not joined',
@@ -393,12 +405,14 @@ test('같은 위치의 중복 dynamic 사실을 한 번만 센다', () => {
     [
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
@@ -423,12 +437,14 @@ test('서로 다른 문서의 같은 위치 dynamic 사실도 한 번만 센다'
     [
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
       {
         platform: 'dart',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
@@ -472,6 +488,7 @@ test('생산자가 신고한 개수와 무관하게 미귀속 핸들러를 직�
     [
       {
         platform: 'swift',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-unattributed-handlers: 2 method handler facts without a channel were not joined',
@@ -516,6 +533,7 @@ test('미귀속이면서 dynamic인 핸들러를 두 번 세지 않는다', () =
     [
       {
         platform: 'swift',
+        target: 'flutter',
         tool: 'isthmus',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
@@ -561,6 +579,12 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
   assert.equal(
     result.limitations.some(({ message }) => message.startsWith('mixed-targets:')),
     true,
+  );
+  assert.deepEqual(
+    result.limitations
+      .filter(({ platform }) => platform === 'swift')
+      .map(({ target }) => target),
+    [null, null, null, null],
   );
 });
 
@@ -671,6 +695,98 @@ test('사실이 없는 수신 측 문서도 플랫폼 구성 요건을 충족한
   assert.equal(result.unhandledInvocations.length >= 1, true);
 });
 
+test('사실이 없는 문서의 한계는 target 귀속 없이 전달한다', () => {
+  const emptyReceiver = parseBridgeFactsDocument({
+    ...swiftDocument,
+    target: null,
+    facts: [],
+  });
+
+  const result = joinBridgeDocuments([
+    dartDocument,
+    swiftDocument,
+    emptyReceiver,
+  ]);
+
+  assert.deepEqual(
+    result.limitations
+      .filter(({ platform }) => platform === 'swift')
+      .map(({ target }) => target),
+    ['flutter', 'flutter', 'flutter', null, null],
+  );
+});
+
+test('같은 플랫폼의 한계는 target 문자열 순으로 정렬한다', () => {
+  const flutterSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    limitations: ['opaque-handler-bodies: 1 named-function handler is not read'],
+  });
+  const reactNativeSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    target: 'react-native',
+    limitations: ['opaque-handler-bodies: 1 named-function handler is not read'],
+  });
+
+  const result = joinBridgeDocuments([
+    dartDocument,
+    flutterSwift,
+    reactNativeSwift,
+  ]);
+
+  assert.deepEqual(
+    result.limitations
+      .filter(({ message }) => message.startsWith('opaque-handler-bodies:'))
+      .map(({ platform, target }) => [platform, target]),
+    [
+      ['swift', 'flutter'],
+      ['swift', 'react-native'],
+    ],
+  );
+});
+
+test('같은 플랫폼이라도 target이 다르면 조인에서 제외한 사실을 따로 센다', () => {
+  const reactNativeJs = parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'js',
+    target: 'react-native',
+    tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'method-invoke',
+        channel: 'CameraModule',
+        method: 'takePhoto',
+        dynamic: true,
+        location: { path: 'src/camera.js', line: 7, column: 3 },
+      },
+    ],
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, reactNativeJs, swiftDocument]);
+
+  assert.deepEqual(
+    result.limitations.filter(({ message }) =>
+      message.startsWith('unjoined-dynamic-methods:'),
+    ),
+    [
+      {
+        platform: 'dart',
+        target: 'flutter',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'js',
+        target: 'react-native',
+        tool: 'isthmus',
+        message:
+          'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
 test('조인 문서 수가 안전 상한을 넘으면 그룹 생성 전에 거부한다', () => {
   const maximumDocuments = 256;
 
@@ -726,6 +842,7 @@ test('입력 생성 시각이 하루 넘게 다르면 신선도 한계를 추가
     result.limitations.some(
       (limitation) =>
         limitation.platform === 'cross-platform' &&
+        limitation.target === null &&
         limitation.tool === 'isthmus' &&
         limitation.message ===
           'input-freshness: bridge documents differ by 72 hours',

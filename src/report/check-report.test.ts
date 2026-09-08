@@ -463,6 +463,165 @@ test('kotlin 수신 문서가 신고한 공백도 같은 규칙으로 인정한�
   ]);
 });
 
+test('다른 target 수신 문서가 신고한 공백은 현재 target 진단을 낮추지 않는다', () => {
+  const reactNativeReceiver = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    target: 'react-native',
+    facts: [
+      {
+        kind: 'method-handle',
+        channel: 'CameraModule',
+        method: 'recordVideo',
+        dynamic: false,
+        location: { path: 'ios/CameraModule.swift', line: 8, column: 12 },
+      },
+    ],
+    limitations: ['objective-c-sources: 1 Objective-C file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      dartWithOrphanChannel(),
+      jsReactNativeCaller(),
+      fullyObservedSwiftDocument,
+      reactNativeReceiver,
+    ]),
+  );
+
+  assert.deepEqual(codesForTarget(report, 'flutter', 'unhandled-invocation'), [
+    'unhandled-invocation',
+  ]);
+  assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unhandled-invocation'),
+    ['unhandled-invocation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
+  );
+});
+
+test('isthmus가 다른 target에서 센 공백도 현재 target 진단을 낮추지 않는다', () => {
+  const reactNativeReceiver = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    platform: 'kotlin',
+    target: 'react-native',
+    tool: { name: 'kartograph', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'method-handle',
+        channel: 'CameraModule',
+        method: 'takePhoto',
+        dynamic: true,
+        location: { path: 'android/CameraModule.kt', line: 12, column: 9 },
+      },
+    ],
+    limitations: [],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      dartWithOrphanChannel(),
+      jsReactNativeCaller(),
+      fullyObservedSwiftDocument,
+      reactNativeReceiver,
+    ]),
+  );
+
+  assert.deepEqual(codesForTarget(report, 'flutter', 'unhandled-invocation'), [
+    'unhandled-invocation',
+  ]);
+  assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unhandled-invocation'),
+    ['unhandled-invocation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
+  );
+});
+
+test('사실이 없는 수신 문서의 공백은 귀속할 target이 없어 모두에게 적용한다', () => {
+  const emptySwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [],
+    target: null,
+    limitations: ['objective-c-sources: 2 file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, jsReactNativeCaller(), emptySwift]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesForTarget(report, 'flutter', 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+    'unhandled-invocation-unverified',
+  ]);
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unhandled-invocation'),
+    ['unhandled-invocation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
+  );
+});
+
+test('귀속된 수신 문서와 공존해도 사실 없는 문서의 공백은 전체에 적용한다', () => {
+  const emptySwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [],
+    target: null,
+    limitations: ['objective-c-sources: 2 file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, fullyObservedSwiftDocument, emptySwift]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesForTarget(report, 'flutter', 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+  ]);
+});
+
+test('isthmus 계수 접두사를 차용한 생산자 문자열은 공백 근거가 되지 않는다', () => {
+  const spoofingSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: [
+      ...fullyObservedSwiftDocument.limitations,
+      'unjoined-dynamic-methods: 9 method facts with a non-literal name were not joined',
+      'unjoined-dynamic-channels: 9 channel facts with a non-literal name were not joined',
+      'unjoined-unattributed-handlers: 9 method handler facts without a channel were not joined',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartWithOrphanChannel(), spoofingSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation',
+  ]);
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation',
+  ]);
+  assert.equal(report.summary.errors, 2);
+});
+
 test('한계 문구의 접두사가 정확히 맞을 때만 공백으로 본다', () => {
   for (const message of [
     'see objective-c-sources: 2 file(s) are not analysed',
@@ -537,12 +696,50 @@ function dartWithOrphanChannel(): BridgeFactsDocument {
   });
 }
 
+/** 핸들러 없는 정적 호출을 가진 React Native 호출 측 js 문서다. */
+function jsReactNativeCaller(): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'js',
+    target: 'react-native',
+    tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'channel-create',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'src/camera.js', line: 3, column: 18 },
+      },
+      {
+        kind: 'method-invoke',
+        channel: 'CameraModule',
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'src/camera.js', line: 7, column: 3 },
+      },
+    ],
+    limitations: [],
+  });
+}
+
 /** 한 진단 계열에서 실제로 보고된 code만 추린다. */
 function codesOf(
   report: ReturnType<typeof createCheckReport>,
   prefix: string,
 ): string[] {
   return report.issues
+    .map(({ code }) => code)
+    .filter((code) => code.startsWith(prefix));
+}
+
+/** 특정 target의 진단 계열에서 보고된 code만 추린다. */
+function codesForTarget(
+  report: ReturnType<typeof createCheckReport>,
+  target: string,
+  prefix: string,
+): string[] {
+  return report.issues
+    .filter((issue) => issue.target === target)
     .map(({ code }) => code)
     .filter((code) => code.startsWith(prefix));
 }
