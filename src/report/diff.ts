@@ -1,6 +1,7 @@
 import type { BridgeFactsDocument, BridgeTarget } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
+import { baselineEntryKey } from './baseline.ts';
 import { createCheckReport } from './check-report.ts';
 
 /** 동일 프로젝트의 관찰 결과를 비교하며 삭제 안전성이나 rename을 추측하지 않는다. */
@@ -20,8 +21,8 @@ export function createBridgeDiff(
   const newReport = createCheckReport(newJoin);
   const addedMethods = difference(newJoin.matchedMethods, oldJoin.matchedMethods, logicalKey);
   const removedMethods = difference(oldJoin.matchedMethods, newJoin.matchedMethods, logicalKey);
-  const introducedIssues = difference(newReport.issues, oldReport.issues, issueKey);
-  const resolvedIssues = difference(oldReport.issues, newReport.issues, issueKey);
+  const introducedIssues = difference(newReport.issues, oldReport.issues, baselineEntryKey);
+  const resolvedIssues = difference(oldReport.issues, newReport.issues, baselineEntryKey);
   return {
     format: 'isthmus-diff' as const,
     version: 1 as const,
@@ -76,10 +77,6 @@ function producerVersions(docs: readonly BridgeFactsDocument[]) {
 /** 충돌 없는 논리 키로 비교해 소스 줄 이동을 추가·삭제로 보고하지 않는다. */
 function logicalKey(item: { readonly target: BridgeTarget; readonly channel: string; readonly method?: string }): string {
   return JSON.stringify([item.target, item.channel, item.method ?? null]);
-}
-
-function issueKey(item: Parameters<typeof logicalKey>[0] & { readonly code: string }): string {
-  return JSON.stringify([item.code, logicalKey(item)]);
 }
 
 function limitationKey(item: { readonly platform: string; readonly target: string | null; readonly tool: string; readonly message: string; readonly channels?: readonly string[]; readonly origin?: 'consumer' }): string {

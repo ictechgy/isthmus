@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runChild } from './run-child.mjs';
@@ -21,6 +23,7 @@ verifyInputError();
 verifyCompositionError();
 verifySuccessfulCheck();
 verifyStrictFindings();
+verifyBaselineRoundtrip();
 verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
@@ -88,6 +91,49 @@ function verifyStrictFindings() {
   verify(result.status === 1, 'strict exit code');
   verify(result.stderr === '', 'strict stderr');
   verify(JSON.parse(result.stdout).summary.errors === 1, 'strict JSON');
+}
+
+/** 베이스라인 기록과 재입력이 발행 CLI에서도 종료 코드 계약을 지키는지 검증한다. */
+function verifyBaselineRoundtrip() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-contract-'));
+  try {
+    const baselinePath = join(directory, 'baseline.json');
+    const update = run([
+      'check', dartPath, swiftPath, '--update-baseline', baselinePath,
+    ]);
+    verify(update.status === 0, 'baseline update exit code');
+    verify(update.stderr === '', 'baseline update stderr');
+    verify(
+      JSON.parse(update.stdout).summary.errors === 1,
+      'baseline update reports unsuppressed findings',
+    );
+    const document = JSON.parse(readFileSync(baselinePath, 'utf8'));
+    verify(document.format === 'isthmus-baseline', 'baseline format');
+    verify(document.version === 1, 'baseline version');
+    verify(document.entries.length === 3, 'baseline entries');
+
+    const applied = run([
+      'check', dartPath, swiftPath, '--strict', '--baseline', baselinePath,
+    ]);
+    verify(applied.status === 0, 'baseline strict exit code');
+    const summary = JSON.parse(applied.stdout).summary;
+    verify(
+      summary.errors === 0 && summary.suppressed === 3,
+      'baseline suppressed summary',
+    );
+    verify(summary.staleBaselineEntries === 0, 'baseline stale count');
+
+    writeFileSync(baselinePath, '{invalid');
+    const invalid = run(['check', dartPath, swiftPath, '--baseline', baselinePath]);
+    verify(invalid.status === 2, 'baseline invalid exit code');
+    verify(invalid.stdout === '', 'baseline invalid stdout');
+    verify(
+      invalid.stderr.startsWith('The baseline file is not valid JSON'),
+      'baseline invalid stderr',
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** retentions가 cartograph용 보존 문서를 내는지 검증한다. */

@@ -14,12 +14,12 @@ import {
   internalError,
   inputFailureResult,
   readBridgeDocuments,
+  type Clock,
   type CommandResult,
   type ReadTextFile,
 } from './check-command.ts';
 
-/** 생성 시각을 테스트 가능하게 주입하는 시계다. */
-export type Clock = () => Date;
+export type { Clock };
 
 /** retentions 인자를 실행해 cartograph용 보존 문서를 반환한다. */
 export async function runRetentionsCommand(

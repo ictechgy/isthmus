@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- `check --baseline <file>`·`--update-baseline <file>` (PRD v0.1의 베이스라인 목표).
+  인정된 이슈를 isthmus 소유 `isthmus-baseline` 버전 1 문서에 기록하고 다음 실행에서
+  논리 이슈 식별자(code·target·channel·method)가 같은 이슈만 `suppressed`로 억제한다.
+  사실·증거·심각도는 보존되고 요약 계수와 `--strict`에서만 빠진다. `--update-baseline`은
+  파일을 전체 다시 써서 해결된 항목을 자동 정리하고, 맞지 않는 항목은
+  `staleBaselineEntries`로 센다. 잘못된 베이스라인 파일은 종료 코드 2로 실패한다.
+  설계 근거는 ESLint bulk suppressions·detekt baseline·Trivy `.trivyignore` 조사
+  (docs/RESEARCH.md)
+
 ## [0.2.0] - 2026-09-08
 
 ### Added

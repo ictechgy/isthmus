@@ -14,6 +14,10 @@ export interface CheckSummary {
   readonly warnings: number;
   readonly matchedChannels: number;
   readonly matchedMethods: number;
+  /** 베이스라인이 적용된 실행에서만 실리는 억제된 이슈 수다. */
+  readonly suppressed?: number;
+  /** 베이스라인이 적용된 실행에서만 실리는, 현재 이슈와 맞지 않는 항목 수다. */
+  readonly staleBaselineEntries?: number;
 }
 
 /**
@@ -22,13 +26,17 @@ export interface CheckSummary {
  * `-unverified` 종류는 수신 측이 스스로 분석 공백을 신고해, 핸들러가 없는 것인지
  * 보지 못한 것인지 구분할 수 없는 경우다. 사실과 증거는 같지만 판정이 아니다.
  */
-export type CheckIssueCode =
-  | 'unhandled-invocation'
-  | 'unhandled-invocation-unverified'
-  | 'unregistered-channel-creation'
-  | 'unregistered-channel-creation-unverified'
-  | 'registration-without-creation'
-  | 'handler-without-invocation';
+export const checkIssueCodes = [
+  'unhandled-invocation',
+  'unhandled-invocation-unverified',
+  'unregistered-channel-creation',
+  'unregistered-channel-creation-unverified',
+  'registration-without-creation',
+  'handler-without-invocation',
+] as const;
+
+/** check가 보고하는 안정적인 진단 종류다. */
+export type CheckIssueCode = (typeof checkIssueCodes)[number];
 
 /** 삭제 판정 없이 경계 불일치 사실과 증거만 전달한다. */
 export interface CheckIssue {
@@ -38,6 +46,14 @@ export interface CheckIssue {
   readonly channel: string;
   readonly method?: string;
   readonly evidence: readonly BridgeEndpoint[];
+  /**
+   * 베이스라인이 이 이슈를 인정된 상태로 억제했다는 표시다.
+   *
+   * 사실·증거·심각도는 그대로 보존하고, 요약의 error·warning 계산과
+   * `--strict`에서만 빼는다. 억제 자체를 지우면 베이스라인이 무엇을
+   * 삼켰는지 보고서에서 사라진다.
+   */
+  readonly suppressed?: true;
 }
 
 /** 에이전트와 CI가 소비할 check 문서다. */

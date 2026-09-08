@@ -92,6 +92,24 @@ CI에서 브리지 오류가 있으면 실패시키려면 `--strict`를 붙인�
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
+이미 인정된 이슈를 베이스라인으로 삼으려면 현재 이슈 전체를 파일로 기록하고,
+다음 실행부터 그 파일을 적용한다.
+
+```bash
+isthmus check dart-bridges.json swift-bridges.json --update-baseline isthmus-baseline.json
+isthmus check dart-bridges.json swift-bridges.json --strict --baseline isthmus-baseline.json
+```
+
+`--update-baseline`은 이번 실행을 억제하지 않고 현재 이슈 전체를 isthmus 소유
+`isthmus-baseline` 버전 1 문서로 다시 쓴다. 파일 전체를 새로 쓰므로 해결된 항목은
+자동으로 빠진다. `--baseline`은 항목과 논리 이슈 식별자(code·target·channel·method)가
+같은 이슈만 억제하므로 소스 줄 이동에는 깨지지 않고, 새 채널·메서드 불일치는 억제되지
+않는다. 억제된 이슈도 지워지지 않는다 — 사실·증거·심각도를 보존한 채 `suppressed`
+표시가 붙고 요약의 error·warning 계산과 `--strict` 판단에서만 빠진다. 어느 이슈와도
+맞지 않는 항목은 `staleBaselineEntries`로 세므로, 해결된 이슈를 베이스라인에 남겨
+다음 악화를 가리는 상태를 보고서에서 볼 수 있다. 베이스라인 파일의 읽기 실패·JSON
+오류·계약 위반은 종료 코드 2로 실패한다. 두 플래그를 한 실행에 함께 쓸 수 없다.
+
 매치된 Swift 핸들러를 cartograph 보존 근거로 돌려주려면:
 
 ```bash
@@ -203,8 +221,8 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 | 종료 코드 | 의미 |
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
-| `1` | `--strict`에서 error 이슈를 발견함. `-unverified` 경고는 실패시키지 않음 |
-| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인 등 도구 실패. stderr가 원인을 구분 |
+| `1` | `--strict`에서 error 이슈를 발견함. `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
+| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 베이스라인 파일 오류, 베이스라인 쓰기 실패 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
 
 저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크,

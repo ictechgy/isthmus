@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 import {
   checkUsage,
@@ -42,6 +42,8 @@ Options:
 
 const arguments_ = process.argv.slice(2);
 const readTextFile = (path: string) => readFile(path, 'utf8');
+const writeTextFile = (path: string, text: string) =>
+  writeFile(path, text, 'utf8');
 const informationalResult = await runInformationalCommand(arguments_);
 const result = informationalResult ?? await dispatchCommand(arguments_);
 
@@ -88,7 +90,7 @@ async function dispatchCommand(
 ): Promise<CommandResult> {
   switch (commandArguments[0]) {
     case 'check':
-      return runCheckCommand(commandArguments, readTextFile);
+      return runCheckCommand(commandArguments, readTextFile, writeTextFile);
     case 'graph':
       return runGraphCommand(commandArguments, readTextFile);
     case 'diff':
