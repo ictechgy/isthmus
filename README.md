@@ -22,7 +22,7 @@ isthmus는 조사한 도구들이 언어별로 나눠 보던 이 교차 경계�
 
 ## 상태
 
-**0.1.7.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
+**0.2.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
 cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
 Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했고, 조인하지 못한 사실과 근거를
 만들지 못한 보존 대상이 조용히 사라지지 않도록 소비자 쪽에서 다시 세고, 수신 측이 신고한
@@ -169,7 +169,7 @@ target의 진단을 낮추지 않고, 사실이 없는 수신 문서의 공백�
 주지 않으며, 알려지지 않은 한계 문구는 공백으로 해석하지 않는다.
 
 
-다음 릴리스는 v1의 선택적 `limitationScopes`를 읽습니다. `{ limitationIndex, channels }`는
+0.2.0은 v1의 선택적 `limitationScopes`를 읽습니다. `{ limitationIndex, channels }`는
 해당 한계 전체의 보수적 채널 상한이며, 단순히 발견한 리터럴 목록이면 안 됩니다. 스코프가
 없거나 다른 범위 불명 공백이 공존하면 기존 target 전체 완화를 유지합니다. 빈 채널 집합과
 잘못된 인덱스는 입력 오류입니다. 스코프는 check/query/graph/diff에서 `channels`로 보존됩니다.
