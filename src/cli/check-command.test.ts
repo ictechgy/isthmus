@@ -760,3 +760,126 @@ test('베이스라인 쓰기 실패는 읽기 오류와 구분해 보고한다',
     'Unable to write the baseline file; check that the path is writable.\n',
   );
 });
+
+test('--update-baseline 중복 플래그도 64로 거부한다', async () => {
+  const result = await runCheckCommand(
+    [
+      'check', dartPath, swiftPath,
+      '--update-baseline', 'a.json', '--update-baseline', 'b.json',
+    ],
+    async () => '',
+  );
+
+  assert.equal(result.exitCode, 64);
+});
+
+test('--update-baseline은 --strict와 함께면 파일을 쓰고 error 종료 코드를 유지한다', async () => {
+  const written = new Map<string, string>();
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--strict', '--update-baseline', 'out.json'],
+    (path) => readFile(path, 'utf8'),
+    async (path, text) => {
+      written.set(path, text);
+    },
+    () => new Date('2026-09-08T01:02:03.000Z'),
+  );
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.standardOutput).summary.errors, 1);
+  assert.equal(written.has('out.json'), true);
+});
+
+test('입력 실패는 베이스라인 파일을 쓰지 않는다', async () => {
+  let didWrite = false;
+  const result = await runCheckCommand(
+    ['check', 'broken.json', swiftPath, '--update-baseline', 'out.json'],
+    async (path) => (path === 'broken.json' ? '{invalid' : readFile(path, 'utf8')),
+    async () => {
+      didWrite = true;
+    },
+    () => new Date('2026-09-08T01:02:03.000Z'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(didWrite, false);
+});
+
+test('객체가 아닌 베이스라인 JSON은 계약 위반 원인으로 거부한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--baseline', 'baseline.json'],
+    readerWithBaseline('[]'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError,
+    'The baseline file is not a valid isthmus-baseline document: '
+    + 'Baseline must be a JSON object.\n',
+  );
+});
+
+test('깊게 중첩된 베이스라인 JSON도 입력 탓 JSON 오류로 분류한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--baseline', 'baseline.json'],
+    readerWithBaseline('['.repeat(100_000)),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(
+    result.standardError,
+    'The baseline file is not valid JSON; regenerate it with '
+    + 'check --update-baseline.\n',
+  );
+});
+
+test('항목 상한을 넘는 베이스라인은 쓰지 않고 실패한다', async () => {
+  const base = {
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'test-tool', version: '1.0.0' },
+    generatedAt: '2026-09-08T00:00:00.000Z',
+    project: '/fixture',
+    limitations: [],
+  };
+  const inputs = new Map([
+    ['many.json', JSON.stringify({
+      ...base,
+      platform: 'dart',
+      target: 'flutter',
+      facts: Array.from({ length: 10_001 }, (_, index) => ({
+        kind: 'channel-create',
+        channel: `dev.isthmus/c${index}`,
+        dynamic: false,
+        location: { path: 'lib/many.dart', line: index + 1, column: 1 },
+      })),
+    })],
+    ['empty-swift.json', JSON.stringify({
+      ...base,
+      platform: 'swift',
+      target: null,
+      facts: [],
+    })],
+  ]);
+  let didWrite = false;
+  const result = await runCheckCommand(
+    ['check', 'many.json', 'empty-swift.json', '--update-baseline', 'out.json'],
+    async (path) => {
+      const text = inputs.get(path);
+      if (text === undefined) throw new Error('missing');
+      return text;
+    },
+    async () => {
+      didWrite = true;
+    },
+    () => new Date('2026-09-08T01:02:03.000Z'),
+  );
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.equal(
+    result.standardError,
+    'Cannot write a baseline with more than 10000 entries; '
+    + 'narrow the join inputs.\n',
+  );
+  assert.equal(didWrite, false);
+});

@@ -1,6 +1,7 @@
 import {
   isBridgeTarget,
   isBridgeTimestamp,
+  isJsonObject,
   isSafeNonEmptyString,
   type BridgeTarget,
 } from '../exchange/parse.ts';
@@ -53,6 +54,7 @@ export function parseBaselineDocument(input: unknown): BaselineDocument {
   if (input.format !== 'isthmus-baseline') {
     fail('Expected format "isthmus-baseline".');
   }
+  // 숫자 비교라 `1.0`도 통과한다. bridge-facts의 version 검증과 같은 의도적 관용이다.
   if (input.version !== 1) {
     fail('Unsupported isthmus-baseline version; expected version 1.');
   }
@@ -81,7 +83,13 @@ export function parseBaselineDocument(input: unknown): BaselineDocument {
   };
 }
 
-/** 현재 보고서의 이슈 전체를 새 베이스라인 문서로 만든다. */
+/**
+ * 현재 보고서의 이슈 전체를 새 베이스라인 문서로 만든다.
+ *
+ * 읽기 상한과 같은 상한을 쓰기에도 적용한다. 상한 없이 쓰면 도구가
+ * 스스로 소비할 수 없는 산출물을 만들고, 그 파일은 다음 `--baseline`
+ * 실행에서 거부된다.
+ */
 export function createBaselineDocument(
   issues: readonly CheckIssue[],
   generatedAt: string,
@@ -102,6 +110,12 @@ export function createBaselineDocument(
     seen.add(key);
     entries.push(entry);
   }
+  if (entries.length > MAX_BASELINE_ENTRIES) {
+    fail(
+      `Baseline entries exceed the ${MAX_BASELINE_ENTRIES} item limit; `
+      + 'narrow the join inputs.',
+    );
+  }
   entries.sort(compareEntries);
   return { format: 'isthmus-baseline', version: 1, generatedAt, entries };
 }
@@ -118,32 +132,36 @@ export function encodeBaselineDocument(document: BaselineDocument): string {
  * 요약의 error·warning과 `--strict` 판단에서만 빠진다. 어떤 항목도 맞지
  * 않는 이슈를 만들지 않으며, 맞지 않는 항목은 오래된 것으로 센다 —
  * 해결된 이슈가 베이스라인에 남으면 다음 악화를 가릴 수 있기 때문이다.
+ *
+ * 판정은 전부 논리 키 교집합이라 이미 억제 표시가 있는 보고서에 다시
+ * 적용해도 결과가 같다(멱등). suppressed 표시가 아닌 키로 세어야 stale과
+ * suppressed 계수가 이중 적용에 흔들리지 않는다.
  */
 export function applyBaseline(
   report: CheckReport,
   entries: readonly BaselineEntry[],
 ): CheckReport {
   const entryKeys = new Set(entries.map(baselineEntryKey));
+  const issueKeys = new Set(report.issues.map(baselineEntryKey));
   const issues = report.issues.map((issue) =>
     entryKeys.has(baselineEntryKey(issue))
       ? { ...issue, suppressed: true as const }
       : issue,
   );
-  const suppressed = issues.filter((issue) => issue.suppressed === true).length;
-  const matchedKeys = new Set(
-    issues
-      .filter((issue) => issue.suppressed === true)
-      .map((issue) => baselineEntryKey(issue)),
-  );
+  const suppressed = issues.filter(
+    (issue) => issue.suppressed === true,
+  ).length;
+  const staleBaselineEntries = [...entryKeys].filter(
+    (key) => !issueKeys.has(key),
+  ).length;
   return {
     ...report,
     summary: {
+      ...report.summary,
       errors: countUnsuppressed(issues, 'error'),
       warnings: countUnsuppressed(issues, 'warning'),
       suppressed,
-      staleBaselineEntries: entryKeys.size - matchedKeys.size,
-      matchedChannels: report.summary.matchedChannels,
-      matchedMethods: report.summary.matchedMethods,
+      staleBaselineEntries,
     },
     issues,
   };
@@ -215,10 +233,7 @@ function fail(message: string): never {
   throw new BridgeBaselineValidationError(message);
 }
 
-/** 배열과 null을 제외한 JSON 객체인지 확인한다. */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+/** 배열과 null을 제외한 JSON 객체 확인은 exchange/parse의 검증을 재사용한다. */
 
 /** 검증에 쓰는 진단 코드 집합이다. */
 const checkIssueCodeSet = new Set<string>(checkIssueCodes);

@@ -15,6 +15,12 @@
   설계 근거는 ESLint bulk suppressions·detekt baseline·Trivy `.trivyignore` 조사
   (docs/RESEARCH.md)
 
+### Changed
+
+- diff의 introduced/resolved 이슈 내부 비교 키를 베이스라인과 공유하는 평탄한 논리 키
+  (code·target·channel·method)로 단일화. 내용과 결정성은 그대로지만 code가 서로의
+  접두사인 경계에서 배열 순서는 이전 버전 출력과 한 번 달라질 수 있다
+
 ## [0.2.0] - 2026-09-08
 
 ### Added

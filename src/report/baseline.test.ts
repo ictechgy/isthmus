@@ -69,6 +69,8 @@ test('중복 항목은 하나로 합치고 code·target·channel·method 순으�
 test('형식·버전·시각·항목 잘못을 원인별 정적 메시지로 거부한다', () => {
   const cases: Array<[unknown, string]> = [
     [{}, 'Expected format "isthmus-baseline".'],
+    [null, 'Baseline must be a JSON object.'],
+    [[], 'Baseline must be a JSON object.'],
     [
       { ...validDocument, format: 'other' },
       'Expected format "isthmus-baseline".',
@@ -235,6 +237,68 @@ test('억제는 target과 code 경계를 넘지 않는다', () => {
 
   assert.equal(applied.summary.suppressed, 1);
   assert.equal(applied.summary.errors, 2);
+});
+
+test('method 없는 항목은 method 없는 이슈만 억제한다', () => {
+  const report = makeReport([
+    withSeverity(issue('unregistered-channel-creation', 'flutter', 'b'), 'error'),
+    withSeverity(issue('unhandled-invocation', 'flutter', 'b', 'm2'), 'error'),
+  ]);
+
+  const applied = applyBaseline(report, [
+    { code: 'unregistered-channel-creation', target: 'flutter', channel: 'b' },
+  ]);
+
+  assert.deepEqual(
+    applied.issues.map(({ code, suppressed }) => [code, suppressed ?? false]),
+    [
+      ['unregistered-channel-creation', true],
+      ['unhandled-invocation', false],
+    ],
+  );
+  assert.equal(applied.summary.staleBaselineEntries, 0);
+});
+
+test('억제 표시가 있는 보고서에 다시 적용해도 결과가 같다', () => {
+  const report = makeReport([
+    withSeverity(issue('unhandled-invocation', 'flutter', 'b', 'm2'), 'error'),
+    withSeverity(issue('handler-without-invocation', 'flutter', 'a'), 'warning'),
+  ]);
+  const entries = [
+    {
+      code: 'unhandled-invocation' as const,
+      target: 'flutter' as const,
+      channel: 'b',
+      method: 'm2',
+    },
+  ];
+
+  const once = applyBaseline(report, entries);
+  const twice = applyBaseline(once, entries);
+
+  assert.deepEqual(twice, once);
+});
+
+test('쓰기 상한을 넘는 베이스라인 문서는 만들지 않는다', () => {
+  const issues = Array.from(
+    { length: MAX_BASELINE_ENTRIES + 1 },
+    (_, index) => issue('unhandled-invocation', 'flutter', `dev.isthmus/c${index}`),
+  );
+
+  assert.throws(
+    () => createBaselineDocument(issues, '2026-09-08T05:00:00.000Z'),
+    /item limit/u,
+  );
+});
+
+test('이슈가 없는 실행도 빈 문서로 왕복한다', () => {
+  const document = createBaselineDocument([], '2026-09-08T05:00:00.000Z');
+
+  assert.deepEqual(document.entries, []);
+  assert.deepEqual(
+    parseBaselineDocument(JSON.parse(encodeBaselineDocument(document))),
+    document,
+  );
 });
 
 /** 최소 증거를 가진 check 이슈를 만든다. */

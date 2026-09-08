@@ -14,6 +14,7 @@ import {
   BridgeBaselineValidationError,
   createBaselineDocument,
   encodeBaselineDocument,
+  MAX_BASELINE_ENTRIES,
   parseBaselineDocument,
   type BaselineDocument,
 } from '../report/baseline.ts';
@@ -146,9 +147,19 @@ async function readBaselineDocument(
   try {
     return parseBaselineDocument(JSON.parse(text));
   } catch (error) {
-    if (error instanceof SyntaxError) throw new BridgeBaselineJsonError();
+    if (isJsonParseFailure(error)) throw new BridgeBaselineJsonError();
     throw error;
   }
+}
+
+/**
+ * 사용자 입력 JSON 파싱 실패인지 확인한다.
+ *
+ * 깊은 중첩은 SyntaxError가 아니라 RangeError(스택 초과)로 실패한다.
+ * 둘 다 입력 탓이라 내부 오류 메시지로 오분류하지 않는다.
+ */
+function isJsonParseFailure(error: unknown): boolean {
+  return error instanceof SyntaxError || error instanceof RangeError;
 }
 
 /** 현재 이슈 전체를 결정적 베이스라인 문서로 써서 해결된 항목을 정리한다. */
@@ -158,7 +169,17 @@ async function writeBaselineDocument(
   generatedAt: Date,
   writeTextFile: WriteTextFile,
 ): Promise<void> {
-  const document = createBaselineDocument(issues, generatedAt.toISOString());
+  let document: BaselineDocument;
+  try {
+    document = createBaselineDocument(issues, generatedAt.toISOString());
+  } catch (error) {
+    // 만들 수 없는 문서는 쓰지 않는다. 상한 초과 산출물은 다음 실행이
+    // 소비할 수 없어 부분 성공보다 실패가 안전하다.
+    if (error instanceof BridgeBaselineValidationError) {
+      throw new BridgeBaselineWriteLimitError();
+    }
+    throw error;
+  }
   try {
     await writeTextFile(path, encodeBaselineDocument(document));
   } catch {
@@ -198,6 +219,14 @@ class BridgeBaselineWriteError extends Error {
   }
 }
 
+/** 쓸 베이스라인이 항목 상한을 넘는 경우를 구분한다. */
+class BridgeBaselineWriteLimitError extends Error {
+  constructor() {
+    super('BridgeBaselineWriteLimitError');
+    this.name = 'BridgeBaselineWriteLimitError';
+  }
+}
+
 /** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 교환 문서로 파싱한다. */
 export async function readBridgeDocuments(
   inputPaths: readonly string[],
@@ -223,7 +252,7 @@ export async function readBridgeDocuments(
     try {
       documents.push(parseBridgeFactsDocument(JSON.parse(text)));
     } catch (error) {
-      if (error instanceof SyntaxError) {
+      if (isJsonParseFailure(error)) {
         throw new BridgeInputJsonError(inputPosition);
       }
       if (error instanceof BridgeFactsValidationError) {
@@ -323,6 +352,12 @@ export function inputFailureResult(error: unknown): CommandResult | undefined {
   if (error instanceof BridgeBaselineWriteError) {
     return inputFailure(
       'Unable to write the baseline file; check that the path is writable.\n',
+    );
+  }
+  if (error instanceof BridgeBaselineWriteLimitError) {
+    return inputFailure(
+      `Cannot write a baseline with more than ${MAX_BASELINE_ENTRIES} entries; `
+      + 'narrow the join inputs.\n',
     );
   }
   if (error instanceof BridgeBaselineValidationError) {

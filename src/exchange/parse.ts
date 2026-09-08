@@ -410,7 +410,7 @@ const timestampPattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 
-/** 배열과 null을 제외한 JSON 객체인지 확인한다. */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
+/** 배열과 null을 제외한 JSON 객체인지 확인한다. isthmus 소유 문서 검증도 재사용한다. */
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
