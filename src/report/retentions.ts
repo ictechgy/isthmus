@@ -42,6 +42,7 @@ export interface CartographRetentionsDocument {
   readonly producedBy: Readonly<{ name: 'isthmus'; version: string }>;
   readonly generatedAt: string;
   readonly retentions: readonly ExternalRetention[];
+  readonly omittedObjectiveCHandlers?: number;
 }
 
 /** 불완전한 조인으로 보존 결정을 만들 수 없음을 나타낸다. */
@@ -88,17 +89,33 @@ export function createCartographRetentionsDocument(
     );
   }
   rejectUnresolvedSwiftHandlers(joined);
+  const omittedObjectiveCHandlers = countObjectiveCHandlers(joined);
   return {
     format: 'external-retentions',
     version: 0,
     producedBy: { name: 'isthmus', version: producerVersion },
     generatedAt,
     retentions: collectCartographRetentions(joined),
+    ...(omittedObjectiveCHandlers === 0 ? {} : { omittedObjectiveCHandlers }),
   };
+}
+
+/** 그래프 밖의 매치도 사라지지 않게 채널·메서드·위치별로 센다. */
+function countObjectiveCHandlers(joined: BridgeJoinResult): number {
+  const keys = new Set<string>();
+  for (const method of joined.matchedMethods) {
+    for (const handler of method.handlers) {
+      if (handler.sourceLanguage !== 'objective-c') continue;
+      keys.add(JSON.stringify([method.target, method.channel, method.method,
+        handler.location.path, handler.location.line, handler.location.column]));
+    }
+  }
+  return keys.size;
 }
 
 /**
  * 심볼이 없어 보존 근거로 바꿀 수 없는 매치 Swift 핸들러를 거부한다.
+ * sourceLanguage로 확인된 Objective-C 구현은 Swift 그래프의 보존 대상이 아니다.
  *
  * 교환 계약에서 `symbol`은 선택 필드다. 호출자가 있는데도 근거를 만들지 못한
  * 핸들러를 조용히 빼면 cartograph는 그 핸들러를 계속 미사용으로 보고하고,
@@ -108,7 +125,7 @@ function rejectUnresolvedSwiftHandlers(joined: BridgeJoinResult): void {
   const unresolved = new Set<string>();
   for (const method of joined.matchedMethods) {
     for (const handler of method.handlers) {
-      if (handler.platform !== 'swift' || handler.symbol !== undefined) continue;
+      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol !== undefined) continue;
       const { path, line, column } = handler.location;
       unresolved.add(`${path}\u0000${line}\u0000${column}`);
     }
@@ -131,7 +148,7 @@ function collectCartographRetentions(
     const caller = method.invocations[0];
     if (caller === undefined) continue;
     for (const handler of method.handlers) {
-      if (handler.platform !== 'swift' || handler.symbol === undefined) continue;
+      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol === undefined) continue;
       const symbolKey = handler.symbol.usr === undefined
         ? `name:${handler.symbol.qualifiedName}`
         : `usr:${handler.symbol.usr}`;

@@ -25,6 +25,39 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 }
 ```
 
+## 선택적 limitation 스코프 (v1 확장)
+
+기존 `limitations: string[]`는 유지한다. 생산자는 그 중 특정 항목의 **공백 전체**를
+포함하는 채널 집합을 증명할 수 있을 때만 선택적 `limitationScopes`를 추가한다.
+
+```json
+"limitations": ["opaque-handler-bodies: 1 handler body could not be inspected"],
+"limitationScopes": [{"limitationIndex": 0, "channels": ["dev.example/camera"]}]
+```
+
+- `limitationIndex`는 같은 문서의 `limitations` 배열에 대한 0부터 시작하는 인덱스다.
+  항목별로 하나만 허용한다. 같은 접두사의 다른 항목과 다른 문서의 공백을 덮어쓰지 않는다.
+- `channels`는 제어 문자가 없는 비어 있지 않은 채널 문자열의 비어 있지 않은 배열이다.
+  글롭·대소문자 접기·부분 문자열 매칭을 하지 않는다. 중복은 제거하고 문자열 순으로 정규화한다.
+- 채널 이름을 일부 발견한 것만으로 스코프를 만들지 않는다. 해당 한계가 가릴 수 있는 모든
+  채널을 포함하는 **보수적 상한**이어야 한다. 동적 이름·미해석 위임·읽기 실패 때문에
+  상한을 증명할 수 없으면 그 항목의 스코프를 생략한다. ObjC 파일에서 채널 리터럴을
+  몇 개 읽었다는 것만으로 `objective-c-sources`의 범위를 좁히지 않는다.
+- 스코프가 없는 항목은 기존 target 범위 전체에 적용한다. 스코프 있는 항목과 공존하면
+  범위 없는 공백이 우선하며, 다른 target과 호출 측 한계는 기존 규칙대로 처리한다.
+  `target: null`은 target을 추측하지 않고 모든 target의 해당 채널에 적용한다.
+- 잘못된 인덱스, 중복 인덱스, 빈 채널 집합, 잘못된 타입은 입력 오류로 거부한다. 잘못된
+  스코프를 빈 공백으로 읽고 error를 만들지 않는다. 문서당 최대 1,000 스코프, 정규화 전
+  채널 원소 합계 최대 10,000개다. 파일 위치는 채널 집합의 대체물이 아니다.
+- 문자열 끝의 `[channels: …]`는 문장일 뿐 파싱하지 않는다. JSON 문자열 인코딩이 쉼표·
+  대괄호·따옴표 이스케이프를 맡는다. 같은 채널 안의 플랫폼 조건은 이 범위로 구분하지 않는다.
+- 옛 v1 소비자는 모르는 필드를 버리고 기존 문자열을 target 전체로 적용한다. 새 소비자는
+  조인 결과의 해당 `JoinLimitation.channels`에 범위를 보존하며 check/query/graph/diff에
+  전달한다. 스코프 배열 자체가 비었으면 추가 범위가 없다는 뜻이며 기존 전체 적용이다.
+  범위만 바뀌어도 diff에서 한계 변화로 보인다. isthmus의 직접 계수에는 선택적
+  `origin: "consumer"`를 붙이고, 이 필드는 생산 문서에서 복사하지 않는다. `unjoined-*`를 생산자가 신고해
+  소비자의 자체 계수를 덮어쓰는 것은 여전히 허용하지 않는다.
+
 ## Fact
 
 공통 필드:
@@ -43,6 +76,13 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   }
 }
 ```
+
+선택적 `sourceLanguage: "objective-c"`는 `platform: "swift"` 문서에 담긴 `.m`/`.mm`의
+**Objective-C 구현 사실**을 구분한다. 실제 Clang 인덱스에서 확인한 `c:` USR이 있으면
+`symbol`을 함께 싣는다. 인덱스가 없거나 선언을 유일하게 확인하지 못하면 생략한다.
+이름만 지어 Swift 그래프의 선언인 것처럼 내보내지 않는다. USR의 존재가 현재 Swift 분석
+그래프에 포함된다는 뜻은 아니다. 그 외 값·플랫폼·확장자 조합은 입력 오류다.
+필드가 없으면 기존 플랫폼 의미를 유지한다. 위치 확장자만으로 Objective-C라고 추측하지 않는다.
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
@@ -91,9 +131,9 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - `module-import` ↔ `module-export`: 0.2에서 `channel`(모듈 이름)로 조인할 예정
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다.
   세는 주체는 소비자다. isthmus는 조인에서 제외한 dynamic 사실을 직접 세어 자신을 출처(`tool: "isthmus"`)로 밝힌 limitation으로 내보내며, 같은 위치의 중복 사실은 한 번만 센다. 생산자의 `dynamic-*` limitation은 원인을 설명하는 추가 정보이지 소비자가 신뢰의 근거로 삼는 값이 아니다. `channel: null` 핸들러도 같다. 생산자의 `unattributed-method-handles:` 신고가 없으면 문서를 거부하지만, 신고한 개수는 검증하지 않고 소비자가 실제 사실 수를 다시 센다
-- 수신 측이 스스로 신고한 분석 공백은 심각도에 반영한다. 소비자는 `objective-c-sources:`·`shadowed-flutter-method-channel:`(등록과 핸들러를 모두 가림), `opaque-handler-bodies:`(핸들러를 가림)를 수신 측 플랫폼 문서에서 발견하면 "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 판정 불가(`-unverified` 경고)로 보고한다. 소비자가 직접 센 `unjoined-dynamic-methods`·`unjoined-unattributed-handlers`는 핸들러를, `unjoined-dynamic-channels`는 등록을 가리는 공백으로 본다. 알려진 접두사만 인정한다. `unjoined-` 접두사는 isthmus가 직접 센 한계에만 유효하며, 같은 접두사를 차용한 생산자 문자열은 완화 근거가 되지 않는다. 모르는 한계를 공백으로 넓게 해석하면 진짜 불일치가 경고로 묻힌다. 호출 측 플랫폼의 한계는 네이티브 코드를 가리지 않으므로 심각도를 바꾸지 않는다.
+- 수신 측이 스스로 신고한 분석 공백은 심각도에 반영한다. 소비자는 `objective-c-sources:`·`shadowed-flutter-method-channel:`(등록과 핸들러를 모두 가림), `opaque-handler-bodies:`(핸들러를 가림)를 수신 측 플랫폼 문서에서 발견하면 "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 판정 불가(`-unverified` 경고)로 보고한다. 소비자가 직접 센 `unjoined-dynamic-methods`·`unjoined-unattributed-handlers`는 핸들러를, `unjoined-dynamic-channels`는 등록을 가리는 공백으로 본다. 알려진 접두사만 인정한다. `unjoined-` 접두사는 isthmus가 직접 세고 `origin: "consumer"`를 붙인 한계에만 유효하다. 이 출처는 입력 문서에서 복사하지 않는다. 생산자가 tool 이름을 isthmus로 적거나 같은 접두사를 차용해도 자체 계수의 근거가 되지 않는다. 모르는 한계를 공백으로 넓게 해석하면 진짜 불일치가 경고로 묻힌다. 호출 측 플랫폼의 한계는 네이티브 코드를 가리지 않으므로 심각도를 바꾸지 않는다.
   이 접두사들은 계약이다. 생산자는 문구를 바꿀 때 접두사를 유지하고, 새 공백 종류를 추가하면 소비자의 목록도 함께 갱신한다. 목록이 닫혀 있으므로 갱신 전까지는 그 공백이 error로 보고된다(안전한 방향).
-  완화 단위는 진단의 target이다. 사실은 target별로만 조인되므로 target을 가진 수신 문서가 신고한 공백은 그 target 진단의 심각도만 낮춘다. 사실이 없는(`target: null`) 수신 문서의 공백은 어느 target의 분석을 가리는지 귀속 근거가 없어 모든 target에 적용한다. 같은 target에 귀속된 수신 문서가 사실과 함께 공존해도 마찬가지다. 수신 문서 여러 개가 소스 트리를 나누어 가졌을 수 있어, 귀속 없는 문서가 본 소스가 해당 target의 핸들러를 가릴 가능성을 배제할 수 없기 때문이다. mixed-targets 문서의 한계도 선언한 target을 신뢰할 수 없어 귀속 없이 남긴다. limitation 문법에 파일·채널 범위가 없어 같은 target 안에서 공백을 개별 진단에 귀속할 수는 없다. 범위가 생기면 진단별로 더 좁힌다. 같은 이유로 `objective-c-sources:`처럼 소비자가 직접 셀 수 없는 공백은 생산자의 신고를 그대로 믿는다. 과다 신고는 진짜 불일치를 경고로 묻고, 과소 신고는 거짓 error를 남긴다
+  완화 단위는 진단의 target이다. 사실은 target별로만 조인되므로 target을 가진 수신 문서가 신고한 공백은 그 target 진단의 심각도만 낮춘다. 사실이 없는(`target: null`) 수신 문서의 공백은 어느 target의 분석을 가리는지 귀속 근거가 없어 모든 target에 적용한다. 같은 target에 귀속된 수신 문서가 사실과 함께 공존해도 마찬가지다. 수신 문서 여러 개가 소스 트리를 나누어 가졌을 수 있어, 귀속 없는 문서가 본 소스가 해당 target의 핸들러를 가릴 가능성을 배제할 수 없기 때문이다. mixed-targets 문서의 한계도 선언한 target을 신뢰할 수 없어 귀속 없이 남긴다. 선택적 limitationScopes가 있으면 같은 target 안에서도 그 채널에만 적용한다. 범위가 없으면 기존 전체 적용을 유지한다. 같은 이유로 `objective-c-sources:`처럼 소비자가 직접 셀 수 없는 공백은 생산자의 신고를 그대로 믿는다. 과다 신고는 진짜 불일치를 경고로 묻고, 과소 신고는 거짓 error를 남긴다
 - 위치는 증거이지 조인 키가 아니다. 같은 `(channel, method)` 사실이 여러 위치에 있어도 존재 여부는 키 집합으로 판단하고, 위치는 모두 증거로 보존한다
 - 한 번의 조인에 넣는 모든 문서는 정확히 같은 `project` 문자열을 가져야 한다. 다른 프로젝트의 같은 채널 이름을 연결하지 않기 위해 불일치는 입력 오류로 거부한다
 - 한 번의 조인 입력에는 호출 측 플랫폼(dart·js) 문서와 수신 측 플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 한쪽만 있는 입력은 한쪽 관찰을 경계 불일치로 오독할 수 있으므로 소비자는 입력 오류로 거부한다. 사실이 없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다
@@ -145,7 +185,18 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 
 자매 도구는 이것을 `RetentionReason.externalBridge` 로 매핑하고, `--explain` 에서 `evidence` 를 그대로 문장으로 만든다.
 
-이 문서는 부분적으로 만들지 않는다. 소비 도구가 읽을 수 있는 수신 측 문서가 입력에 없거나, 호출자가 있는데도 `symbol`이 없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 isthmus는 일부만 담은 목록 대신 도구 실패(종료 코드 2)로 끝낸다. 근거가 빠진 목록은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다.
+cartograph의 보존 문서는 **Swift 그래프 선언**을 대상으로 완전해야 한다. 명시적
+`sourceLanguage: "objective-c"` 구현은 조인·진단·query의 증거로 남기지만 Swift 보존 대상은
+아니므로 그 목록에 넣지 않는다. Kotlin 핸들러를 cartograph 보존에서 제외하는 것과 같은
+범위 구분이며, symbol 없는 Swift 핸들러를 조용히 버리는 예외가 아니다. ObjC가 Swift로
+위임하는 관계는 별도 증거가 필요하고, ObjC 핸들러 이름으로 Swift USR을 만들지 않는다.
+`omittedObjectiveCHandlers`(선택적 비음수 정수)에 목록에서 제외한 매치 ObjC 핸들러 수를
+(target, channel, method, source location)별로 센다. 0이면 키를 생략한다. cartograph는
+이 수를 외부 보존 근거의 한계로 알려 빈 목록을 Swift와 ObjC 전체의 보존 결과로 오인하지 않게 한다.
+이 필드를 모르는 옛 isthmus는 ObjC 매치도 심볼 없는 Swift로 보아 retentions에서 실패한다.
+따라서 ObjC 사실을 내는 생산자보다 이 확장을 지원하는 소비자를 먼저 배포한다.
+
+이 문서는 대상 범위 안에서 부분적으로 만들지 않는다. 소비 도구가 읽을 수 있는 수신 측 문서가 입력에 없거나, 호출자가 있는데도 `symbol`이 없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 isthmus는 일부만 담은 목록 대신 도구 실패(종료 코드 2)로 끝낸다. 근거가 빠진 목록은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다.
 
 ## 자매 도구가 해야 할 일 (선행 작업)
 

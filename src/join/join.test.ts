@@ -260,6 +260,7 @@ test('입력 limitations를 플랫폼·target·생산 도구 출처와 함께 �
       platform: 'dart',
       target: 'flutter',
       tool: 'isthmus',
+      origin: 'consumer',
       message:
         'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
@@ -267,6 +268,7 @@ test('입력 limitations를 플랫폼·target·생산 도구 출처와 함께 �
       platform: 'dart',
       target: 'flutter',
       tool: 'isthmus',
+      origin: 'consumer',
       message:
         'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
     },
@@ -288,6 +290,7 @@ test('입력 limitations를 플랫폼·target·생산 도구 출처와 함께 �
       platform: 'swift',
       target: 'flutter',
       tool: 'isthmus',
+      origin: 'consumer',
       message:
         'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
     },
@@ -329,6 +332,7 @@ test('생산자가 신고하지 않아도 조인하지 못한 dynamic 사실을 
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
@@ -336,6 +340,7 @@ test('생산자가 신고하지 않아도 조인하지 못한 dynamic 사실을 
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
@@ -343,6 +348,7 @@ test('생산자가 신고하지 않아도 조인하지 못한 dynamic 사실을 
         platform: 'swift',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
@@ -375,6 +381,7 @@ test('같은 플랫폼 문서 여러 개의 dynamic 사실을 한 한계로 합�
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
@@ -382,6 +389,7 @@ test('같은 플랫폼 문서 여러 개의 dynamic 사실을 한 한계로 합�
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 2 method facts with a non-literal name were not joined',
       },
@@ -407,6 +415,7 @@ test('같은 위치의 중복 dynamic 사실을 한 번만 센다', () => {
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
@@ -414,6 +423,7 @@ test('같은 위치의 중복 dynamic 사실을 한 번만 센다', () => {
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
@@ -439,6 +449,7 @@ test('서로 다른 문서의 같은 위치 dynamic 사실도 한 번만 센다'
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-channels: 1 channel facts with a non-literal name were not joined',
       },
@@ -446,6 +457,7 @@ test('서로 다른 문서의 같은 위치 dynamic 사실도 한 번만 센다'
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
@@ -490,6 +502,7 @@ test('생산자가 신고한 개수와 무관하게 미귀속 핸들러를 직�
         platform: 'swift',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-unattributed-handlers: 2 method handler facts without a channel were not joined',
       },
@@ -535,6 +548,7 @@ test('미귀속이면서 dynamic인 핸들러를 두 번 세지 않는다', () =
         platform: 'swift',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
@@ -773,6 +787,7 @@ test('같은 플랫폼이라도 target이 다르면 조인에서 제외한 사�
         platform: 'dart',
         target: 'flutter',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },
@@ -780,6 +795,7 @@ test('같은 플랫폼이라도 target이 다르면 조인에서 제외한 사�
         platform: 'js',
         target: 'react-native',
         tool: 'isthmus',
+        origin: 'consumer',
         message:
           'unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined',
       },

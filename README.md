@@ -160,13 +160,27 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 
 `-unverified` 종류는 수신 측 문서의 한계에서 나온다. 예를 들어 Flutter 핸들러가
 Objective-C로 쓰인 플러그인에서 cartograph는 `objective-c-sources:`를 신고하고 핸들러 사실을
-내지 못한다. 이때 "핸들러 없는 호출"을 error로 단정하면 이 도구가 없애려던 오탐을 이 도구가
+완전히 열거하지 못할 수 있다. 이때 "핸들러 없는 호출"을 error로 단정하면 이 도구가 없애려던 오탐을 이 도구가
 만든다. 사실과 증거는 그대로 보고하되 `--strict`를 실패시키지 않는다. 공백의 종류는 구분해서,
 이름이 리터럴이 아닌 채널 등록은 채널 진단만 낮추고 메서드 진단은 낮추지 않는다. 완화 단위는
 진단의 target이다. 사실은 target별로만 조인되므로 다른 target 수신 문서가 신고한 공백은 현재
 target의 진단을 낮추지 않고, 사실이 없는 수신 문서의 공백은 무엇이 가려졌는지 귀속시킬 수
 없어 모든 target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 않으므로 심각도에 영향을
 주지 않으며, 알려지지 않은 한계 문구는 공백으로 해석하지 않는다.
+
+
+다음 릴리스는 v1의 선택적 `limitationScopes`를 읽습니다. `{ limitationIndex, channels }`는
+해당 한계 전체의 보수적 채널 상한이며, 단순히 발견한 리터럴 목록이면 안 됩니다. 스코프가
+없거나 다른 범위 불명 공백이 공존하면 기존 target 전체 완화를 유지합니다. 빈 채널 집합과
+잘못된 인덱스는 입력 오류입니다. 스코프는 check/query/graph/diff에서 `channels`로 보존됩니다.
+생산자의 tool 이름만으로 자체 계수를 신뢰하지 않으며, `unjoined-*`는 소비자가 직접 붙인
+`origin: "consumer"`가 있어야 완화 근거가 됩니다.
+
+선택적 fact `sourceLanguage: "objective-c"`는 `.m`/`.mm`의 ObjC 구현을 Swift 그래프와
+구분합니다. 이 사실에는 symbol을 붙이지 않습니다. 매치는 check/query/graph에 남고 Swift
+보존 목록에서는 제외되며, `omittedObjectiveCHandlers`가 제외 수를 알립니다. 표식 없는
+Swift 핸들러의 symbol 누락은 여전히 종료 코드 2입니다. 이 확장을 지원하는 소비자를 먼저
+배포해야 합니다. 옛 소비자는 스코프를 버리고 넓게 완화하며 ObjC 보존 생성은 실패합니다.
 
 모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
 handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께
@@ -176,7 +190,7 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 기존 필드의 의미를 바꾸거나 제거할 때 문서 버전을 올린다.
 
 `limitations`에는 생산자가 신고한 한계와 isthmus가 직접 센 한계가 함께 들어간다.
-각 항목은 `platform`·`target`·`tool`로 출처와 귀속을 밝히고, `tool`이 `isthmus`인 항목은
+각 항목은 `platform`·`target`·`tool`로 출처와 귀속을 밝히고, `origin: "consumer"`인 항목은
 조인 단계에서 관찰한 것이다. 조인하지 못한 사실은 생산자의 신고나 그 개수와 무관하게
 플랫폼·target별로 다시 센다.
 

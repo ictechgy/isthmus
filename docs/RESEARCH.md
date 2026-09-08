@@ -49,7 +49,7 @@
 
 isthmus 0.1.7(#18)로 완화 단위는 진단의 target이 됐다. 남은 과완화 — 같은 target 안에서
 무관한 공백이 모든 진단을 `-unverified`로 낮추는 문제 — 를 줄이는 두 방향의 제안이다.
-**구현 승인이 아니라 합의용 초안**이며, 근거는 cartograph 0.8.2 소스와 그 실측 문서
+**원래 제안 기록**이며, 이후 구조화 v1 확장의 정본은 GRAPH-EXCHANGE의 선택적 limitation 스코프 절이다. 근거는 cartograph 0.8.2 소스와 그 실측 문서
 `docs/scans/2026-09-flutter-plugins.md`(2026-09-05~07)다.
 
 ### 확인된 사실
@@ -57,8 +57,8 @@ isthmus 0.1.7(#18)로 완화 단위는 진단의 target이 됐다. 남은 과완
 - 과완화의 실측 사례: flutter_local_notifications는 macOS Swift 핸들러 14개가 전부 매치되고
   이슈 20개가 남았는데, 그들의 손 분류는 15개 Android 전용 메서드 · 1개 iOS `.m` 안
   (getCallbackHandle) · 3개 example/ 비대칭이다. `.m`이 실제로 가리는 것은 1건뿐이지만
-  `objective-c-sources:` 하나가 20건 전부를 완화한다. 계약이 경고한 "과다 신고는 진짜
-  불일치를 경고로 묻는다"의 실례다.
+  숫자의 합은 19라 한 건의 분류가 보존된 원문에 없다. 20건 전체가 실제 완화 대상이었다고
+  단정할 수 없으며, 채널 스코프의 효과는 진단별 결과로 재검증해야 한다.
 - cartograph는 이미 `.m`을 텍스트로 스캔한다(`ReactNativeMacroScanner`: 주석·문자열을
   상태 기계로 blanking하고 고정 형태 매크로를 추출). RN 경로에서는 ObjC 핸들러 사실이
   생산된다(`objective-c-handlers:`, USR 없음). Flutter 경로의 `.m`은 RN 매크로만 읽는다
@@ -74,7 +74,7 @@ isthmus 0.1.7(#18)로 완화 단위는 진단의 target이 됐다. 남은 과완
 - 효과: 6개 플러그인이 관측 가능해지고, package_info_plus 류의 `-unverified`가 실제
   판정(매치 또는 진짜 error)으로 바뀐다. `objective-c-sources:`의 잔여 범위가 줄어
   방향 B의 스코프도 정확해진다.
-- 선행 조건: **isthmus Blockers 2(ObjC 핸들러 retention)와 함께 정해야 한다.** USR 없는
+- 선행 조건: **isthmus Blockers 2(ObjC 핸들러 retention)와 함께 정해야 한다.** symbol 전체가 없는
   ObjC 사실이 조인에서 매치되면 `retentions --for cartograph`가
   `rejectUnresolvedSwiftHandlers`로 종료 코드 2가 된다(오늘은 사실이 없어 통과). 또한
   ObjC 선언은 cartograph 그래프에 없으므로 이름 기반 retention을 보내도 지킬 대상이
