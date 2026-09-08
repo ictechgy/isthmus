@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-08 11:14 KST by opencode_
+_Last updated: 2026-09-08 12:50 KST by opencode_
 
 ## Goal
 
@@ -9,7 +9,7 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- `main`과 `origin/main`은 `a25bbf6`(PR #20 squash)에서 일치한다. 이 문서의 이후 갱신은
+- `main`과 `origin/main`은 `a60ebe9`(PR #22 squash)에서 일치한다. 이 문서의 이후 갱신은
   그 위에 쌓인다.
 - npm `isthmus-cli@0.1.7`이 최신 발행본이고 registry latest도 0.1.7이다. 발행본 `dist`와
   README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI로 phase-0
@@ -53,6 +53,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   미채택(PR 코멘트 참조).
 - PR #20 `a25bbf6`(이번 세션): 0.1.7 버전·CHANGELOG·README 상태 갱신과 npm 발행.
   발행 후 registry·tarball·발행본 실행 검증 완료.
+- PR #22 `a60ebe9`(이번 세션): 완화 범위 축소 제안(방향 A·B + 합의 질문 4개)을
+  RESEARCH에 추가. cartograph 0.8.2 소스와 실측 문서를 clone해 1차 출처로 근거를 댔다.
+  합의 issue는 [cartograph#64](https://github.com/ictechgy/cartograph/issues/64)(사용자 등록,
+  토큰에 자매 저장소 issue 쓰기 권한이 없음).
 - PR #14 `67de008`·#17 `d3e5ab7`(이전 세션): 이 문서 갱신 두 번. #14는 blocker 재현 기록,
   #17은 0.1.6 발행과 사고 경위.
 
@@ -77,6 +81,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   담는다. `join.json`은 `{platform, message}` 투영이라 JoinLimitation 형태 영향이 없다.
 - [README](README.md): `tool`이 `isthmus`인 한계 세 종류, target별 완화 단위, retentions
   거부 조건, 출력 문서 버전 1의 호환 변경 정책을 설명한다.
+- [RESEARCH](docs/RESEARCH.md): "완화 범위 축소 제안 (2026-09-08)"이 Blockers 1의 합의
+  초안이다(방향 A: cartograph의 ObjC Flutter 핸들러 사실화, 방향 B: 공백 limitation의
+  채널 스코프 접미사). 실측 근거와 isthmus 쪽 구현 약속·합의 질문이 들어 있다.
 
 ## Important Context / Decisions
 
@@ -138,7 +145,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
    범위가 없어 무관한 `.m` 파일 하나가 **같은 target 안의** 모든 채널·메서드 진단을
    경고로 낮춘다. 같은 target 내 수신 문서 사이의 완화 번짐(kotlin(flutter) 공백이
    swift(flutter) 증거로 성립한 진단도 완화)도 남는다. 범위 있는 limitation 문법은
-   GRAPH-EXCHANGE 변경이라 자매 저장소 합의가 필요하다.
+   GRAPH-EXCHANGE 변경이라 자매 저장소 합의가 필요하다. 합의 초안은 RESEARCH
+   "완화 범위 축소 제안"(PR #22), issue는 cartograph#64다(답변 대기).
 2. **ObjC 핸들러의 retention**: `objective-c-handlers: N ... carry no USR, so a retention for
    them cannot be applied by --external-retentions`. 핸들러는 보이지만 USR이 없어 보존 근거로
    쓸 수 없다. check 쪽은 #15로 닫혔지만 retentions 쪽은 남아 있다. external-retentions 형식
@@ -165,7 +173,10 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 - 계약 문서와 구현을 대조해 "강제되는 절반과 신고에만 의존하는 절반"을 찾았다.
   `channel: null`은 parse에서 fail-closed인데 `dynamic`은 아무 강제가 없었다.
 - 자매 저장소 소스를 읽어 생산자의 의도를 확인했다. cartograph의 주석이 ObjC 한계를 왜 내는지
-  직접 설명하고 있어, 소비자 쪽 미구현임을 코드 근거로 확정할 수 있었다.
+  직접 설명하고 있어, 소비자 쪽 미구현임을 코드 근거로 확정할 수 있었다. #22 제안도
+  cartograph를 clone해 스캐너 코드(`ReactNativeMacroScanner`)와 실측 문서
+  (`docs/scans/2026-09-flutter-plugins.md`)를 1차 출처로 삼았다 — 과완화 실례
+  (flutter_local_notifications 이슈 20건 중 `.m`이 가리는 것은 1건)가 이미 그 문서에 있었다.
 - 리뷰 지적을 코드로 검증했다. 채택 2건은 실제 비대칭·테스트 공백이었고, 구분자 키 제안은
   `channel`이 null일 수 있다는 기존 테스트로 반증했다. #18에서도 11건 중 8건 채택·3건
   기각을 모두 코드 근거로 판정했다.
@@ -197,7 +208,9 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
   `-c credential.helper=osxkeychain`을 명령 단위로 붙인다. `.git/config` 쓰기가 막혀
   `push -u`의 upstream 저장이 실패하므로 명시적 ref(`git push origin br:br`)로 push한다.
   `gh`는 임시 GH_CONFIG_DIR + `git credential fill`로 뽑은 GH_TOKEN(x-access-token)으로
-  동작한다. 토큰은 출력하지 않는다.
+  동작한다. 토큰은 출력하지 않는다. 이 토큰은 isthmus에서만 쓰기 가능하고 **자매
+  저장소(cartograph) issue 쓰기는 403**이다 — 자매 저장소 쓰기 작업은 사용자에게
+  명령과 본문을 준비해 넘긴다(#22에서 실제 적용).
 - 미해석 결과나 관찰 소실을 코드 삭제 안전성으로 해석하지 않는다.
 - 낡은 producer binary, 서로 다른 추출 범위, OS 임시경로 별칭으로 비교 결과를 오염시키지 않는다.
 - cartograph는 인덱스 스토어가 없으면 종료 코드 2로 거부한다. 조사용 checkout에도 빌드 가능한
@@ -206,8 +219,10 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **완화 범위 나머지 절반**(Blockers 1): 파일·채널 범위 limitation 문법 — GRAPH-EXCHANGE
-   변경이므로 자매 저장소 합의 후 결정한다.
+1. **완화 범위 나머지 절반**(Blockers 1): 합의 초안은 RESEARCH "완화 범위 축소 제안"으로
+   머지됐고(PR #22), [cartograph#64](https://github.com/ictechgy/cartograph/issues/64)
+   답변을 기다린다. 방향 B가 합의되면 GRAPH-EXCHANGE 개정 + 접미사 파서 + 채널 단위
+   완화를 isthmus PR 하나로 진행한다. 방향 A는 cartograph의 Blockers 2 확인이 선행이다.
 2. **project 정규화**(Blockers 3): cartograph·dartograph 중 어느 쪽을 바꿀지 자매 저장소에서
    합의한다. isthmus 쪽 완화는 다른 프로젝트를 잘못 연결할 수 있으므로 마지막 수단이다.
 3. **ObjC retention**(Blockers 2): USR 없는 ObjC 핸들러의 보존 근거를 어떻게 다룰지 정한다.
@@ -221,9 +236,10 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-0.1.7까지 발행을 마쳤고 `main`은 `a25bbf6`(PR #20)야. #18의 target 귀속·완화 축소는
-0.1.7로 배포됐다. 로컬 .gitignore 미커밋 수정을 보존해줘.
+0.1.7까지 발행을 마쳤고 `main`은 `a60ebe9`(PR #22)야. 완화 범위 축소 합의는
+cartograph#64에서 답변을 기다리는 중이고, 제안서는 RESEARCH.md에 있어.
+로컬 .gitignore 미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 완화 범위 나머지 절반(파일·채널,
-계약 합의), producer 경로 정규화, ObjC retention이 우선이야. 샌드박스에서 GLM 리뷰는
-packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 cartograph#64 답변 처리, producer
+경로 정규화, ObjC retention이 우선이야. 샌드박스에서 GLM 리뷰는 packet-review files
+모드로 해줘(--diff 모드는 깨져 있음).
