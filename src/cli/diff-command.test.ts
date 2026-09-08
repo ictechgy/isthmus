@@ -81,6 +81,21 @@ test('동적 전환은 분석 한계를 양 시점과 차이로 남기며 안전
   assert.ok(reverse.limitations.removed.length > 0);
 });
 
+test('같은 문구의 한계도 target 귀속이 바뀌면 추가·삭제로 보고한다', async () => {
+  const beforeSwift = { ...document('swift'), limitations: ['objective-c-sources: 1 file'] };
+  const afterSwift = { ...document('swift'), target: null, facts: [],
+    limitations: ['objective-c-sources: 1 file'] };
+  const contents = new Map(['old-dart', 'old-swift', 'new-dart', 'new-swift']
+    .map((path, index) => [path, JSON.stringify(
+      [document('dart'), beforeSwift, document('dart'), afterSwift][index])]));
+  const result = await runDiffCommand(diffArgs, async (path) => contents.get(path)!);
+  const report = JSON.parse(result.standardOutput);
+  assert.ok(report.limitations.added.some((item: { target: string | null; message: string }) =>
+    item.target === null && item.message === 'objective-c-sources: 1 file'));
+  assert.ok(report.limitations.removed.some((item: { target: string | null; message: string }) =>
+    item.target === 'flutter' && item.message === 'objective-c-sources: 1 file'));
+});
+
 test('project와 producer 구성 차이 및 혼합 target은 코드 삭제로 오인하지 않는다', async () => {
   const swift = document('swift');
   for (const changed of [

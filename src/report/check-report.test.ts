@@ -481,7 +481,7 @@ test('다른 target 수신 문서가 신고한 공백은 현재 target 진단을
 
   const report = createCheckReport(
     joinBridgeDocuments([
-      dartDocument,
+      dartWithOrphanChannel(),
       jsReactNativeCaller(),
       fullyObservedSwiftDocument,
       reactNativeReceiver,
@@ -492,8 +492,16 @@ test('다른 target 수신 문서가 신고한 공백은 현재 target 진단을
     'unhandled-invocation',
   ]);
   assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
+  );
+  assert.deepEqual(
     codesForTarget(report, 'react-native', 'unhandled-invocation'),
     ['unhandled-invocation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
   );
 });
 
@@ -517,7 +525,7 @@ test('isthmus가 다른 target에서 센 공백도 현재 target 진단을 낮�
 
   const report = createCheckReport(
     joinBridgeDocuments([
-      dartDocument,
+      dartWithOrphanChannel(),
       jsReactNativeCaller(),
       fullyObservedSwiftDocument,
       reactNativeReceiver,
@@ -528,8 +536,16 @@ test('isthmus가 다른 target에서 센 공백도 현재 target 진단을 낮�
     'unhandled-invocation',
   ]);
   assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
+  );
+  assert.deepEqual(
     codesForTarget(report, 'react-native', 'unhandled-invocation'),
     ['unhandled-invocation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation'],
   );
 });
 
@@ -554,6 +570,56 @@ test('사실이 없는 수신 문서의 공백은 귀속할 target이 없어 모
     codesForTarget(report, 'react-native', 'unhandled-invocation'),
     ['unhandled-invocation-unverified'],
   );
+  assert.deepEqual(
+    codesForTarget(report, 'flutter', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
+  );
+  assert.deepEqual(
+    codesForTarget(report, 'react-native', 'unregistered-channel-creation'),
+    ['unregistered-channel-creation-unverified'],
+  );
+});
+
+test('귀속된 수신 문서와 공존해도 사실 없는 문서의 공백은 전체에 적용한다', () => {
+  const emptySwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    facts: [],
+    target: null,
+    limitations: ['objective-c-sources: 2 file(s) are not analysed'],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, fullyObservedSwiftDocument, emptySwift]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesForTarget(report, 'flutter', 'unhandled-invocation'), [
+    'unhandled-invocation-unverified',
+  ]);
+});
+
+test('isthmus 계수 접두사를 차용한 생산자 문자열은 공백 근거가 되지 않는다', () => {
+  const spoofingSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    limitations: [
+      ...fullyObservedSwiftDocument.limitations,
+      'unjoined-dynamic-methods: 9 method facts with a non-literal name were not joined',
+      'unjoined-dynamic-channels: 9 channel facts with a non-literal name were not joined',
+      'unjoined-unattributed-handlers: 9 method handler facts without a channel were not joined',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartWithOrphanChannel(), spoofingSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'unhandled-invocation'), [
+    'unhandled-invocation',
+  ]);
+  assert.deepEqual(codesOf(report, 'unregistered-channel-creation'), [
+    'unregistered-channel-creation',
+  ]);
+  assert.equal(report.summary.errors, 2);
 });
 
 test('한계 문구의 접두사가 정확히 맞을 때만 공백으로 본다', () => {

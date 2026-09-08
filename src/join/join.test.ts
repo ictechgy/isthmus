@@ -580,6 +580,12 @@ test('mixed-targets 문서는 거짓 연결과 불일치를 만들지 않는다'
     result.limitations.some(({ message }) => message.startsWith('mixed-targets:')),
     true,
   );
+  assert.deepEqual(
+    result.limitations
+      .filter(({ platform }) => platform === 'swift')
+      .map(({ target }) => target),
+    [null, null, null, null],
+  );
 });
 
 test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보류한다', () => {
@@ -707,6 +713,34 @@ test('사실이 없는 문서의 한계는 target 귀속 없이 전달한다', (
       .filter(({ platform }) => platform === 'swift')
       .map(({ target }) => target),
     ['flutter', 'flutter', 'flutter', null, null],
+  );
+});
+
+test('같은 플랫폼의 한계는 target 문자열 순으로 정렬한다', () => {
+  const flutterSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    limitations: ['opaque-handler-bodies: 1 named-function handler is not read'],
+  });
+  const reactNativeSwift = parseBridgeFactsDocument({
+    ...swiftDocument,
+    target: 'react-native',
+    limitations: ['opaque-handler-bodies: 1 named-function handler is not read'],
+  });
+
+  const result = joinBridgeDocuments([
+    dartDocument,
+    flutterSwift,
+    reactNativeSwift,
+  ]);
+
+  assert.deepEqual(
+    result.limitations
+      .filter(({ message }) => message.startsWith('opaque-handler-bodies:'))
+      .map(({ platform, target }) => [platform, target]),
+    [
+      ['swift', 'flutter'],
+      ['swift', 'react-native'],
+    ],
   );
 });
 

@@ -68,8 +68,8 @@ export interface HandlerWithoutInvocation {
  *
  * `target`은 이 한계를 신고한 문서의 브리지 메커니즘이다. 사실은 target별로만
  * 조인되므로, 보고서는 이 값으로 한계를 해당 target의 진단에만 귀속시킨다.
- * 사실이 없는 문서(`target: null`)의 한계와 교차 입력 한계는 어느 target이
- * 가려졌는지 특정할 수 없어 `null`이다.
+ * 사실이 없는 문서의 한계, 선언한 target을 신뢰할 수 없는 mixed-targets 문서의
+ * 한계, 교차 입력 한계는 어느 target이 가려졌는지 특정할 수 없어 `null`이다.
  */
 export interface JoinLimitation {
   readonly platform: BridgePlatform | 'cross-platform';
@@ -202,6 +202,17 @@ function hasMixedTargets(document: BridgeFactsDocument): boolean {
   );
 }
 
+/**
+ * 한계를 귀속시킬 target을 결정한다.
+ *
+ * mixed-targets 문서의 선언 target은 대표값일 뿐 사실별 메커니즘을 복원할 수
+ * 없으므로, 그 문서의 한계와 조인 제외 사실 계수는 귀속 없이(null) 남긴다.
+ * 귀속을 잃어도 관찰 자체는 보존해야 한다.
+ */
+function limitationTarget(document: BridgeFactsDocument): BridgeTarget | null {
+  return hasMixedTargets(document) ? null : document.target;
+}
+
 /** 안전하게 조인을 보류하면서 입력 한계만 전달한다. */
 function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResult {
   return {
@@ -223,7 +234,7 @@ function collectLimitations(
   const limitations: JoinLimitation[] = documents.flatMap((document) =>
     document.limitations.map((message) => ({
       platform: document.platform,
-      target: document.target,
+      target: limitationTarget(document),
       tool: document.tool.name,
       message,
     })),
@@ -288,25 +299,35 @@ function unjoinedLimitations(
  * 주어진 조건의 서로 다른 사실 수를 생산 플랫폼·target별로 모은다.
  *
  * 사실은 target별로만 조인되므로 다른 target의 사실을 한 한계로 합산하면
- * 관찰 공백의 귀속이 사라진다. 사실이 있는 문서는 항상 target을 가지므로
- * (교환 계약이 강제) 여기서 target은 null이 아니다.
+ * 관찰 공백의 귀속이 사라진다. mixed-targets 문서의 사실은 귀속 없이(null)
+ * 센다. 사실이 없는 문서는 교환 계약상 target이 null이고 사실도 없으므로
+ * 여기에서 자연스럽게 제외된다.
  */
 function countFactsByPlatformTarget(
   documents: readonly BridgeFactsDocument[],
   matchesFact: (fact: BridgeFact) => boolean,
-): Array<{ platform: BridgePlatform; target: BridgeTarget; count: number }> {
+): Array<{
+  platform: BridgePlatform;
+  target: BridgeTarget | null;
+  count: number;
+}> {
   const distinctFacts = new Map<
     string,
-    { platform: BridgePlatform; target: BridgeTarget; keys: Set<string> }
+    {
+      platform: BridgePlatform;
+      target: BridgeTarget | null;
+      keys: Set<string>;
+    }
   >();
   for (const document of documents) {
-    if (document.target === null) continue;
-    const groupKey = `${document.platform}\u0000${document.target}`;
+    const target = limitationTarget(document);
+    // BridgeTarget은 닫힌 어휘라 문자열화된 null과 충돌하지 않는다.
+    const groupKey = `${document.platform}\u0000${target}`;
     for (const fact of document.facts) {
       if (!matchesFact(fact)) continue;
       const group = distinctFacts.get(groupKey) ?? {
         platform: document.platform,
-        target: document.target,
+        target,
         keys: new Set<string>(),
       };
       group.keys.add(unjoinedFactKey(fact));
@@ -321,10 +342,12 @@ function countFactsByPlatformTarget(
 }
 
 /**
- * 증거 dedup과 같게 같은 위치의 중복 사실을 한 번만 세는 키를 만든다.
+ * 같은 위치의 중복 사실을 한 번만 세는 키를 만든다.
  *
- * `channel`은 null일 수 있어 구분자 결합 대신 JSON으로 만든다. 그래야 미귀속
- * 핸들러와 이름이 `null`인 채널의 사실이 같은 키로 합쳐지지 않는다.
+ * 위치 기준은 증거 dedup과 같지만 symbol은 비교하지 않아, 같은 위치의 서로
+ * 다른 symbol은 하나로 센다. `channel`은 null일 수 있어 구분자 결합 대신
+ * JSON으로 만든다. 그래야 미귀속 핸들러와 이름이 `null`인 채널의 사실이
+ * 같은 키로 합쳐지지 않는다.
  */
 function unjoinedFactKey(fact: BridgeFact): string {
   const { path, line, column } = fact.location;
