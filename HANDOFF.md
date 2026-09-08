@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-09-08 — check 베이스라인과 2차 흡수 조사 (opencode 세션)
+
+PR #29 `098c8ef`로 PRD v0.1 목표의 베이스라인(Blockers 4)을 닫았다. isthmus 소유
+`isthmus-baseline` v1 문서, 논리 이슈 키(code·target·channel·method) 억제, `suppressed`
+표시 보존, `--update-baseline` 전체 재작성(자동 prune), `staleBaselineEntries` 계수,
+읽기·쓰기 상한 10,000 대칭, 원자 쓰기(temp+rename). 설계 근거는 RESEARCH의 오픈소스
+조사(ESLint bulk suppressions·detekt baseline·Trivy `.trivyignore`)다. GLM 리뷰
+(packet-review files 모드, effort=high) F1~F4를 전부 코드 검증 후 채택했고 기록은
+PR #29 본문에 있다. 검증: `npm run verify` 전체(제품 246개, 커버리지 98.71/95.84/97.87,
+Phase 0 15개, build·CLI·package 계약), CI 그린.
+
+같은 세션에서 RESEARCH에 흡수 조사 두 건을 머지했다(#24 1차, #28 2차). 1차의 Clang USR
+근거는 0.2.0 구현(#25)에 흡수됐고, 2차는 베이스라인 설계와 Blockers 3 합의 초안으로
+이어졌다. Blockers 3은 양쪽 producer 소스에서 코드 근거를 확정했다: cartograph는
+`CartographService.swift`의 `projectPath`(configuration ?? cwd)를 symlink 해결 없이
+`project`로 싣고, dartograph는 `_runBridges`에서 `resolveSymbolicLinksSync()`로
+정규화한다. 합의 issue 본문 두 건을 준비했다(아래 Next Steps 1).
+
 ## 2026-09-08 — 0.2.0 발행 완료
 
 PR #25(계약 확장)와 #26(릴리스)은 병합됐다. 릴리스 소스는 `06aa96d`다.
@@ -24,7 +42,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-08 (0.2.0 발행 및 설치 검증 완료)_
+_Last updated: 2026-09-08 (check 베이스라인 #29 머지, 0.2.0 발행 완료)_
 
 ## Goal
 
@@ -34,6 +52,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 ## Current Status
 
 - 0.2.0 릴리스 소스는 `06aa96d`(PR #26)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- **PR #29(check 베이스라인)는 미발행** — CHANGELOG Unreleased에 쌓여 있다. 다음 발행은
+  0.3.0(기능 추가)이 자연스럽고 시점은 사용자 결정.
 - npm `isthmus-cli@0.2.0`이 최신 발행본이고 registry latest도 0.2.0이다. 발행본 `dist`와
   README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI의 버전과 실제
   Dart→Swift 외부 보존 왕복을 확인했고, 설치본 49개 파일도 공개 tarball과 일치했다.
@@ -80,6 +100,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   RESEARCH에 추가. cartograph 0.8.2 소스와 실측 문서를 clone해 1차 출처로 근거를 댔다.
   합의 issue는 [cartograph#64](https://github.com/ictechgy/cartograph/issues/64)(사용자 등록,
   토큰에 자매 저장소 issue 쓰기 권한이 없음).
+- PR #24 `982e67f`·#28 `d103634`(이번 세션): 오픈소스 흡수 조사 두 건을 RESEARCH에 기록.
+  1차(베이스라인·Clang USR·SCIP·SARIF·realpath), 2차(Trivy 만료일·Semgrep baseline-commit·
+  Pub Workspaces/Melos·oxc/knip·CodeQL 비흡수). cartograph#64 코멘트로 Clang USR 근거 전달.
+- PR #29 `098c8ef`(이번 세션): check 베이스라인(`isthmus-baseline` v1, `--baseline`·
+  `--update-baseline`). GLM 리뷰 F1~F4 채택(쓰기 상한·원자 쓰기·멱등 apply·JSON 오류
+  분류). Blockers 4 닫힘.
 - PR #14 `67de008`·#17 `d3e5ab7`(이전 세션): 이 문서 갱신 두 번. #14는 blocker 재현 기록,
   #17은 0.1.6 발행과 사고 경위.
 
@@ -98,8 +124,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   목록은 닫혀 있고 계약이며, `unjoined-*`는 `tool`이 isthmus인 항목만 인정한다.
 - `src/report/diff.ts`·`src/report/graph.ts`: 한계 비교 키와 텍스트 주석
   (`platform/target/tool`)에 target을 싣는다.
-- `src/cli/check-command.ts`: typed 입력 오류 4종과 공유 매퍼 `inputFailureResult`.
-  보간값은 숫자 `inputPosition`과 parse.ts의 정적 `reason`뿐이다(이전 세션에 재확인).
+- `src/cli/check-command.ts`: typed 입력 오류(bridge-facts 4종 + baseline 읽기·JSON·계약·
+  크기·쓰기·쓰기 상한)와 공유 매퍼 `inputFailureResult`. 보간값은 숫자 `inputPosition`·
+  `MAX_BASELINE_ENTRIES`와 parse/baseline의 정적 `reason`뿐이다.
+- `src/report/baseline.ts`: `isthmus-baseline` v1 parse/create/encode/apply. 항목 키
+  `baselineEntryKey`는 diff의 이슈 비교 키와 동일하다(단일 원천). apply는 키 교집합
+  기반이라 멱등이고, 억제는 `suppressed: true` 표시로 사실·증거를 보존한다.
 - `experiments/phase-0/expected/{check,graph,query}.json`: limitations가 `target` 필드를
   담는다. `join.json`은 `{platform, message}` 투영이라 JoinLimitation 형태 영향이 없다.
 - [README](README.md): `tool`이 `isthmus`인 한계 세 종류, target별 완화 단위, retentions
@@ -137,51 +167,46 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Verification
 
-이번 세션에서 직접 확인한 결과:
-- `npm run verify` 전체 통과: typecheck, 제품 187개(신규 9·보강 3), Phase 0 조인 15개;
-  라인 98.97%, 분기 95.68%, 함수 98.58%. `Package contract verified: isthmus-cli@0.1.6`.
-- PR #18 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지(`f074bab`).
-- 골든 diff를 한 줄씩 대조했다: check/graph/query.json의 한계 7줄씩에 `"target": "flutter"`
-  추가 외 형태 변화 없음. join.json은 투영이라 무변경.
-- GLM 리뷰 1회(effort=high, packet-review files 모드). 지적 11건 중 8건을 코드 검증 후
-  채택: M1(`unjoined-*`가 tool 미검증으로 생산자 문자열을 완화 근거로 인정하던
-  fail-open), M2·M3(null-target 공존 조합과 등록 진단 쪽 target 스코핑의 테스트 공백),
-  L1(출력 v1 호환 정책 명문화), L2(diff 귀속 변화 테스트), L3(mixed-targets null 귀속),
-  L4(비null target 순서), 니트(계수 키 주석 과대 선언). 미채택 3건(null 렌더링 '-',
-  null 공백 축소, 같은 target 문서 간 완화)은 PR #18 코멘트에 사유를 기록했다.
-- producer 통합 스크립트(roundtrip·public-flutter-plugin)는 이번 변경이 bridge-facts
-  입력과 external-retentions 출력 형태를 바꾸지 않아 재실행하지 않았다. 이전 세션에서
-  0.1.6 산출물로 통과했다.
-- 발행 검증(0.1.7): registry latest 0.1.7(비동기 반영 — 발행 직후 조회는 0.1.6이었고
-  약 1분 뒤 반영됐다). `diff -r dist <tarball>/dist` 완전 일치, README 일치,
-  `--version` 0.1.7, 발행본 phase-0 check 코드 0(error 1·warning 2)·`--strict` 코드 1,
-  limitations가 `"target": "flutter"`를 실어 나르는 것까지 확인. ObjC 플러그인
-  도그푸드는 발행본으로 재실행하지 않았다(dartograph 실행 불가) — 그것이 검증하는
-  null-target 완화 경로는 단위 테스트로 고정돼 있고 #18이 동작을 보존했다.
+최근 세션에서 직접 확인한 결과:
+- `npm run verify` 전체 통과(#29 기준): typecheck, 제품 246개, Phase 0 조인 15개;
+  라인 98.71%, 분기 95.84%, 함수 97.87%. `Package contract verified: isthmus-cli@0.2.0`.
+  `verify-cli-contract.mjs`에 발행 CLI 베이스라인 왕복 시나리오(update→strict+baseline
+  억제 3·stale 0·코드 0, 손상 파일 코드 2)가 포함됐다.
+- PR #24·#28·#29 모두 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
+- GLM 리뷰(#29, effort=high, packet-review files 모드): F1(쓰기 상한 비대칭)·F2(비원자
+  쓰기)·F3(apply 이중 적용 계수 흔들림)·F4(JSON RangeError 오분류)를 코드 검증 후
+  채택. F4는 지원 런타임(Node ≥22.18)에서 깊은 중첩이 SyntaxError임을 실측하고 방어적
+  분류만 남겼다. 니트 5건·테스트 공백 7건 중 6건 반영. 기록은 PR #29 본문.
+- 0.2.0 발행 검증은 위 "0.2.0 발행 완료" 절과 PR #26 기록을 본다. 0.1.7 발행 검증
+  (registry·tarball·발행본 phase-0)은 #21 시점 기록으로 완료.
+- Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
+  `CartographService.swift` `projectPath = configuration.projectPath ?? cwd`(symlink 미해결,
+  `project:`로 직행) vs dartograph `dartograph_cli.dart` `_runBridges`의
+  `Directory(root).absolute.resolveSymbolicLinksSync()`. dartograph에 `--project`류
+  공유 루트 옵션은 없다(위치 인자만).
 
 ## Blockers & Open Questions
 
 배포 blocker는 없다. 0.1.7까지 발행을 마쳤다.
 
-1. **완화 범위의 나머지 절반 — 파일·채널.** 이전 Blockers 1의 target 절반은 #18로
-   닫혔다(`JoinLimitation.target` + target별 완화). 남은 것: limitation 문법에 파일·채널
-   범위가 없어 무관한 `.m` 파일 하나가 **같은 target 안의** 모든 채널·메서드 진단을
-   경고로 낮춘다. 같은 target 내 수신 문서 사이의 완화 번짐(kotlin(flutter) 공백이
-   swift(flutter) 증거로 성립한 진단도 완화)도 남는다. 범위 있는 limitation 문법은
-   GRAPH-EXCHANGE 변경이라 자매 저장소 합의가 필요하다. 합의 초안은 RESEARCH
-   "완화 범위 축소 제안"(PR #22), issue는 cartograph#64다(답변 대기).
-2. **ObjC 핸들러의 retention**: `objective-c-handlers: N ... carry no USR, so a retention for
-   them cannot be applied by --external-retentions`. 핸들러는 보이지만 USR이 없어 보존 근거로
-   쓸 수 없다. check 쪽은 #15로 닫혔지만 retentions 쪽은 남아 있다. external-retentions 형식
-   논의가 필요하다.
-3. **모노레포 project 기준 — `/tmp` 절반은 재현 완료.** 두 producer가 macOS 심볼릭 링크를
-   **반대 방향으로** 정규화한다. 같은 디렉터리를 주어도 cartograph는 `/tmp/...`, dartograph는
-   `/private/tmp/...`를 낸다. cartograph에 `/private/tmp/...`를 명시해도 `/tmp/...`로 바꿔 낸다.
-   isthmus는 정확한 문자열 일치를 요구하므로 코드 2로 거부한다(설계대로). 사용자 쪽 플래그로
-   맞출 방법이 없으므로 자매 저장소의 정규화 합의가 필요하다. `/tmp` 밖 경로에서는 문제없다.
-   기존 통합 스크립트가 이 문제를 만나지 않는 이유는 저장소 아래나 `~` 아래 경로를 쓰기 때문이다.
-   `*_platform_interface`와 plugin의 producer root가 다른 절반은 아직 재현하지 않았다.
-4. **check 베이스라인**: PRD v0.1 목표의 "베이스라인"이 미구현이다.
+1. **완화 범위 — 구현 완료, 정착 대기.** target 절반은 #18, 파일·채널 절반은 #25의
+   선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
+   0.2.0/cartograph 0.9.0으로 양쪽 배포됐다. 남은 것: 실제 producer 실행에서 스코프
+   신고가 얼마나 덮이는지 실측(공개 플러그인 재검증), 스코프 없는 공백의 target 전체
+   완화는 설계대로 남는다.
+2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
+   clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
+   `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고). 남은 것:
+   인덱스 없이 빌드된 환경의 ObjC 핸들러 신원(fallback 문법 후보는 RESEARCH의 SCIP).
+3. **모노레포 project 기준 — 코드 근거 확정, 합의 issue 대기.** cartograph는
+   `projectPath`(configuration ?? cwd)를 symlink 해결 없이 싣고, dartograph는
+   `resolveSymbolicLinksSync()`로 정규화한다 → `/tmp` vs `/private/tmp` 불일치(재현됨).
+   dartograph에는 공유 루트 선언 수단이 없어 `*_platform_interface`와 plugin의 root
+   불일치는 문서 손 rewriting으로만 우회됐다(provenance 파괴). 합의 issue 본문 두 건
+   준비 완료(Next Steps 1). isthmus의 정확한 문자열 일치 fail-closed는 유지한다.
+4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
+   `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
+   후보다(자동 prune+stale로 위생 확보 판단).
 5. **retentions 대표 증거**: `invocations[0]`만 evidence로 실린다. external-retentions v0 형식
    변경이라 cartograph 합의가 필요하다.
 6. **관찰량 미노출**: `isthmus-check`의 `summary`에 입력 fact 수·한계 수가 없어, "브리지가 없는
@@ -242,15 +267,23 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **완화 범위 나머지 절반**(Blockers 1): 합의 초안은 RESEARCH "완화 범위 축소 제안"으로
-   머지됐고(PR #22), [cartograph#64](https://github.com/ictechgy/cartograph/issues/64)
-   답변을 기다린다. 방향 B가 합의되면 GRAPH-EXCHANGE 개정 + 접미사 파서 + 채널 단위
-   완화를 isthmus PR 하나로 진행한다. 방향 A는 cartograph의 Blockers 2 확인이 선행이다.
-2. **project 정규화**(Blockers 3): cartograph·dartograph 중 어느 쪽을 바꿀지 자매 저장소에서
-   합의한다. isthmus 쪽 완화는 다른 프로젝트를 잘못 연결할 수 있으므로 마지막 수단이다.
-3. **ObjC retention**(Blockers 2): USR 없는 ObjC 핸들러의 보존 근거를 어떻게 다룰지 정한다.
-4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.1.7 모두 태그가 없다).
-5. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+1. **Blockers 3 합의 issue 등록**(사용자 실행 — 세션 토큰은 자매 저장소 쓰기 403):
+   본문 초안은 [isthmus#30](https://github.com/ictechgy/isthmus/issues/30)에 보존했다.
+   cartograph에는 realpath 정규화, dartograph에는 공유 루트(`--project`/pub workspace
+   감지) 본문을 각 저장소에 등록한다. 합의되면 GRAPH-EXCHANGE project 규칙에 realpath
+   문구를 넣는 동시 docs PR을 isthmus에서.
+2. **0.3.0 발행 결정**: CHANGELOG Unreleased에 check 베이스라인(#29)이 쌓여 있다.
+   발행 요청 시 브랜치/`git status`부터 확인하고 `--otp`로 사용자가 npm을 직접 실행한다
+   (PUT 404는 인증 문제 — npm login 먼저).
+3. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
+   실측에서 얼마나 덮이는지 확인(verify-public-flutter-plugin 재실행 포함).
+4. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
+   isthmus 단독, additive.
+5. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
+   지금은 충분하다고 판단.
+6. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.2.0 모두 isthmus는
+   태그가 없다. cartograph는 GitHub Release를 한다).
+7. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 경로는 `/tmp`
@@ -259,10 +292,11 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-0.1.7까지 발행을 마쳤고 `main`은 `a60ebe9`(PR #22)야. 완화 범위 축소 합의는
-cartograph#64에서 답변을 기다리는 중이고, 제안서는 RESEARCH.md에 있어.
-로컬 .gitignore 미커밋 수정을 보존해줘.
+0.2.0까지 발행을 마쳤고 `main`은 `098c8ef`(PR #29, check 베이스라인)야. 베이스라인은
+미발행 상태(CHANGELOG Unreleased → 0.3.0 후보)다. 완화 범위 합의는 cartograph#64가
+닫히며 0.2.0·cartograph 0.9.0으로 구현 완료. 로컬 .gitignore 미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 cartograph#64 답변 처리, producer
-경로 정규화, ObjC retention이 우선이야. 샌드박스에서 GLM 리뷰는 packet-review files
-모드로 해줘(--diff 모드는 깨져 있음).
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 Blockers 3 합의 issue 등록(본문
+준비됨), producer 스코프 신고 실측, SARIF 리포터 순이야. 샌드박스에서 GLM 리뷰는
+packet-review files 모드로 해줘(--diff 모드는 깨져 있음). 자매 저장소 쓰기는 토큰
+403이라 사용자 실행으로 넘긴다.
