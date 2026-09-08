@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-08 09:59 KST by opencode_
+_Last updated: 2026-09-08 11:14 KST by opencode_
 
 ## Goal
 
@@ -9,11 +9,11 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- `main`과 `origin/main`은 `f074bab`(PR #18 squash)에서 일치한다. 이 문서의 이후 갱신은
+- `main`과 `origin/main`은 `a25bbf6`(PR #20 squash)에서 일치한다. 이 문서의 이후 갱신은
   그 위에 쌓인다.
-- npm `isthmus-cli@0.1.6`이 최신 발행본이고 registry latest도 0.1.6이다. **PR #18 변경은
-  미발행** — CHANGELOG Unreleased에 target 귀속·완화 단위 축소·`unjoined-*` tool 검증이
-  쌓여 있다. 발행 시점은 사용자 결정.
+- npm `isthmus-cli@0.1.7`이 최신 발행본이고 registry latest도 0.1.7이다. 발행본 `dist`와
+  README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI로 phase-0
+  check(코드 0)·`--strict`(코드 1)·limitations의 `target` 필드를 확인했다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
   않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
@@ -51,6 +51,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   문서 한계는 null 귀속. diff 비교 키·DOT/Mermaid 주석에 target 반영. 골든 3종에
   `"target": "flutter"` 추가. GLM 리뷰 1회: 11건 중 8건 채택, 3건은 이유를 기록하고
   미채택(PR 코멘트 참조).
+- PR #20 `a25bbf6`(이번 세션): 0.1.7 버전·CHANGELOG·README 상태 갱신과 npm 발행.
+  발행 후 registry·tarball·발행본 실행 검증 완료.
 - PR #14 `67de008`·#17 `d3e5ab7`(이전 세션): 이 문서 갱신 두 번. #14는 blocker 재현 기록,
   #17은 0.1.6 발행과 사고 경위.
 
@@ -95,8 +97,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - 근거가 빠진 보존 문서는 만들지 않는다. 부분 목록은 소비자에게 살아 있는 핸들러를 미사용으로
   보이게 하므로, 만들 수 없으면 종료 코드 2로 실패한다.
 - 노출하는 오류 메시지는 정적 문자열·숫자만 보간한다.
-- **설치된 producer는 cartograph 0.6.0, dartograph 0.2.0이다.** 이전 기록(0.5.5)보다 최신이며
-  두 통합 검증 스크립트를 모두 통과한다. README/스크립트의 최소 버전 게이트는 그대로다.
+- **설치된 producer는 cartograph 0.8.2(이번 세션 homebrew에서 확인), dartograph 0.2.0
+  (이전 세션 기록. 샌드박스에서 실행 불가)**다. 이전 기록(0.5.5/0.6.0)보다 최신이며
+  0.6.0·0.2.0에서 두 통합 검증 스크립트를 모두 통과했다. README/스크립트의 최소 버전
+  게이트(cartograph 0.5.3·dartograph 0.1.1)는 그대로다.
 - PR #12에서 의식적으로 제외한 항목: 모노레포 project 재기준화, ObjC 진단 정책, retentions
   다중 caller evidence, query `notFound` 종료 코드, check 베이스라인, RN/Kotlin/EventChannel.
 - Windows CI는 보류: `src/script-security.test.ts` 하네스의 shebang·chmod·TMPDIR 의존 때문이다.
@@ -118,10 +122,16 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - producer 통합 스크립트(roundtrip·public-flutter-plugin)는 이번 변경이 bridge-facts
   입력과 external-retentions 출력 형태를 바꾸지 않아 재실행하지 않았다. 이전 세션에서
   0.1.6 산출물로 통과했다.
+- 발행 검증(0.1.7): registry latest 0.1.7(비동기 반영 — 발행 직후 조회는 0.1.6이었고
+  약 1분 뒤 반영됐다). `diff -r dist <tarball>/dist` 완전 일치, README 일치,
+  `--version` 0.1.7, 발행본 phase-0 check 코드 0(error 1·warning 2)·`--strict` 코드 1,
+  limitations가 `"target": "flutter"`를 실어 나르는 것까지 확인. ObjC 플러그인
+  도그푸드는 발행본으로 재실행하지 않았다(dartograph 실행 불가) — 그것이 검증하는
+  null-target 완화 경로는 단위 테스트로 고정돼 있고 #18이 동작을 보존했다.
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. 0.1.6까지 발행을 마쳤다.
+배포 blocker는 없다. 0.1.7까지 발행을 마쳤다.
 
 1. **완화 범위의 나머지 절반 — 파일·채널.** 이전 Blockers 1의 target 절반은 #18로
    닫혔다(`JoinLimitation.target` + target별 완화). 남은 것: limitation 문법에 파일·채널
@@ -173,6 +183,9 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
    발행돼 미출시 코드가 나갔다. `npm publish`는 checkout 상태를 그대로 담는다.
 - npm 발행은 `PUT 202`로 끝나고 registry 반영은 비동기다. 직후 조회로 실패를 단정하지 않는다.
   npm 계정에 2FA가 걸려 있어 `--otp`가 필요하고, 코드가 30초면 만료되므로 사용자가 직접 실행한다.
+  발행이 `PUT 404`로 실패하면 패키지 문제가 아니라 인증 문제다(레지스트리는 존재 여부를
+  숨기려고 404를 쓴다). `npm whoami` → `npm owner ls isthmus-cli` → `npm config get registry`
+  순서로 확인하고 `npm login`으로 재인증한다. 0.1.7 발행 시 토큰 만료로 실제 발생했다.
 - 리뷰 지적을 검증 없이 반영하지 않는다. #12는 9건 중 2건, #15는 지적 2건을 코드로 반증했다.
 - 샌드박스에서 `packet-ask`·`packet-ask-safe`는 돌지 않는다(설계). `packet-review`를 쓴다.
   자격증명·모델·allowlist를 고쳐 우회하지 않는다.
@@ -198,11 +211,8 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 2. **project 정규화**(Blockers 3): cartograph·dartograph 중 어느 쪽을 바꿀지 자매 저장소에서
    합의한다. isthmus 쪽 완화는 다른 프로젝트를 잘못 연결할 수 있으므로 마지막 수단이다.
 3. **ObjC retention**(Blockers 2): USR 없는 ObjC 핸들러의 보존 근거를 어떻게 다룰지 정한다.
-4. **0.1.7 발행 결정**: CHANGELOG Unreleased에 target 귀속·완화 단위 축소·`unjoined-*`
-   tool 검증이 쌓여 있다. 발행 요청 시 브랜치/`git status`부터 확인하고 `--otp`로
-   사용자가 npm을 직접 실행한다.
-5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.1.6 모두 태그가 없다).
-6. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.1.7 모두 태그가 없다).
+5. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 경로는 `/tmp`
@@ -211,8 +221,9 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-0.1.6까지 발행을 마쳤고 `main`은 `f074bab`(PR #18)야. #18의 target 귀속·완화 축소는
-미발행 상태(CHANGELOG Unreleased)다. 로컬 .gitignore 미커밋 수정을 보존해줘.
-발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘.
-후속 작업은 완화 범위 나머지 절반(파일·채널, 계약 합의), producer 경로 정규화, ObjC
-retention이 우선이야. 샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
+0.1.7까지 발행을 마쳤고 `main`은 `a25bbf6`(PR #20)야. #18의 target 귀속·완화 축소는
+0.1.7로 배포됐다. 로컬 .gitignore 미커밋 수정을 보존해줘.
+발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 완화 범위 나머지 절반(파일·채널,
+계약 합의), producer 경로 정규화, ObjC retention이 우선이야. 샌드박스에서 GLM 리뷰는
+packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
