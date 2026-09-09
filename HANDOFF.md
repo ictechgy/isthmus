@@ -16,7 +16,10 @@ Phase 0 15개, build·CLI·package 계약), CI 그린.
 이어졌다. Blockers 3은 양쪽 producer 소스에서 코드 근거를 확정했다: cartograph는
 `CartographService.swift`의 `projectPath`(configuration ?? cwd)를 symlink 해결 없이
 `project`로 싣고, dartograph는 `_runBridges`에서 `resolveSymbolicLinksSync()`로
-정규화한다. 합의 issue 본문 두 건을 준비했다(아래 Next Steps 1).
+정규화한다. 합의 issue는 사용자가 등록했다: [cartograph#72](https://github.com/ictechgy/cartograph/issues/72)
+(realpath 정규화)·[dartograph#38](https://github.com/ictechgy/dartograph/issues/38)
+(모노레포 공유 루트). 초안은 isthmus#30에 보존돼 있다(세션 토큰 권한이 생성만 되고
+코멘트·닫기는 403이라 열려 있음 — 정리는 사용자 몫).
 
 ## 2026-09-08 — 0.2.0 발행 완료
 
@@ -198,12 +201,13 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
    clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
    `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고). 남은 것:
    인덱스 없이 빌드된 환경의 ObjC 핸들러 신원(fallback 문법 후보는 RESEARCH의 SCIP).
-3. **모노레포 project 기준 — 코드 근거 확정, 합의 issue 대기.** cartograph는
+3. **모노레포 project 기준 — 코드 근거 확정, 합의 issue 등록됨.** cartograph는
    `projectPath`(configuration ?? cwd)를 symlink 해결 없이 싣고, dartograph는
    `resolveSymbolicLinksSync()`로 정규화한다 → `/tmp` vs `/private/tmp` 불일치(재현됨).
    dartograph에는 공유 루트 선언 수단이 없어 `*_platform_interface`와 plugin의 root
-   불일치는 문서 손 rewriting으로만 우회됐다(provenance 파괴). 합의 issue 본문 두 건
-   준비 완료(Next Steps 1). isthmus의 정확한 문자열 일치 fail-closed는 유지한다.
+   불일치는 문서 손 rewriting으로만 우회됐다(provenance 파괴). 합의 issue:
+   cartograph#72(realpath)·dartograph#38(공유 루트), 답변 대기. isthmus의 정확한
+   문자열 일치 fail-closed는 유지한다.
 4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
    `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
    후보다(자동 prune+stale로 위생 확보 판단).
@@ -267,11 +271,12 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **Blockers 3 합의 issue 등록**(사용자 실행 — 세션 토큰은 자매 저장소 쓰기 403):
-   본문 초안은 [isthmus#30](https://github.com/ictechgy/isthmus/issues/30)에 보존했다.
-   cartograph에는 realpath 정규화, dartograph에는 공유 루트(`--project`/pub workspace
-   감지) 본문을 각 저장소에 등록한다. 합의되면 GRAPH-EXCHANGE project 규칙에 realpath
-   문구를 넣는 동시 docs PR을 isthmus에서.
+1. **Blockers 3 합의 답변 처리**: [cartograph#72](https://github.com/ictechgy/cartograph/issues/72)
+   (realpath 정규화)·[dartograph#38](https://github.com/ictechgy/dartograph/issues/38)
+   (공유 루트 `--project`/pub workspace 감지)가 등록됐다(사용자 실행 — 세션 토큰은 자매
+   저장소 쓰기 403, isthmus issue도 생성 외 코멘트·닫기 403). 답변이 오면 GRAPH-EXCHANGE
+   project 규칙에 realpath 문구를 넣는 동시 docs PR을 isthmus에서 진행한다. 초안
+   isthmus#30은 열려 있으니 정리(코멘트·닫기)는 사용자가.
 2. **0.3.0 발행 결정**: CHANGELOG Unreleased에 check 베이스라인(#29)이 쌓여 있다.
    발행 요청 시 브랜치/`git status`부터 확인하고 `--otp`로 사용자가 npm을 직접 실행한다
    (PUT 404는 인증 문제 — npm login 먼저).
