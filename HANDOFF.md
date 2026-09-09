@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-10 — 구조·보안·성능 리뷰와 베이스라인 원자 쓰기 경화 (opencode 세션)
+
+사용자 요청으로 제품 코드 전량 리뷰(실측 포함)를 하고 발견 1건을 수정했다.
+기록은 RESEARCH "구조·보안·성능 리뷰(2026-09-10)" 절 — 성능 실측(check 87k facts
+0.17s, graph 92.5k 간선 0.16s 등), 확인된 강점, 발견·처분 전부 거기에 있다.
+
+- **수정**: 베이스라인 임시파일이 `${path}.${pid}.tmp`로 예측 가능하고 `writeFile`
+  기본 플래그가 심링크를 따라가던 문제(공유 시스템 임의 파일 덮기 가능). 를
+  `src/cli/atomic-write.ts`로 분리해 pid+무작위 바이트 이름·`wx` 배타 생성·EEXIST
+  시 미정리(우리 것이 아닌 파일)로 바꿨고 단위 테스트 4건을 추가했다.
+- **문서화**: `limitations` 문자열의 자유 서술·소비자 미검증·텍스트 출력 경로 소독을
+  GRAPH-EXCHANGE에 명문화(의미 변경 없는 v1 동작 설명).
+- 미반영 후보(근거와 함께 RESEARCH에 기록): 비교자 내 `JSON.stringify`,
+  `encodeSortedJson` 깊은 복사, query 전체 결과 구성 — 실측 규모에서 무의미.
+  공유 CLI 인프라의 check-command 편중은 다음 CLI 확장 시 분리.
+
 ## 2026-09-09 — limitationScopes 양성 사례 종단 실측 (opencode 세션)
 
 Next Steps 1을 닫았다(PR #43). `scripts/verify-limitation-scopes.mjs`(신규, 자기완결 합성 dogfood,
@@ -176,7 +192,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-09 (limitationScopes 양성 사례 종단 실측 — 스코프 실발행·채널 단위 완화, Blockers 1 종결)_
+_Last updated: 2026-09-10 (구조·보안·성능 리뷰 + 베이스라인 원자 쓰기 경화)_
 
 ## Goal
 
