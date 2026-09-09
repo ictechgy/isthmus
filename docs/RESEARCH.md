@@ -133,6 +133,9 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
   `unhandled-invocation-unverified`(경고)로 낮추고, 같은 target의 인접 채널 미처리 호출과
   등록 없는 채널 생성은 error로 유지했다(오직 핸들러만 가리는 한계라는 계약 구분의 종단 확인).
   `--strict`는 exit 1.
+- **인과 대조**: 같은 문서에서 `limitationScopes`만 제거하고 다시 check하면 무관한 인접
+  채널의 미처리 호출까지 `-unverified`로 완화되는 과완화가 돌아온다(errors 1·warnings 2).
+  완화의 원인이 스코프임을 종단으로 입증하는 대조다.
 - **fixture 주의점**: 위임 핸들러 본문에 `switch call.method` 분기를 두면 귀속 없는
   `channel: null` method-handle이 함께 나와 `unattributed-method-handles:`(스코프 없는
   공백)가 발행되고 전체 완화로 번진다. 양성 fixture는 본문에 분기를 두지 않는다.

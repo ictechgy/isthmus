@@ -47,7 +47,10 @@ const swiftFactsPath = join(dogfoodDirectory, 'swift-facts.json');
 const dartFactsPath = join(dogfoodDirectory, 'dart-facts.json');
 for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
   process.once(signal, () => {
-    void cleanupDogfoodDirectory().finally(() => process.exit(exitCode));
+    void cleanupDogfoodDirectory().then(
+      (cleaned) => process.exit(cleaned ? exitCode : 2),
+      () => process.exit(2),
+    );
   });
 }
 
@@ -57,7 +60,7 @@ try {
     'swift',
     ['build', '--package-path', dogfoodDirectory],
     'Swift fixture build',
-    10 * 60_000,
+    { timeout: 10 * 60_000 },
   );
 
   const swiftFacts = run(cartographBinary, [
@@ -100,6 +103,23 @@ try {
   ]);
   verify(checkResult.status === 0, 'isthmus check');
   verifyCheckReport(parseDocument(checkResult.stdout, 'isthmus check JSON'));
+
+  // 인과 대조: 같은 문서에서 스코프만 빼면 무관한 채널까지 완화되는 과완화가
+  // 되돌아온다. 스코프가 채널 단위 완화의 원인임을 종단에서 입증한다.
+  const unscopedSwiftPath = join(dogfoodDirectory, 'swift-facts-unscoped.json');
+  const unscopedDocument = JSON.parse(swiftFacts.stdout);
+  delete unscopedDocument.limitationScopes;
+  await writePrivateFile(unscopedSwiftPath, JSON.stringify(unscopedDocument));
+  const unscopedResult = run(process.execPath, [
+    isthmusBinary,
+    'check',
+    dartFactsPath,
+    unscopedSwiftPath,
+  ]);
+  verify(unscopedResult.status === 0, 'isthmus unscoped check');
+  verifyUnscopedContrast(
+    parseDocument(unscopedResult.stdout, 'isthmus unscoped check JSON'),
+  );
 
   const strictResult = run(process.execPath, [
     isthmusBinary,
@@ -160,6 +180,7 @@ function verifySwiftDocument(document) {
   verify(document.platform === 'swift', 'swift bridge facts platform');
   verify(document.target === 'flutter', 'swift bridge facts target');
   verify(document.project === dogfoodDirectory, 'swift bridge facts project');
+  verify(Array.isArray(document.facts), 'swift bridge facts array');
   verify(
     Array.isArray(document.limitations)
       && document.limitations.length === 1
@@ -188,13 +209,16 @@ function verifySwiftDocument(document) {
 /** 호출 측 문서가 세 채널의 관찰을 그대로 실었는지 확인한다. */
 function verifyDartDocument(document) {
   verify(document.format === 'bridge-facts', 'dart bridge facts format');
+  verify(document.version === 1, 'dart bridge facts version');
   verify(document.platform === 'dart', 'dart bridge facts platform');
   verify(document.project === dogfoodDirectory, 'dart bridge facts project');
+  verify(Array.isArray(document.facts), 'dart bridge facts array');
   const created = document.facts
     .filter((fact) => fact.kind === 'channel-create')
     .map((fact) => fact.channel);
+  verify(created.length === 3, 'dart channel creation count');
   for (const channel of [opaqueChannel, inlineChannel, ghostChannel]) {
-    verify(created.includes(channel), `dart channel creation ${channel === ghostChannel ? 'ghost' : 'expected'}`);
+    verify(created.includes(channel), `dart channel creation ${channel}`);
   }
   const invoked = document.facts
     .filter((fact) => fact.kind === 'method-invoke')
@@ -204,8 +228,9 @@ function verifyDartDocument(document) {
     `${inlineChannel}/known`,
     `${inlineChannel}/missing`,
   ]) {
-    verify(invoked.includes(name), 'dart method invocation');
+    verify(invoked.includes(name), `dart method invocation ${name}`);
   }
+  verify(invoked.length === 3, 'dart method invocation count');
 }
 
 /**
@@ -218,6 +243,10 @@ function verifyDartDocument(document) {
 function verifyCheckReport(report) {
   verify(report.format === 'isthmus-check', 'isthmus check format');
   verify(report.version === 1, 'isthmus check version');
+  verify(
+    Array.isArray(report.issues) && report.summary !== null && typeof report.summary === 'object',
+    'isthmus check shape',
+  );
   const issues = report.issues.map((issue) => ({
     severity: issue.severity,
     code: issue.code,
@@ -254,6 +283,33 @@ function verifyCheckReport(report) {
   );
   verify(report.summary.matchedChannels === 2, 'matched channels');
   verify(report.summary.matchedMethods === 1, 'matched methods');
+}
+
+/**
+ * 스코프를 뺀 문서에서는 같은 target의 무관한 채널까지 완화되는 과완화가
+ * 돌아오는지 확인한다. 완화의 원인이 스코프라는 인과를 종단으로 잇는 대조다.
+ */
+function verifyUnscopedContrast(report) {
+  const relaxed = (channel, method) => report.issues.some((issue) =>
+    issue.code === 'unhandled-invocation-unverified'
+      && issue.severity === 'warning'
+      && issue.channel === channel
+      && issue.method === method,
+  );
+  verify(relaxed(opaqueChannel, 'hidden'), 'unscoped contrast opaque relaxed');
+  verify(relaxed(inlineChannel, 'missing'), 'unscoped contrast inline relaxed');
+  verify(
+    report.issues.some((issue) =>
+      issue.code === 'unregistered-channel-creation'
+        && issue.severity === 'error'
+        && issue.channel === ghostChannel,
+    ),
+    'unscoped contrast ghost error',
+  );
+  verify(
+    report.summary.errors === 1 && report.summary.warnings === 2,
+    'unscoped contrast summary',
+  );
 }
 
 /** 사실 문서는 소유자만 읽을 수 있게 새 파일로 쓴다. */
@@ -325,19 +381,22 @@ function verify(condition, step) {
   if (!condition) throw new Error(`Limitation scopes dogfood failed: ${step}`);
 }
 
-/** 전용 접두사와 부모를 다시 확인한 디렉터리만 재귀 정리한다. */
+/** 전용 접두사와 부모를 다시 확인한 디렉터리만 재귀 정리한다. 정리 성공을 알린다. */
 async function cleanupDogfoodDirectory() {
   const safe = dirname(dogfoodDirectory) === repositoryRoot
     && basename(dogfoodDirectory).startsWith('.isthmus-limitation-scopes-');
   if (!safe) {
     process.stderr.write('Limitation scopes dogfood cleanup refused.\n');
     process.exitCode = 2;
-    return;
+    return false;
   }
+  let cleaned = true;
   await rm(dogfoodDirectory, { recursive: true, force: true }).catch(() => {
     process.stderr.write('Limitation scopes dogfood cleanup failed.\n');
     process.exitCode = 2;
+    cleaned = false;
   });
+  return cleaned;
 }
 
 function packageManifest() {

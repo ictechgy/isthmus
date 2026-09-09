@@ -27,5 +27,6 @@ node scripts/verify-limitation-scopes.mjs /path/to/cartograph /path/to/dartograp
 
 합성 corpus는 producer → retention → dead 억제·explain을, 공개 plugin은 원본 Dart 위치·Swift USR·
 대표 evidence를, 스코프 dogfood는 `limitationScopes` 실발행과 채널 단위 완화(인접 채널·등록
-진단은 error 유지)를 검증한다. 세 검사 모두 일반 npm verify 밖에서 해당 연동 변경·릴리스 시 실행한다.
+진단은 error 유지, 스코프 제거 시 과완화 재현 대조 포함)를 검증한다. 세 검사 모두 일반 npm
+verify 밖에서 해당 연동 변경·릴리스 시 실행한다.
 같은 project·추출 범위를 사용하고 경로 별칭 차이를 살핀다. 통과를 위해 문서의 project를 임의로 덮어쓰지 않는다.

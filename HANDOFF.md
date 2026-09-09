@@ -13,7 +13,9 @@ Next Steps 1을 닫았다. `scripts/verify-limitation-scopes.mjs`(신규, 자기
 - **채널 단위 완화(소비)**: isthmus check가 스코프 채널의 미처리 호출만
   `unhandled-invocation-unverified` 경고로 낮추고, 같은 target 인접 채널의 미처리 호출과
   등록 없는 채널 생성은 error로 유지했다(summary errors 2·warnings 1, `--strict` exit 1).
-  "핸들러만 가린다"는 계약 구분의 종단 확인.
+  "핸들러만 가린다"는 계약 구분의 종단 확인. **인과 대조**도 포함: 같은 문서에서
+  `limitationScopes`만 빼면 인접 채널까지 완화되는 과완화가 돌아온다(errors 1·warnings 2)
+  — 완화의 원인이 스코프임을 입증.
 - **fixture 주의점(첫 실패에서 확정)**: 위임 본문에 `switch call.method`를 두면 귀속 없는
   `channel: null` method-handle이 나와 `unattributed-method-handles:`(스코프 없는 공백)가
   함께 발행되고 전체 완화로 번진다. 본문에서 분기를 제거해 해결했다.
