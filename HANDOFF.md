@@ -1,6 +1,36 @@
 # Handoff
 
+## 2026-09-09 — 통합 검증 전체 그린: cartograph 0.10.1 · dartograph 0.5.0 · isthmus 0.3.0 (opencode 세션)
+
+사용자가 `/var/folders` 쓰기 차단을 열자 cartograph가 샌드박스에서 실행 가능해져,
+차단됐던 두 통합 검증이 **모두 통과**했다(아래 "실행 불가 확정" 절의 판정을 무효화).
+
+- `verify-cartograph-roundtrip.mjs`: cartograph 0.10.1 + dartograph 0.5.0(샌드박스
+  `PUB_CACHE`) + isthmus 0.3.0 dist — producer → retentions → dead 억제 → explain
+  왕복 통과.
+- `verify-public-flutter-plugin.mjs`: plus_plugins 고정 커밋 `13e17047` — macOS Swift
+  근거와 **iOS ObjC 3개 핸들러·제외 계수** 검증 통과.
+- ObjC Flutter 핸들러가 `sourceLanguage: objective-c`와 **실제 clang USR**(`c:objc(cs)…`)이
+  붙은 사실로 추출된다(corpus 실측) — RESEARCH 1차 조사(indexstore-db의 Apple Clang
+  유닛)와 제안 #22의 방향 A가 cartograph 0.10.1에서 구현된 결과다. `objective-c-handlers:`
+  문구는 "outside the Swift analysis graph"로 바뀌었다(USR 부재가 아니라 그래프 밖이
+  본질).
+- 스코프 실측: `limitationScopes`는 **입증 가능한 채널 상한에서만** 발행된다 — 소스에서
+  `opaque-handler-bodies:`이고 전 채널이 알려졌을 때만 스코프를 붙임을 확인했고, corpus의
+  ObjC 공백은 상한 입증 불가로 `null`(계약의 "상한을 증명할 수 없으면 생략" 그대로).
+  양성 사례(스코프 실제 등장)는 미실측 — opaque-handler-bodies 형태 fixture가 필요하다.
+
+샌드박스 운영 기법(이번 실측): guard는 **워크스페이스 안 `.git/config` 쓰기**를 차단한다
+(`git init` 불가, `push -u`의 upstream 저장 실패와 같은 뿌리). dogfood 스크립트는
+checkout을 repositoryRoot에 만들므로 scripts·dist를 tmp로 복사한 뒤 **세 번째 인자
+(isthmus-js 오버라이드)로 재빌드를 건너뛰어** 실행했고, `swift` PATH shim으로
+`--disable-sandbox`를 보급했다(SwiftPM 자체 sandbox-exec 중첩 거부). Node `os.tmpdir()`은
+`$TMPDIR`을 따르지만 `NSTemporaryDirectory()`·xcrun은 confstr(`/var/folders`)을 따른다 —
+cartograph 실행에는 그 경로 개방이 필요했다.
+
 ## 2026-09-09 — toolchain 수리 후: cartograph는 샌드박스에서 실행 불가 확정 (opencode 세션)
+
+> **이후 무효**: 같은 날 `/var/folders` 차단이 열리며 cartograph 실행 가능 — 최상단 절 참조.
 
 사용자가 Swift toolchain을 수리했다(hello-world 통과, 컴파일러 6.3.3). corpus
 `swift build`도 guard 플래그(`--disable-sandbox`, 필요 시 `--scratch-path`/`--cache-path`
@@ -123,7 +153,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-09 (Blockers 3 완전 종결 — realpath·공유 루트 모두 계약 명문화)_
+_Last updated: 2026-09-09 (통합 검증 전체 그린 — cartograph 0.10.1·dartograph 0.5.0·isthmus 0.3.0)_
 
 ## Goal
 
@@ -236,13 +266,11 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   보이게 하므로, 만들 수 없으면 종료 코드 2로 실패한다.
 - 노출하는 오류 메시지는 정적 문자열·숫자만 보간한다.
 - **producer 릴리스는 cartograph 0.10.1(realpath 수정)·dartograph 0.5.0(공유 루트,
-  pub.dev 2026-09-09 확인)**이다. 이 머신 설치본: brew cartograph 0.10.1(업그레이드
-  확인), 샌드박스 `PUB_CACHE` dartograph 0.5.0(활성화·실행 확인 — 호스트
-  `~/.pub-cache`는 업그레이드 여부 미확인). Swift toolchain은 수리됐으나
-  **cartograph는 샌드박스에서 실행 불가**(confstr 임시경로 차단, 오버라이드 없음 —
-  위 "toolchain 수리 후" 절)라 cartograph 계열 통합 검증은 사용자 터미널 몫이다.
-  과거 0.6.0·0.2.0에서 두 통합 검증 스크립트를 통과했다. README/스크립트의 최소
-  버전 게이트(cartograph 0.5.3·dartograph 0.1.1)는 그대로다.
+  pub.dev 2026-09-09 확인)**이다. 두 통합 검증 스크립트가 이 조합 + isthmus 0.3.0으로
+  통과했다(최상단 절). 설치본: brew cartograph 0.10.1(확인), 샌드박스 `PUB_CACHE`
+  dartograph 0.5.0(활성화·실측) — **호스트 `~/.pub-cache`의 dartograph 업그레이드만
+  사용자 몫으로 남았다**. README/스크립트의 최소 버전 게이트(cartograph 0.5.3·
+  dartograph 0.1.1)는 그대로다.
 - PR #12에서 의식적으로 제외한 항목: 모노레포 project 재기준화, ObjC 진단 정책, retentions
   다중 caller evidence, query `notFound` 종료 코드, check 베이스라인, RN/Kotlin/EventChannel.
 - Windows CI는 보류: `src/script-security.test.ts` 하네스의 shebang·chmod·TMPDIR 의존 때문이다.
@@ -349,23 +377,12 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **통합 검증 재실행은 사용자 터미널에서**(샌드박스는 cartograph 실행 불가 —
-   위 "toolchain 수리 후" 절. toolchain 자체는 수리됨):
-   ```bash
-   dart pub global activate dartograph 0.5.0   # 호스트 pub-cache 업그레이드
-   cd ~/Desktop/cartograph/Fixtures/FalsePositiveCorpus && swift build
-   cd ~/Desktop/isthmus && npm run build
-   node scripts/verify-cartograph-roundtrip.mjs /opt/homebrew/bin/cartograph \
-     ~/.pub-cache/bin/dartograph ~/Desktop/cartograph/Fixtures/FalsePositiveCorpus
-   node scripts/verify-public-flutter-plugin.mjs /opt/homebrew/bin/cartograph \
-     ~/.pub-cache/bin/dartograph
-   ```
-   그리고 스코프 실측: `cartograph bridges --format json --project <ObjC 플러그인
-   checkout>` 출력에서 `limitationScopes` 유무·채널 커버리지 확인(공개 플러그인
-   package_info_plus·share_plus가 대상 — 0.10.1이 스코프를 신고하는지, 공백이
-   실제로 좁아지는지). 결과를 다음 세션에 넘기면 isthmus 쪽 기록을 마감한다.
-2. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
-   실측에서 얼마나 덮이는지 확인(verify-public-flutter-plugin 재실행 포함).
+1. **limitationScopes 양성 사례 실측**(선택): `opaque-handler-bodies:` 형태(채널은
+   알려지고 본문은 미스캔) fixture나 실 프로젝트에서 스코프 실제 등장과 isthmus의
+   채널 단위 완화까지 확인한다. 음성 사례(상한 불가 시 null)와 발행 조건은 소스·
+   corpus 실측으로 확인됐다(최상단 절).
+2. **호스트 dartograph 업그레이드**(사용자): `dart pub global activate dartograph 0.5.0`
+   — 샌드박스 PUB_CACHE는 완료, 호스트 `~/.pub-cache`만 남음.
 3. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
    isthmus 단독, additive.
 4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
@@ -375,20 +392,23 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 6. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
-인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 경로는 `/tmp`
-밖이어야 한다 — 단 이 제약은 cartograph 0.10.1(realpath 정규화, cartograph#73) 미만
-설치본에만 유효하고, 업그레이드 후 재현하면 이 절차도 갱신한다.
+인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
+"경로는 `/tmp` 밖" 제약은 cartograph 0.10.1(realpath 정규화, cartograph#73) 설치로
+이 머신에서는 사라졌다. ObjC 핸들러는 이제 사실로 추출되므로(최상단 절) 이 재현의
+목적 자체가 대부분 사라졌고, 남은 용도는 구버전 회귀 확인뿐이다.
 
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
 0.3.0까지 발행을 마쳤고(check 베이스라인 + 영문 README 포함) 0.3.0 릴리스 소스는
-`92b160b`(PR #34)야 — 이 문서의 이후 갱신은 그 위에 쌓인다. Blockers 3은 cartograph
-0.10.1(realpath)·dartograph 0.5.0(공유 루트)과 GRAPH-EXCHANGE 명문화로 완전 종결됐고,
-dartograph#38 닫기와 로컬 producer 업그레이드만 사용자 몫으로 남았어. 로컬 .gitignore
-미커밋 수정을 보존해줘.
+`92b160b`(PR #34)야 — 이 문서의 이후 갱신은 그 위에 쌓는다. Blockers는 1·3·4가 닫혔고
+2는 대부분 닫혔어. 통합 검증은 cartograph 0.10.1·dartograph 0.5.0·isthmus 0.3.0 조합으로
+전체 통과했고(roundtrip + 공개 플러그인 + ObjC clang USR 사실 + 스코프 발행 조건),
+dartograph#38도 닫혔어. 로컬 .gitignore 미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 producer 스코프 신고 실측(producer
-업그레이드 후 verify-public-flutter-plugin 재실행), SARIF 리포터 순이야.
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 limitationScopes 양성 사례 실측(선택),
+SARIF 리포터, 호스트 dartograph 업그레이드(사용자) 순이야.
 샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
-자매 저장소 쓰기는 토큰 403이라 사용자 실행으로 넘긴다.
+자매 저장소 쓰기와 isthmus issue 코멘트·닫기는 토큰 403이라 사용자 실행으로 넘기고,
+워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는
+tmp 사본 + isthmus-js 오버라이드로 돌려줘(최상단 절).
