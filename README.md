@@ -30,15 +30,16 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.2.0.** Implements the bridge-facts version 1 parser, `check`, `query`, `graph`, `diff`,
-and the external retention evidence round trip for cartograph. isthmus enforces fail-closed
-behavior for external input, mixed targets, graph size, and the Dart/Swift Phase 0 extraction
-boundary. Facts that could not be joined are re-counted on the consumer side, and retention
-subjects whose evidence cannot be built are refused loudly, so neither disappears silently.
-Coverage gaps a receiver reports about itself come back as undecidable, not as mismatches.
-Limitations are attributed to the reporting document's target, so gap mitigation never leaks
-into other targets' diagnostics. Next: dogfooding it on a real Flutter app, and React Native
-support.
+**0.3.0.** Implements the bridge-facts version 1 parser, `check`, `query`, `graph`, `diff`,
+the external retention evidence round trip for cartograph, and check baselines that suppress
+accepted findings by logical issue identity while preserving their evidence. isthmus enforces
+fail-closed behavior for external input, mixed targets, graph size, and the Dart/Swift Phase 0
+extraction boundary. Facts that could not be joined are re-counted on the consumer side, and
+retention subjects whose evidence cannot be built are refused loudly, so neither disappears
+silently. Coverage gaps a receiver reports about itself come back as undecidable, not as
+mismatches. Limitations are attributed to the reporting document's target, so gap mitigation
+never leaks into other targets' diagnostics. Next: dogfooding it on a real Flutter app, and
+React Native support.
 
 The supported producers are cartograph 0.5.3+ and dartograph 0.1.1+. Both were verified on
 their real output, and on a Swift USR ↔ Dart invocation evidence round trip over the public
