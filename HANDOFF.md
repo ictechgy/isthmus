@@ -170,8 +170,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
 - 로컬 `.gitignore` 미커밋 수정은 사용자 소유로 보존한다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 - 이전 세션들이 남긴 plus_plugins 조사 메모 두 건은 **0.1.5~0.1.6 세션에서 실제 producer로
-  재현됐다.** ObjC 항목은 재현 뒤 수정까지 끝났고(#15, target 귀속 후에도 동작 보존 #18),
-  경로 정규화 항목은 아래 Blockers에 남았다.
+  재현됐다.** ObjC 항목은 재현 뒤 수정까지 끝났고(#15, target 귀속 후에도 동작 보존 #18,
+  cartograph 0.10.1의 ObjC 사실 추출로 대부분 해소), 경로 정규화 항목은 2026-09-09
+  cartograph 0.10.1·dartograph 0.5.0·계약 명문화로 닫혔다(Blockers 3 종결).
 
 ## Completed
 
@@ -214,6 +215,18 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #29 `098c8ef`(이번 세션): check 베이스라인(`isthmus-baseline` v1, `--baseline`·
   `--update-baseline`). GLM 리뷰 F1~F4 채택(쓰기 상한·원자 쓰기·멱등 apply·JSON 오류
   분류). Blockers 4 닫힘.
+- PR #25 `5fded38`·#26 `a25bbf6`·#27 `a2f0952`(별도 세션): 선택적 v1 `limitationScopes`·
+  ObjC `sourceLanguage`·clang USR·`omittedObjectiveCHandlers`·`origin: consumer` 구현과
+  0.2.0 발행, 그 기록. cartograph#65·0.9.0이 생산자 측.
+- PR #31·#32·#35·#38·#39·#40·#41(이번 세션): 이 문서 갱신 일곱 번(베이스라인 머지,
+  Blockers 3 합의 issue, 0.3.0 발행, toolchain 경계, 통합 검증 그린 등).
+- PR #33 `f33d31b`(이번 세션): README 영문 전환 + 퇴고한 한글본 `README.ko.md` 분리
+  (cartograph 관례, tarball 동봉). GLM 리뷰로 영문 문법·양 문서 대조·기술 정합성 점검.
+- PR #34 `92b160b`(이번 세션): 0.3.0 릴리스 준비와 npm 발행(발행·검증 기록은 위 절).
+- PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
+  정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
+  dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
+- isthmus#30(합의 초안 보존 issue)은 목적 달성 후 사용자 닫기.
 - PR #14 `67de008`·#17 `d3e5ab7`(이전 세션): 이 문서 갱신 두 번. #14는 blocker 재현 기록,
   #17은 0.1.6 발행과 사고 경위.
 
@@ -278,26 +291,28 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 ## Verification
 
 최근 세션에서 직접 확인한 결과:
-- `npm run verify` 전체 통과(#29 기준): typecheck, 제품 246개, Phase 0 조인 15개;
-  라인 98.71%, 분기 95.84%, 함수 97.87%. `Package contract verified: isthmus-cli@0.2.0`.
+- `npm run verify` 전체 통과(#34 기준): typecheck, 제품 246개, Phase 0 조인 15개;
+  커버리지 게이트 충족. `Package contract verified: isthmus-cli@0.3.0`.
   `verify-cli-contract.mjs`에 발행 CLI 베이스라인 왕복 시나리오(update→strict+baseline
   억제 3·stale 0·코드 0, 손상 파일 코드 2)가 포함됐다.
-- PR #24·#28·#29 모두 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
-- GLM 리뷰(#29, effort=high, packet-review files 모드): F1(쓰기 상한 비대칭)·F2(비원자
-  쓰기)·F3(apply 이중 적용 계수 흔들림)·F4(JSON RangeError 오분류)를 코드 검증 후
-  채택. F4는 지원 런타임(Node ≥22.18)에서 깊은 중첩이 SyntaxError임을 실측하고 방어적
-  분류만 남겼다. 니트 5건·테스트 공백 7건 중 6건 반영. 기록은 PR #29 본문.
-- 0.2.0 발행 검증은 위 "0.2.0 발행 완료" 절과 PR #26 기록을 본다. 0.1.7 발행 검증
-  (registry·tarball·발행본 phase-0)은 #21 시점 기록으로 완료.
+- 통합 검증 그린: roundtrip·공개 플러그인 모두 cartograph 0.10.1 + dartograph 0.5.0 +
+  isthmus 0.3.0으로 통과(세부·스코프 실측은 최상단 절).
+- PR #18~#41 전부 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
+- GLM 리뷰 기록: #18(11건 중 8건 채택), #29(F1~F4 채택), #33(영문 퇴고 — 과장 지적
+  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영). 전부 packet-review
+  files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은 합의 원문 전사라
+  생략(사유 기록).
+- 0.3.0 발행 검증은 위 "0.3.0 발행 완료" 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
+  시점 기록을 본다.
 - Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
   `CartographService.swift` `projectPath = configuration.projectPath ?? cwd`(symlink 미해결,
   `project:`로 직행) vs dartograph `dartograph_cli.dart` `_runBridges`의
-  `Directory(root).absolute.resolveSymbolicLinksSync()`. dartograph에 `--project`류
-  공유 루트 옵션은 없다(위치 인자만).
+  `Directory(root).absolute.resolveSymbolicLinksSync()`. 당시 dartograph에 공유 루트
+  옵션이 없었음(→ 0.5.0에서 `--project`·pub workspace 감지로 구현됨).
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. 0.1.7까지 발행을 마쳤다.
+배포 blocker는 없다. 0.3.0까지 발행을 마쳤고 통합 검증도 전체 그린이다.
 
 1. **완화 범위 — 구현 완료, 정착 대기.** target 절반은 #18, 파일·채널 절반은 #25의
    선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
