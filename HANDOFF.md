@@ -2,7 +2,7 @@
 
 ## 2026-09-09 — limitationScopes 양성 사례 종단 실측 (opencode 세션)
 
-Next Steps 1을 닫았다. `scripts/verify-limitation-scopes.mjs`(신규, 자기완결 합성 dogfood,
+Next Steps 1을 닫았다(PR #43). `scripts/verify-limitation-scopes.mjs`(신규, 자기완결 합성 dogfood,
 네트워크·git 불필요)가 cartograph 0.10.1 + dartograph 0.5.0 + isthmus 0.3.0 조합으로 통과했다:
 
 - **스코프 실발행(양성)**: 위임 참조 핸들러(`setMethodCallHandler(HandlerDelegate().handleCall)`
@@ -246,6 +246,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #33 `f33d31b`(이번 세션): README 영문 전환 + 퇴고한 한글본 `README.ko.md` 분리
   (cartograph 관례, tarball 동봉). GLM 리뷰로 영문 문법·양 문서 대조·기술 정합성 점검.
 - PR #34 `92b160b`(이번 세션): 0.3.0 릴리스 준비와 npm 발행(발행·검증 기록은 위 절).
+- PR #43(이번 세션): `verify-limitation-scopes.mjs` 스코프 양성 종단 검증(인과 대조 포함)과
+  사용법 테스트, RESEARCH 실측 절·README 양문·scripts AGENTS 안내. Blockers 1 완전 종결.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -324,9 +326,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   완화 종단(동일 버전 조합, 2026-09-09 세션 최상단 절).
 - PR #18~#41 전부 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
 - GLM 리뷰 기록: #18(11건 중 8건 채택), #29(F1~F4 채택), #33(영문 퇴고 — 과장 지적
-  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영). 전부 packet-review
-  files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은 합의 원문 전사라
-  생략(사유 기록).
+  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영), #43(빌드 타임아웃·
+  스키마 가드·인과 대조 채택, 이슈 순서·default 의미론·버전 하한은 실측·코드로 기각).
+  전부 packet-review files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은
+  합의 원문 전사라 생략(사유 기록).
 - 0.3.0 발행 검증은 위 "0.3.0 발행 완료" 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
   시점 기록을 본다.
 - Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
