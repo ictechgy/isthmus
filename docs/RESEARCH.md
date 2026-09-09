@@ -197,6 +197,18 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
   형식으로 내보낸다(그쪽 HANDOFF #35 기록). isthmus `check`에 SARIF 리포터를 추가하면
   GitHub code scanning·PR annotation으로 결과가 흐른다. additive이고 isthmus 소유라
   JSON 계약과 독립이다.
+- **구현(2026-09-10)**: `check --format sarif`(기본 `json`). 규칙 id=check 진단 코드,
+  주 위치=첫 증거 끝점(프로젝트 상대 경로를 세그먼트별 RFC 3986 퍼센트 인코딩한
+  저장소 상대 URI), 나머지 끝점=relatedLocations, 베이스라인 억제=`external`
+  suppression, 논리 키 해시=`partialFingerprints.isthmusIssueV1`(줄 이동에 강한
+  GitHub 중복 판정). 결정적 정렬 인코딩 유지.
+- **리뷰(packet-review, 지연 도착) 처분**: 채택 — URI 세그먼트 인코딩, ruleIndex
+  `-1` 폴백 제거(미지 규칙은 실패), region 1행 1열 하한 가드, 빈 버전 문자열
+  생략, 테스트 5종 보강. 기각(코드 확인) — `baselineEntryKey`는 JSON.stringify라
+  구분자 충돌 없음, 이슈 순서는 join 정렬로 결정적, 배열 순서는 sortJson이 보존.
+  유보 — `-unverified`→정상 코드 전환 시 지문이 바뀌어 GitHub 알림이 새로 열리는
+  churn(논리 키 identity의 자연 귀결, 베이스라인과 동일 속성), run 레벨 limitations
+  맥락, GitHub 업로드 상한(소비자 정책) 실측, `--format=json` 등호 형식 미지원.
 
 ### Blockers 3 (project 정규화) — realpath 선행
 

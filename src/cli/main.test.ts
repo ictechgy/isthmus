@@ -72,6 +72,26 @@ test('실제 CLI 프로세스가 check JSON을 stdout으로 출력한다', async
   assert.equal(stdout, await readFile(checkPath, 'utf8'));
 });
 
+test('실제 CLI 프로세스가 check SARIF 로그를 stdout으로 출력한다', async () => {
+  const packageDocument = JSON.parse(await readFile(packagePath, 'utf8'));
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'check',
+    dartPath,
+    swiftPath,
+    '--format',
+    'sarif',
+  ]);
+
+  assert.equal(stderr, '');
+  const log = JSON.parse(stdout);
+  assert.equal(log.version, '2.1.0');
+  assert.equal(log.runs.length, 1);
+  assert.equal(log.runs[0].tool.driver.name, 'isthmus');
+  assert.equal(log.runs[0].tool.driver.version, packageDocument.version);
+  assert.equal(log.runs[0].results.length, 3);
+});
+
 test('실제 CLI 프로세스가 cartograph 보존 JSON을 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     mainPath,

@@ -20,6 +20,10 @@ import {
 } from '../report/baseline.ts';
 import type { CheckIssue } from '../report/check-report.ts';
 import { createCheckReport, encodeCheckReport } from '../report/check-report.ts';
+import {
+  createSarifLog,
+  encodeSarifLog,
+} from '../report/sarif.ts';
 
 /** 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다. */
 export type ReadTextFile = (path: string) => Promise<string>;
@@ -29,6 +33,9 @@ export type WriteTextFile = (path: string, text: string) => Promise<void>;
 
 /** 생성 시각을 테스트 가능하게 주입하는 시계다. */
 export type Clock = () => Date;
+
+/** check가 내는 보고서 형식이다. SARIF는 isthmus 소유의 additive 출력이다. */
+export type CheckOutputFormat = 'json' | 'sarif';
 
 /** 한 입력 파일에서 허용하는 최대 UTF-16 문자열 길이다. */
 export const MAX_INPUT_TEXT_LENGTH = 16 * 1024 * 1024;
@@ -49,11 +56,12 @@ export async function runCheckCommand(
   readTextFile: ReadTextFile,
   writeTextFile?: WriteTextFile,
   now: Clock = () => new Date(),
+  producerVersion?: string,
 ): Promise<CommandResult> {
   if (arguments_[0] !== 'check') return usageError();
   const options = parseCheckOptions(arguments_.slice(1));
   if (options === undefined) return usageError();
-  const { strict, baselinePath, updateBaselinePath, inputPaths } = options;
+  const { strict, format, baselinePath, updateBaselinePath, inputPaths } = options;
   if (inputPaths.length < 2 || inputPaths.length > MAX_DOCUMENTS_PER_JOIN) {
     return usageError();
   }
@@ -69,7 +77,9 @@ export async function runCheckCommand(
       const baseline = await readBaselineDocument(baselinePath, readTextFile);
       report = applyBaseline(report, baseline.entries);
     }
-    const standardOutput = encodeCheckReport(report);
+    const standardOutput = format === 'sarif'
+      ? encodeSarifLog(createSarifLog(report, producerVersion))
+      : encodeCheckReport(report);
     if (updateBaselinePath !== undefined && writeTextFile !== undefined) {
       await writeBaselineDocument(
         updateBaselinePath,
@@ -93,11 +103,13 @@ function parseCheckOptions(
   rest: readonly string[],
 ): {
   strict: boolean;
+  format: CheckOutputFormat;
   baselinePath: string | undefined;
   updateBaselinePath: string | undefined;
   inputPaths: string[];
 } | undefined {
   let strict = false;
+  let format: CheckOutputFormat | undefined;
   let baselinePath: string | undefined;
   let updateBaselinePath: string | undefined;
   const inputPaths: string[] = [];
@@ -108,10 +120,15 @@ function parseCheckOptions(
       strict = true;
       continue;
     }
-    if (argument === '--baseline' || argument === '--update-baseline') {
+    if (argument === '--format' || argument === '--baseline' || argument === '--update-baseline') {
       const value = rest[index + 1];
       if (value === undefined || value.startsWith('-')) return undefined;
-      if (argument === '--baseline') {
+      if (argument === '--format') {
+        if (format !== undefined || (value !== 'json' && value !== 'sarif')) {
+          return undefined;
+        }
+        format = value;
+      } else if (argument === '--baseline') {
         if (baselinePath !== undefined) return undefined;
         baselinePath = value;
       } else {
@@ -127,7 +144,13 @@ function parseCheckOptions(
   if (baselinePath !== undefined && updateBaselinePath !== undefined) {
     return undefined;
   }
-  return { strict, baselinePath, updateBaselinePath, inputPaths };
+  return {
+    strict,
+    format: format ?? 'json',
+    baselinePath,
+    updateBaselinePath,
+    inputPaths,
+  };
 }
 
 /** 베이스라인 파일을 읽고 크기 상한 안에서 검증된 문서로 파싱한다. */
@@ -408,5 +431,6 @@ function usageError(): CommandResult {
 /** check 명령의 한 줄 사용법이다. */
 export const checkUsage =
   'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-  + '[more...] [--strict] [--baseline <isthmus-baseline.json>] '
+  + '[more...] [--strict] [--format json|sarif] '
+  + '[--baseline <isthmus-baseline.json>] '
   + '[--update-baseline <isthmus-baseline.json>]';

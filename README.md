@@ -107,6 +107,26 @@ To make CI fail when bridge errors exist, add `--strict`:
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
+### SARIF output
+
+To upload check results to GitHub code scanning (or any SARIF 2.1.0 consumer), ask for SARIF
+instead of the isthmus-check JSON:
+
+```bash
+isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sarif
+```
+
+The default is `--format json`, which keeps the versioned isthmus-check document. SARIF is an
+additive, isthmus-owned rendering of the same join: every issue becomes a result with its
+`check` issue code as the rule id, the first evidence endpoint as the primary location
+(project-relative paths become percent-encoded, repository-relative URIs), remaining
+endpoints as related locations, and baseline-suppressed issues carry an `external`
+suppression. Results include a
+`partialFingerprints` hash of the logical issue identity (code, target, channel, method), so
+deduplication survives source line moves exactly like baseline suppression. `--strict`,
+`--baseline`, and `--update-baseline` combine with either format and keep their documented
+exit-code behavior.
+
 ### Baselines
 
 To accept the current findings as a baseline, write them to a file once and apply that file
