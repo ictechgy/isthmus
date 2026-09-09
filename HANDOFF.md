@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-09-10 — SARIF 리포터·gitignore 커밋·지연 도착 리뷰 후속 (opencode 세션)
+
+- **PR #46**: 사용자 소유였던 `.gitignore` 미커밋 수정을 약속대로 별도 브랜치로 커밈
+  (`.serena/`, experiments 하위 Dart/Swift 산출물). 워크스페이스가 처음으로 깨끗해졌다.
+  사용자는 호스트 dartograph 0.5.0 업그레이드도 완료(Next Steps 1 소멸).
+- **PR #47 (main `ab5c997`)**: Next Steps 3 SARIF 리포터 — `check --format json|sarif`
+  (기본 json 불변). 규칙 id=진단 코드, 주 위치=첫 증거 끝점(세그먼트별 RFC 3986 인코딩
+  URI), 나머지 끝점=relatedLocations, 베이스라인 억제=`external` suppression, 논리 키
+  sha256=`partialFingerprints.isthmusIssueV1`. driver 버전은 package.json에서 주입.
+  GLM 리뷰(지연 도착) 반영: URI 인코딩·ruleIndex 폴백 제거·region 하한 가드·빈 버전
+  생략·테스트 보강. 기각 근거(키 충돌 없음·결정성)와 유보 항목(alarm churn·GitHub
+  업로드 상한 실측)은 RESEARCH 해당 절.
+- **지연 도착한 이전 리뷰(구조·보안·성능)의 후속 지적 처분**: F4(a)(b) —
+  `encodeBaselineDocument`이 쓰기 try 안에 있어 인코더 결함이 쓰기 실패로 오분류,
+  `JSON.parse`와 문서 검증기가 같은 try라 검증기 RangeError가 "not valid JSON"으로
+  오분류될 수 있는 잠재 결합(현재 미발생) — **수정 대기(Next Steps)**. F4(c)는 기각:
+  diff 포함 전 명령이 try/catch + `inputFailureResult ?? internalError` 가드 확인.
+  F5~F9는 문서 수준(단일 패스 정규화·fsync·mode·dangling 참조 등), RESEARCH 리뷰
+  절의 장기 후보로 남김.
+
 ## 2026-09-10 — 구조·보안·성능 리뷰와 베이스라인 원자 쓰기 경화 (opencode 세션)
 
 사용자 요청으로 제품 코드 전량 리뷰(실측 포함)를 하고 발견 1건을 수정했다(PR #44).
@@ -267,6 +287,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #44(이번 세션): 구조·보안·성능 리뷰(2026-09-10) 반영 — 베이스라인 원자 쓰기 경화
   (`src/cli/atomic-write.ts`, 무작위 임시 이름·`wx` 배타 생성, 테스트 4종)와 GRAPH-EXCHANGE
   `limitations` 문자열 동작 명문화. 리뷰 기록은 RESEARCH 해당 절.
+- PR #46(이번 세션): 사용자 소유 `.gitignore` 수정 커밋(Phase 0 산출물·serena 무시).
+- PR #47(이번 세션): `check --format sarif` SARIF 2.1.0 리포터(리뷰 반영 포함).
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -439,15 +461,21 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **호스트 dartograph 업그레이드**(사용자): `dart pub global activate dartograph 0.5.0`
-   — 샌드박스 PUB_CACHE는 완료, 호스트 `~/.pub-cache`만 남음.
-2. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
-   isthmus 단독, additive.
-3. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
+1. **오류 분류 잠재 경로 2건 수정**(지연 리뷰 F4(a)(b)): `writeBaselineDocument`에서
+   인코딩을 try 밖으로, `readBridgeDocuments`·`readBaselineDocument`에서 `JSON.parse`만
+   별도 try로(검증기 예외의 오분류 차단).
+2. **관찰량 미노출 (Blockers 6)**: `isthmus-check` summary에 입력 fact 수·한계 수 추가.
+   isthmus 소유 형식이라 국지 수정 가능.
+3. **retentions 대표 증거 (Blockers 5)**: `invocations[0]`만 실림 — external-retentions
+   v0 형식 변경이라 cartograph 합의 필요.
+4. **ObjC 무인덱스 환경 신원 (Blockers 2 잔여)**: 인덱스 없이 빌드된 환경의 핸들러
+   식별, SCIP fallback 문법이 RESEARCH 후보.
+5. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
+   저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
+6. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+7. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
-5. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
