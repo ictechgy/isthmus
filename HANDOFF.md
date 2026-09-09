@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-09 — Blockers 3 완전 종결 (opencode 세션)
+
+dartograph가 **#52(merged, 0.5.0으로 pub.dev 발행)**로 공유 루트 (a)+(b)를 모두
+구현했다: `--project <shared-root>`(스캔 범위는 위치 인자 유지, project·location.path
+재기준화, 공유 루트는 realpath 후 package root 포함·동일 필수)와 pub workspace 자동
+감지(`resolution: workspace` → `workspace:` 키를 가진 가장 가까운 조상 pubspec
+디렉터리, Melos 정의와 동일), 우선순위 명시 옵션 > 감지 > 분석 루트, 감지 실패는
+`pub-workspace-root-not-found`·`pub-workspace-pubspec-unparsed` limitation 폴백.
+설치본 isthmus 0.2.0으로 모노레포 2패키지 왕복 실측(조인 성공 + 구행동 거부
+양방향)까지 마쳤다. isthmus는 GRAPH-EXCHANGE의 자리표시자 문구를 이 의미론으로
+구체화했다("생산자가 선언한 조인 루트" 정의 — cartograph의 `--project`=분석 루트와
+dartograph의 재기준화 옵션을 모두 포섭). 두 폴백 limitation은 호출 측 한계라
+isthmus 심각도 정책은 코드 변경 없음. **dartograph#38은 isthmus 계약 갱신까지
+열어 두기로 했으므로 이제 사용자가 닫으면 된다.** dartograph 쪽 비차단 후속:
+workspace 멤버십 검증(현재는 `workspace:` 키 존재만 확인).
+
 ## 2026-09-09 — Blockers 3의 realpath 절반 합의 성립 (opencode 세션)
 
 cartograph#72가 **cartograph#73(merged)으로 닫히고 0.10.1로 발행됐다.** 주목할 구현
@@ -70,7 +86,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-09 11:12 KST (0.3.0 발행 및 발행본 검증 완료)_
+_Last updated: 2026-09-09 (Blockers 3 완전 종결 — realpath·공유 루트 모두 계약 명문화)_
 
 ## Goal
 
@@ -182,11 +198,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - 근거가 빠진 보존 문서는 만들지 않는다. 부분 목록은 소비자에게 살아 있는 핸들러를 미사용으로
   보이게 하므로, 만들 수 없으면 종료 코드 2로 실패한다.
 - 노출하는 오류 메시지는 정적 문자열·숫자만 보간한다.
-- **producer 릴리스는 cartograph 0.10.1(realpath 수정 포함)·dartograph 0.4.1이고,
-  이 머신의 설치본은 brew cartograph 0.8.2(tap 손 갱신 관행)·dartograph 0.2.0
-  (샌드박스에서 실행 불가)**이다. 과거 0.6.0·0.2.0에서 두 통합 검증 스크립트를
-  통과했다. realpath 수정(cartograph#73)은 0.10.1로 업그레이드해야 적용된다.
-  README/스크립트의 최소 버전 게이트(cartograph 0.5.3·dartograph 0.1.1)는 그대로다.
+- **producer 릴리스는 cartograph 0.10.1(realpath 수정)·dartograph 0.5.0(공유 루트,
+  pub.dev 2026-09-09 확인)이고, 이 머신의 설치본은 brew cartograph 0.8.2(tap 손
+  갱신 관행)·dartograph 0.2.0(샌드박스에서 실행 불가)이다.** Blockers 3 수정들은
+  설치본을 업그레이드해야 적용된다. 과거 0.6.0·0.2.0에서 두 통합 검증 스크립트를
+  통과했다. README/스크립트의 최소 버전 게이트(cartograph 0.5.3·dartograph 0.1.1)는
+  그대로다.
 - PR #12에서 의식적으로 제외한 항목: 모노레포 project 재기준화, ObjC 진단 정책, retentions
   다중 caller evidence, query `notFound` 종료 코드, check 베이스라인, RN/Kotlin/EventChannel.
 - Windows CI는 보류: `src/script-security.test.ts` 하네스의 shebang·chmod·TMPDIR 의존 때문이다.
@@ -224,14 +241,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
    clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
    `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고). 남은 것:
    인덱스 없이 빌드된 환경의 ObjC 핸들러 신원(fallback 문법 후보는 RESEARCH의 SCIP).
-3. **모노레포 project 기준 — realpath 절반은 닫힘, 공유 루트 절반은 대기.**
-   `/tmp`↔`/private/tmp` 불일치는 cartograph#73(0.10.1)의 POSIX realpath 정규화와
-   dartograph의 기존 `resolveSymbolicLinks()`로 해결됐고, 계약에도 명문화됐다
-   (GRAPH-EXCHANGE 조인 규칙). 남은 절반: dartograph에 공유 루트 선언 수단
-   (`--project` 오버라이드 또는 pub workspace 자동 감지)이 없어
-   `*_platform_interface`와 plugin의 root 불일치는 문서 손 rewriting으로만
-   우회된다(provenance 파괴). dartograph#38 open·답변 없음. isthmus의 정확한
-   문자열 일치 fail-closed는 유지한다.
+3. ~~**모노레포 project 기준**~~ — **완전 종결(2026-09-09).** realpath 절반은
+   cartograph#73(0.10.1), 공유 루트 절반은 dartograph#52(0.5.0)로 구현되고
+   GRAPH-EXCHANGE에 "생산자가 선언한 조인 루트" 정의로 명문화됐다. isthmus 코드
+   변경은 없었고(정확 문자열 일치 유지), 왕복 실측은 dartograph 쪽에서 설치본
+   isthmus로 완료. 로컬 설치본 업그레이드(brew cartograph 0.10.1, pub global
+   dartograph 0.5.0) 후 통합 스크립트 재실행만 남았다.
 4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
    `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
    후보다(자동 prune+stale로 위생 확보 판단).
@@ -295,12 +310,11 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **Blockers 3 남은 절반 — dartograph 공유 루트**: realpath는 cartograph#73(0.10.1)으로
-   합의·구현·계약 명문화까지 끝났다. [dartograph#38](https://github.com/ictechgy/dartograph/issues/38)
-   (공유 루트 `--project` 오버라이드 / pub workspace 자동 감지)은 open·답변 없음 —
-   답변이나 구현이 오면 GRAPH-EXCHANGE에 공유 루트 선언 방식을 추가하고 isthmus 쪽
-   영향을 살핀다. isthmus#30은 사용자가 닫았다. 로컬 brew cartograph 0.8.2는
-   0.10.1로 업그레이드해야 realpath 수정이 적용된다(tap 손 갱신 관행).
+1. **dartograph#38 닫기**(사용자): isthmus 계약 갱신이 완료됐으니 issue를 닫으면 된다.
+   로컬 producer 업그레이드(brew cartograph 0.10.1, `dart pub global activate
+   dartograph` 0.5.0) 후 통합 검증 스크립트 재실행도 사용자 환경에서만 가능하다
+   (샌드박스는 dartograph 실행 불가). 재실행하면 ObjC 재현 절차의 `/tmp` 제약도
+   무의미해진다.
 2. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
    실측에서 얼마나 덮이는지 확인(verify-public-flutter-plugin 재실행 포함).
 3. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
@@ -320,11 +334,12 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
 0.3.0까지 발행을 마쳤고(check 베이스라인 + 영문 README 포함) 0.3.0 릴리스 소스는
-`92b160b`(PR #34)야 — 이 문서의 이후 갱신은 그 위에 쌓인다. Blockers 3의 realpath 절반은
-cartograph#73(0.10.1)과 GRAPH-EXCHANGE 조항 명문화로 닫혔고, 남은 절반은 dartograph#38
-(공유 루트) 답변 대기야. 로컬 .gitignore 미커밋 수정을 보존해줘.
+`92b160b`(PR #34)야 — 이 문서의 이후 갱신은 그 위에 쌓인다. Blockers 3은 cartograph
+0.10.1(realpath)·dartograph 0.5.0(공유 루트)과 GRAPH-EXCHANGE 명문화로 완전 종결됐고,
+dartograph#38 닫기와 로컬 producer 업그레이드만 사용자 몫으로 남았어. 로컬 .gitignore
+미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 dartograph#38 답변 처리, producer
-스코프 신고 실측(cartograph 0.10.1로 brew 업그레이드 후), SARIF 리포터 순이야.
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 producer 스코프 신고 실측(producer
+업그레이드 후 verify-public-flutter-plugin 재실행), SARIF 리포터 순이야.
 샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
 자매 저장소 쓰기는 토큰 403이라 사용자 실행으로 넘긴다.
