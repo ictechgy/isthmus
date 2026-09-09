@@ -276,6 +276,20 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/FalsePositiveCorpus
 ```
 
+생산자가 발행한 `limitationScopes`가 소비자까지 전달되어 진단을 채널 단위로만
+완화하는지 확인하려면 자기완결 스코프 dogfood를 실행한다. 스크립트는 스캐너가
+본문을 볼 수 없으면서 채널 이름은 리터럴로 알려지는 형태(위임 핸들러 등록)의
+최소 Swift 패키지와 Dart 호출 측을 합성하고, 스코프가 붙은 채널의 미처리 호출만
+`-unverified` 경고로 낮아지고 같은 target의 인접 미처리 호출과 등록 없는 채널
+생성은 error로 남는지 검증한다. cartograph 0.9.0 이상, dartograph 0.1.1 이상,
+Swift 6이 필요하며 네트워크 접근은 하지 않는다.
+
+```bash
+node scripts/verify-limitation-scopes.mjs \
+  /path/to/cartograph \
+  /path/to/dartograph
+```
+
 ## 변경 전후 비교 (0.1.4 이상)
 
 같은 프로젝트의 변경 전후 Dart·Swift 교환 파일을 비교하려면:

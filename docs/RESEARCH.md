@@ -114,6 +114,29 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
 4. B를 v1 문자열 접미사가 아니라 bridge-facts v2의 구조화 limitation(독립 필드)으로
    할 것인가? v2는 깔끔하지만 네 저장소 동시 버전 인상과 이행 기간 비용이 있다.
 
+### 스코프 양성 사례 실측 (2026-09-09)
+
+위 제안이 구조화 v1 확장(GRAPH-EXCHANGE 선택적 limitationScopes)으로 구현된 뒤,
+스코프가 **실제 producer 출력에 등장하는 양성 사례**를 `scripts/verify-limitation-scopes.mjs`
+(isthmus 저장소)로 종단 실측했다. cartograph 0.10.1 · dartograph 0.5.0 · isthmus 0.3.0.
+
+- **발행 트리거(코드 근거)**: `setMethodCallHandler`의 인자가 클로저도 아니고 가독 핸들러
+  참조(같은 파일 선언 + `self.` 베이스)도 아닌 위임 참조이면 그 등록이 `opaqueHandlerChannels`에
+  적립되고(cartograph `BridgeFactScanner.swift`의 `visit(FunctionCallExprSyntax)`), 항목 전원이
+  리터럴 채널로 알려질 때만 `BridgeFactsDocument`가 스코프를 붙인다(`BridgeFacts.swift` init).
+  하나라도 dynamic이면 스코프 없음(음성 — corpus 실측과 동일).
+- **실측 출력**: limitations 정확히 1개
+  `opaque-handler-bodies: 1 handler registration(s) use bodies outside the supported local scan`,
+  `limitationScopes: [{"limitationIndex": 0, "channels": ["demo.example/opaque"]}]`.
+  등록 사실(`channel-register`)은 스코프와 무관하게 그대로 나온다.
+- **소비 실측**: isthmus check가 스코프 채널의 미처리 호출만
+  `unhandled-invocation-unverified`(경고)로 낮추고, 같은 target의 인접 채널 미처리 호출과
+  등록 없는 채널 생성은 error로 유지했다(오직 핸들러만 가리는 한계라는 계약 구분의 종단 확인).
+  `--strict`는 exit 1.
+- **fixture 주의점**: 위임 핸들러 본문에 `switch call.method` 분기를 두면 귀속 없는
+  `channel: null` method-handle이 함께 나와 `unattributed-method-handles:`(스코프 없는
+  공백)가 발행되고 전체 완화로 번진다. 양성 fixture는 본문에 분기를 두지 않는다.
+
 ## 다른 오픈소스에서 흡수할 장점 (2026-09-08)
 
 열린 Blockers와 완화 범위 제안(cartograph#64)에 대한 흡수 후보다. 전부 1차 출처를

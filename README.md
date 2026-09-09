@@ -300,6 +300,21 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/FalsePositiveCorpus
 ```
 
+To verify that producer-emitted `limitationScopes` reach the consumer and relax diagnostics at
+channel granularity, run the self-contained scope dogfood. It synthesizes a minimal Swift
+package with a delegated handler registration — a literal channel whose handler body the
+scanner cannot inspect, the one shape whose channel upper bound is provable — plus a Dart
+caller, and checks that only the scoped channel's unhandled invocation becomes an unverified
+warning while an adjacent unhandled invocation and an unregistered channel creation stay
+errors. It needs cartograph 0.9.0+, dartograph 0.1.1+, and Swift 6, and performs no network
+access.
+
+```bash
+node scripts/verify-limitation-scopes.mjs \
+  /path/to/cartograph \
+  /path/to/dartograph
+```
+
 ## Comparing before and after a change (0.1.4+)
 
 To compare the Dart and Swift exchange files of one project before and after a change:
