@@ -270,6 +270,51 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
 - 새 검색어(flutter unused native code, platform channel dead code)로도 브리지 조인
   도구는 나오지 않는다(2026-09-08). 2026-09-04 판단의 재확인.
 
+## 구조·보안·성능 리뷰 (2026-09-10, 0.3.0 `6832a58`)
+
+제품 코드 전량(`src/` 약 3,400줄)과 빌드·CI 스크립트를 읽고, 계약 상한 근처 합성
+입력으로 실측했다. packet-review 의뢰는 미응답(타임아웃)이라 자체 리뷰로 확정.
+
+### 성능 실측 (계약 상한 스케일)
+
+| 시나리오 | 입력 | 결과 |
+|---|---|---|
+| `check` | 87k facts(14MiB, 매치 30k 메서드 + dedup 5k + dynamic 1k + 미귀속 1k) | 0.17s(3회 동일) |
+| `query` | 40k 메서드 코퍼스 | 0.20s |
+| `graph` Cartesian | 300×300 채널 + 50×50 메서드 = 92.5k 간선(상한 100k) | 0.16s(DOT 93k 줄), JSON 17MiB 출력 0.18s |
+| `diff` | 스냅샷 2쌍 | 0.12s |
+
+이론적 개선 여지 3건(`compareLimitations`의 비교자 내 `JSON.stringify`,
+`encodeSortedJson`의 전체 깊은 복사 ≈2× 일시 메모리, `createBridgeQuery`의 전체 결과
+구성)은 모두 실측 규모에서 무의미해 미반영. 대형 모노레포 상한 입력에서의 일시
+피크 메모리만 장기 관찰 대상으로 남긴다.
+
+### 확인된 강점
+
+- 프로토타입 오염 경로 없음: `JSON.parse`의 `__proto__`는 own-property로만 생성되고
+  `normalizeDocument`/`normalizeFact`가 허용 필드만 복사해 미지 필드를 제거한다.
+- 출력 주입 차단: DOT는 `JSON.stringify` 이스케이프, Mermaid는 `mermaidText`,
+  텍스트 주석은 제어 문자 소독. 입력 단계에서 NEL·U+2028/2029 포함 제어 문자 거부.
+- 오류 메시지는 정적 문자열·숫자 보간만(전 `fail()` 호출부 확인) — 경로·본문 미노출.
+- Cartesian 곱은 할당 전 오버플로 안전 가드, 크기·문서 수 상한이 사전 검증.
+- 4층 경계(exchange→join→report→cli)의 import 방향이 하위에서 cli로 향하지 않음.
+- CI는 SHA 고정 Action·`contents: read`.
+
+### 발견과 처분
+
+1. **[중간 → 수정] 베이스라인 임시파일 이름 예측 가능** — `${path}.${pid}.tmp`에
+   `writeFile` 기본 `'w'`는 심링크를 따라감. 공유 시스템에서 사전 생성 심링크로 임의
+   파일 덮기 가능. → `src/cli/atomic-write.ts`로 분리: pid+무작위 바이트 이름, `wx`
+   배타 생성, EEXIST는 우리 것이 아니니 정리하지 않음. 단위 테스트 4건 추가.
+2. **[낮음 → 문서화] `limitations` 문자열은 안전 문자열 검증 제외** — 생산자 서술
+   자유가 의도이고 텍스트 출력 경로에서 소독되지만 계약에 명시가 없었다. →
+   GRAPH-EXCHANGE에 한 단락 명문화(자유 서술·소비자 미검증·출력 경로 소독).
+3. **[기각] 이슈 순서·`invocations[0]` 대표 증거·diff의 dart/swift 경직** — 각각
+   결정적 정렬 검증, HANDOFF Blockers 5로 이미 추적 중, v0 문서화 범위.
+4. **[장기 후보] 공유 CLI 인프라의 `check-command.ts` 편중**(`readBridgeDocuments`·
+   `inputFailureResult` 등을 query/graph/diff/retentions가 import), baseline·입력
+   오류 클래스의 스위치보드 선형 증가 — 기능 문제 없음, 다음 CLI 확장 시 분리.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위

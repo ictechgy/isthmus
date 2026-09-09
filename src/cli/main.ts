@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import {
   checkUsage,
   runCheckCommand,
   type CommandResult,
 } from './check-command.ts';
+import { writeTextAtomically } from './atomic-write.ts';
 import { graphUsage, runGraphCommand } from './graph-command.ts';
 import { diffUsage, runDiffCommand } from './diff-command.ts';
 import { queryUsage, runQueryCommand } from './query-command.ts';
@@ -42,22 +43,8 @@ Options:
 
 const arguments_ = process.argv.slice(2);
 const readTextFile = (path: string) => readFile(path, 'utf8');
-/**
- * 같은 디렉터리의 임시 파일에 쓰고 rename으로 교체한다.
- *
- * 중단·디스크 가득 참 중에 기존 베이스라인이 잘린 채 남으면 다음 실행이
- * 코드 2로 실패한다. rename은 같은 파일시스템 안에서 원자적이다.
- */
-const writeTextFile = async (path: string, text: string) => {
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  try {
-    await writeFile(temporaryPath, text, 'utf8');
-    await rename(temporaryPath, path);
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-};
+const writeTextFile = (path: string, text: string) =>
+  writeTextAtomically(path, text);
 const informationalResult = await runInformationalCommand(arguments_);
 const result = informationalResult ?? await dispatchCommand(arguments_);
 
