@@ -1,121 +1,140 @@
 # isthmus
 
-크로스플랫폼 앱에서 **언어 경계를 넘는 호출**을 그래프로 잇는 도구.
-[cartograph](https://github.com/ictechgy/cartograph)(Swift) · kartograph(Kotlin, 예정) ·
-[dartograph](https://github.com/ictechgy/dartograph)(Dart)가 각자 그린 지도를 하나로 붙인다.
+**Cross-language bridge calls in cross-platform apps, joined into one graph.**
+[cartograph](https://github.com/ictechgy/cartograph) (Swift) · kartograph (Kotlin, planned) ·
+[dartograph](https://github.com/ictechgy/dartograph) (Dart) each draw their own map; isthmus
+joins them into one.
 
-이름은 지협(isthmus) — 두 땅덩어리를 잇는 좁은 육교. 지도에서 다리를 뜻하는 말이다.
+[한국어 문서](README.ko.md)
 
-## 무엇을 하려는가
+The name refers to an isthmus — the narrow strip of land that connects two landmasses. On a
+map, it is the bridge.
 
-React Native 나 Flutter 앱의 네이티브 코드는 JS/Dart 가 **문자열 이름으로** 부른다. `MethodChannel('com.example/camera')`, `NativeModules.CameraModule`. 컴파일러 인덱스는 이 문자열을 못 본다. 그래서:
+## What it does, and why
 
-- cartograph 는 Flutter 가 부르는 Swift 핸들러를 **미사용** 이라고 한다 — 오탐
-- 기존 언어별 분석만으로는 "Dart가 `invokeMethod('takePhoto')`를 부르는데 Swift 쪽에
-  그 핸들러가 없다"를 **빌드 전에** 잡기 어렵다 — 런타임 크래시
-- 같은 이유로 "이 채널은 Swift에는 있는데 Dart 어디서도 안 부른다"는 교차 경계
-  사실을 언어별 도구 하나만으로는 판단하기 어렵다
+Native code in a React Native or Flutter app is called from JS/Dart **by string name**:
+`MethodChannel('com.example/camera')`, `NativeModules.CameraModule`. Compiler indexes cannot
+see these strings. As a result:
 
-isthmus 는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 메서드 이름 · 등록 지점 · 호출 지점)을 문자열 키로 조인해서, 경계를 넘는 간선을 만들고 위 세 가지를 답한다. 그리고 그 결과를 cartograph/kartograph 에 **보존 근거로 돌려준다** — "Swift `CameraHandler.takePhoto` 는 `lib/camera.dart:42` 가 채널 `com.example/camera` 로 부르므로 보존".
+- cartograph reports a Swift handler that Flutter calls as **unused** — a false positive
+- per-language analysis alone struggles to catch "Dart calls `invokeMethod('takePhoto')` but
+  no Swift handler exists" **before the build** — a runtime crash
+- for the same reason, "this channel exists in Swift but nothing in Dart calls it" is a
+  cross-boundary fact that is hard to judge from any single per-language tool
 
-isthmus는 조사한 도구들이 언어별로 나눠 보던 이 교차 경계를 조인한다.
+isthmus joins the **bridge facts** each language tool exports (channel names, method names,
+registration sites, invocation sites) by string key, builds the edges that cross the boundary,
+and answers those three questions. It then hands the result **back to cartograph/kartograph as
+retention evidence** — "keep Swift `CameraHandler.takePhoto`, because `lib/camera.dart:42`
+calls it over channel `com.example/camera`".
 
-## 상태
+## Status
 
-**0.2.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
-cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기와
-Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했고, 조인하지 못한 사실과 근거를
-만들지 못한 보존 대상이 조용히 사라지지 않도록 소비자 쪽에서 다시 세고, 수신 측이 신고한
-분석 공백은 불일치가 아니라 판정 불가로 보고한다. 한계는 신고 문서의 target으로 귀속되어
-공백 완화가 다른 target의 진단으로 번지지 않는다. 다음 단계는
-실제 Flutter 앱 도그푸딩과 React Native 지원이다.
+**0.2.0.** Implements the bridge-facts version 1 parser, `check`, `query`, `graph`, `diff`,
+and the external retention evidence round trip for cartograph. isthmus enforces fail-closed
+behavior for external input, mixed targets, graph size, and the Dart/Swift Phase 0 extraction
+boundary. Facts that could not be joined are re-counted on the consumer side, and retention
+subjects whose evidence cannot be built are refused loudly, so neither disappears silently.
+Coverage gaps a receiver reports about itself come back as undecidable, not as mismatches.
+Limitations are attributed to the reporting document's target, so gap mitigation never leaks
+into other targets' diagnostics. Next: dogfooding it on a real Flutter app, and React Native
+support.
 
-정식 producer는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상이다. 두 도구의 실제 출력과
-공개 battery 플러그인의 Swift USR·Dart 호출 근거 왕복을 검증했다.
+The supported producers are cartograph 0.5.3+ and dartograph 0.1.1+. Both were verified on
+their real output, and on a Swift USR ↔ Dart invocation evidence round trip over the public
+battery plugin.
 
-| 문서 | 내용 |
+| Document | Contents |
 |---|---|
-| [`docs/PRD.md`](docs/PRD.md) | 무엇을 · 누구를 위해 · 어디까지 |
-| [`docs/PLAN.md`](docs/PLAN.md) | 단계별 계획. **cartograph 와 dartograph 에 선행 작업이 있다** |
-| [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 세 저장소가 공유하는 계약 |
-| [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
-| [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
+| [`docs/PRD.md`](docs/PRD.md) | What, for whom, how far |
+| [`docs/PLAN.md`](docs/PLAN.md) | Step-by-step plan. **cartograph and dartograph have prerequisite work** |
+| [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
+| [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
+| [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
 
-## 의존 관계
+Internal documents are maintained in Korean, the maintainer's working language.
+
+## Dependency picture
 
 ```
-cartograph  ──bridges──┐
-kartograph  ──bridges──┼──▶ isthmus ──▶ 경계 간선 · 불일치 보고 · 보존 근거
-dartograph  ──bridges──┤
-JS/TS 추출기 ─bridges──┘
+cartograph    ──bridges──┐
+kartograph    ──bridges──┼──▶ isthmus ──▶ boundary edges · mismatch reports · retention evidence
+dartograph    ──bridges──┤
+JS/TS extractor ─bridges─┘
 ```
 
-isthmus 자체는 작다. 무거운 일(각 언어의 해석)은 자매 도구가 한다.
+isthmus itself is small. The heavy lifting — interpreting each language — falls to the
+sister tools.
 
-## 설치
+## Install
 
-Node.js 22.18.0 이상이 필요하다.
+Requires Node.js 22.18.0 or later.
 
-전역 설치 후 CLI 이름 `isthmus`로 실행한다.
+Install globally and run it under the CLI name `isthmus`:
 
 ```bash
 npm install --global isthmus-cli
 isthmus --help
 ```
 
-설치 없이 한 번 실행할 때는 package 이름을 명시한다.
+For a one-off run without installing, name the package explicitly:
 
 ```bash
 npx isthmus-cli --help
 ```
 
-`npx isthmus`는 이름이 같은 다른 package를 설치하므로 사용하지 않는다.
+Do not use `npx isthmus` — that installs a different package with the same name.
 
-## 사용
+## Usage
 
-isthmus는 자매 도구를 직접 실행하지 않는다. 각 도구가 만든 JSON 파일을 전달한다.
+isthmus never runs the sister tools itself. You hand it the JSON files they produced:
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json
 ```
 
-전체 명령과 현재 package 버전은 다음처럼 확인한다.
+List all commands and the installed package version:
 
 ```bash
 isthmus --help
 isthmus --version
 ```
 
-CI에서 브리지 오류가 있으면 실패시키려면 `--strict`를 붙인다.
+To make CI fail when bridge errors exist, add `--strict`:
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
-이미 인정된 이슈를 베이스라인으로 삼으려면 현재 이슈 전체를 파일로 기록하고,
-다음 실행부터 그 파일을 적용한다.
+### Baselines
+
+To accept the current findings as a baseline, write them to a file once and apply that file
+from the next run onward:
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json --update-baseline isthmus-baseline.json
 isthmus check dart-bridges.json swift-bridges.json --strict --baseline isthmus-baseline.json
 ```
 
-`--update-baseline`은 이번 실행을 억제하지 않고 현재 이슈 전체를 isthmus 소유
-`isthmus-baseline` 버전 1 문서로 다시 쓴다. 파일 전체를 새로 쓰므로 해결된 항목은
-자동으로 빠진다. `--baseline`은 항목과 논리 이슈 식별자(code·target·channel·method)가
-같은 이슈만 억제하므로 소스 줄 이동에는 깨지지 않고, 새 채널·메서드 불일치는 억제되지
-않는다. 억제된 이슈도 지워지지 않는다 — 사실·증거·심각도를 보존한 채 `suppressed`
-표시가 붙고 요약의 error·warning 계산과 `--strict` 판단에서만 빠진다. 어느 이슈와도
-맞지 않는 항목은 `staleBaselineEntries`로 세므로, 해결된 이슈를 베이스라인에 남겨
-다음 악화를 가리는 상태를 보고서에서 볼 수 있다. 베이스라인 파일의 읽기 실패·JSON
-오류·계약 위반은 종료 코드 2로 실패한다. 두 플래그를 한 실행에 함께 쓸 수 없고,
-플래그 바로 뒤의 값이 `-`로 시작하면 거부된다(`-`로 시작하는 합법적 파일명 포함).
-`--update-baseline`을 `--strict`와 함께 쓰면 파일은 기록되고 종료 코드는 이번
-실행의 억제되지 않은 error를 따른다. 기록할 항목이 10,000개를 넘으면 소비할 수
-없는 산출물을 남기지 않고 종료 코드 2로 실패한다. 쓰기는 같은 디렉터리의 임시
-파일 교체(원자 rename)로 이루어져 중단돼도 기존 파일이 깨지지 않는다.
+`--update-baseline` does not suppress the run that writes it; it rewrites the whole file — an
+isthmus-owned `isthmus-baseline` version 1 document — from the current issues, so resolved
+items drop out automatically. `--baseline` suppresses only the issues whose logical identity
+(code, target, channel, method) matches an entry, so moving source lines never breaks
+suppression and a new channel or method mismatch is never suppressed. Suppressed issues are
+not deleted: they keep their facts, evidence, and severity, gain a `suppressed` marker, and
+are excluded only from the summary error/warning counts and the `--strict` decision. Entries
+that match no issue are counted in `staleBaselineEntries`, so a baseline hiding a future
+regression stays visible in the report. An unreadable, non-JSON, or contract-violating
+baseline file fails with exit code 2. The two flags cannot be combined in one run, and a value
+starting with `-` is rejected (including legitimate file names that start with `-`). `--update-baseline` combined
+with `--strict` still writes the file, and the exit code follows that run's unsuppressed
+errors. If more than 10,000 entries would be recorded, the command fails with exit code 2
+instead of leaving an artifact it cannot consume. Writes go through a temporary file in the
+same directory (atomic rename), so an interrupted run cannot corrupt an existing baseline.
 
-매치된 Swift 핸들러를 cartograph 보존 근거로 돌려주려면:
+### Retention evidence
+
+To return matched Swift handlers to cartograph as retention evidence:
 
 ```bash
 isthmus retentions \
@@ -125,18 +144,31 @@ isthmus retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. `mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
+`retentions` prefers each handler's USR and falls back to its `qualifiedName`. A
+`mixed-targets` document cannot have per-fact targets restored in v1, so every consuming
+command defers the join with exit code 2; split such a document per target at production time
+first.
 
-cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소 하나 요구하고, 없으면 빈 보존 문서 대신 종료 코드 2로 거부한다. 호출자가 있는데도 `symbol`이 없어 보존 근거로 바꿀 수 없는 Swift 핸들러가 있으면 부분 문서를 만들지 않고 같은 코드로 실패한다. 근거가 빠진 보존 파일은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다.
+cartograph retains Swift symbols only, so `--for cartograph` requires at least one
+receiver-side Swift document and refuses with exit code 2 instead of emitting an empty
+retention document. If a matched Swift handler has callers but no `symbol`, and therefore
+cannot become evidence, the command fails with the same code rather than producing a partial
+document: a retention file with missing evidence makes live handlers look unused to the
+consumer.
 
-모든 소비 명령은 호출 측(dart)과 수신 측(swift) 플랫폼 문서를 최소 하나씩 요구한다. 한쪽만 있으면 한쪽 관찰을 경계 불일치로 오독하지 않고 종료 코드 2로 거부한다. 입력 실패 메시지는 원인(읽기 실패, JSON 오류, 교환 계약 위반, project 불일치, 플랫폼 구성 누락, 크기 상한)과 입력 순서, 해결 방향을 구분해 전달하며 입력 본문과 경로는 노출하지 않는다.
+Every consuming command requires at least one caller-side (dart) and one receiver-side (swift)
+platform document. Given only one side, it refuses with exit code 2 rather than misreading a
+one-sided observation as a boundary mismatch. Input failure messages state the cause (read
+failure, JSON error, exchange contract violation, project mismatch, missing platform
+composition, size limit), the input position, and how to resolve it, and never expose input
+bodies or paths.
 
-실제 공개 Flutter 플러그인에서 생산부터 소비까지 확인하려면 저장소 루트에서 다음 검증을
-실행한다. 스크립트는 `plus_plugins`의 고정 커밋을 sparse checkout하고 배터리 플러그인의
-원본 Dart·Swift 소스에서 세 메서드의 보존 근거를 확인한 뒤 임시 checkout을 지운다.
-네트워크, Git 2.26 이상, Swift 6, cartograph 0.5.3 이상, dartograph 0.1.1 이상이
-필요하다. isthmus는 현재 소스에서 자동으로 다시 빌드하며, 세 번째 인자로 별도 isthmus
-JavaScript 산출물을 넘길 수도 있다.
+To verify the whole path from production to consumption on a real public Flutter plugin, run
+this from the repository root. The script does a sparse checkout of a pinned `plus_plugins`
+commit, confirms the retention evidence for three methods in the battery plugin's original
+Dart and Swift sources, and removes the temporary checkout. It needs network access, Git
+2.26+, Swift 6, cartograph 0.5.3+, and dartograph 0.1.1+. isthmus is rebuilt from the current
+sources automatically; a third argument can point at a separate isthmus JavaScript artifact.
 
 ```bash
 npm run build
@@ -145,19 +177,22 @@ node scripts/verify-public-flutter-plugin.mjs \
   /path/to/dartograph
 ```
 
-공개 플러그인 검증은 원본 `addMethodCallDelegate` 구현에서 나온 Swift USR과 세 원본 Dart
-호출 위치를 확인하고, cartograph `--explain`이 해당 심볼의 대표 근거를 읽는지 검증한다. 이미
-public인 플러그인 handler의 dead 상태 전환을 억지로 만들지는 않는다. 그 전환과
-`setMethodCallHandler` 경로는 `verify-cartograph-roundtrip.mjs`의 합성 코퍼스가 별도로
-검증한다.
+The public plugin verification checks the Swift USRs from the original `addMethodCallDelegate`
+implementation and the three original Dart call sites, and verifies that cartograph
+`--explain` reads the representative evidence for those symbols. It does not force a
+dead-state transition on an already-public plugin handler; that transition and the
+`setMethodCallHandler` path are covered separately by the synthetic corpus in
+`verify-cartograph-roundtrip.mjs`.
 
-채널이나 메서드가 경계 반대편의 어느 위치와 연결되는지 조회하려면:
+### Query and graph
+
+To see which locations on the other side of the boundary a channel or method connects to:
 
 ```bash
 isthmus query takePhoto dart-bridges.json swift-bridges.json
 ```
 
-경계 간선만 JSON, Graphviz DOT, Mermaid로 출력하려면:
+To emit only the boundary edges as JSON, Graphviz DOT, or Mermaid:
 
 ```bash
 isthmus graph dart-bridges.json swift-bridges.json
@@ -165,82 +200,97 @@ isthmus graph dart-bridges.json swift-bridges.json --format dot
 isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 ```
 
-`query`는 같은 메서드가 여러 채널에 있으면 후보를 반환하고 임의로 고르지 않는다.
-반환된 `qualifiedName`을 같은 subject 자리에 넣어 정확한 후보를 다시 조회할 수 있다.
-`graph`는 매치된 간선만 내보내며, 입력의 `limitations`를 JSON 필드 또는 DOT/Mermaid
-주석으로 보존한다. 증거의 Cartesian 곱이 100,000개 간선을 넘으면 메모리 폭증을 막기
-위해 입력 오류로 종료한다.
+When the same method exists on several channels, `query` returns candidates instead of picking
+one; feed a returned `qualifiedName` back into the same subject position to disambiguate.
+`graph` emits matched edges only and preserves the input `limitations` as a JSON field or as
+DOT/Mermaid comments. If the Cartesian product of evidence would exceed 100,000 edges, the
+command fails with exit code 2 to prevent a memory blowup.
 
-출력은 `isthmus-check` 버전 1 JSON이며 다음 네 사실을 보고한다.
+### What check reports
 
-- `unhandled-invocation` (error): 호출은 있지만 네이티브 핸들러가 없음
-- `unregistered-channel-creation` (error): 호출 측 채널 생성은 있지만 네이티브 등록이 없음
-- `registration-without-creation` (warning): 네이티브 채널 등록은 있지만 호출 측 생성이 없음
-- `handler-without-invocation` (warning): 네이티브 핸들러는 있지만 호출 측 사용이 없음
-- `unhandled-invocation-unverified` (warning): 위 첫 항목과 같은 사실이지만, 수신 측이
-  핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
-- `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
+The output is `isthmus-check` version 1 JSON, reporting these facts:
 
-`-unverified` 종류는 수신 측 문서의 한계에서 나온다. 예를 들어 Flutter 핸들러가
-Objective-C로 쓰인 플러그인에서 cartograph는 `objective-c-sources:`를 신고하고 핸들러 사실을
-완전히 열거하지 못할 수 있다. 이때 "핸들러 없는 호출"을 error로 단정하면 이 도구가 없애려던 오탐을 이 도구가
-만든다. 사실과 증거는 그대로 보고하되 `--strict`를 실패시키지 않는다. 공백의 종류는 구분해서,
-이름이 리터럴이 아닌 채널 등록은 채널 진단만 낮추고 메서드 진단은 낮추지 않는다. 완화 단위는
-진단의 target이다. 사실은 target별로만 조인되므로 다른 target 수신 문서가 신고한 공백은 현재
-target의 진단을 낮추지 않고, 사실이 없는 수신 문서의 공백은 무엇이 가려졌는지 귀속시킬 수
-없어 모든 target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 않으므로 심각도에 영향을
-주지 않으며, 알려지지 않은 한계 문구는 공백으로 해석하지 않는다.
+- `unhandled-invocation` (error): an invocation exists but no native handler does
+- `unregistered-channel-creation` (error): a caller-side channel creation exists but no
+  native registration does
+- `registration-without-creation` (warning): a native channel registration exists but no
+  caller-side creation does
+- `handler-without-invocation` (warning): a native handler exists but no caller-side use does
+- `unhandled-invocation-unverified` (warning): the same fact as the first item, but the
+  receiver reported that it may have missed handlers, so "absent" and "not seen" cannot be
+  distinguished
+- `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
+  reason
 
+The `-unverified` kinds come from limitations in receiver-side documents. For example, in a
+plugin whose Flutter handler is written in Objective-C, cartograph reports
+`objective-c-sources:` and may fail to enumerate the handler facts completely. Asserting
+"unhandled invocation" as an error there would recreate the very false positive this tool
+exists to remove. The facts and evidence are still reported, but `--strict` does not fail.
+Gap kinds are distinguished: a channel registration with a non-literal name downgrades channel
+diagnostics only, never method diagnostics. The mitigation unit is the diagnostic's target —
+facts join per target only, so a gap reported by another target's receiver document never
+downgrades the current target's diagnostics, and a gap from a receiver document with no facts
+applies to all targets because nothing can be attributed. Caller-side limitations never hide
+native code, so they do not affect severity, and unknown limitation wording is never
+interpreted as a gap.
 
-0.2.0은 v1의 선택적 `limitationScopes`를 읽습니다. `{ limitationIndex, channels }`는
-해당 한계 전체의 보수적 채널 상한이며, 단순히 발견한 리터럴 목록이면 안 됩니다. 스코프가
-없거나 다른 범위 불명 공백이 공존하면 기존 target 전체 완화를 유지합니다. 빈 채널 집합과
-잘못된 인덱스는 입력 오류입니다. 스코프는 check/query/graph/diff에서 `channels`로 보존됩니다.
-생산자의 tool 이름만으로 자체 계수를 신뢰하지 않으며, `unjoined-*`는 소비자가 직접 붙인
-`origin: "consumer"`가 있어야 완화 근거가 됩니다.
+Since 0.2.0, isthmus reads the optional v1 `limitationScopes`. `{ limitationIndex, channels }`
+is a conservative channel upper bound for that limitation as a whole — never merely a list of
+literals that happened to be found. Without scopes, or when a scoped entry coexists with
+another unscoped gap, the existing whole-target mitigation stands. An empty channel set or an
+invalid index is an input error. Scopes are preserved as `channels` through
+check/query/graph/diff. A producer's tool name alone never drives mitigation: `unjoined-*`
+counts mitigate only when they carry the consumer-attached `origin: "consumer"`.
 
-선택적 fact `sourceLanguage: "objective-c"`는 `.m`/`.mm`의 ObjC 구현을 Swift 그래프와
-구분합니다. 이 사실에는 symbol을 붙이지 않습니다. 매치는 check/query/graph에 남고 Swift
-보존 목록에서는 제외되며, `omittedObjectiveCHandlers`가 제외 수를 알립니다. 표식 없는
-Swift 핸들러의 symbol 누락은 여전히 종료 코드 2입니다. 이 확장을 지원하는 소비자를 먼저
-배포해야 합니다. 옛 소비자는 스코프를 버리고 넓게 완화하며 ObjC 보존 생성은 실패합니다.
+The optional fact field `sourceLanguage: "objective-c"` distinguishes ObjC implementations in
+`.m`/`.mm` files from the Swift graph. These facts carry no symbol. Their matches stay in
+check/query/graph but are excluded from the Swift retention list, and
+`omittedObjectiveCHandlers` reports how many were excluded. A matched Swift handler that has
+callers but no `symbol` and no `sourceLanguage` marker still fails with exit code 2.
+Consumers supporting this extension must ship before producers: old consumers drop scopes
+(mitigating broadly) and fail to produce ObjC retentions.
 
-모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
-handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와 함께
-남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
+Every issue carries its observed locations as `evidence`. Dynamic names, unresolved receivers
+or handler bodies, missing USRs, input generation-time differences, and mixed targets stay in
+`limitations` with their provenance. This tool never decides whether code is safe to delete.
 
-isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 호환 변경으로 다룬다.
-기존 필드의 의미를 바꾸거나 제거할 때 문서 버전을 올린다.
+isthmus output documents treat added fields and new issue codes within version 1 as compatible
+changes; the document version is raised only when an existing field's meaning changes or the
+field is removed.
 
-`limitations`에는 생산자가 신고한 한계와 isthmus가 직접 센 한계가 함께 들어간다.
-각 항목은 `platform`·`target`·`tool`로 출처와 귀속을 밝히고, `origin: "consumer"`인 항목은
-조인 단계에서 관찰한 것이다. 조인하지 못한 사실은 생산자의 신고나 그 개수와 무관하게
-플랫폼·target별로 다시 센다.
+`limitations` holds both producer-reported and isthmus-counted limitations. Each entry states
+its provenance and attribution with `platform`, `target`, and `tool`; entries with
+`origin: "consumer"` were observed at the join stage. Facts that could not be joined are
+re-counted per platform and target, regardless of what producers reported or how many they
+reported:
 
-- `unjoined-dynamic-channels`: 이름이 리터럴이 아닌 채널 생성·등록 사실
-- `unjoined-dynamic-methods`: 이름이 리터럴이 아닌 호출·핸들러 사실
-- `unjoined-unattributed-handlers`: 어느 채널에 속하는지 모르는 핸들러 사실
+- `unjoined-dynamic-channels`: channel create/register facts with a non-literal name
+- `unjoined-dynamic-methods`: invoke/handle facts with a non-literal name
+- `unjoined-unattributed-handlers`: handler facts that belong to no known channel
 
-같은 위치의 중복 사실은 한 번만 센다. dynamic이면서 미귀속인 핸들러는 dynamic으로만 센다.
+Duplicate facts at the same location are counted once. A handler that is both dynamic and
+unattributed is counted as dynamic only.
 
-| 종료 코드 | 의미 |
+| Exit code | Meaning |
 |---|---|
-| `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
-| `1` | `--strict`에서 error 이슈를 발견함. `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
-| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 베이스라인 파일 오류, 베이스라인 쓰기 실패 등 도구 실패. stderr가 원인을 구분 |
-| `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
+| `0` | Success. In default mode, issues are reported but do not fail the run |
+| `1` | `--strict` found error issues (for `diff`: newly observed errors only). `-unverified` warnings and baseline-suppressed errors do not fail |
+| `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries), baseline file or write errors, retention evidence that cannot be built. stderr distinguishes the cause |
+| `64` | Bad command, option, or input count; or `query` `notFound`/`ambiguous` |
 
-저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크,
-제품 코드 90% 커버리지, clean build, 실제 CLI·package 계약을 함께 실행한다.
+For development from a checkout, run `npm ci` first. Development verification runs the type
+check and a clean build, enforces 90% product-code coverage, and exercises the real CLI and
+package contract checks together:
 
 ```bash
 npm run verify
 ```
 
-실제 두 producer와 외부 보존 근거 왕복을 검증하려면 cartograph 0.5.3 이상,
-dartograph 바이너리와 두 도구가 함께 분석할 fixture 루트를 넘긴다. 이 검증은 producer
-바이너리와 컴파일러 인덱스가 필요하므로 `npm run verify`와 공개 CI에는 포함되지 않으며
-릴리스 전에 수동으로 실행한다.
+To verify the external retention round trip with the two real producers, pass cartograph
+0.5.3+, the dartograph binary, and a fixture root both tools can analyze. This needs producer
+binaries and a compiler index, so it is not part of `npm run verify` or public CI; run it
+manually before a release.
 
 ```bash
 node scripts/verify-cartograph-roundtrip.mjs \
@@ -249,9 +299,9 @@ node scripts/verify-cartograph-roundtrip.mjs \
   /path/to/FalsePositiveCorpus
 ```
 
-## 변경 전후 비교 (0.1.4 이상)
+## Comparing before and after a change (0.1.4+)
 
-같은 프로젝트의 변경 전후 Dart·Swift 교환 파일을 비교하려면:
+To compare the Dart and Swift exchange files of one project before and after a change:
 
 ```bash
 isthmus diff \
@@ -259,34 +309,38 @@ isthmus diff \
   --after after-dart.json after-swift.json --strict
 ```
 
-`isthmus-diff` v1은 추가·제거된 논리 메서드 연결, 새로 관찰된 불일치와 사라진 불일치,
-양 시점의 분석 한계와 그 차이, producer 버전·생성 시각을 JSON으로 출력한다. 연결에는 호출자와
-핸들러 위치가 포함된다. 줄 이동은 연결 변경으로 세지 않으며 rename은 추측하지 않는다.
-같은 논리 키의 호출자·핸들러 교체나 개별 호출 위치 증감은 이번 비교 범위에 포함하지 않는다.
+`isthmus-diff` v1 outputs, as JSON: added and removed logical method connections, newly
+observed and no-longer-observed issues, the analysis limitations at both snapshots and their
+difference, and producer versions and generation times. Connections include caller and handler
+locations. Line moves do not count as connection changes, and renames are never inferred.
+Caller/handler replacement under the same logical key, and per-call-site additions or
+removals, are outside this comparison.
 
-`--strict`는 새로 관찰된 error가 있을 때만 1이다. 기존 오류·경고·분석 한계만 있으면 0이므로
-성공 코드가 삭제 안전성이나 완전한 분석을 뜻하지 않는다. `resolvedIssues`도 이전 불일치가
-더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를 함께 확인해야 한다.
-`--strict`은 인자 위치와 무관하게 인식하며 두 번 이상 줄 수 없다.
+`--strict` exits 1 only when a newly observed error exists. With only pre-existing errors,
+warnings, or limitations, it exits 0, so a success code never means "safe to delete" or "fully
+analyzed". `resolvedIssues` likewise means a previous mismatch is no longer observed — check
+the limitations to see whether a dynamic transition or an extractor change caused it.
+`--strict` is recognized at any argument position and cannot be given more than once.
 
-현재 diff는 Flutter의 Dart·Swift 문서만 받는다. 각 시점에 두 플랫폼이 모두 필요하며,
-양 시점의 `project`와 플랫폼·도구별 문서 개수가
-같아야 한다. 한 checkout의 같은 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만
-추출한 결과와 전체 결과를 비교하지 말고 같은 분석 설정을 사용한다. 입력 파일은 합계 256개,
-텍스트 길이 제한은 기존 CLI와 동일하다. 혼합 target이나 비교 불가능한 입력은 코드 2로 거부한다.
-`generatedAt`은 fact 추출 시각이며 revision 순서가 아니다. 비교 방향은 `--before`와
-`--after` 인자로 결정되므로 사용자가 올바른 revision의 파일을 지정해야 한다.
+`diff` currently accepts only Flutter Dart/Swift documents. Both platforms are required at
+each point in time, and the two snapshots must agree on `project` and on the per-platform,
+per-tool document counts. Build each revision from the same checkout path and keep the JSON.
+Do not compare a partial extraction against a full one; use the same analysis settings. Input
+files are capped at 256 total, and the text size limits match the rest of the CLI. Mixed
+targets or incomparable inputs are refused with exit code 2. `generatedAt` is the fact
+extraction time, not an indicator of revision order — the comparison direction comes from the
+`--before` and `--after` arguments, so you must point them at the right revisions.
 
-## 코딩 에이전트 skill
+## Coding-agent skill
 
-네이티브 브리지 핸들러를 지우거나 이름을 바꾸기 전에 `query`로 다른 언어의 호출자를
-확인하도록 가르치는 skill 원문을 [`Skills/isthmus/SKILL.md`](Skills/isthmus/SKILL.md)에 제공한다.
-사용하는 에이전트의 프로젝트 skill 디렉터리에 이 파일을 복사해 사용할 수 있다.
+[`Skills/isthmus/SKILL.md`](Skills/isthmus/SKILL.md) provides a skill that teaches agents to
+check other languages' callers with `query` before deleting or renaming a native bridge
+handler. Copy it into your agent's project skill directory.
 
-Codex는 이 checkout의 `.agents/skills/isthmus` 링크로 같은 원문을 발견한다.
-`Skills/isthmus/SKILL.md` 한 곳만 편집하며, npm 패키지에는 이 원문이 포함된다.
-스킬 내용 검증과 모델별 지침 조정 근거는 [에이전트 감사 기록](docs/AGENT-AUDIT.md)에 있다.
+Codex discovers the same text through the `.agents/skills/isthmus` link in this checkout.
+Edit only `Skills/isthmus/SKILL.md`; the npm package includes it. Skill content verification
+and per-model tuning rationale are in the [agent audit record](docs/AGENT-AUDIT.md).
 
-## 라이선스
+## License
 
-[MIT](LICENSE). 상업적 사용을 포함해 영구 무료다.
+[MIT](LICENSE). Free forever, including commercial use.
