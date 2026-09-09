@@ -118,9 +118,10 @@ isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sari
 
 The default is `--format json`, which keeps the versioned isthmus-check document. SARIF is an
 additive, isthmus-owned rendering of the same join: every issue becomes a result with its
-`check` issue code as the rule id, the first evidence endpoint as the primary location (the
-project-relative paths map directly to repository paths), remaining endpoints as related
-locations, and baseline-suppressed issues carry an `external` suppression. Results include a
+`check` issue code as the rule id, the first evidence endpoint as the primary location
+(project-relative paths become percent-encoded, repository-relative URIs), remaining
+endpoints as related locations, and baseline-suppressed issues carry an `external`
+suppression. Results include a
 `partialFingerprints` hash of the logical issue identity (code, target, channel, method), so
 deduplication survives source line moves exactly like baseline suppression. `--strict`,
 `--baseline`, and `--update-baseline` combine with either format and keep their documented

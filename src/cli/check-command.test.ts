@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -116,6 +118,52 @@ test('형식 인자가 없거나 중복되면 종료 코드 64를 반환한다',
     const result = await runCheckCommand(arguments_, async () => '');
     assert.equal(result.exitCode, 64);
     assert.equal(result.standardOutput, '');
+  }
+});
+
+test('명시적 --format json은 기본 출력과 바이트까지 같다', async () => {
+  const read = (path: string) => readFile(path, 'utf8');
+  const implicit = await runCheckCommand(['check', dartPath, swiftPath], read);
+  const explicit = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--format', 'json'],
+    read,
+  );
+
+  assert.equal(explicit.standardOutput, implicit.standardOutput);
+  assert.equal(explicit.exitCode, implicit.exitCode);
+});
+
+test('check --format sarif는 베이스라인 억제를 suppression으로 전달한다', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'isthmus-sarif-baseline-'));
+  try {
+    const baselinePath = join(root, 'isthmus-baseline.json');
+    const read = (path: string) => readFile(path, 'utf8');
+    await runCheckCommand(
+      ['check', dartPath, swiftPath, '--update-baseline', baselinePath],
+      read,
+      (path, text) => writeFile(path, text, 'utf8'),
+    );
+
+    const result = await runCheckCommand(
+      ['check', dartPath, swiftPath, '--format', 'sarif', '--baseline', baselinePath],
+      read,
+    );
+
+    assert.equal(result.exitCode, 0);
+    const log = JSON.parse(result.standardOutput);
+    const results = log.runs[0].results;
+    assert.equal(results.length, 3);
+    const suppressed = results.filter(
+      (entry: { suppressions?: unknown[] }) => entry.suppressions !== undefined,
+    );
+    assert.equal(suppressed.length, 3);
+    for (const entry of suppressed) {
+      assert.deepEqual(entry.suppressions, [
+        { kind: 'external', status: 'accepted' },
+      ]);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

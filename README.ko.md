@@ -110,8 +110,8 @@ isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sari
 
 기본값은 `--format json`으로 버전이 붙은 isthmus-check 문서를 유지한다. SARIF는 같은
 조인 결과의 additive·isthmus 소유 렌더링이다. 모든 이슈는 check 진단 코드를 규칙 id로
-하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 저장소 경로와
-바로 대응한다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
+하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 퍼센트 인코딩된
+저장소 상대 URI가 된다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
 `external` suppression을 달고 나온다. 결과마다 논리 이슈 식별자(code·target·channel·
 method)의 `partialFingerprints` 해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인
 억제와 같은 기준으로 살아남는다. `--strict`·`--baseline`·`--update-baseline`은 두 형식

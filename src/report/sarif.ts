@@ -100,7 +100,7 @@ export function createSarifLog(
         driver: {
           name: 'isthmus',
           informationUri: sarifInformationUri,
-          ...(toolVersion === undefined ? {} : { version: toolVersion }),
+          ...(toolVersion ? { version: toolVersion } : {}),
           rules,
         },
       },
@@ -123,18 +123,22 @@ function sarifResult(
   if (primary === undefined) {
     throw new Error('Cannot create a SARIF result without evidence.');
   }
+  const index = ruleIndex.get(issue.code);
+  if (index === undefined) {
+    throw new Error('Cannot create a SARIF result for an unknown rule.');
+  }
   const subject = issue.method === undefined
     ? `${issue.code} on channel '${issue.channel}'`
     : `${issue.code} on channel '${issue.channel}' for method '${issue.method}'`;
   return {
     ruleId: issue.code,
-    ruleIndex: ruleIndex.get(issue.code) ?? -1,
+    ruleIndex: index,
     level: issue.severity,
     message: { text: subject },
     locations: [{ physicalLocation: physicalLocation(primary) }],
     ...(related.length === 0 ? {} : {
-      relatedLocations: related.map((endpoint, index) => ({
-        id: index + 1,
+      relatedLocations: related.map((endpoint, order) => ({
+        id: order + 1,
         physicalLocation: physicalLocation(endpoint),
       })),
     }),
@@ -156,13 +160,22 @@ function sarifResult(
 function physicalLocation(endpoint: {
   readonly location: { readonly path: string; readonly line: number; readonly column: number };
 }): SarifPhysicalLocation {
+  const { line, column } = endpoint.location;
+  if (line < 1 || column < 1) {
+    throw new Error('Cannot create a SARIF region before the first line or column.');
+  }
   return {
-    artifactLocation: { uri: endpoint.location.path },
-    region: {
-      startLine: endpoint.location.line,
-      startColumn: endpoint.location.column,
-    },
+    artifactLocation: { uri: sarifUri(endpoint.location.path) },
+    region: { startLine: line, startColumn: column },
   };
+}
+
+/**
+ * 경로를 URI 참조로 만든다. 구분자 `/`는 보존하고 각 세그먼트를 RFC 3986으로
+ * 인코딩해 공백·`#`·비ASCII 파일명이 GitHub 업로드를 깨지 않게 한다.
+ */
+export function sarifUri(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
 }
 
 /** 베이스라인과 같은 논리 키의 안정 지문으로 소스 줄 이동에도 중복을 막는다. */
