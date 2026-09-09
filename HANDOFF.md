@@ -1,5 +1,28 @@
 # Handoff
 
+## 2026-09-09 — limitationScopes 양성 사례 종단 실측 (opencode 세션)
+
+Next Steps 1을 닫았다(PR #43). `scripts/verify-limitation-scopes.mjs`(신규, 자기완결 합성 dogfood,
+네트워크·git 불필요)가 cartograph 0.10.1 + dartograph 0.5.0 + isthmus 0.3.0 조합으로 통과했다:
+
+- **스코프 실발행(양성)**: 위임 참조 핸들러(`setMethodCallHandler(HandlerDelegate().handleCall)`
+  — 클로저도 아니고 같은 파일·`self` 가독 참조도 아님) + 리터럴 채널이면
+  `opaque-handler-bodies:` limitation과 함께
+  `limitationScopes: [{"limitationIndex": 0, "channels": ["demo.example/opaque"]}]`가
+  실제로 발행된다. 발행 트리거의 코드 근거는 RESEARCH "스코프 양성 사례 실측" 절.
+- **채널 단위 완화(소비)**: isthmus check가 스코프 채널의 미처리 호출만
+  `unhandled-invocation-unverified` 경고로 낮추고, 같은 target 인접 채널의 미처리 호출과
+  등록 없는 채널 생성은 error로 유지했다(summary errors 2·warnings 1, `--strict` exit 1).
+  "핸들러만 가린다"는 계약 구분의 종단 확인. **인과 대조**도 포함: 같은 문서에서
+  `limitationScopes`만 빼면 인접 채널까지 완화되는 과완화가 돌아온다(errors 1·warnings 2)
+  — 완화의 원인이 스코프임을 입증.
+- **fixture 주의점(첫 실패에서 확정)**: 위임 본문에 `switch call.method`를 두면 귀속 없는
+  `channel: null` method-handle이 나와 `unattributed-method-handles:`(스코프 없는 공백)가
+  함께 발행되고 전체 완화로 번진다. 본문에서 분기를 제거해 해결했다.
+- 스크립트는 공개 plugin 스크립트와 동일 구조(버전 게이트 cartograph 0.9.0·dartograph
+  0.1.1·isthmus 0.2.0, isthmus-js 오버라이드)이고 사용법 테스트
+  `src/limitation-scopes-script.test.ts`를 추가했다. README 양문·scripts/AGENTS에 명령 안내.
+
 ## 2026-09-09 — 통합 검증 전체 그린: cartograph 0.10.1 · dartograph 0.5.0 · isthmus 0.3.0 (opencode 세션)
 
 사용자가 `/var/folders` 쓰기 차단을 열자 cartograph가 샌드박스에서 실행 가능해져,
@@ -153,7 +176,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-09 (통합 검증 전체 그린 — cartograph 0.10.1·dartograph 0.5.0·isthmus 0.3.0)_
+_Last updated: 2026-09-09 (limitationScopes 양성 사례 종단 실측 — 스코프 실발행·채널 단위 완화, Blockers 1 종결)_
 
 ## Goal
 
@@ -223,6 +246,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #33 `f33d31b`(이번 세션): README 영문 전환 + 퇴고한 한글본 `README.ko.md` 분리
   (cartograph 관례, tarball 동봉). GLM 리뷰로 영문 문법·양 문서 대조·기술 정합성 점검.
 - PR #34 `92b160b`(이번 세션): 0.3.0 릴리스 준비와 npm 발행(발행·검증 기록은 위 절).
+- PR #43(이번 세션): `verify-limitation-scopes.mjs` 스코프 양성 종단 검증(인과 대조 포함)과
+  사용법 테스트, RESEARCH 실측 절·README 양문·scripts AGENTS 안내. Blockers 1 완전 종결.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -297,11 +322,14 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   억제 3·stale 0·코드 0, 손상 파일 코드 2)가 포함됐다.
 - 통합 검증 그린: roundtrip·공개 플러그인 모두 cartograph 0.10.1 + dartograph 0.5.0 +
   isthmus 0.3.0으로 통과(세부·스코프 실측은 최상단 절).
+- 스코프 dogfood: `verify-limitation-scopes.mjs` 통과 — 양성 스코프 실발행과 채널 단위
+  완화 종단(동일 버전 조합, 2026-09-09 세션 최상단 절).
 - PR #18~#41 전부 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
 - GLM 리뷰 기록: #18(11건 중 8건 채택), #29(F1~F4 채택), #33(영문 퇴고 — 과장 지적
-  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영). 전부 packet-review
-  files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은 합의 원문 전사라
-  생략(사유 기록).
+  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영), #43(빌드 타임아웃·
+  스키마 가드·인과 대조 채택, 이슈 순서·default 의미론·버전 하한은 실측·코드로 기각).
+  전부 packet-review files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은
+  합의 원문 전사라 생략(사유 기록).
 - 0.3.0 발행 검증은 위 "0.3.0 발행 완료" 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
   시점 기록을 본다.
 - Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
@@ -314,11 +342,11 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 배포 blocker는 없다. 0.3.0까지 발행을 마쳤고 통합 검증도 전체 그린이다.
 
-1. **완화 범위 — 구현 완료, 정착 대기.** target 절반은 #18, 파일·채널 절반은 #25의
+1. ~~**완화 범위**~~ — **완전 종결(2026-09-09).** target 절반은 #18, 파일·채널 절반은 #25의
    선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
-   0.2.0/cartograph 0.9.0으로 양쪽 배포됐다. 남은 것: 실제 producer 실행에서 스코프
-   신고가 얼마나 덮이는지 실측(공개 플러그인 재검증), 스코프 없는 공백의 target 전체
-   완화는 설계대로 남는다.
+   0.2.0/cartograph 0.9.0으로 양쪽 배포됐다. 남아 있던 양성 실측(실제 producer의 스코프
+   발행 + 채널 단위 완화 종단)을 `verify-limitation-scopes.mjs`로 완료했다(최상단 절).
+   스코프 없는 공백의 target 전체 완화는 설계대로 유지된다.
 2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
    clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
    `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고). 남은 것:
@@ -392,19 +420,15 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **limitationScopes 양성 사례 실측**(선택): `opaque-handler-bodies:` 형태(채널은
-   알려지고 본문은 미스캔) fixture나 실 프로젝트에서 스코프 실제 등장과 isthmus의
-   채널 단위 완화까지 확인한다. 음성 사례(상한 불가 시 null)와 발행 조건은 소스·
-   corpus 실측으로 확인됐다(최상단 절).
-2. **호스트 dartograph 업그레이드**(사용자): `dart pub global activate dartograph 0.5.0`
+1. **호스트 dartograph 업그레이드**(사용자): `dart pub global activate dartograph 0.5.0`
    — 샌드박스 PUB_CACHE는 완료, 호스트 `~/.pub-cache`만 남음.
-3. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
+2. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
    isthmus 단독, additive.
-4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
+3. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
    지금은 충분하다고 판단.
-5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
-6. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+5. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
@@ -421,8 +445,9 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 전체 통과했고(roundtrip + 공개 플러그인 + ObjC clang USR 사실 + 스코프 발행 조건),
 dartograph#38도 닫혔어. 로컬 .gitignore 미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 limitationScopes 양성 사례 실측(선택),
-SARIF 리포터, 호스트 dartograph 업그레이드(사용자) 순이야.
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 호스트 dartograph 업그레이드(사용자),
+SARIF 리포터 순이야. limitationScopes 양성 실측은 완료됐어(verify-limitation-scopes.mjs,
+Blockers 1 종결).
 샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
 자매 저장소 쓰기와 isthmus issue 코멘트·닫기는 토큰 403이라 사용자 실행으로 넘기고,
 워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는
