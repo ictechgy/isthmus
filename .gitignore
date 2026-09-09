@@ -15,6 +15,13 @@ npm-debug.log*
 # 로컬 상태
 .omc/
 .claude/settings.local.json
+.serena/
+
+# Phase 0 실험 안의 Dart/Swift 산출물
+experiments/**/.dart_tool/
+experiments/**/build/
+experiments/**/.build/
+experiments/**/pubspec.lock
 
 # 비밀
 .env
