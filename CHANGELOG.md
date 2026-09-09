@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-09
+
 ### Added
 
 - `check --baseline <file>`·`--update-baseline <file>` (PRD v0.1의 베이스라인 목표).
@@ -20,6 +22,8 @@
 - diff의 introduced/resolved 이슈 내부 비교 키를 베이스라인과 공유하는 평탄한 논리 키
   (code·target·channel·method)로 단일화. 내용과 결정성은 그대로지만 code가 서로의
   접두사인 경계에서 배열 순서는 이전 버전 출력과 한 번 달라질 수 있다
+- 저장소와 npm의 대표 README를 영어로 전환하고, 퇴고한 한글본을 `README.ko.md`로
+  분리해 상호 링크했다. npm 패키지에도 두 문서를 모두 싣는다
 
 ## [0.2.0] - 2026-09-08
 

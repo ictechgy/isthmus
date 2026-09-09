@@ -28,8 +28,9 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 ## 상태
 
-**0.2.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
-cartograph용 외부 보존 근거 왕복을 구현했다. 외부 입력·혼합 target·그래프 크기·
+**0.3.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
+cartograph용 외부 보존 근거 왕복, 인정된 이슈를 논리 이슈 식별자로 억제하되 증거는
+보존하는 check 베이스라인을 구현했다. 외부 입력·혼합 target·그래프 크기·
 Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했고, 조인하지 못한 사실은 소비자
 쪽에서 다시 세고 근거를 만들지 못한 보존 대상은 조용히 사라지는 대신 실패로 보고한다.
 수신 측이 신고한 분석 공백은 불일치가 아니라 판정 불가로 보고한다. 한계는 신고 문서의
