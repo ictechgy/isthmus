@@ -1,5 +1,28 @@
 # Handoff
 
+## 2026-09-09 — Blockers 3 수정 실측과 Swift toolchain 고장 발견 (opencode 세션)
+
+**dartograph는 샌드박스에서 실행 가능했다** — `dart pub global activate dartograph 0.5.0`이
+격리 `PUB_CACHE`(`…/homes/opencode/<id>/.pub-cache`)에 설치되고 `bridges`가 정상 동작한다.
+이전 기록 "샌드박스에서 실행 불가"는 호스트 `~/.pub-cache`만 본 오판이었다.
+
+합성 pub workspace로 Blockers 3 공유 루트 수정을 종단 실측했다(전부 통과):
+자동 감지(`resolution: workspace` → 조상 `workspace:` 루트)는 project=워크스페이스 루트 +
+location 재기준화(`packages/<pkg>/lib/…`), `--project` 명시도 동일, 비-workspace 패키지는
+자기 루트 유지, orphan은 `pub-workspace-root-not-found` limitation과 함께 폴백(조용하지
+않음). 이어서 isthmus check 조인 exit 0·matched 1/1·이슈 0, retentions 1건(재기준
+evidence 경로 보존), project 불일치 음성은 코드 2 거부. **cartograph 실측 문서가 기록한
+"문서 손 rewriting" 우회가 dartograph 쪽에서 불필요해졌음을 실증했다.** swift 문서는
+합성(hand-synthetic)이었다 — 수신 측 실문서는 아래 toolchain 장애로 보류.
+
+**호스트 Swift toolchain이 깨져 있다**: CLT 컴파일러는 6.3.3인데 SDK 26.5의 stdlib 모듈이
+6.3.2(15.4 SDK는 6.1)라 `swift` hello-world 실행조차 "this SDK is not supported by the
+compiler"로 실패한다. 디스크 파일 버전 사실이라 샌드박스 원인이 아니고, `swift build`
+전반이 불가하다. 이로써 **차단된 것**: verify-cartograph-roundtrip, verify-public-flutter-plugin,
+cartograph 0.10.1의 limitationScopes 실측(bridges는 인덱스 스토어 필수). brew cartograph
+0.10.1 설치 자체는 확인했다. toolchain 수리는 사용자 판단(호스트 시스템 변경은 세션에서
+시도하지 않는다). dartograph#38은 사용자가 닫았다.
+
 ## 2026-09-09 — Blockers 3 완전 종결 (opencode 세션)
 
 dartograph가 **#52(merged, 0.5.0으로 pub.dev 발행)**로 공유 루트 (a)+(b)를 모두
@@ -200,9 +223,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - 노출하는 오류 메시지는 정적 문자열·숫자만 보간한다.
 - **producer 릴리스는 cartograph 0.10.1(realpath 수정)·dartograph 0.5.0(공유 루트,
   pub.dev 2026-09-09 확인)**이다. 이 머신 설치본: brew cartograph 0.10.1(업그레이드
-  확인, 2026-09-09), dartograph 0.2.0(샌드박스에서 실행 불가 — 0.5.0 업그레이드
-  여부는 미확인). 과거 0.6.0·0.2.0에서 두 통합 검증 스크립트를 통과했다.
-  README/스크립트의 최소 버전 게이트(cartograph 0.5.3·dartograph 0.1.1)는 그대로다.
+  확인), 샌드박스 `PUB_CACHE` dartograph 0.5.0(활성화·실행 확인 — 호스트
+  `~/.pub-cache` 상태는 별개). 단 **호스트 Swift toolchain 고장**(컴파일러 6.3.3 vs
+  SDK 6.3.2)으로 인덱스 스토어 빌드가 불가해 cartograph bridges 계열 검증은 차단 —
+  위 "toolchain 고장 발견" 절 참조. 과거 0.6.0·0.2.0에서 두 통합 검증 스크립트를
+  통과했다. README/스크립트의 최소 버전 게이트(cartograph 0.5.3·dartograph 0.1.1)는
+  그대로다.
 - PR #12에서 의식적으로 제외한 항목: 모노레포 project 재기준화, ObjC 진단 정책, retentions
   다중 caller evidence, query `notFound` 종료 코드, check 베이스라인, RN/Kotlin/EventChannel.
 - Windows CI는 보류: `src/script-security.test.ts` 하네스의 shebang·chmod·TMPDIR 의존 때문이다.
@@ -309,12 +335,12 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **마무리 사용자 액션**: dartograph#38 닫기(isthmus 계약 갱신 완료 — PR #37),
-   dartograph 0.5.0 업그레이드(`dart pub global activate dartograph`), 두 producer
-   업그레이드 후 통합 검증 스크립트 재실행(brew cartograph는 0.10.1로 업그레이드
-   확인됐다). 재실행하면 producer 스코프 신고 실측(limitationScopes)과 ObjC 재현
-   절차의 `/tmp` 제약 소멸을 함께 확인한다 — 샌드박스는 dartograph 실행 불가라
-   사용자 환경에서만 가능하다.
+1. **통합 검증 재실행은 toolchain 수리 후**: 호스트 Swift toolchain(컴파일러 6.3.3 vs
+   SDK 6.3.2)이 깨져 `swift build`가 불가하다 — 수리는 사용자 판단(호스트 시스템
+   변경). 수리 후 `verify-cartograph-roundtrip.mjs`(fixture: cartograph 저장소
+   `Fixtures/FalsePositiveCorpus`, swift build 선행)·`verify-public-flutter-plugin.mjs`
+   재실행과 cartograph 0.10.1 limitationScopes 실측(스코프 신고 커버리지)을 진행한다.
+   dartograph 쪽 Blockers 3 실측은 완료(위 절) — 재실행 불필요.
 2. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
    실측에서 얼마나 덮이는지 확인(verify-public-flutter-plugin 재실행 포함).
 3. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
