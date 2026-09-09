@@ -29,7 +29,8 @@
     "dist",
     "Skills",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.ko.md"
   ],
   "publishConfig": {
     "access": "public"
