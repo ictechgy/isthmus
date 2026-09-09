@@ -110,6 +110,8 @@
     "errors": 1,
     "matchedChannels": 1,
     "matchedMethods": 1,
+    "observedFacts": 10,
+    "observedLimitations": 7,
     "warnings": 2
   },
   "version": 1

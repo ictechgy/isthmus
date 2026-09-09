@@ -143,7 +143,14 @@ function reportFixture(): CheckReport {
   return {
     format: 'isthmus-check',
     version: 1,
-    summary: { errors: 1, warnings: 1, matchedChannels: 0, matchedMethods: 0 },
+    summary: {
+      errors: 1,
+      warnings: 1,
+      matchedChannels: 0,
+      matchedMethods: 0,
+      observedFacts: 3,
+      observedLimitations: 0,
+    },
     issues: [
       {
         severity: 'error',

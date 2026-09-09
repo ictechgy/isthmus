@@ -86,6 +86,8 @@ export interface JoinLimitation {
 /** 검증된 교환 문서들의 논리 조인 결과다. */
 export interface BridgeJoinResult {
   readonly deferred: boolean;
+  /** 입력 문서 전체가 관찰한 fact 수다. 조인 여부와 무관한 관찰량이다. */
+  readonly observedFacts: number;
   readonly matchedChannels: readonly MatchedChannel[];
   readonly unregisteredChannelCreations: readonly UnregisteredChannelCreation[];
   readonly registrationsWithoutCreations: readonly RegistrationWithoutCreation[];
@@ -119,7 +121,13 @@ export function joinBridgeDocuments(
   validateProjects(documents);
   validatePlatformComposition(documents);
   const limitations = collectLimitations(documents);
-  if (documents.some(hasMixedTargets)) return emptyJoinResult(limitations);
+  const observedFacts = documents.reduce(
+    (total, document) => total + document.facts.length,
+    0,
+  );
+  if (documents.some(hasMixedTargets)) {
+    return emptyJoinResult(limitations, observedFacts);
+  }
   const groups = collectChannelGroups(documents);
   const matchedChannels = [...groups.values()]
     .filter((group) => group.creations.length > 0 && group.registrations.length > 0)
@@ -160,6 +168,7 @@ export function joinBridgeDocuments(
     .sort(compareMethodKeys);
   return {
     deferred: false,
+    observedFacts,
     matchedChannels,
     unregisteredChannelCreations,
     registrationsWithoutCreations,
@@ -218,10 +227,14 @@ function limitationTarget(document: BridgeFactsDocument): BridgeTarget | null {
   return hasMixedTargets(document) ? null : document.target;
 }
 
-/** 안전하게 조인을 보류하면서 입력 한계만 전달한다. */
-function emptyJoinResult(limitations: readonly JoinLimitation[]): BridgeJoinResult {
+/** 안전하게 조인을 보류하면서 입력 한계만 전달한다. 관찰량은 보존한다. */
+function emptyJoinResult(
+  limitations: readonly JoinLimitation[],
+  observedFacts: number,
+): BridgeJoinResult {
   return {
     deferred: true,
+    observedFacts,
     matchedChannels: [],
     unregisteredChannelCreations: [],
     registrationsWithoutCreations: [],

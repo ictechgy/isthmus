@@ -243,6 +243,12 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
 - `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
   reason
 
+The `summary` carries the issue counts plus observation volume: `observedFacts` is the total
+number of facts across all input documents and `observedLimitations` counts the reported
+analysis limitations. This keeps a project with no bridges and a run that observed nothing
+from producing indistinguishable reports — an `observedFacts` of 0 means the producers saw
+nothing to describe.
+
 The `-unverified` kinds come from limitations in receiver-side documents. For example, in a
 plugin whose Flutter handler is written in Objective-C, cartograph reports
 `objective-c-sources:` and may fail to enumerate the handler facts completely. Asserting

@@ -188,6 +188,8 @@ test('적용은 맞은 이슈만 표시하고 요약을 다시 계산한다', ()
     staleBaselineEntries: 0,
     matchedChannels: 0,
     matchedMethods: 0,
+    observedFacts: 3,
+    observedLimitations: 0,
   });
   assert.deepEqual(
     applied.issues.map(({ code, suppressed }) => [code, suppressed ?? false]),
@@ -338,6 +340,8 @@ function makeReport(issues: readonly CheckIssue[]): CheckReport {
       warnings: issues.filter(({ severity }) => severity === 'warning').length,
       matchedChannels: 0,
       matchedMethods: 0,
+      observedFacts: issues.length,
+      observedLimitations: 0,
     },
     issues,
     limitations: [],

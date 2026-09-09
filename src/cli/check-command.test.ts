@@ -28,6 +28,8 @@ test('check가 실제 교환 파일을 읽어 JSON 보고서를 출력한다', a
     errors: 1,
     matchedChannels: 1,
     matchedMethods: 1,
+    observedFacts: 10,
+    observedLimitations: 7,
     warnings: 2,
   });
 });
@@ -635,6 +637,8 @@ test('check --baseline은 맞은 이슈를 억제하되 사실과 증거를 보�
     staleBaselineEntries: 0,
     matchedChannels: 1,
     matchedMethods: 1,
+    observedFacts: 10,
+    observedLimitations: 7,
   });
   const suppressed = report.issues.find(
     (issue: { suppressed?: boolean }) => issue.suppressed === true,

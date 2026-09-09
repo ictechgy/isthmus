@@ -1,5 +1,16 @@
 # Handoff
 
+## 2026-09-10 — check summary 관찰량 노출·오류 분류 경계 분리 (opencode 세션)
+
+- **PR #49 (main `db9ee3a`)**: 지연 리뷰 F4(a)(b) 반영 — 베이스라인 인코딩을 쓰기 try
+  밖으로, JSON 파싱과 문서 검증의 try 분리(오분류 잠재 경로 제거).
+- **이번 PR — Blockers 6 종결**: `isthmus-check` summary에 `observedFacts`(입력 문서
+  fact 총수)·`observedLimitations`(한계 수) 추가(호환 변경). 조인 결과
+  (`BridgeJoinResult.observedFacts`)가 관찰량을 들고 있어 보류(mixed-targets) 결과도
+  관찰량을 보존한다. Phase 0 골든 check.json 재생성(observedFacts 10·
+  observedLimitations 7). "브리지가 없는 프로젝트"와 "아무것도 관찰하지 못한 실행"이
+  이제 구분된다.
+
 ## 2026-09-10 — SARIF 리포터·gitignore 커밋·지연 도착 리뷰 후속 (opencode 세션)
 
 - **PR #46**: 사용자 소유였던 `.gitignore` 미커밋 수정을 약속대로 별도 브랜치로 커밈
@@ -403,9 +414,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
    후보다(자동 prune+stale로 위생 확보 판단).
 5. **retentions 대표 증거**: `invocations[0]`만 evidence로 실린다. external-retentions v0 형식
    변경이라 cartograph 합의가 필요하다.
-6. **관찰량 미노출**: `isthmus-check`의 `summary`에 입력 fact 수·한계 수가 없어, "브리지가 없는
-   프로젝트"와 "아무것도 관찰하지 못한 실행"이 같은 출력을 낸다. isthmus 소유 형식이라 국지적으로
-   고칠 수 있다.
+6. ~~**관찰량 미노출**~~ — **닫힘(2026-09-10)**: `isthmus-check` summary에
+   `observedFacts`·`observedLimitations` 추가(호환 변경). 조인 보류 결과도 관찰량
+   보존. Phase 0 골든 재생성 포함.
 
 RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계약을 먼저 합의한다.
 
@@ -461,20 +472,15 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **오류 분류 잠재 경로 2건 수정**(지연 리뷰 F4(a)(b)): `writeBaselineDocument`에서
-   인코딩을 try 밖으로, `readBridgeDocuments`·`readBaselineDocument`에서 `JSON.parse`만
-   별도 try로(검증기 예외의 오분류 차단).
-2. **관찰량 미노출 (Blockers 6)**: `isthmus-check` summary에 입력 fact 수·한계 수 추가.
-   isthmus 소유 형식이라 국지 수정 가능.
-3. **retentions 대표 증거 (Blockers 5)**: `invocations[0]`만 실림 — external-retentions
+1. **retentions 대표 증거 (Blockers 5)**: `invocations[0]`만 실림 — external-retentions
    v0 형식 변경이라 cartograph 합의 필요.
-4. **ObjC 무인덱스 환경 신원 (Blockers 2 잔여)**: 인덱스 없이 빌드된 환경의 핸들러
+2. **ObjC 무인덱스 환경 신원 (Blockers 2 잔여)**: 인덱스 없이 빌드된 환경의 핸들러
    식별, SCIP fallback 문법이 RESEARCH 후보.
-5. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
+3. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
-6. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
+4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-7. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,

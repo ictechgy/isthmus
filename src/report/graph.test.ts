@@ -184,6 +184,7 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
 test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {
   const joined: BridgeJoinResult = {
     deferred: false,
+    observedFacts: 0,
     matchedChannels: [
       {
         target: 'flutter',
@@ -218,6 +219,7 @@ test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한
 test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합하지 않는다', () => {
   const joined: BridgeJoinResult = {
     deferred: false,
+    observedFacts: 0,
     matchedChannels: [],
     unregisteredChannelCreations: [],
     registrationsWithoutCreations: [],
@@ -280,6 +282,7 @@ test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', (
   };
   const joined: BridgeJoinResult = {
     deferred: false,
+    observedFacts: 0,
     matchedChannels: [
       {
         target: 'flutter',
@@ -326,6 +329,7 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
   const location = { path: 'ios/Plugin.swift', line: 5, column: 7 };
   const joined: BridgeJoinResult = {
     deferred: false,
+    observedFacts: 0,
     matchedChannels: [],
     unregisteredChannelCreations: [],
     registrationsWithoutCreations: [],
