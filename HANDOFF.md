@@ -2,7 +2,7 @@
 
 ## 2026-09-10 — 구조·보안·성능 리뷰와 베이스라인 원자 쓰기 경화 (opencode 세션)
 
-사용자 요청으로 제품 코드 전량 리뷰(실측 포함)를 하고 발견 1건을 수정했다.
+사용자 요청으로 제품 코드 전량 리뷰(실측 포함)를 하고 발견 1건을 수정했다(PR #44).
 기록은 RESEARCH "구조·보안·성능 리뷰(2026-09-10)" 절 — 성능 실측(check 87k facts
 0.17s, graph 92.5k 간선 0.16s 등), 확인된 강점, 발견·처분 전부 거기에 있다.
 
@@ -264,6 +264,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #34 `92b160b`(이번 세션): 0.3.0 릴리스 준비와 npm 발행(발행·검증 기록은 위 절).
 - PR #43(이번 세션): `verify-limitation-scopes.mjs` 스코프 양성 종단 검증(인과 대조 포함)과
   사용법 테스트, RESEARCH 실측 절·README 양문·scripts AGENTS 안내. Blockers 1 완전 종결.
+- PR #44(이번 세션): 구조·보안·성능 리뷰(2026-09-10) 반영 — 베이스라인 원자 쓰기 경화
+  (`src/cli/atomic-write.ts`, 무작위 임시 이름·`wx` 배타 생성, 테스트 4종)와 GRAPH-EXCHANGE
+  `limitations` 문자열 동작 명문화. 리뷰 기록은 RESEARCH 해당 절.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
