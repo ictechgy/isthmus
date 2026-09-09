@@ -167,12 +167,16 @@ async function readBaselineDocument(
   if (text.length > MAX_INPUT_TEXT_LENGTH) {
     throw new BridgeBaselineLimitError();
   }
+  // JSON 구문 오류와 문서 검증 실패를 같은 try로 감싸면 검증기의 예외가
+  // 구문 오류로 오분류된다. 파싱과 검증을 나눠 분류 경계를 지킨다.
+  let parsed: unknown;
   try {
-    return parseBaselineDocument(JSON.parse(text));
+    parsed = JSON.parse(text);
   } catch (error) {
     if (isJsonParseFailure(error)) throw new BridgeBaselineJsonError();
     throw error;
   }
+  return parseBaselineDocument(parsed);
 }
 
 /**
@@ -203,8 +207,10 @@ async function writeBaselineDocument(
     }
     throw error;
   }
+  // 인코딩 결함은 쓰기 실패가 아니라 내부 오류로 분류되어야 한다.
+  const encoded = encodeBaselineDocument(document);
   try {
-    await writeTextFile(path, encodeBaselineDocument(document));
+    await writeTextFile(path, encoded);
   } catch {
     throw new BridgeBaselineWriteError();
   }
@@ -272,12 +278,20 @@ export async function readBridgeDocuments(
     ) {
       throw new BridgeInputLimitError(inputPosition);
     }
+    // JSON 구문 오류와 문서 검증 실패를 같은 try로 감싸면 검증기의 예외가
+    // 구문 오류로 오분류된다. 파싱과 검증을 나눠 분류 경계를 지킨다.
+    let parsed: unknown;
     try {
-      documents.push(parseBridgeFactsDocument(JSON.parse(text)));
+      parsed = JSON.parse(text);
     } catch (error) {
       if (isJsonParseFailure(error)) {
         throw new BridgeInputJsonError(inputPosition);
       }
+      throw error;
+    }
+    try {
+      documents.push(parseBridgeFactsDocument(parsed));
+    } catch (error) {
       if (error instanceof BridgeFactsValidationError) {
         throw new BridgeInputContractError(inputPosition, error.message);
       }
