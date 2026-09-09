@@ -1,5 +1,16 @@
 # Handoff
 
+## 2026-09-09 — 0.3.0 발행 완료 (opencode 세션)
+
+PR #34로 0.3.0을 준비(`92b160b`)하고 사용자가 `npm publish --otp`로 발행했다.
+check 베이스라인(#29)과 영문 README·README.ko.md 분리(#33, tarball 동봉)가 포함된다.
+발행 후 검증: registry latest 0.3.0(비동기 반영 — 직후 조회는 0.2.0, 약 25초 뒤 반영),
+tarball의 `dist`·영문/한글 README·SKILL.md가 main 빌드와 바이트 일치, package metadata
+0.3.0 확인. 발행본 CLI로 `--version` 0.3.0, phase-0 check 코드 0(error 1·warning 2)·
+`--strict` 코드 1, **베이스라인 왕복**(update가 isthmus-baseline v1 3항목 기록·이번
+실행 미억제 → strict+baseline 코드 0·suppressed 3·stale 0·전 이슈 `suppressed` 표시)
+까지 확인했다. README 영문본이 npm 페이지 대표 문서가 됐다.
+
 ## 2026-09-08 — check 베이스라인과 2차 흡수 조사 (opencode 세션)
 
 PR #29 `098c8ef`로 PRD v0.1 목표의 베이스라인(Blockers 4)을 닫았다. isthmus 소유
@@ -45,7 +56,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-08 (check 베이스라인 #29 머지, 0.2.0 발행 완료)_
+_Last updated: 2026-09-09 11:12 KST (0.3.0 발행 및 발행본 검증 완료)_
 
 ## Goal
 
@@ -54,9 +65,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- 0.2.0 릴리스 소스는 `06aa96d`(PR #26)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
-- **PR #29(check 베이스라인)는 미발행** — CHANGELOG Unreleased에 쌓여 있다. 다음 발행은
-  0.3.0(기능 추가)이 자연스럽고 시점은 사용자 결정.
+- 0.3.0 릴리스 소스는 `92b160b`(PR #34)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- npm `isthmus-cli@0.3.0`이 최신 발행본이고 registry latest도 0.3.0이다(2026-09-09 발행,
+  tarball·발행본 검증은 위 "0.3.0 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
 - npm `isthmus-cli@0.2.0`이 최신 발행본이고 registry latest도 0.2.0이다. 발행본 `dist`와
   README가 `main` 빌드와 완전히 일치함을 tarball 대조로 확인했고, 발행본 CLI의 버전과 실제
   Dart→Swift 외부 보존 왕복을 확인했고, 설치본 49개 파일도 공개 tarball과 일치했다.
@@ -277,18 +288,15 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
    저장소 쓰기 403, isthmus issue도 생성 외 코멘트·닫기 403). 답변이 오면 GRAPH-EXCHANGE
    project 규칙에 realpath 문구를 넣는 동시 docs PR을 isthmus에서 진행한다. 초안
    isthmus#30은 열려 있으니 정리(코멘트·닫기)는 사용자가.
-2. **0.3.0 발행 결정**: CHANGELOG Unreleased에 check 베이스라인(#29)이 쌓여 있다.
-   발행 요청 시 브랜치/`git status`부터 확인하고 `--otp`로 사용자가 npm을 직접 실행한다
-   (PUT 404는 인증 문제 — npm login 먼저).
-3. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
+2. **producer 스코프 신고 실측**: cartograph 0.9.0의 `limitationScopes`가 공개 플러그인
    실측에서 얼마나 덮이는지 확인(verify-public-flutter-plugin 재실행 포함).
-4. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
+3. **SARIF 리포터**(RESEARCH 흡수 후보): check 결과의 GitHub code scanning 통합.
    isthmus 단독, additive.
-5. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
+4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale 계수로
    지금은 충분하다고 판단.
-6. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.2.0 모두 isthmus는
+5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
-7. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
+6. `.gitignore` 미커밋 수정은 사용자 소유다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 경로는 `/tmp`
@@ -297,11 +305,11 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-0.2.0까지 발행을 마쳤고 `main`은 `098c8ef`(PR #29, check 베이스라인)야. 베이스라인은
-미발행 상태(CHANGELOG Unreleased → 0.3.0 후보)다. 완화 범위 합의는 cartograph#64가
-닫히며 0.2.0·cartograph 0.9.0으로 구현 완료. 로컬 .gitignore 미커밋 수정을 보존해줘.
+0.3.0까지 발행을 마쳤고(check 베이스라인 + 영문 README 포함) `main`은 `92b160b`(PR #34,
+0.3.0 릴리스 소스)야. 완화 범위 합의는 cartograph#64가 닫히며 0.2.0·cartograph 0.9.0으로
+구현 완료. 로컬 .gitignore 미커밋 수정을 보존해줘.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 Blockers 3 합의 issue 등록(본문
-준비됨), producer 스코프 신고 실측, SARIF 리포터 순이야. 샌드박스에서 GLM 리뷰는
-packet-review files 모드로 해줘(--diff 모드는 깨져 있음). 자매 저장소 쓰기는 토큰
-403이라 사용자 실행으로 넘긴다.
+(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 Blockers 3 합의 답변 처리
+(cartograph#72·dartograph#38), producer 스코프 신고 실측, SARIF 리포터 순이야.
+샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
+자매 저장소 쓰기는 토큰 403이라 사용자 실행으로 넘긴다.
