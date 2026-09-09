@@ -197,6 +197,11 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
   형식으로 내보낸다(그쪽 HANDOFF #35 기록). isthmus `check`에 SARIF 리포터를 추가하면
   GitHub code scanning·PR annotation으로 결과가 흐른다. additive이고 isthmus 소유라
   JSON 계약과 독립이다.
+- **구현(2026-09-10)**: `check --format sarif`(기본 `json`). 규칙 id=check 진단 코드,
+  주 위치=첫 증거 끝점(프로젝트 상대 경로가 저장소 경로와 직결), 나머지 끝점=
+  relatedLocations, 베이스라인 억제=`external` suppression, 논리 키 해시=
+  `partialFingerprints.isthmusIssueV1`(줄 이동에 강한 GitHub 중복 판정). 결정적
+  정렬 인코딩 유지.
 
 ### Blockers 3 (project 정규화) — realpath 선행
 

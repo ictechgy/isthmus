@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `check --format sarif`: 같은 조인 결과를 SARIF 2.1.0으로 내는 additive 출력(기본값
+  `json`은 그대로). 이슈 코드가 규칙 id, 첫 증거 끝점이 주 위치, 나머지 끝점이 관련
+  위치가 되고 베이스라인 억제 이슈는 `external` suppression으로 전달된다. 논리 이슈
+  식별자의 `partialFingerprints` 해시로 소스 줄 이동에도 중복 판정이 안정적으로
+  유지된다. `--strict`·`--baseline`·`--update-baseline`과 조합 가능하다. GitHub code
+  scanning 업로드용.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

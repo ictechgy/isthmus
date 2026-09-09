@@ -48,10 +48,75 @@ test('하위 명령이 없으면 사용법과 종료 코드 64를 반환한다',
     standardOutput: '',
     standardError:
       'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-      + '[more...] [--strict] [--baseline <isthmus-baseline.json>] '
+      + '[more...] [--strict] [--format json|sarif] '
+      + '[--baseline <isthmus-baseline.json>] '
       + '[--update-baseline <isthmus-baseline.json>]\n',
     exitCode: 64,
   });
+});
+
+test('check --format sarif는 결과를 SARIF 2.1.0 로그로 출력한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--format', 'sarif'],
+    (path) => readFile(path, 'utf8'),
+    undefined,
+    undefined,
+    '0.0.0-test',
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.standardError, '');
+  const log = JSON.parse(result.standardOutput);
+  assert.equal(log.version, '2.1.0');
+  assert.equal(log.runs.length, 1);
+  assert.equal(log.runs[0].tool.driver.name, 'isthmus');
+  assert.equal(log.runs[0].tool.driver.version, '0.0.0-test');
+  assert.equal(log.runs[0].results.length, 3);
+  const codes = new Set(
+    log.runs[0].results.map((entry: { ruleId: string }) => entry.ruleId),
+  );
+  assert.equal(codes.has('unhandled-invocation'), true);
+  assert.equal(codes.has('handler-without-invocation'), true);
+  for (const result_ of log.runs[0].results) {
+    assert.equal(result_.locations.length, 1);
+    assert.equal(Number.isInteger(result_.locations[0].physicalLocation.region.startLine), true);
+    assert.equal(result_.partialFingerprints.isthmusIssueV1.length > 0, true);
+  }
+});
+
+test('check --format sarif는 strict 판정을 그대로 유지한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--format', 'sarif', '--strict'],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.standardOutput).runs[0].results.length, 3);
+});
+
+test('지원하지 않는 형식 값은 파일을 읽기 전에 종료 코드 64로 거부한다', async () => {
+  let didReadFile = false;
+  const result = await runCheckCommand(
+    ['check', 'dart.json', 'swift.json', '--format', 'xml'],
+    async () => {
+      didReadFile = true;
+      return '';
+    },
+  );
+
+  assert.equal(result.exitCode, 64);
+  assert.equal(didReadFile, false);
+});
+
+test('형식 인자가 없거나 중복되면 종료 코드 64를 반환한다', async () => {
+  for (const arguments_ of [
+    ['check', 'dart.json', 'swift.json', '--format'],
+    ['check', 'dart.json', 'swift.json', '--format', 'sarif', '--format', 'json'],
+  ]) {
+    const result = await runCheckCommand(arguments_, async () => '');
+    assert.equal(result.exitCode, 64);
+    assert.equal(result.standardOutput, '');
+  }
 });
 
 test('입력 파일이 두 개보다 적으면 종료 코드 64를 반환한다', async () => {

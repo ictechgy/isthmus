@@ -99,6 +99,24 @@ isthmus --version
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
+### SARIF 출력
+
+check 결과를 GitHub code scanning(또는 그 밖의 SARIF 2.1.0 소비자)에 올리려면
+isthmus-check JSON 대신 SARIF를 요청한다.
+
+```bash
+isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sarif
+```
+
+기본값은 `--format json`으로 버전이 붙은 isthmus-check 문서를 유지한다. SARIF는 같은
+조인 결과의 additive·isthmus 소유 렌더링이다. 모든 이슈는 check 진단 코드를 규칙 id로
+하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 저장소 경로와
+바로 대응한다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
+`external` suppression을 달고 나온다. 결과마다 논리 이슈 식별자(code·target·channel·
+method)의 `partialFingerprints` 해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인
+억제와 같은 기준으로 살아남는다. `--strict`·`--baseline`·`--update-baseline`은 두 형식
+모두와 조합되고 문서화된 종료 코드 동작을 유지한다.
+
 ### 베이스라인
 
 현재 발견된 이슈를 인정해 베이스라인으로 기록하고, 다음 실행부터 그 파일을 적용한다.

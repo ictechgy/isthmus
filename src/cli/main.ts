@@ -91,7 +91,14 @@ async function dispatchCommand(
 ): Promise<CommandResult> {
   switch (commandArguments[0]) {
     case 'check':
-      return runCheckCommand(commandArguments, readTextFile, writeTextFile);
+      // SARIF driver에만 필요하므로 메타데이터 부재는 json 보고서를 막지 않는다.
+      return runCheckCommand(
+        commandArguments,
+        readTextFile,
+        writeTextFile,
+        undefined,
+        await readPackageVersion(),
+      );
     case 'graph':
       return runGraphCommand(commandArguments, readTextFile);
     case 'diff':
