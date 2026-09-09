@@ -35,6 +35,8 @@ test('조인 결과의 오류·경고·정상 연결 수를 요약한다', () =>
     warnings: 2,
     matchedChannels: 1,
     matchedMethods: 1,
+    observedFacts: 10,
+    observedLimitations: 7,
   });
 });
 

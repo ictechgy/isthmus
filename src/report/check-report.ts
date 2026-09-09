@@ -14,6 +14,10 @@ export interface CheckSummary {
   readonly warnings: number;
   readonly matchedChannels: number;
   readonly matchedMethods: number;
+  /** 입력 문서 전체가 관찰한 fact 수다. 0이면 아무것도 관찰하지 못한 실행이다. */
+  readonly observedFacts: number;
+  /** 이 실행에 보고된 분석 한계 수다. */
+  readonly observedLimitations: number;
   /** 베이스라인이 적용된 실행에서만 실리는 억제된 이슈 수다. */
   readonly suppressed?: number;
   /** 베이스라인이 적용된 실행에서만 실리는, 현재 이슈와 맞지 않는 항목 수다. */
@@ -120,6 +124,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       warnings: issues.filter(({ severity }) => severity === 'warning').length,
       matchedChannels: joined.matchedChannels.length,
       matchedMethods: joined.matchedMethods.length,
+      observedFacts: joined.observedFacts,
+      observedLimitations: joined.limitations.length,
     },
     issues,
     limitations: joined.limitations,

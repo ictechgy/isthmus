@@ -224,6 +224,11 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
   핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
 - `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
 
+`summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 fact
+총수이고 `observedLimitations`는 보고된 분석 한계 수다. 이로써 브리지가 없는 프로젝트와
+아무것도 관찰하지 못한 실행이 같은 보고서를 내지 않는다 — `observedFacts`가 0이면
+생산자가 서술할 것을 아무것도 보지 못했다는 뜻이다.
+
 `-unverified` 종류는 수신 측 문서의 한계에서 나온다. 예를 들어 Flutter 핸들러가
 Objective-C로 쓰인 플러그인에서 cartograph는 `objective-c-sources:`를 신고하고 핸들러
 사실을 완전히 열거하지 못할 수 있다. 이때 "핸들러 없는 호출"을 error로 단정하면 이

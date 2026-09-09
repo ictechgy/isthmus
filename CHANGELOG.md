@@ -6,6 +6,10 @@
 
 ### Added
 
+- `check` 문서 `summary`에 관찰량 추가(호환 변경): `observedFacts`(입력 문서 전체의
+  fact 총수)와 `observedLimitations`(보고된 분석 한계 수). 브리지가 없는 프로젝트와
+  아무것도 관찰하지 못한 실행이 같은 보고서를 내지 않게 한다. 조인 보류 결과도
+  관찰량은 보존한다.
 - `check --format sarif`: 같은 조인 결과를 SARIF 2.1.0으로 내는 additive 출력(기본값
   `json`은 그대로). 이슈 코드가 규칙 id, 첫 증거 끝점이 주 위치, 나머지 끝점이 관련
   위치가 되고 베이스라인 억제 이슈는 `external` suppression으로 전달된다. 논리 이슈
