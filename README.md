@@ -30,20 +30,20 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.4.0.** The 0.3.0 contract and commands — the bridge-facts version 1 parser, `check`,
-`query`, `graph`, `diff`, the external retention evidence round trip for cartograph, and
-check baselines that suppress accepted findings by logical issue identity while preserving
-their evidence — plus this cycle's additions: a SARIF 2.1.0 rendering of check results for
-GitHub code scanning (`check --format sarif`, additive, with logic-key fingerprints that
-survive source line moves), observation volume in the check summary (`observedFacts`,
-`observedLimitations`) so a project without bridges and a run that observed nothing are no
-longer indistinguishable, multi-caller retention evidence (`evidence.callers` with a
-per-retention cap and an explicit `callersOmitted` count, byte-identical for single
-callers), and usr-less `qualifiedName` identity for Objective-C handlers built without an
-index. isthmus keeps fail-closed behavior for external input, mixed targets, graph size,
-and the Dart/Swift Phase 0 extraction boundary. Facts that could not be joined are
-re-counted on the consumer side, and retention subjects whose evidence cannot be built are
-refused loudly, so neither disappears silently. Coverage gaps a receiver reports about
+**0.4.1.** Hardens 0.4.0 with structure, security, and performance review follow-ups:
+word-boundary matching for `mixed-targets`, lone surrogate rejection via `toWellFormed()`,
+a 1,000,000 caller budget for retention documents with pre-slice allocation savings, empty
+flag validation (exit 64), and atomic-write permission hardening (`0o600`).
+The 0.4.0 additions — SARIF 2.1.0 rendering of check results for GitHub code scanning
+(`check --format sarif`, additive, with logic-key fingerprints that survive source line
+moves), observation volume in the check summary (`observedFacts`, `observedLimitations`),
+multi-caller retention evidence (`evidence.callers` with a per-retention cap and an explicit
+`callersOmitted` count, byte-identical for single callers), and usr-less `qualifiedName`
+identity for Objective-C handlers built without an index — and the core 0.3.0 contract and
+commands remain intact. isthmus keeps fail-closed behavior for external input, mixed targets,
+graph size, and the Dart/Swift Phase 0 extraction boundary. Facts that could not be joined
+are re-counted on the consumer side, and retention subjects whose evidence cannot be built
+are refused loudly, so neither disappears silently. Coverage gaps a receiver reports about
 itself come back as undecidable, not as mismatches, and gap mitigation never leaks across
 targets. Next: dogfooding it on a real Flutter app, and React Native support.
 

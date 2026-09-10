@@ -28,14 +28,15 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 ## 상태
 
-**0.4.0.** 0.3.0의 계약과 명령 — bridge-facts 버전 1 파서, `check`, `query`, `graph`,
-`diff`, cartograph용 외부 보존 근거 왕복, 논리 이슈 식별자로 억제하되 증거는 보존하는
-check 베이스라인 — 에 이번 주기의 추가를 더했다: GitHub code scanning용 check 결과의
-SARIF 2.1.0 렌더링(`check --format sarif`, additive, 소스 줄 이동에 강한 논리 키
-지문), 브리지가 없는 프로젝트와 아무것도 관찰하지 못한 실행을 구분하는 check summary
-관찰량(`observedFacts`·`observedLimitations`), 다중 호출자 보존 근거(`evidence.callers`
-— 근거당 상한·명시적 `callersOmitted` 계수, 단일 호출자는 기존과 바이트 동일),
-인덱스 없이 빌드된 Objective-C 핸들러의 usr 없는 `qualifiedName` 신원. 외부 입력·
+**0.4.1.** 0.4.0에 구조·보안·성능 리뷰 반영(패치): `mixed-targets` 단어 경계 일치,
+짝 없는 서러게이트 사전 거부(`toWellFormed()`), retentions 호출자 총예산(100만)과
+할당 절감, 빈 플래그 값(exit 64) 거부, atomic-write(0o600) 경화를 적용했다.
+0.4.0의 추가 사항 — GitHub code scanning용 check SARIF 2.1.0 렌더링(`check --format sarif`,
+additive, 소스 줄 이동에 강한 논리 키 지문), 브리지가 없는 프로젝트와 아무것도
+관찰하지 못한 실행을 구분하는 check summary 관찰량(`observedFacts`·`observedLimitations`),
+다중 호출자 보존 근거(`evidence.callers` — 근거당 상한·명시적 `callersOmitted` 계수,
+단일 호출자는 기존과 바이트 동일), 인덱스 없이 빌드된 Objective-C 핸들러의 usr 없는
+`qualifiedName` 신원 — 과 0.3.0의 핵심 계약·명령은 그대로 유지된다. 외부 입력·
 혼합 target·그래프 크기·Dart/Swift Phase 0 추출 경계는 fail-closed를 유지하고,
 조인하지 못한 사실은 소비자 쪽에서 다시 세며 근거를 만들지 못한 보존 대상은 조용히
 사라지는 대신 실패로 보고한다. 수신 측이 신고한 분석 공백은 불일치가 아니라 판정
