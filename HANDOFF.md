@@ -1,5 +1,68 @@
 # Handoff
 
+## 2026-09-10 — 0.4.0 구조·보안·성능 전체 리뷰: 반영 진행 중 (다음 세션에서 마무리)
+
+사용자 요청으로 0.4.0(발행 직후) 전체 리뷰를 했다. 자체 실측 + GLM packet-review
+(12건 발견) 조합. **코드 반영과 테스트는 끝났고 브랜치로 보존됨 — 문서화와 PR이
+남았다.**
+
+### 성능 실측 (계약 상한 스케일, 0.4.0)
+
+| 시나리오 | 결과 |
+|---|---|
+| check json 87k facts(매치 30k·dedup·dynamic·미귀속 혼합) | 0.16–0.18s(0.3.0과 동일, 회귀 없음) |
+| check sarif 100k facts / 40k 이슈(relatedLocations 2개씩) | 0.39s, 출력 31MB(json 14MB의 ≈2.2배) |
+| 베이스라인 8k 이슈 update·apply | 각 0.15s(억제 8000·stale 0 확인) |
+| 베이스라인 40k 이슈 | 상한 10k 초과 → exit 2 안내 문구(설계대로) |
+| retentions 500메서드×120호출(상한 경로) | 0.15s(callers 100·omitted 20 확인) |
+
+### GLM 리뷰 발견·처분 (재현으로 진위 확정)
+
+채택(브랜치에 구현·테스트 완료):
+1. **[상] mixed-targets 부분 문자열 오판** — "non-mixed-targets workspaces" 산문이
+   조인을 보류(exit 2) 재현 확정. → 단어 경계 토큰 일치 `(?<![\w-])mixed-targets(?![\w-])`로
+   수정. 기존 변형 테스트(선행 산문 "Detected …" 포함)는 유지, 낱말 내포 표기
+   ("non-…"·"-like") 거부 테스트 추가.
+2. **[중] 짝 없는 서러게이트 → sarif 내부 오류 오분류** — 경로에 `\ud800`이면
+   json은 exit 0인데 sarif는 "Internal isthmus error" exit 2 재현 확정
+   (encodeURIComponent가 URIError). → parse의 안전 문자열·경로 검증에
+   `toWellFormed()` 미편성 서러게이트 거부 추가(아스트랄 문자=유효 쌍은 통과,
+   통과 테스트 포함). tsconfig lib ES2024 갱신.
+3. **[중] retentions 호출자 증폭 무예산** — 핸들러마다 callers가 재실림(100k
+   핸들러×100 호출자=천만 객체 가능). → 문서 전체 예산 `MAX_RETENTION_CALLER_ENTRIES`
+   1,000,000 초과 시 RetentionValidationError(exit 2), 상한 밖 호출을 객체로 만들기
+   전에 slice(할당 절감). 예산 테스트 추가(1,000메서드×100호출×100핸들러, 문서
+   상한 100k 내 성립).
+4. **[하] 빈 플래그 값 `--baseline ''`이 64가 아니라 2** → 값 길이 0 거부(64),
+   미읽기 단언 테스트.
+5. **[하] atomic-write** — mode 0o600(경로 정보 파일), 주석 정확화(rename 원자성은
+   중단·디스크 가득 참용, fsync 없어 전원 손실 비보장, 심링크는 링크 자체 교체).
+6. **[하] parse의 "isthmus 0.1" 고정 문구** → "this isthmus version"(4곳 단언 갱신).
+
+기각(재현·코드 확인):
+- **partialFingerprints 유일성** — 같은 키 호출 2개 → 결과 1개·지문 1개(집계가
+  유일성 보장, baselineEntryKey 설계 의도와 일치).
+
+유보(근거와 함께 다음에 재검):
+- ObjC 라벨이 Swift 보존 fail-closed를 우회(생산자 자가 선언 전제 — 0.4.0 이전부터
+  동일, 완화로 새 생긴 것 아님). GRAPH-EXCHANGE에 신뢰 전제 문장 추가 예정,
+  omitted 목록 감사 필드는 cartograph 합의 필요한 v0 확장 후보.
+- callers에 column 없음(같은 path/line 다른 column이 동일 표시) — column 추가는
+  v0 필드 합의 필요, 조용한 dedup는 증거 손실이라 보류.
+- check의 5-위치-매개변수 서명·공유 CLI 인프라 편중 — 옵션 객체화는 다음 CLI 확장 시.
+- SARIF 대형 보고서(31MB)의 GitHub 업로드 상한 — 실측 여지(HANDOFF 기존 항목).
+
+### 진행 상태와 남은 작업
+
+- **브랜치 `fix/review-040-followups`(원격 push 완료, 커밋 2개)**: 위 채택 6건의
+  코드+테스트 반영. 영향 테스트 103/103 통과, typecheck 그린. main에는 아직 없음.
+- **남은 것(다음 세션)**:
+  1. docs — GRAPH-EXCHANGE 3문장(서러게이트 금지·mixed-targets 단어 경계·
+     sourceLanguage 생산자 신뢰 전제), RESEARCH에 리뷰 절(위 실측표·처분 전목록),
+     CHANGELOG Unreleased(Fixed 항목), atomic-write mode 0o600 단언(선택).
+  2. `npm run verify` 전체 → PR → CI → squash 머지.
+  3. 원하면 리뷰 절의 성능 표를 RESEARCH에 그대로 이관.
+
 ## 2026-09-10 — 0.4.0 발행 완료
 
 PR #56(`5a0c733`)으로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
@@ -300,7 +363,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (0.4.0 발행 완료 — Blockers 전부 종결)_
+_Last updated: 2026-09-10 (0.4.0 전체 리뷰 — 반영 브랜치 보존, docs·PR이 다음 세션 과제)_
 
 ## Goal
 
@@ -561,11 +624,13 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
+1. **리뷰 반영 브랜치 마무리**: `fix/review-040-followups`(코드·테스트 완료) —
+   docs 3건(위 최상단 절) 작성 후 `npm run verify` → PR → 머지.
+2. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
-2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
+3. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+4. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
@@ -577,17 +642,18 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-0.3.0까지 발행을 마쳤고(check 베이스라인 + 영문 README 포함) 0.3.0 릴리스 소스는
-`92b160b`(PR #34)야 — 이 문서의 이후 갱신은 그 위에 쌓는다. Blockers는 1·3·4가 닫혔고
-2는 대부분 닫혔어. 통합 검증은 cartograph 0.10.1·dartograph 0.5.0·isthmus 0.3.0 조합으로
-전체 통과했고(roundtrip + 공개 플러그인 + ObjC clang USR 사실 + 스코프 발행 조건),
-dartograph#38도 닫혔어. 로컬 .gitignore 미커밋 수정을 보존해줘.
+**0.4.0까지 발행 완료(registry·tarball·발행본 검증까지), Blockers는 전부 종결됐어.**
+가장 먼저 할 일: 리뷰 반영 브랜치 `fix/review-040-followups`(원격에 있음, 코드+테스트
+완료·103/103 통과·typecheck 그린)를 체크아웃해서 최상단 절의 "남은 작업"을 마저 해줘 —
+docs 3건(GRAPH-EXCHANGE 서러게이트/단어 경계/sourceLanguage 신뢰 전제, RESEARCH 리뷰 절,
+CHANGELOG Unreleased) 작성 → `npm run verify` → PR → squash 머지. 브랜치에는 이미
+mixed-targets 단어 경계·서러게이트 거부·retentions 호출자 예산·빈 플래그 64·
+atomic-write 0o600·"isthmus 0.1" 문구 갱신이 들어 있어.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저). 후속 작업은 호스트 dartograph 업그레이드(사용자),
-SARIF 리포터 순이야. limitationScopes 양성 실측은 완료됐어(verify-limitation-scopes.mjs,
-Blockers 1 종결).
-샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
+(PUT 404는 인증 문제 — npm login 먼저).
+샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음; 지연
+도착하니 백그라운드 제출 후 나중에 `$TMPDIR/packet-requests`를 확인).
 자매 저장소 쓰기 권한은 세션마다 다르니 직접 시도해 보고(2026-09-10 세션은 cartograph
-issue 등록 성공 #74), 막히면 사용자에게 넘겨줘. 워크스페이스 안 git init은
+issue 등록 성공 #74·#75), 막히면 사용자에게 넘겨줘. 워크스페이스 안 git init은
 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는 tmp 사본 + isthmus-js
-오버라이드로 돌려줘(최상단 절).
+오버라이드로 돌려줘.
