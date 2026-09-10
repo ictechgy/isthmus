@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-10 — 0.4.1 발행 완료
+
+PR #61(`fabe186`)로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
+
+- registry latest 0.4.1 반영 확인.
+- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 59개 파일
+  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.4.1.
+- 발행본 CLI: `--version` 0.4.1, phase-0 check 코드 0(error 1·warning 2·
+  observedFacts 10·observedLimitations 7), `--strict` 코드 1, 베이스라인 왕복
+  (update → strict+baseline 억제 3·stale 0·코드 0), SARIF(2.1.0·driver isthmus
+  0.4.1·results 3)까지 확인. 격리 설치본 npx 실행(0.4.1) 확인.
+
+Unreleased는 비어 있다. 0.4.1 구성: 0.4.0 구조·보안·성능 리뷰 반영(mixed-targets
+단어 경계 일치, 짝 없는 서러게이트 사전 거부, retentions 호출자 총예산 100만,
+빈 플래그 값 64, atomic-write mode 0o600).
+
 ## 2026-09-10 — 0.4.0 구조·보안·성능 전체 리뷰 반영 완료 (PR #59 머지)
 
 0.4.0(발행 직후) 전체 리뷰의 6건 채택 사항과 문서화가 **PR #59(`c6b5ddb`)**로 main에 squash 머지됐다.
@@ -329,7 +345,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (0.4.0 리뷰 반영 PR #59 머지 완료)_
+_Last updated: 2026-09-10 (0.4.1 발행 완료)_
 
 ## Goal
 
@@ -338,10 +354,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- 0.4.0 릴리스 소스는 `5a0c733`(PR #56)다. 이후 0.4.0 리뷰 반영(PR #59 `c6b5ddb`)이 머지되어
-  Unreleased에 Fixed 6건이 기록되어 있다.
-- npm `isthmus-cli@0.4.0`이 최신 발행본이고 registry latest도 0.4.0이다(2026-09-10 발행,
-  tarball·발행본 검증은 위 "0.4.0 발행 완료" 절).
+- 0.4.1 릴리스 소스는 `fabe186`(PR #61)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- npm `isthmus-cli@0.4.1`이 최신 발행본이고 registry latest도 0.4.1이다(2026-09-10 발행,
+  tarball·발행본 검증은 위 "0.4.1 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
   않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
@@ -416,6 +431,7 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   cartograph#75 등록, 0.11.0 이행 검증 기록(Blockers 2·5 완전 종결).
 - PR #56(이번 세션): 0.4.0 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행.
 - PR #59 `c6b5ddb`(이번 세션): 0.4.0 구조·보안·성능 리뷰 반영(mixed-targets 단어 경계, 서러게이트 거부, retentions 호출자 예산, 빈 플래그 값 64, atomic-write 0o600 및 모드 단언, parse 고정 문구 갱신, GRAPH-EXCHANGE·RESEARCH·CHANGELOG 문서화). GLM packet-review 2회 반영 완료.
+- PR #61 `fabe186`(이번 세션): 0.4.1 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행. 발행 후 검증 완료.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -596,7 +612,7 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
 2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.4.0 모두 isthmus는
+3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.4.1 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
@@ -608,9 +624,9 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-**0.4.0까지 발행 완료(registry·tarball·발행본 검증까지), Blockers는 전부 종결됐고, 0.4.0 구조·보안·성능 리뷰 반영(PR #59)까지 main에 머지 완료됐어.**
+**0.4.1까지 발행 완료(registry·tarball·발행본 검증까지), Blockers는 전부 종결됐어.**
 현재 `main`이 깨끗하며 `npm run verify` 전체 통과 상태야.
-CHANGELOG `Unreleased`에 0.4.0 리뷰 반영(Fixed 6건)이 기록되어 있어.
+CHANGELOG `Unreleased`는 비어 있어.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
 (PUT 404는 인증 문제 — npm login 먼저).
 샌드박스에서 GLM 리뷰는 `packet-ask review --provider glm`으로 해줘.
