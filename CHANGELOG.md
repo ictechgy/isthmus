@@ -6,6 +6,12 @@
 
 ### Added
 
+- `retentions` 근거의 다중 호출자 확장(external-retentions v0 additive): 메서드를
+  여러 위치에서 호출하면 `evidence.callers`에 전체 호출 위치(대표 포함)를 결정적
+  순서로 실고, 근거당 100개 상한을 넘으면 `callersOmitted`로 계수를 밝힌다. 대표
+  `caller`는 옛 소비자 호환을 위해 유지되고 호출이 하나인 근거의 출력은 기존과
+  바이트가 같다. 소비 도구(cartograph)는 알 수 없는 필드를 무시하므로 생산자
+  선행 배포가 안전하다(설치본 cartograph 0.10.1로 왕복 검증).
 - `check` 문서 `summary`에 관찰량 추가(호환 변경): `observedFacts`(입력 문서 전체의
   fact 총수)와 `observedLimitations`(보고된 분석 한계 수). 브리지가 없는 프로젝트와
   아무것도 관찰하지 못한 실행이 같은 보고서를 내지 않게 한다. 조인 보류 결과도

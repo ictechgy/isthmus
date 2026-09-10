@@ -154,9 +154,12 @@ isthmus retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다.
-`mixed-targets` 문서는 v1에서 사실별 target을 복원할 수 없어 모든 소비 명령이 종료
-코드 2로 조인을 보류한다. 먼저 생산 단계에서 target별 문서로 분리해야 한다.
+`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. 메서드를
+여러 위치에서 호출하면 근거가 전체 호출 위치를 `callers`로 실고(대표 `caller`는 옛
+소비자를 위해 유지), 근거당 100개 상한을 넘은 호출은 조용히 버리지 않고
+`callersOmitted`로 계수를 밝힌다. `mixed-targets` 문서는 v1에서 사실별 target을
+복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서
+target별 문서로 분리해야 한다.
 
 cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소
 하나 요구하고, 없으면 빈 보존 문서 대신 종료 코드 2로 거부한다. 호출자가 있는데도

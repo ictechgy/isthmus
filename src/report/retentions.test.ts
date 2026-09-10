@@ -10,6 +10,7 @@ import { joinBridgeDocuments } from '../join/join.ts';
 import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
+  MAX_RETENTION_CALLERS,
   validateCartographRetentionInputs,
 } from './retentions.ts';
 
@@ -141,6 +142,102 @@ test('USR과 qualifiedName dedup namespace가 충돌하지 않는다', () => {
   assert.deepEqual(
     document.retentions.map(({ symbol }) => symbol.qualifiedName),
     ['OtherPlugin.handle', 'CameraPlugin.register'],
+  );
+});
+
+test('호출이 여럿이면 전체 호출 위치를 결정적 순서로 실는다', () => {
+  const dartWithMoreInvocations = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [
+      ...dartDocument.facts,
+      {
+        kind: 'method-invoke',
+        channel: 'dev.isthmus/camera',
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'lib/camera_bridge.dart', line: 2, column: 3 },
+      },
+      {
+        kind: 'method-invoke',
+        channel: 'dev.isthmus/camera',
+        method: 'takePhoto',
+        dynamic: false,
+        location: { path: 'lib/other.dart', line: 9, column: 5 },
+      },
+    ],
+  });
+  const swiftWithUSRs = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: swiftDocument.facts.map((fact) =>
+      fact.kind === 'method-handle'
+        ? { ...fact, symbol: { ...fact.symbol, usr: 's:CameraPlugin.register' } }
+        : fact,
+    ),
+  });
+  const joined = joinBridgeDocuments([dartWithMoreInvocations, swiftWithUSRs]);
+
+  const document = createCartographRetentionsDocument(
+    joined,
+    '2026-09-04T13:00:00Z',
+    '0.0.0',
+  );
+
+  const evidence = document.retentions[0]?.evidence;
+  assert.deepEqual(evidence?.callers, [
+    { platform: 'dart', path: 'lib/camera_bridge.dart', line: 2 },
+    { platform: 'dart', path: 'lib/camera_bridge.dart', line: 6 },
+    { platform: 'dart', path: 'lib/other.dart', line: 9 },
+  ]);
+  assert.deepEqual(evidence?.caller, evidence?.callers?.[0]);
+  assert.equal(evidence?.callersOmitted, undefined);
+});
+
+test('호출 상한을 넘으면 잘린 목록과 계수를 실는다', () => {
+  const invocationFacts = Array.from(
+    { length: MAX_RETENTION_CALLERS + 5 },
+    (_, index) => ({
+      kind: 'method-invoke',
+      channel: 'dev.isthmus/camera',
+      method: 'takePhoto',
+      dynamic: false,
+      location: {
+        path: `lib/file${String(index).padStart(4, '0')}.dart`,
+        line: index + 1,
+        column: 1,
+      },
+    }),
+  );
+  const dartWithMany = parseBridgeFactsDocument({
+    ...dartDocument,
+    facts: [...dartDocument.facts, ...invocationFacts],
+  });
+  const swiftWithUSRs = parseBridgeFactsDocument({
+    ...swiftDocument,
+    facts: swiftDocument.facts.map((fact) =>
+      fact.kind === 'method-handle'
+        ? { ...fact, symbol: { ...fact.symbol, usr: 's:CameraPlugin.register' } }
+        : fact,
+    ),
+  });
+  const joined = joinBridgeDocuments([dartWithMany, swiftWithUSRs]);
+
+  const document = createCartographRetentionsDocument(
+    joined,
+    '2026-09-04T13:00:00Z',
+    '0.0.0',
+  );
+
+  const evidence = document.retentions[0]?.evidence;
+  assert.equal(evidence?.callers?.length, MAX_RETENTION_CALLERS);
+  // 원본 fixture의 호출 1건과 새로 만든 105건을 합쳐 6건이 상한을 넘는다.
+  assert.equal(evidence?.callersOmitted, 6);
+  assert.deepEqual(
+    evidence?.callers?.[MAX_RETENTION_CALLERS - 1],
+    { platform: 'dart', path: 'lib/file0098.dart', line: 99 },
+  );
+  assert.deepEqual(
+    evidence?.callers?.[0],
+    { platform: 'dart', path: 'lib/camera_bridge.dart', line: 6 },
   );
 });
 

@@ -165,7 +165,10 @@ isthmus retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions` prefers each handler's USR and falls back to its `qualifiedName`. A
+`retentions` prefers each handler's USR and falls back to its `qualifiedName`. When a method is
+invoked from several caller locations, the evidence carries all of them in `callers` (the
+representative first `caller` stays for older consumers) and counts any entries beyond the
+100-per-retention cap in `callersOmitted` instead of dropping them silently. A
 `mixed-targets` document cannot have per-fact targets restored in v1, so every consuming
 command defers the join with exit code 2; split such a document per target at production time
 first.

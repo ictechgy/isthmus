@@ -25,7 +25,15 @@ export interface RetentionCaller {
 export interface RetentionEvidence {
   readonly channel: string;
   readonly method: string;
+  /** 대표 호출 위치다. 결정적 순서의 첫 호출이며 옛 소비자가 읽는 필드다. */
   readonly caller: RetentionCaller;
+  /**
+   * 이 보존의 전체 호출 위치(대표 포함)다. 결정적 순서를 유지하고 호출이 둘 이상일
+   * 때만 실는다. 옛 소비자는 이 필드를 모르고 대표 `caller`만 읽는다.
+   */
+  readonly callers?: readonly RetentionCaller[];
+  /** 상한 때문에 `callers`에 실지 못한 호출 수다. 0이면 실지 않는다. */
+  readonly callersOmitted?: number;
 }
 
 /** cartograph 외부 보존 근거 하나다. */
@@ -44,6 +52,9 @@ export interface CartographRetentionsDocument {
   readonly retentions: readonly ExternalRetention[];
   readonly omittedObjectiveCHandlers?: number;
 }
+
+/** 근거 하나가 실을 수 있는 호출 위치 상한이다. */
+export const MAX_RETENTION_CALLERS = 100;
 
 /** 불완전한 조인으로 보존 결정을 만들 수 없음을 나타낸다. */
 export class RetentionValidationError extends Error {
@@ -145,8 +156,11 @@ function collectCartographRetentions(
   const retentions: ExternalRetention[] = [];
   const seen = new Set<string>();
   for (const method of joined.matchedMethods) {
-    const caller = method.invocations[0];
-    if (caller === undefined) continue;
+    if (method.invocations.length === 0) continue;
+    // 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이 대표 증거다.
+    const callers = method.invocations.map(toRetentionCaller);
+    const representative = callers[0];
+    if (representative === undefined) continue;
     for (const handler of method.handlers) {
       if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol === undefined) continue;
       const symbolKey = handler.symbol.usr === undefined
@@ -155,20 +169,32 @@ function collectCartographRetentions(
       const retentionKey = `${symbolKey}\u0000${method.channel}\u0000${method.method}`;
       if (seen.has(retentionKey)) continue;
       seen.add(retentionKey);
+      const capped = callers.slice(0, MAX_RETENTION_CALLERS);
+      const callersOmitted = callers.length - capped.length;
       retentions.push({
         symbol: handler.symbol,
         reason: 'bridge',
         evidence: {
           channel: method.channel,
           method: method.method,
-          caller: {
-            platform: caller.platform,
-            path: caller.location.path,
-            line: caller.location.line,
-          },
+          caller: representative,
+          ...(capped.length > 1 ? { callers: capped } : {}),
+          ...(callersOmitted > 0 ? { callersOmitted } : {}),
         },
       });
     }
   }
   return retentions;
+}
+
+/** 증거 끝점을 external-retentions의 호출자 형태로 바꾼다. */
+function toRetentionCaller(endpoint: {
+  readonly platform: BridgePlatform;
+  readonly location: { readonly path: string; readonly line: number };
+}): RetentionCaller {
+  return {
+    platform: endpoint.platform,
+    path: endpoint.location.path,
+    line: endpoint.location.line,
+  };
 }

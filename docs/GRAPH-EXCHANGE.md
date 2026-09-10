@@ -182,7 +182,12 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
       "evidence": {
         "channel": "com.example/camera",
         "method": "takePhoto",
-        "caller": { "platform": "dart", "path": "lib/camera.dart", "line": 42 }
+        "caller": { "platform": "dart", "path": "lib/camera.dart", "line": 42 },
+        "callers": [
+          { "platform": "dart", "path": "lib/camera.dart", "line": 42 },
+          { "platform": "dart", "path": "lib/widget.dart", "line": 7 }
+        ],
+        "callersOmitted": 3
       }
     }
   ]
@@ -190,6 +195,17 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 ```
 
 자매 도구는 이것을 `RetentionReason.externalBridge` 로 매핑하고, `--explain` 에서 `evidence` 를 그대로 문장으로 만든다.
+
+- `caller` 은 대표 호출 위치다. 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이며
+  v0 초안부터 있던 필드라 옛 소비자가 계속 읽는다.
+- 선택 `callers` 는 이 근거의 **전체** 호출 위치(대표 포함)를 같은 결정적 순서로
+  실는다. 호출이 둘 이상일 때만 두어, 호출이 하나인 근거는 기존 문서와 바이트가
+  같다. 근거당 상한은 100개다.
+- 상한을 넘은 호출은 조용히 버리지 않고 선택 `callersOmitted` (비음수 정수,
+  0이면 생략)로 밝힌다. `omittedObjectiveCHandlers` 와 같은 계수 공개 원칙이다.
+- 소비 도구는 모르는 필드를 무시한다(Swift `JSONDecoder` 의 기본 동작). 그래서
+  이 확장은 생산자(isthmus)를 먼저 배포해도 안전하고, 소비 도구가 `callers` 를
+  문장으로 펼치는 것은 별도 구현 사항이다.
 
 cartograph의 보존 문서는 **Swift 그래프 선언**을 대상으로 완전해야 한다. 명시적
 `sourceLanguage: "objective-c"` 구현은 조인·진단·query의 증거로 남기지만 Swift 보존 대상은
