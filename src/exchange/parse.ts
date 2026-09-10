@@ -233,7 +233,9 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   validateSymbol(value.symbol, index);
   if (value.sourceLanguage !== undefined && (
     value.sourceLanguage !== 'objective-c' || platform !== 'swift' ||
-    !/\.(?:m|mm)$/u.test((value.location as BridgeLocation).path) || (value.symbol !== undefined && !(value.symbol as BridgeSymbol).usr?.startsWith('c:'))
+    !/\.(?:m|mm)$/u.test((value.location as BridgeLocation).path) ||
+    (value.symbol !== undefined && (value.symbol as BridgeSymbol).usr !== undefined &&
+      !(value.symbol as BridgeSymbol).usr?.startsWith('c:'))
   )) fail(`Invalid source language at index ${index}.`);
 }
 

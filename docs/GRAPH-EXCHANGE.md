@@ -79,9 +79,11 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 
 선택적 `sourceLanguage: "objective-c"`는 `platform: "swift"` 문서에 담긴 `.m`/`.mm`의
 **Objective-C 구현 사실**을 구분한다. 실제 Clang 인덱스에서 확인한 `c:` USR이 있으면
-`symbol`을 함께 싣는다. 인덱스가 없거나 선언을 유일하게 확인하지 못하면 생략한다.
-이름만 지어 Swift 그래프의 선언인 것처럼 내보내지 않는다. USR의 존재가 현재 Swift 분석
-그래프에 포함된다는 뜻은 아니다. 그 외 값·플랫폼·확장자 조합은 입력 오류다.
+`usr`까지 함께 싣는다. 인덱스가 없거나 선언을 유일하게 확인하지 못하면 `usr`를 생략하고
+구문이 아는 `qualifiedName`만 둘 수 있다 — Swift의 `missing-handler-usrs`와 같은
+대칭이다. 합성 안정 식별자(SCIP 문법 등)를 지어 진짜 신원처럼 싣지 않는다.
+`usr`가 있는데 `c:`로 시작하지 않으면 입력 오류다.
+그 외 값·플랫폼·확장자 조합은 입력 오류다.
 필드가 없으면 기존 플랫폼 의미를 유지한다. 위치 확장자만으로 Objective-C라고 추측하지 않는다.
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.

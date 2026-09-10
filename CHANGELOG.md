@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- bridge-facts v1 완화(호환): `sourceLanguage: objective-c` 사실이 `usr` 없는
+  `qualifiedName`-only symbol을 가질 수 있다. 인덱스가 없는 환경의 ObjC 핸들러도
+  구문 이름 신원을 유지하며, `usr`이 있는 경우 여전히 실제 Clang `c:` 접두만
+  허용한다. Swift의 `missing-handler-usrs`와 대칭이고 소비자(isthmus) 선행 배포다.
+
 ### Added
 
 - `retentions` 근거의 다중 호출자 확장(external-retentions v0 additive): 메서드를

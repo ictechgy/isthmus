@@ -171,6 +171,14 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
   사실화)에 clang 인덱스 유닛을 결합하면 USR 있는 retention 왕복이 가능할 수 있다 —
   cartograph#64의 순서 의존 논의에 이 사실을 보탠다. 인덱스 없이 빌드된 환경의
   fallback 신원으로는 SCIP 문법이 후보다.
+- **잔여 결정(2026-09-10) — SCIP 합성 usr 기각, 이름 신원 완화 채택**: 무인덱스
+  환경의 ObjC 핸들러 신원으로 SCIP 문법의 합성 심볼을 만드는 안은 "이름만 지어 진짜
+  신원처럼 싣지 않는다"는 계약 철학에 부딪히고, ObjC 핸들러는 Swift 그래프 보존
+  대상이 아니어서 전역 식별자가 필요하지 않다. 대신 Swift의 `missing-handler-usrs`
+  대칭으로 **usr 없는 `qualifiedName`-only symbol을 허용**한다(구문 표기
+  `Class.selector`는 소스에서 결정적). 스캐너(`BridgeSymbolResolver`)가 이미 선언
+  이름을 알고 있어 생산 비용이 없다. isthmus는 이 완화를 먼저 배포했고(usr이 있는
+  경우 `c:` 접두 요구 유지), cartograph의 부착 구현을 제안했다(cartograph#75).
 - SCIP(`sourcegraph/scip` `scip.proto`): `<symbol> ::= <scheme> ' ' <package> ' '
   (<descriptor>)+ | 'local ' <local-id>`. 공백은 이중 공백으로 이스케이프하고,
   식별자 문자(`_-+$`·영숫자) 밖의 이름은 백틱으로 감싼다(내부 백틱은 이중 백틱).

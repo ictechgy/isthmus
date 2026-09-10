@@ -109,12 +109,46 @@ test('ObjC 구현은 매치 증거로 남지만 Swift 보존 목록을 막지 �
 for (const invalid of [
   { sourceLanguage: 'objc' },
   { sourceLanguage: 'objective-c', location },
-  { sourceLanguage: 'objective-c', location: { ...location, path: 'Plugin.m' }, symbol: { qualifiedName: 'Fake.handle' } },
+  {
+    sourceLanguage: 'objective-c',
+    location: { ...location, path: 'Plugin.m' },
+    symbol: { qualifiedName: 'Fake.handle', usr: 'synthetic:fake' },
+  },
 ]) {
   test(`ObjC 표식으로 불명확한 Swift 보존을 우회하지 않는다 ${JSON.stringify(invalid)}`, () => {
     assert.throws(() => parseBridgeFactsDocument({ ...input(), facts: [{ ...fact('method-handle', 'A', 'run'), ...invalid }] }));
   });
 }
+
+test('ObjC 구현은 인덱스가 없어도 구문 이름 신원을 유지한다', () => {
+  const receiver = parseBridgeFactsDocument({
+    ...input(),
+    facts: [
+      fact('channel-register', 'A'),
+      {
+        ...fact('method-handle', 'A', 'run'),
+        sourceLanguage: 'objective-c',
+        location: { ...location, path: 'Plugin.m' },
+        symbol: { qualifiedName: 'Plugin.handle' },
+      },
+    ],
+  });
+
+  const joined = joinBridgeDocuments([caller(), receiver]);
+  const handler = joined.matchedMethods[0]?.handlers[0];
+  assert.equal(handler?.sourceLanguage, 'objective-c');
+  assert.equal(handler?.symbol?.qualifiedName, 'Plugin.handle');
+  assert.equal(handler?.symbol?.usr, undefined);
+  const query = createBridgeQuery(joined, 'flutter:A#run');
+  assert.equal(query.result?.dependsOn[0]?.symbol?.qualifiedName, 'Plugin.handle');
+  const document = createCartographRetentionsDocument(joined, '2026-09-10T00:00:00Z', '1');
+  assert.equal(
+    document.retentions.some((retention) =>
+      retention.symbol.qualifiedName === 'Plugin.handle'),
+    false,
+  );
+  assert.equal(document.omittedObjectiveCHandlers, 1);
+});
 
 test('tool 이름과 추가 origin 필드로 소비자 자체 계수를 사칭할 수 없다', () => {
   const receiver = parseBridgeFactsDocument({
