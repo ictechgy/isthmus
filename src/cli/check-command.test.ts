@@ -123,6 +123,21 @@ test('형식 인자가 없거나 중복되면 종료 코드 64를 반환한다',
   }
 });
 
+test('플래그 값이 빈 문자열이면 파일을 읽기 전에 종료 코드 64로 거부한다', async () => {
+  let didReadFile = false;
+  for (const flag of ['--baseline', '--update-baseline', '--format']) {
+    const result = await runCheckCommand(
+      ['check', 'dart.json', 'swift.json', flag, ''],
+      async () => {
+        didReadFile = true;
+        return '';
+      },
+    );
+    assert.equal(result.exitCode, 64);
+  }
+  assert.equal(didReadFile, false);
+});
+
 test('명시적 --format json은 기본 출력과 바이트까지 같다', async () => {
   const read = (path: string) => readFile(path, 'utf8');
   const implicit = await runCheckCommand(['check', dartPath, swiftPath], read);
@@ -304,7 +319,7 @@ test('contract 위반 메시지는 어떤 검증 분기에서도 입력 값을 �
     ],
     [
       { ...base, facts: [{ ...markerFact, kind: 'module-import' }] },
-      'Fact kind is reserved but not supported in isthmus 0.1 at index 0.',
+      'Fact kind is reserved but not supported by this isthmus version at index 0.',
     ],
     [
       { ...base, facts: [{ ...markerFact, method: 'MARKER-METHOD' }] },
@@ -554,7 +569,7 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
     standardOutput: '',
     standardError:
       'Bridge facts input 1 violates the bridge-facts contract: '
-      + 'Fact kind is reserved but not supported in isthmus 0.1 at index 0.\n',
+      + 'Fact kind is reserved but not supported by this isthmus version at index 0.\n',
     exitCode: 2,
   });
 });
@@ -591,7 +606,7 @@ test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류�
     standardOutput: '',
     standardError:
       'Bridge facts input 2 violates the bridge-facts contract: '
-      + 'Fact kind is reserved but not supported in isthmus 0.1 at index 0.\n',
+      + 'Fact kind is reserved but not supported by this isthmus version at index 0.\n',
     exitCode: 2,
   });
 });

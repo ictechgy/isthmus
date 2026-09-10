@@ -56,6 +56,14 @@ export interface CartographRetentionsDocument {
 /** 근거 하나가 실을 수 있는 호출 위치 상한이다. */
 export const MAX_RETENTION_CALLERS = 100;
 
+/**
+ * 문서 전체가 실을 수 있는 호출 위치 총상한이다.
+ *
+ * 호출자 증거는 (심볼 × 채널 × 메서드)마다 다시 실리므로 건당 상한만으로는 출력이
+ * 입력보다 커질 수 있다. 베이스라인의 항목 상한과 같은 자원 거버넌스다.
+ */
+export const MAX_RETENTION_CALLER_ENTRIES = 1_000_000;
+
 /** 불완전한 조인으로 보존 결정을 만들 수 없음을 나타낸다. */
 export class RetentionValidationError extends Error {
   constructor(message: string) {
@@ -155,10 +163,15 @@ function collectCartographRetentions(
 ): ExternalRetention[] {
   const retentions: ExternalRetention[] = [];
   const seen = new Set<string>();
+  let callerEntries = 0;
   for (const method of joined.matchedMethods) {
     if (method.invocations.length === 0) continue;
-    // 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이 대표 증거다.
-    const callers = method.invocations.map(toRetentionCaller);
+    // 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이 대표 증거다. 상한 밖 호출까지
+    // 객체로 만들지 않도록 먼저 자른다.
+    const callers = method.invocations
+      .slice(0, MAX_RETENTION_CALLERS)
+      .map(toRetentionCaller);
+    const callersOmitted = method.invocations.length - callers.length;
     const representative = callers[0];
     if (representative === undefined) continue;
     for (const handler of method.handlers) {
@@ -169,8 +182,13 @@ function collectCartographRetentions(
       const retentionKey = `${symbolKey}\u0000${method.channel}\u0000${method.method}`;
       if (seen.has(retentionKey)) continue;
       seen.add(retentionKey);
-      const capped = callers.slice(0, MAX_RETENTION_CALLERS);
-      const callersOmitted = callers.length - capped.length;
+      callerEntries += callers.length;
+      if (callerEntries > MAX_RETENTION_CALLER_ENTRIES) {
+        throw new RetentionValidationError(
+          `Cannot produce retention evidence with more than `
+            + `${MAX_RETENTION_CALLER_ENTRIES} caller entries; narrow the join inputs.`,
+        );
+      }
       retentions.push({
         symbol: handler.symbol,
         reason: 'bridge',
@@ -178,7 +196,7 @@ function collectCartographRetentions(
           channel: method.channel,
           method: method.method,
           caller: representative,
-          ...(capped.length > 1 ? { callers: capped } : {}),
+          ...(callers.length > 1 ? { callers } : {}),
           ...(callersOmitted > 0 ? { callersOmitted } : {}),
         },
       });

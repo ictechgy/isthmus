@@ -211,10 +211,16 @@ function validatePlatformComposition(
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */
 function hasMixedTargets(document: BridgeFactsDocument): boolean {
+  // 단어 경계로 판정한다. 낱말 안에 붙은 표기("non-mixed-targets workspaces",
+  // "mixed-targets-like")는 문구 변형이 아니라 다른 낱말이라 보류의 근거가 못 된다.
+  // 앞 공백·대소문자·콜론 누락 변형은 계속 보수적으로 인정한다.
   return document.limitations.some((message) =>
-    /mixed-targets\b/i.test(message),
+    mixedTargetToken.test(message),
   );
 }
+
+/** 문구 변형을 인정하는 mixed-targets 토큰 경계다. */
+const mixedTargetToken = /(?<![\w-])mixed-targets(?![\w-])/i;
 
 /**
  * 한계를 귀속시킬 target을 결정한다.

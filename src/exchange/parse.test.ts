@@ -167,7 +167,7 @@ test('아직 조인하지 않는 module·component fact는 fail-closed로 거부
       {
         name: 'BridgeFactsValidationError',
         message:
-          'Fact kind is reserved but not supported in isthmus 0.1 at index 0.',
+          'Fact kind is reserved but not supported by this isthmus version at index 0.',
       },
     );
   }
@@ -227,6 +227,37 @@ test('channel null은 귀속할 수 없는 method-handle에만 허용한다', ()
       },
     );
   }
+});
+
+test('짝 없는 서러게이트를 문자열 필드와 경로에서 거부한다', () => {
+  for (const fact of [
+    { kind: 'channel-create', channel: 'a\ud800b', dynamic: false, location: { path: 'a.dart', line: 1, column: 1 } },
+    { kind: 'channel-create', channel: 'ok', dynamic: false, location: { path: 'x\udc00y.dart', line: 1, column: 1 } },
+  ]) {
+    assert.throws(() => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'dart',
+      target: 'flutter',
+      facts: [fact],
+    }), { name: 'BridgeFactsValidationError' });
+  }
+});
+
+test('아스트랄 문자는 유효한 서러게이트 쌍으로 그대로 통과한다', () => {
+  const document = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'dart',
+    target: 'flutter',
+    facts: [{
+      kind: 'channel-create',
+      channel: '예시/카메라😀',
+      dynamic: false,
+      location: { path: 'lib/카메라😀.dart', line: 1, column: 1 },
+    }],
+  });
+
+  assert.equal(document.facts[0]?.channel, '예시/카메라😀');
+  assert.equal(document.facts[0]?.location.path, 'lib/카메라😀.dart');
 });
 
 test('귀속할 수 없는 method-handle은 원인을 limitation으로 알려야 한다', () => {

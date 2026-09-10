@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -15,6 +15,10 @@ test('원자 쓰기는 대상을 교체하고 임시 파일을 남기지 않는�
 
     assert.equal(await readFile(target, 'utf8'), 'second');
     assert.deepEqual(await readdir(root), ['baseline.json']);
+    if (process.platform !== 'win32') {
+      const mode = (await stat(target)).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
