@@ -86,7 +86,7 @@ export async function readBridgeDocuments(
  * 깊은 중첩은 SyntaxError가 아니라 RangeError(스택 초과)로 실패한다.
  * 둘 다 입력 탓이라 내부 오류 메시지로 오분류하지 않는다.
  */
-function isJsonParseFailure(error: unknown): boolean {
+export function isJsonParseFailure(error: unknown): boolean {
   return error instanceof SyntaxError || error instanceof RangeError;
 }
 

@@ -54,6 +54,22 @@ test('값 플래그 뒤의 값이 비었거나 `-`로 시작하면 거부한다'
     parseCommandArguments(['--baseline', '-x'], ['--baseline'], []),
     undefined,
   );
+  // `--` 자체와 등록된 플래그 이름도 값이 될 수 없다.
+  assert.equal(
+    parseCommandArguments(['--format', '--', 'x'], ['--format'], []),
+    undefined,
+  );
+  assert.equal(
+    parseCommandArguments(['--baseline', '--strict'], ['--baseline'], ['--strict']),
+    undefined,
+  );
+});
+
+test('홀로 서 있는 `-`는 `--` 앞에서만 모르는 플래그로 거부한다', () => {
+  assert.equal(parseCommandArguments(['-'], [], []), undefined);
+  const parsed = parseCommandArguments(['a.json', '--', '-'], [], []);
+
+  assert.deepEqual(parsed?.positionals, ['a.json', '-']);
 });
 
 test('값 플래그를 두 번 주면 거부하고 값 없는 플래그 반복은 한 번과 같다', () => {

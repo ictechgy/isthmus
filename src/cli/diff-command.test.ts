@@ -196,7 +196,13 @@ test('mixed-targets diff는 보류된 조인 메시지로 진단한다', async (
   const result = await runDiffCommand(diffArgs, async (path) => contents.get(path)!);
   assert.equal(result.exitCode, 2);
   assert.equal(result.standardOutput, '');
-  assert.ok(result.standardError.startsWith('Cannot compare deferred bridge joins'));
+  // 보류된 조인도 관찰량을 숫자로 알린다. diff는 양쪽 스냅샷의 관찰량을 함께 낸다.
+  assert.equal(
+    result.standardError,
+    'Cannot compare deferred bridge joins; split mixed bridge targets and '
+    + 'retry. The before inputs observed 4 facts across 2 documents, and the '
+    + 'after inputs observed 4 facts across 2 documents.\n',
+  );
 });
 
 test('잘못된 diff 인자와 총 파일 수 초과는 읽기 전에 거부한다', async () => {

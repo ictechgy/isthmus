@@ -61,7 +61,10 @@ export function createBridgeDiff(
   const newJoin = joinBridgeDocuments(after);
   if (isBridgeJoinDeferred(oldJoin) || isBridgeJoinDeferred(newJoin)) {
     throw new BridgeJoinValidationError(
-      'Cannot compare deferred bridge joins; split mixed bridge targets and retry.',
+      'Cannot compare deferred bridge joins; split mixed bridge targets and '
+      + `retry. The before inputs observed ${oldJoin.observedFacts} facts across `
+      + `${before.length} documents, and the after inputs observed `
+      + `${newJoin.observedFacts} facts across ${after.length} documents.`,
     );
   }
   const oldReport = createCheckReport(oldJoin);

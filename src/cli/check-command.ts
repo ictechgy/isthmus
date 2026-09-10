@@ -26,6 +26,7 @@ import {
   inputFailure,
   inputFailureResult,
   internalError,
+  isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   readBridgeDocuments,
   type Clock,
@@ -149,16 +150,6 @@ async function readBaselineDocument(
     throw error;
   }
   return parseBaselineDocument(parsed);
-}
-
-/**
- * 사용자 입력 JSON 파싱 실패인지 확인한다.
- *
- * 깊은 중첩은 SyntaxError가 아니라 RangeError(스택 초과)로 실패한다.
- * 둘 다 입력 탓이라 내부 오류 메시지로 오분류하지 않는다.
- */
-function isJsonParseFailure(error: unknown): boolean {
-  return error instanceof SyntaxError || error instanceof RangeError;
 }
 
 /** 현재 이슈 전체를 결정적 베이스라인 문서로 써서 해결된 항목을 정리한다. */
