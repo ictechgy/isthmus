@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-09-10 — retentions 다중 호출자 근거 (Blockers 5 절반 종결)
+
+external-retentions v0의 additive 확장으로 `evidence.callers`(전체 호출 위치, 대표 포함,
+결정적 순서, 근거당 상한 100)+`callersOmitted`(상한 초과 계수, 0이면 생략)를 실는다.
+대표 `caller`는 옛 소비자 호환으로 유지되고 호출이 하나인 근거는 기존 출력과 바이트가
+같다.
+
+- **하위호환 실측(설치본 cartograph 0.10.1)**: corpus에 호출 하나를 복제한 다중 호출자
+  문서로 `retentions`를 만들어 먹였다 — dead 억제 정상(CameraBridge 미보고), `--explain`
+  정상(대표 호출 문장), exit 0. Swift `JSONDecoder`가 알 수 없는 키를 무시하므로
+  구형 소비자도 그대로 읽는다. 생산자 선행 배포 안전(limitationScopes와 같은 패턴).
+- **계약**: GRAPH-EXCHANGE "되돌려 주는 형식" 절에 예시·규칙(상한·계수 공개·소비자
+  무시 근거) 명문화. README 양문·CHANGELOG 갱신.
+- **남은 것(cartograph 쪽)**: `ExternalRetention`의 `callers` decoding과 `--explain`
+  렌더링(전체 호출 나열 + `+N more`). 합의 issue 초안은
+  `$TMPDIR/opencode/issue-cartograph-callers.md` — 토큰 403이라 **사용자가 등록**한다.
+  등록 후 Blockers 5 완전 종결.
+
 ## 2026-09-10 — check summary 관찰량 노출·오류 분류 경계 분리 (opencode 세션)
 
 - **PR #49 (main `db9ee3a`)**: 지연 리뷰 F4(a)(b) 반영 — 베이스라인 인코딩을 쓰기 try
@@ -223,7 +241,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (구조·보안·성능 리뷰 + 베이스라인 원자 쓰기 경화)_
+_Last updated: 2026-09-10 (retentions 다중 호출자 근거 — Blockers 5 절반 종결)_
 
 ## Goal
 
@@ -412,8 +430,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
    `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
    후보다(자동 prune+stale로 위생 확보 판단).
-5. **retentions 대표 증거**: `invocations[0]`만 evidence로 실린다. external-retentions v0 형식
-   변경이라 cartograph 합의가 필요하다.
+ 5. **retentions 대표 증거**: **절반 종결(2026-09-10).** isthmus가 `evidence.callers`·
+    `callersOmitted`(v0 additive)를 실는다 — 하위호환은 설치본 cartograph 0.10.1로
+    실측(dead 억제·explain 정상). 남은 것은 cartograph의 callers 렌더링 합의·구현
+    (issue 초안은 세션 tmp, 최상단 절).
 6. ~~**관찰량 미노출**~~ — **닫힘(2026-09-10)**: `isthmus-check` summary에
    `observedFacts`·`observedLimitations` 추가(호환 변경). 조인 보류 결과도 관찰량
    보존. Phase 0 골든 재생성 포함.
@@ -472,8 +492,9 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **retentions 대표 증거 (Blockers 5)**: `invocations[0]`만 실림 — external-retentions
-   v0 형식 변경이라 cartograph 합의 필요.
+1. **cartograph callers 합의 issue 등록**(사용자): 초안
+   `$TMPDIR/opencode/issue-cartograph-callers.md`를 ictechgy/cartograph에 등록한다.
+   렌더링 구현이 되면 Blockers 5 완전 종결.
 2. **ObjC 무인덱스 환경 신원 (Blockers 2 잔여)**: 인덱스 없이 빌드된 환경의 핸들러
    식별, SCIP fallback 문법이 RESEARCH 후보.
 3. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
