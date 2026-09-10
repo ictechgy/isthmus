@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-09-10 — ObjC 무인덱스 신원: 이름 신원 완화 (Blockers 2 잔여 처리)
+
+Blockers 2의 남은 절반(인덱스 없이 빌드된 환경의 ObjC 핸들러 신원)을 제안·소비자
+구현으로 처리했다:
+
+- **결정**: SCIP 합성 usr 안은 기각 — 가짜 안정 식별자를 진짜처럼 싣는 것은 계약
+  철학 위반이고 ObjC 핸들러는 Swift 그래프 보존 대상이 아니어서 전역 식별자가
+  불필요. 대신 Swift `missing-handler-usrs`와 대칭인 **usr 없는 `qualifiedName`-only
+  symbol 허용** 완화를 채택(구문 표기 `Class.selector`는 소스에서 결정적,
+  `BridgeSymbolResolver`가 이미 이름을 알고 있어 생산 비용 없음).
+- **isthmus(선행 배포)**: `parse.ts`가 ObjC 사실의 usr 없는 symbol을 수용. usr이
+  있는 경우 실제 Clang `c:` 접두 요구 유지(거부 테스트는 가짜 usr 사례로 갱신).
+  수용 테스트: 조인·query 증거에 이름 신원 등장, retentions 제외·
+  `omittedObjectiveCHandlers` 계수는 불변.
+- **계약**: GRAPH-EXCHANGE ObjC 조항 갱신(usr 생략 허용·합성 신원 금지 명시).
+  RESEARCH에 기각·채택 근거 기록.
+- **cartograph 제안**: `BridgeSymbolResolver.resolve`가 ObjC 정의 위치 비유일·
+  무인덱스일 때 `attaching(Symbol(qualifiedName:, usr: nil))` 하도록 — 이슈 등록
+  예정(이 세션 토큰은 자매 저장소 쓰기 가능, #74 확인).
+
 ## 2026-09-10 — retentions 다중 호출자 근거 (Blockers 5 절반 종결)
 
 external-retentions v0의 additive 확장으로 `evidence.callers`(전체 호출 위치, 대표 포함,
@@ -242,7 +262,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (retentions 다중 호출자 근거 — Blockers 5 절반 종결)_
+_Last updated: 2026-09-10 (ObjC 무인덱스 신원 — 이름 신원 완화, Blockers 2 소비자 쪽 완료)_
 
 ## Goal
 
@@ -418,10 +438,12 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
    0.2.0/cartograph 0.9.0으로 양쪽 배포됐다. 남아 있던 양성 실측(실제 producer의 스코프
    발행 + 채널 단위 완화 종단)을 `verify-limitation-scopes.mjs`로 완료했다(최상단 절).
    스코프 없는 공백의 target 전체 완화는 설계대로 유지된다.
-2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
-   clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
-   `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고). 남은 것:
-   인덱스 없이 빌드된 환경의 ObjC 핸들러 신원(fallback 문법 후보는 RESEARCH의 SCIP).
+ 2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
+    clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
+    `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고).
+    무인덱스 신원 잔여도 **소비자 쪽 완료(2026-09-10)**: usr 없는 `qualifiedName`-only
+    symbol 허용 완화(SCIP 합성 usr 기각 — 근거는 RESEARCH). 남은 것은 cartograph의
+    이름 부착 구현(제안 이슈 등록, 최상단 절).
 3. ~~**모노레포 project 기준**~~ — **완전 종결(2026-09-09).** realpath 절반은
    cartograph#73(0.10.1), 공유 루트 절반은 dartograph#52(0.5.0)로 구현되고
    GRAPH-EXCHANGE에 "생산자가 선언한 조인 루트" 정의로 명문화됐다. isthmus 코드
@@ -494,12 +516,10 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **cartograph callers 합의 issue 등록**(사용자): 초안
-   `$TMPDIR/opencode/issue-cartograph-callers.md`를 ictechgy/cartograph에 등록한다.
-   렌더링 구현이 되면 Blockers 5 완전 종결.
-2. **ObjC 무인덱스 환경 신원 (Blockers 2 잔여)**: 인덱스 없이 빌드된 환경의 핸들러
-   식별, SCIP fallback 문법이 RESEARCH 후보.
-3. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
+1. **cartograph ObjC 이름 부착 제안 이슈 등록**: `BridgeSymbolResolver`의 usr 없는
+   `qualifiedName` 부착(cartograph#75 예정 — 이 세션 토큰으로 등록 가능). 구현되면
+   Blockers 2 완전 종결.
+2. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
 4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
