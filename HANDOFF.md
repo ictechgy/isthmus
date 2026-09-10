@@ -1,5 +1,27 @@
 # Handoff
 
+## 2026-09-10 — cartograph #74·#75 이행(0.11.0) 검증 — Blockers 2·5 완전 종결
+
+cartograph PR #76(릴리스 0.11.0)이 두 제안을 모두 구현했다. 소스 빌드(0.11.0)로
+종단 독립 검증 완료:
+
+- **#75(ObjC 이름 신원)**: 인덱스에 유닛이 없는 `.m`(타깃 밖 파일)이 이제
+  `symbol: {"qualifiedName": "ExtraPlugin.handleMethodCall:result:"}`를 실운다
+  (0.10.1은 symbol 통째 생략). 인덱스 있는 선언은 실제 `c:` USR 유지,
+  `objective-c-handlers` 계수에 반영. isthmus check 수용 — 무인덱스 핸들러의 이름
+  신원이 증거(handler-without-invocation)에 그대로 흐른다.
+- **#74(callers 렌더링)**: 호출 5개 짜리 retentions로 `dead --external-retentions`
+  억제·`--explain` 확인 — `evidence: dart lib/camera.dart:5, dart
+  lib/camera_widget.dart:31, dart lib/gallery.dart:12, +2 more invokes 'takePhoto'
+  on channel 'com.example/camera'`(첫 3개 나열 + 잔여 계수 합산). 보존 판정·단일
+  호출자 문장은 불변(그쪽 테스트 기록).
+- 재현 절차: corpus `Sources/CorpusObjC/`에 타깃 밖 `.m` 추가(registrar 위임
+  패턴) → `bridges`; corpus dart 사실에 호출 복제 → `retentions` → `--explain`.
+- 로컬 brew cartograph는 0.10.1 — 검증 스크립트는 경로 인자라 막히지 않고,
+  필요시 사용자가 수동 tap 갱신 관행대로 0.11.0으로 올린다.
+
+이로 Blockers 2·5가 모두 완전 종결됐다. 남은 blockers는 없다.
+
 ## 2026-09-10 — ObjC 무인덱스 신원: 이름 신원 완화 (Blockers 2 잔여 처리)
 
 Blockers 2의 남은 절반(인덱스 없이 빌드된 환경의 ObjC 핸들러 신원)을 제안·소비자
@@ -262,7 +284,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (ObjC 무인덱스 신원 — 이름 신원 완화, Blockers 2 소비자 쪽 완료)_
+_Last updated: 2026-09-10 (cartograph 0.11.0 이행 검증 — Blockers 2·5 완전 종결)_
 
 ## Goal
 
@@ -441,9 +463,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
  2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
     clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
     `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고).
-    무인덱스 신원 잔여도 **소비자 쪽 완료(2026-09-10)**: usr 없는 `qualifiedName`-only
-    symbol 허용 완화(SCIP 합성 usr 기각 — 근거는 RESEARCH). 남은 것은 cartograph의
-    이름 부착 구현(cartograph#75 등록 완료, 최상단 절).
+    무인덱스 신원 잔여도 **완전 종결(2026-09-10)**: usr 없는 `qualifiedName`-only
+    symbol 완화(isthmus #53) + cartograph 0.11.0(#76, #75)의 이름 부착 — 무인덱스
+    `.m` 재현으로 종단 검증 완료(최상단 절).
 3. ~~**모노레포 project 기준**~~ — **완전 종결(2026-09-09).** realpath 절반은
    cartograph#73(0.10.1), 공유 루트 절반은 dartograph#52(0.5.0)로 구현되고
    GRAPH-EXCHANGE에 "생산자가 선언한 조인 루트" 정의로 명문화됐다. isthmus 코드
@@ -453,10 +475,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
    `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
    후보다(자동 prune+stale로 위생 확보 판단).
- 5. **retentions 대표 증거**: **절반 종결(2026-09-10).** isthmus가 `evidence.callers`·
-    `callersOmitted`(v0 additive)를 실는다 — 하위호환은 설치본 cartograph 0.10.1로
-    실측(dead 억제·explain 정상). 남은 것은 cartograph의 callers 렌더링 합의·구현
-    (issue 초안은 세션 tmp, 최상단 절).
+ 5. ~~**retentions 대표 증거**~~ — **완전 종결(2026-09-10).** isthmus가
+    `evidence.callers`·`callersOmitted`(v0 additive)를 실고 cartograph 0.11.0(#76,
+    #74)이 explain 렌더링까지 구현 — 소스 빌드로 종단 검증 완료(최상단 점).
 6. ~~**관찰량 미노출**~~ — **닫힘(2026-09-10)**: `isthmus-check` summary에
    `observedFacts`·`observedLimitations` 추가(호환 변경). 조인 보류 결과도 관찰량
    보존. Phase 0 골든 재생성 포함.
@@ -516,14 +537,14 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **cartograph 두 제안 이행 대기**: #74(callers 렌더링, Blockers 5)·
-   #75(ObjC 이름 부착, Blockers 2) — 구현되면 각각 완전 종결.
-2. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
+1. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
-4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
+2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
+4. Unreleased 3건(다중 호출자·관찰량·SARIF·ObjC 이름 신원) 쌓임 — 다음 릴리스
+   (0.4.0) 준비 요청 시 진행.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
