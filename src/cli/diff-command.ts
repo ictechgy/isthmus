@@ -2,12 +2,12 @@ import { MAX_DOCUMENTS_PER_JOIN } from '../join/join.ts';
 import { createBridgeDiff } from '../report/diff.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
-  internalError,
   inputFailureResult,
+  internalError,
   readBridgeDocuments,
   type CommandResult,
   type ReadTextFile,
-} from './check-command.ts';
+} from './command-support.ts';
 
 /** 전후 교환 파일을 하나의 입력 예산으로 읽어 새 경계 오류만 CI 실패로 표시한다. */
 export async function runDiffCommand(

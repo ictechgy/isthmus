@@ -388,6 +388,60 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
 - **check 명령의 매개변수 서명 및 CLI 인프라 편중**: 매개변수 객체화는 다음 CLI 확장 시 리팩터링.
 - **SARIF 대형 보고서(31MB)의 GitHub 업로드 상한**: GitHub Code Scanning 크기 한계에 대한 실측 필요.
 
+## 0.4.1 전체 개선 리뷰 (2026-09-10, 사용성·기능 중심)
+
+0.4.1 이후 제품 전량(`src/` 18개 파일)을 성능·보안·구조·기능·사용성 다섯 축으로
+재검토했다. 보안은 새로운 중등 이상 발견이 없었다 — 그래프 노드 ID 충돌 가능성,
+DOT/Mermaid 주입, ReDoS, `JSON.parse` 프로토타입 오염, diff 인수 위치 조작 등
+공격면을 추가로 확인했고 모두 기존 방어(이스케이프·제어 문자 거부·안전 문자열
+검증·인수 거부)로 차단됐다. 성능은 0.3.0/0.4.0 실측 판정이 유효해 코드 변경이
+없다. 반영한 것은 사용성·기능·구조의 아홉 건이다.
+
+### 채택 (반영)
+
+1. **[사용성·중] 하위 명령 간 플래그 위치 규칙 불일치**: check는 플래그를 임의
+   순서로 받았지만 graph의 `--format`은 마지막에서 두 번째, retentions의 `--for`는
+   반드시 마지막이어야 했다. `isthmus graph --format dot a.json b.json`이 사용법
+   오류로 거부됐다. → `src/cli/parse-arguments.ts` 공유 파서로 통일했다.
+2. **[사용성·중] `-` 시작 경로·이름 전달 불가**: 다섯 명령 모두 `-` 선행 인수를
+   거부했고 채널 이름은 계약상 `-weird`도 합법이다. → `--` 구분자 이후는 모두
+   위치 인수로 읽는 관례를 파서에 넣어 해소했다(1과 같은 변경).
+3. **[사용성·하] 도움말 도달성**: `isthmus check a.json b.json -h`가 도움말 대신
+   사용법 오류 64를 냈다. → `-h/--help`가 임의 위치에서 이기고 `help <command>`
+   낱말 형식을 추가했다. 모르는 명령의 `help`는 루트 도움말로 응답한다.
+4. **[사용성·하] query notFound/ambiguous의 빈 stderr**: 스크립트가 상태를 알려면
+   stdout JSON을 파싱해야 했다. → 원인 한 줄(후보 수는 숫자 보간)을 stderr에
+   추가했다. 종료 코드 64와 stdout 문서는 불변이다.
+5. **[기능·중] 조인 보류 시 관찰량 소실**: 보류 결과 객체는 `observedFacts`를
+   보존했지만 CLI는 정적 메시지만 냈다 — "몇 개를 봤는데 못 조인했는지"가
+   사용자에게 도달하지 않았다. → 메시지에 fact 수·문서 수를 숫자 보간으로
+   추가했다. 보류 결과의 문서 출력은 계약 변경이라 하지 않았다.
+6. **[기능·중] query qualifiedName의 `:` 비가역**: `encodeSubjectComponent`가 `%`와
+   `#`만 이스케이프해 채널 이름의 `:`가 target 구분자와 구분되지 않았다. isthmus는
+   정확 문자열 일치라 무사하지만 candidates를 파싱하는 외부 도구는 불가능했다.
+   → `:`까지 이스케이프해 첫 `:`/`#` 분해가 가역이 됐다. isthmus 소유 출력이고
+   문서화된 용법은 "candidates를 그대로 재질의"라 값이 달라지는 것은 `:`를
+   이름에 포함하는 채널·메서드뿐이다.
+7. **[구조·하] `createBridgeDiff` 반환형 추론**: 유일하게 문서 인터페이스 없는
+   보고서였다. → `BridgeDiffDocument`를 export해 대칭을 맞췄다.
+8. **[구조·하] report 계층의 `node:crypto`**: `sarif.ts`만 Node 내장 모듈에
+   의존했다. → `createSarifLog`이 `IssueFingerprint`를 주입받고 sha256 구현은
+   check-command(cli 계층)로 옮겨 exchange→join→report의 순수성이 완전해졌다.
+9. **[구조·중, 기존 장기 후보] check-command 인프라 편중**: `readBridgeDocuments`·
+   입력 오류 분류·공유 결과 형태가 check-command에 살았다. →
+   `src/cli/command-support.ts`로 분리했다. baseline 오류 매퍼는 check 고유로
+   남겨 "명령 고유 실패는 각 명령의 매퍼를 덧붙인다"는 확장 방식을 정례화했다.
+
+### 미반영
+
+- **입력 파일 병렬 읽기**: `readBridgeDocuments`의 순차 await는 256문서 상한에서
+  I/O 지연이 누적될 수 있지만, 계약 상한 실측에서 I/O는 병목이 아니었고 "첫 실패
+  입력 위치" 보고 순서 유지가 복잡도를 더한다. 기존 유보 판정 유지.
+- **사람이 읽는 텍스트 출력 형식**: "제품은 JSON만 읽고 쓴다" 불변 조건과의
+  판단이 먼저다. 4번의 stderr 한 줄로 사람용 최소 필요는 충분하다.
+- **지연 조인의 문서 출력 · baseline 만료일**: 각각 계약 합의 사항과 기존
+  Next Steps 추적 항목이라 이번 범위 밖이다.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위

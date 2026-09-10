@@ -2,12 +2,9 @@
 
 import { readFile } from 'node:fs/promises';
 
-import {
-  checkUsage,
-  runCheckCommand,
-  type CommandResult,
-} from './check-command.ts';
 import { writeTextAtomically } from './atomic-write.ts';
+import { checkUsage, runCheckCommand } from './check-command.ts';
+import type { CommandResult } from './command-support.ts';
 import { graphUsage, runGraphCommand } from './graph-command.ts';
 import { diffUsage, runDiffCommand } from './diff-command.ts';
 import { queryUsage, runQueryCommand } from './query-command.ts';
@@ -35,9 +32,10 @@ Commands:
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change
   retentions   Produce external retention evidence
+  help         Show command help
 
 Options:
-  -h, --help   Show help
+  -h, --help   Show help; after a command it shows that command's usage
   --version    Show version
 `;
 
@@ -65,24 +63,30 @@ function handleStreamError(error: NodeJS.ErrnoException): void {
 async function runInformationalCommand(
   commandArguments: readonly string[],
 ): Promise<CommandResult | undefined> {
-  const first = commandArguments[0];
+  // 도움말 플래그는 어느 위치에 있든 이긴다. 긴 호출 끝에 붙여도 사용법을 본다.
+  const helpFlagIndex = commandArguments.findIndex(
+    (argument) => argument === '--help' || argument === '-h',
+  );
+  if (helpFlagIndex >= 0) return commandHelp(commandArguments[0]);
+  if (commandArguments[0] === 'help') {
+    return commandHelp(commandArguments[1]);
+  }
   if (
     commandArguments.length === 1 &&
-    (first === '--help' || first === '-h')
+    commandArguments[0] === '--version'
   ) {
-    return successfulText(rootHelp);
-  }
-  if (commandArguments.length === 1 && first === '--version') {
     return readVersion();
   }
-  if (
-    commandArguments.length === 2 &&
-    (commandArguments[1] === '--help' || commandArguments[1] === '-h')
-  ) {
-    const usage = first === undefined ? undefined : commandUsages.get(first);
-    if (usage !== undefined) return successfulText(`${usage}\n`);
-  }
   return undefined;
+}
+
+/** 명령 이름에 맞는 사용법을, 모르면 루트 도움말을 돌려준다. */
+function commandHelp(command: string | undefined): CommandResult {
+  if (command === undefined) return successfulText(rootHelp);
+  const usage = commandUsages.get(command);
+  return usage === undefined
+    ? successfulText(rootHelp)
+    : successfulText(`${usage}\n`);
 }
 
 /** 알려진 분석 하위 명령으로만 라우팅한다. */

@@ -124,7 +124,11 @@ test('없는 subject는 notFound JSON과 종료 코드 64를 반환한다', asyn
   );
 
   assert.equal(result.exitCode, 64);
-  assert.equal(result.standardError, '');
+  assert.equal(
+    result.standardError,
+    'No bridge channel or method matches the requested name; '
+    + 'query a channel or method name that the inputs observed.\n',
+  );
   assert.equal(JSON.parse(result.standardOutput).status, 'notFound');
 });
 
@@ -166,7 +170,11 @@ test('모호한 subject는 후보 JSON과 종료 코드 64를 반환한다', asy
   );
 
   assert.equal(result.exitCode, 64);
-  assert.equal(result.standardError, '');
+  assert.equal(
+    result.standardError,
+    'The requested name matches 2 bridge keys; '
+    + 'repeat the query with a qualifiedName from candidates.\n',
+  );
   assert.equal(JSON.parse(result.standardOutput).status, 'ambiguous');
 });
 
@@ -187,7 +195,8 @@ test('mixed-targets로 전체 조인이 보류되면 query를 실행하지 않�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+      'Bridge facts could not be joined; split mixed bridge targets and retry. '
+      + 'The inputs observed 10 facts across 2 documents.\n',
     exitCode: 2,
   });
 });

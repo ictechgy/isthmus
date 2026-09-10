@@ -33,6 +33,18 @@ test('retentions가 cartograph 외부 보존 JSON을 출력한다', async () => 
   assert.equal(result.standardOutput, await readFile(retentionsPath, 'utf8'));
 });
 
+test('retentions는 --for를 입력 앞에 두어도 읽는다', async () => {
+  const result = await runRetentionsCommand(
+    ['retentions', '--for', 'cartograph', dartPath, swiftPath],
+    (path) => readFile(path, 'utf8'),
+    () => new Date('2026-09-04T13:00:00Z'),
+    'test-version',
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(JSON.parse(result.standardOutput).format, 'external-retentions');
+});
+
 test('지원하지 않는 retention 대상은 I/O 전에 종료 코드 64로 거부한다', async () => {
   let didReadFile = false;
   const result = await runRetentionsCommand(
@@ -192,7 +204,8 @@ test('mixed-targets로 전체 조인이 보류되면 retentions를 만들지 않
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+      'Bridge facts could not be joined; split mixed bridge targets and retry. '
+      + 'The inputs observed 10 facts across 2 documents.\n',
     exitCode: 2,
   });
 });

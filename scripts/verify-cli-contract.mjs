@@ -164,7 +164,10 @@ function verifyQuery() {
 function verifyMissingQuery() {
   const result = run(['query', 'missingMethod', dartPath, swiftPath]);
   verify(result.status === 64, 'missing query exit code');
-  verify(result.stderr === '', 'missing query stderr');
+  verify(
+    result.stderr.startsWith('No bridge channel or method matches'),
+    'missing query stderr',
+  );
   verify(JSON.parse(result.stdout).status === 'notFound', 'missing query JSON');
 }
 

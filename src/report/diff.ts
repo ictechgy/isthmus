@@ -1,14 +1,61 @@
 import type { BridgeFactsDocument, BridgeTarget } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
+import type {
+  BridgeJoinResult,
+  JoinLimitation,
+  MatchedMethod,
+} from '../join/join.ts';
 import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
+import type { CheckIssue } from './check-report.ts';
 import { baselineEntryKey } from './baseline.ts';
 import { createCheckReport } from './check-report.ts';
+
+/** 두 스냅샷의 생산 도구 버전 근거다. */
+export interface DiffProducerVersion {
+  readonly platform: string;
+  readonly name: string;
+  readonly version: string;
+  readonly generatedAt: string;
+}
+
+/**
+ * 동일 프로젝트의 전후 관찰을 비교한 isthmus-diff 문서다.
+ *
+ * added/removed는 키 집합 차이라 소스 줄 이동은 차이가 아니다. introduced와
+ * resolved는 논리 이슈 키 기준이라 코드가 바뀌면(-unverified → 본 판정)
+ * 해결·추가 한 쌍으로 보인다 — 심각도 상승은 새 관찰이기 때문이다.
+ */
+export interface BridgeDiffDocument {
+  readonly format: 'isthmus-diff';
+  readonly version: 1;
+  readonly summary: {
+    readonly addedMethods: number;
+    readonly removedMethods: number;
+    readonly introducedErrors: number;
+    readonly introducedWarnings: number;
+    readonly resolvedIssues: number;
+  };
+  readonly addedMethods: readonly MatchedMethod[];
+  readonly removedMethods: readonly MatchedMethod[];
+  readonly introducedIssues: readonly CheckIssue[];
+  readonly resolvedIssues: readonly CheckIssue[];
+  readonly limitations: {
+    readonly before: readonly JoinLimitation[];
+    readonly after: readonly JoinLimitation[];
+    readonly added: readonly JoinLimitation[];
+    readonly removed: readonly JoinLimitation[];
+  };
+  readonly producers: {
+    readonly before: readonly DiffProducerVersion[];
+    readonly after: readonly DiffProducerVersion[];
+  };
+}
 
 /** 동일 프로젝트의 관찰 결과를 비교하며 삭제 안전성이나 rename을 추측하지 않는다. */
 export function createBridgeDiff(
   before: readonly BridgeFactsDocument[],
   after: readonly BridgeFactsDocument[],
-) {
+): BridgeDiffDocument {
   validateSnapshots(before, after);
   const oldJoin = joinBridgeDocuments(before);
   const newJoin = joinBridgeDocuments(after);

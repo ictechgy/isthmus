@@ -174,7 +174,14 @@ function makeQueryResult(
   };
 }
 
-/** qualifiedName 구분자와 이스케이프 문자를 가역적인 퍼센트 표기로 바꾼다. */
+/**
+ * qualifiedName 구분자(:와 #)와 이스케이프 문자(%)를 가역적인 퍼센트 표기로
+ * 바꾼다. 세 문자를 모두 이스케이프하므로 첫 `:`와 `#` 기준으로 나눠 되돌릴 수
+ * 있다 — 채널·메서드 이름에 `:`가 들어도 소비자의 분해가 모호해지지 않는다.
+ */
 function encodeSubjectComponent(value: string): string {
-  return value.replaceAll('%', '%25').replaceAll('#', '%23');
+  return value
+    .replaceAll('%', '%25')
+    .replaceAll('#', '%23')
+    .replaceAll(':', '%3A');
 }
