@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-09-10 — 0.4.1 전체 개선 리뷰 반영 (PR #65 머지, main `f728394`)
+
+0.4.1 이후 제품 전량을 성능·보안·구조·기능·사용성 다섯 축으로 재검토했다. 보안은 새로운
+중등 이상 발견이 없었고(그래프 노드 ID 충돌, DOT/Mermaid 주입, ReDoS, 프로토타입 오염,
+diff 인수 위치 조작 등 추가 공격면 확인 — 모두 기존 방어로 차단), 성능은 기존 실측 판정이
+유효해 코드 변경 없음. 사용성·기능·구조의 채택 9건 + GLM packet-review 반영 3건을
+PR #65로 main에 squash 머지했다. 발견·처분 전문은 RESEARCH "0.4.1 전체 개선 리뷰" 절.
+
+- **사용성**: 공유 인수 파서(`src/cli/parse-arguments.ts`)로 check·graph·query·retentions의
+  플래그 위치 규칙 통일(임의 순서 + `--` 관례), `-h` 임의 위치 도움말 + `help <command>`.
+- **기능**: 조인 보류(mixed-targets) 메시지와 diff 비교 보류 메시지가 관찰 fact 수·문서 수를
+  숫자 보간으로 노출, query notFound/ambiguous stderr 힌트(종료 코드 64·stdout 불변),
+  query `qualifiedName`의 `:` 이스케이프로 가역 분해 확보(`:` 포함 이름만 값 변화).
+- **구조**: 공유 CLI 인프라 `src/cli/command-support.ts` 분리(기존 장기 후보 해소),
+  `createSarifLog` 지문 주입으로 report 계층의 `node:crypto` 제거,
+  `BridgeDiffDocument` 인터페이스 export.
+- **호환성**: isthmus 출력 v1의 필드·종료 코드·문서 형태 불변. CHANGELOG Unreleased가
+  채워졌으므로 다음 릴리스 때 이 내용이 0.4.2(또는 그 다음 버전)의 구성이 된다.
+- **검증**: `npm run verify` 전체(제품 287개, 커버리지 98.95/95.47/98.03), CI 두 잡 그린,
+  계약 검증기의 query stderr 기대값을 새 힌트 문구로 갱신.
+- **미반영(근거 기록)**: 입력 병렬 읽기(I/O 비병목 실측), 사람용 텍스트 출력 형식
+  (제품 불변 조건 판단 선행), diff의 공유 파서 전환(그룹 경계는 파서 모델이 다름),
+  usage 오류 원인 세분화(인수 재생 방지 설계), EPIPE exit 0(기존 동작).
+
 ## 2026-09-10 — git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료
 
 - 누락되었던 버전(`v0.1.5` ~ `v0.4.0`)을 포함하여 최신 `v0.4.1`까지 각 릴리스 커밋에 맞춰 태그를 생성하고 원격 푸시 완료 (`v0.1.0` ~ `v0.4.1` 12개 버전 정렬).
@@ -350,7 +374,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (0.4.1 발행 완료)_
+_Last updated: 2026-09-10 (0.4.1 전체 개선 리뷰 반영, PR #65 머지)_
 
 ## Goal
 
@@ -360,6 +384,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 ## Current Status
 
 - 0.4.1 릴리스 소스는 `fabe186`(PR #61)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- **main은 0.4.1 이후 코드 변경을 포함한다**(PR #65, main `f728394`): CHANGELOG Unreleased가
+  비어 있지 않다. 다음 발행 요청이 오면 버전·CHANGELOG·README Status 확인이 필요하다.
 - npm `isthmus-cli@0.4.1`이 최신 발행본이고 registry latest도 0.4.1이다(2026-09-10 발행,
   tarball·발행본 검증은 위 "0.4.1 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
@@ -439,6 +465,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #61 `fabe186`(이번 세션): 0.4.1 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행. 발행 후 검증 완료.
 - PR #62 `7912e34`(이번 세션): 0.4.1 발행 기록 및 HANDOFF.md 갱신.
 - PR #63 `ea796d8`(이번 세션): v0.1.5~v0.4.1 git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료 기록.
+- PR #65 `f728394`(이번 세션): 0.4.1 전체 개선 리뷰 반영 — CLI 사용성 통일(공유 파서·`--`·help),
+  조인 보류·diff 보류 관찰량 노출, query stderr 힌트·`qualifiedName` `:` 이스케이프,
+  command-support 분리·SARIF 지문 주입·`BridgeDiffDocument`. GLM 리뷰 1회 반영.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
