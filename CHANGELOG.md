@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- mixed-targets 한계 탐지 시 단어 경계 토큰(`(?<![\w-])mixed-targets(?![\w-])`)을 적용해, "non-mixed-targets workspaces" 등 다른 의미의 산문이 포함된 경우 조인을 잘못 보류(exit 2)하던 문제를 수정했다.
+- 유효하지 않은 짝 없는 서러게이트(lone surrogate, `\ud800` 등)가 경로·문자열에 포함될 경우 SARIF 리포터에서 `URIError`로 인해 "Internal isthmus error"(exit 2)가 발생하던 문제를 해결하기 위해, 입력 파싱 단계에서 `toWellFormed()` 검사로 사전 거부하도록 했다.
+- `retentions` 생성 시 핸들러별 호출자 다중 실림으로 인한 메모리 폭증을 방지하기 위해 문서 전체 호출자 총 예산(`MAX_RETENTION_CALLER_ENTRIES` 1,000,000)을 도입하고 상한 밖 호출자를 사전에 slice하도록 했다.
+- `--baseline ''`처럼 빈 문자열 인자가 전달될 때 종료 코드 2가 아닌 사용법 오류(exit 64)로 거부하도록 옵션 검증을 수정했다.
+- 베이스라인 원자 쓰기(`writeTextAtomically`)에 모드 `0o600`을 적용하고 fsync 부재 및 심링크 동작 주석을 보강했다.
+- 교환 문서 검증 오류 메시지의 고정 문구 "isthmus 0.1 only accepts..."를 현재 버전에 맞게 "this isthmus version only accepts..."로 갱신했다.
+
 ## [0.4.0] - 2026-09-10
 
 ### Changed

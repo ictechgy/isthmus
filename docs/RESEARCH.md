@@ -335,6 +335,59 @@ shadowed-flutter-method-channel: 1 … [channels: dev.isthmus/camera]
    `inputFailureResult` 등을 query/graph/diff/retentions가 import), baseline·입력
    오류 클래스의 스위치보드 선형 증가 — 기능 문제 없음, 다음 CLI 확장 시 분리.
 
+## 구조·보안·성능 리뷰 (2026-09-10, 0.4.0)
+
+0.4.0 발행 직후 제품 전량에 대해 자체 실측과 GLM packet-review(12건 발견)를 병행하여
+전체 구조·보안·성능을 재점검했다. 재현을 통해 진위를 판정하고 채택된 6건의 코드·테스트
+수정을 브랜치에 반영했다.
+
+### 성능 실측 (계약 상한 스케일, 0.4.0)
+
+| 시나리오 | 결과 |
+|---|---|
+| `check json` 87k facts(매치 30k·dedup·dynamic·미귀속 혼합) | 0.16–0.18s (0.3.0과 동일, 회귀 없음) |
+| `check sarif` 100k facts / 40k 이슈(relatedLocations 2개씩) | 0.39s, 출력 31MB (json 14MB의 ≈2.2배) |
+| 베이스라인 8k 이슈 update·apply | 각 0.15s (억제 8000·stale 0 확인) |
+| 베이스라인 40k 이슈 | 상한 10k 초과 → exit 2 안내 문구 (설계대로 동작) |
+| `retentions` 500메서드×120호출(상한 경로) | 0.15s (callers 100·omitted 20 확인) |
+
+### GLM 리뷰 발견과 처분
+
+#### 채택 (구현 및 테스트 완료)
+1. **[상] mixed-targets 부분 문자열 오판**: 산문 속에 `"non-mixed-targets workspaces"` 같은
+   표현이 있으면 조인을 보류(exit 2)하는 결함 확인. → 단어 경계 토큰 일치
+   `(?<![\w-])mixed-targets(?![\w-])`로 수정. 기존 변형 테스트(선행 산문 포함)는 유지하고,
+   낱말 내포 표기("non-…"·"-like") 비보류 테스트를 추가.
+2. **[중] 짝 없는 서러게이트(lone surrogate)의 SARIF 내부 오류 오분류**: 경로 등에 `\ud800`이
+   포함되면 JSON 출력은 정상이나 SARIF 리포터의 `encodeURIComponent`가 `URIError`를 던져
+   "Internal isthmus error"(exit 2)로 오분류됨. → `parse.ts`의 안전 문자열·경로 검증에
+   `toWellFormed()`를 이용한 미편성 서러게이트 거부 추가(유효한 아스트랄 문자 쌍은 통과).
+   `tsconfig.json`에 `ES2024` lib 추가.
+3. **[중] retentions 호출자 증폭 무예산**: 핸들러마다 callers가 중복되어 실릴 수 있어(100k
+   핸들러 × 100 호출자 = 최대 천만 객체 가능) 메모리 폭증 위험. → 문서 전체 예산
+   `MAX_RETENTION_CALLER_ENTRIES`(1,000,000)를 도입해 초과 시 `RetentionValidationError`(exit 2)
+   발생. 또한 상한(100개) 밖의 호출은 객체로 매핑하기 전에 사전 `slice`하여 할당 절감.
+4. **[하] 빈 플래그 값 거부**: `--baseline ''`처럼 빈 문자열이 전달될 때 exit 2가 아닌 사용법
+   오류(exit 64)로 거부하도록 옵션 검증 수정 및 미읽기 단언 테스트 추가.
+5. **[하] 원자적 쓰기(atomic-write) 경화**: 파일 쓰기 모드를 `0o600`으로 명시하고, 주석을
+   정확화(rename 원자성은 프로세스 중단·디스크 가득 참 대비이며 fsync가 없어 전원 손실은
+   비보장, 대상 심링크는 링크 자체를 교체).
+6. **[하] parse의 고정 문구 갱신**: "isthmus 0.1 only accepts..." 고정 문구를 "this isthmus version..."으로
+   갱신(테스트 단언 4곳 갱신).
+
+#### 기각
+- **partialFingerprints 유일성**: 동일 논리 키 호출 2개가 있을 때 지문 중복 지적 → 집계가 이미
+  유일성을 보장하며 `baselineEntryKey` 설계 의도와 일치하므로 기각.
+
+#### 유보 (장기 후보)
+- **ObjC 라벨의 Swift 보존 fail-closed 우회**: `sourceLanguage`는 생산자 자가 선언 전제이며
+  정적 분석 없이 소비자가 진위를 판정할 수 없음. GRAPH-EXCHANGE에 생산자 신뢰 전제를 명문화하고,
+  생략 목록 감사 필드는 cartograph와의 향후 합의 과제로 남김.
+- **callers에 column 정보 부재**: 같은 path/line의 다른 column 호출이 동일하게 표시됨 → column
+  추가는 `external-retentions` v0 스키마 합의 필요.
+- **check 명령의 매개변수 서명 및 CLI 인프라 편중**: 매개변수 객체화는 다음 CLI 확장 시 리팩터링.
+- **SARIF 대형 보고서(31MB)의 GitHub 업로드 상한**: GitHub Code Scanning 크기 한계에 대한 실측 필요.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위

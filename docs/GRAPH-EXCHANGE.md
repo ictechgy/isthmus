@@ -85,6 +85,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 `usr`가 있는데 `c:`로 시작하지 않으면 입력 오류다.
 그 외 값·플랫폼·확장자 조합은 입력 오류다.
 필드가 없으면 기존 플랫폼 의미를 유지한다. 위치 확장자만으로 Objective-C라고 추측하지 않는다.
+`sourceLanguage`는 Swift 분석 그래프 밖의 Objective-C 구현을 선언하는 생산자의 자가 선언 필드이며, 소비자는 이를 신뢰한다(생산자 신뢰 전제). 생산자가 이 라벨을 오선언해 Swift 보존 fail-closed를 우회하는 것은 소비자의 정적 분석 범위 밖이다.
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
@@ -95,6 +96,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 소비자는 이 조건을 어긴 문서를 거부해 로컬 경로 노출과 후속 출력 문법 오염을 막는다.
 프로젝트 경로와 채널·메서드·심볼 이름에도 제어 문자를 넣지 않는다.
 NEL(U+0085)과 Unicode 줄·문단 구분자(U+2028/U+2029)도 허용하지 않는다.
+유효하지 않은 유니코드 코드 포인트인 짝 없는 서러게이트(lone surrogate, U+D800~U+DFFF)도 허용하지 않으며(소비자는 `toWellFormed()`로 검증), 이를 어긴 문서는 URI 인코딩 등 하류 출력 파이프라인의 오작동을 막기 위해 파싱 단계에서 거부한다.
 `limitations` 문자열은 원인 설명이라 문장을 자유롭게 쓸 수 있고 소비자가 내용을
 검증하지 않는다. 소비자의 텍스트 출력(DOT·Mermaid 주석 등)에는 제어 문자를
 제거해 넣고, JSON 출력은 인코딩이 이스케이프를 맡는다.
@@ -155,7 +157,7 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 - 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이
   함께 있으면 생산자는 결정적인 대표값을 쓰고 정확히 `mixed-targets:`로 시작하는
   limitation을 반드시 추가한다
-- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. 생산자는 위의 정확한 표기를 써야 하며, 소비자는 대소문자·앞 공백·콜론 누락처럼 명백한 변형도 fail-closed로 보류한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
+- 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. 생산자는 위의 정확한 표기를 써야 하며, 소비자는 대소문자·앞 공백·콜론 누락처럼 명백한 변형도 fail-closed로 보류한다. 단, `non-mixed-targets`나 `mixed-targets-like`처럼 낱말 내부에 포함된 표기는 다른 의미의 산문이므로 보류 근거로 삼지 않고 단어 경계(`(?<![\w-])mixed-targets(?![\w-])`)로 판정한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
 
 소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,
 Swift/Kotlin은 수신 측 종류만 생산할 수 있다.
