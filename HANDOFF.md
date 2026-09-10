@@ -17,8 +17,8 @@ Blockers 2의 남은 절반(인덱스 없이 빌드된 환경의 ObjC 핸들러 
 - **계약**: GRAPH-EXCHANGE ObjC 조항 갱신(usr 생략 허용·합성 신원 금지 명시).
   RESEARCH에 기각·채택 근거 기록.
 - **cartograph 제안**: `BridgeSymbolResolver.resolve`가 ObjC 정의 위치 비유일·
-  무인덱스일 때 `attaching(Symbol(qualifiedName:, usr: nil))` 하도록 — 이슈 등록
-  예정(이 세션 토큰은 자매 저장소 쓰기 가능, #74 확인).
+  무인덱스일 때 `attaching(Symbol(qualifiedName:, usr: nil))` 하도록 —
+  [cartograph#75](https://github.com/ictechgy/cartograph/issues/75)로 등록 완료.
 
 ## 2026-09-10 — retentions 다중 호출자 근거 (Blockers 5 절반 종결)
 
@@ -443,7 +443,7 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
     `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고).
     무인덱스 신원 잔여도 **소비자 쪽 완료(2026-09-10)**: usr 없는 `qualifiedName`-only
     symbol 허용 완화(SCIP 합성 usr 기각 — 근거는 RESEARCH). 남은 것은 cartograph의
-    이름 부착 구현(제안 이슈 등록, 최상단 절).
+    이름 부착 구현(cartograph#75 등록 완료, 최상단 절).
 3. ~~**모노레포 project 기준**~~ — **완전 종결(2026-09-09).** realpath 절반은
    cartograph#73(0.10.1), 공유 루트 절반은 dartograph#52(0.5.0)로 구현되고
    GRAPH-EXCHANGE에 "생산자가 선언한 조인 루트" 정의로 명문화됐다. isthmus 코드
@@ -516,9 +516,8 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 ## Next Steps
 
-1. **cartograph ObjC 이름 부착 제안 이슈 등록**: `BridgeSymbolResolver`의 usr 없는
-   `qualifiedName` 부착(cartograph#75 예정 — 이 세션 토큰으로 등록 가능). 구현되면
-   Blockers 2 완전 종결.
+1. **cartograph 두 제안 이행 대기**: #74(callers 렌더링, Blockers 5)·
+   #75(ObjC 이름 부착, Blockers 2) — 구현되면 각각 완전 종결.
 2. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
 4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
