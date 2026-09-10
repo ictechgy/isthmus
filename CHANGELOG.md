@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-10
+
 ### Changed
 
 - bridge-facts v1 완화(호환): `sourceLanguage: objective-c` 사실이 `usr` 없는

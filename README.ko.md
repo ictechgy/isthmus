@@ -28,14 +28,19 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 ## 상태
 
-**0.3.0.** bridge-facts 버전 1 파서와 `check`, `query`, `graph`, `diff`,
-cartograph용 외부 보존 근거 왕복, 인정된 이슈를 논리 이슈 식별자로 억제하되 증거는
-보존하는 check 베이스라인을 구현했다. 외부 입력·혼합 target·그래프 크기·
-Dart/Swift Phase 0 추출 경계를 fail-closed로 강화했고, 조인하지 못한 사실은 소비자
-쪽에서 다시 세고 근거를 만들지 못한 보존 대상은 조용히 사라지는 대신 실패로 보고한다.
-수신 측이 신고한 분석 공백은 불일치가 아니라 판정 불가로 보고한다. 한계는 신고 문서의
-target으로 귀속되어 공백 완화가 다른 target의 진단으로 번지지 않는다. 다음 단계는
-실제 Flutter 앱 도그푸딩과 React Native 지원이다.
+**0.4.0.** 0.3.0의 계약과 명령 — bridge-facts 버전 1 파서, `check`, `query`, `graph`,
+`diff`, cartograph용 외부 보존 근거 왕복, 논리 이슈 식별자로 억제하되 증거는 보존하는
+check 베이스라인 — 에 이번 주기의 추가를 더했다: GitHub code scanning용 check 결과의
+SARIF 2.1.0 렌더링(`check --format sarif`, additive, 소스 줄 이동에 강한 논리 키
+지문), 브리지가 없는 프로젝트와 아무것도 관찰하지 못한 실행을 구분하는 check summary
+관찰량(`observedFacts`·`observedLimitations`), 다중 호출자 보존 근거(`evidence.callers`
+— 근거당 상한·명시적 `callersOmitted` 계수, 단일 호출자는 기존과 바이트 동일),
+인덱스 없이 빌드된 Objective-C 핸들러의 usr 없는 `qualifiedName` 신원. 외부 입력·
+혼합 target·그래프 크기·Dart/Swift Phase 0 추출 경계는 fail-closed를 유지하고,
+조인하지 못한 사실은 소비자 쪽에서 다시 세며 근거를 만들지 못한 보존 대상은 조용히
+사라지는 대신 실패로 보고한다. 수신 측이 신고한 분석 공백은 불일치가 아니라 판정
+불가로 보고되고 공백 완화는 target을 넘지 않는다. 다음 단계는 실제 Flutter 앱
+도그푸딩과 React Native 지원이다.
 
 정식 producer는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상이다. 두 도구의 실제 출력과
 공개 battery 플러그인의 Swift USR·Dart 호출 근거 왕복을 검증했다.
