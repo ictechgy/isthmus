@@ -122,7 +122,10 @@ function parseCheckOptions(
     }
     if (argument === '--format' || argument === '--baseline' || argument === '--update-baseline') {
       const value = rest[index + 1];
-      if (value === undefined || value.startsWith('-')) return undefined;
+      // 빈 값은 경로가 아니라 호출 오류다. 읽기 실패(코드 2)보다 사용법(64)이 맞다.
+      if (value === undefined || value.length === 0 || value.startsWith('-')) {
+        return undefined;
+      }
       if (argument === '--format') {
         if (format !== undefined || (value !== 'json' && value !== 'sarif')) {
           return undefined;

@@ -210,7 +210,7 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
   if (!supportedBridgeFactKinds.has(value.kind)) {
-    fail(`Fact kind is reserved but not supported in isthmus 0.1 at index ${index}.`);
+    fail(`Fact kind is reserved but not supported by this isthmus version at index ${index}.`);
   }
   if (!isFactKindForPlatform(platform, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
@@ -265,7 +265,16 @@ export function isBridgeTarget(value: unknown): value is BridgeTarget {
 
 /** 조인 키를 깨뜨리는 제어 문자가 없는 비어 있지 않은 문자열인지 확인한다. */
 export function isSafeNonEmptyString(value: unknown): value is string {
-  return isNonEmptyString(value) && !controlCharacterPattern.test(value);
+  return isNonEmptyString(value) && !controlCharacterPattern.test(value) &&
+    !hasUnpairedSurrogate(value);
+}
+
+/** 유효한 UTF-16 문자열인지, 즉 짝 없는 서러게이트가 없는지 확인한다. */
+function hasUnpairedSurrogate(value: string): boolean {
+  // 아스트랄 문자(이모지 등)는 유효한 서러게이트 쌍이므로 그대로 통과한다.
+  // 짝 없는 서러게이트는 어떤 인코딩의 파일에도 존재할 수 없어 JSON 이스케이프로만
+  // 들어오며, URI 인코딩이 실패하는 등 소비 경로마다 깨진다.
+  return value.toWellFormed() !== value;
 }
 
 /** 사실 위치가 상대 경로와 1부터 시작하는 줄·열을 갖는지 검증한다. */
@@ -284,7 +293,9 @@ function validateLocation(value: unknown, index: number): void {
 function isProjectRelativePath(value: unknown): value is string {
   if (!isNonEmptyString(value)) return false;
   if (/^(?:[/\\]|[A-Za-z]:)/u.test(value)) return false;
-  if (controlCharacterPattern.test(value)) return false;
+  if (controlCharacterPattern.test(value) || hasUnpairedSurrogate(value)) {
+    return false;
+  }
   return !value.split(/[/\\]/u).includes('..');
 }
 

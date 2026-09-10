@@ -617,10 +617,27 @@ test('mixed-targets limitation의 명백한 문구 변형도 보수적으로 보
       ...swiftDocument,
       limitations: [...swiftDocument.limitations, message],
     });
-
     const result = joinBridgeDocuments([dartDocument, mixedSwiftDocument]);
 
     assert.equal(result.deferred, true, message);
+  }
+});
+
+test('낱말 안에 붙은 mixed-targets 표기는 보류의 근거로 삼지 않는다', () => {
+  const messages = [
+    'producer does not support non-mixed-targets workspaces',
+    'avoid mixed-targets-like configurations',
+  ];
+
+  for (const message of messages) {
+    const plainSwiftDocument = parseBridgeFactsDocument({
+      ...swiftDocument,
+      limitations: [...swiftDocument.limitations, message],
+    });
+    const result = joinBridgeDocuments([dartDocument, plainSwiftDocument]);
+
+    assert.equal(result.deferred, false, message);
+    assert.equal(result.matchedChannels.length > 0, true, message);
   }
 });
 

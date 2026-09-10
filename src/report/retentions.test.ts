@@ -10,6 +10,7 @@ import { joinBridgeDocuments } from '../join/join.ts';
 import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
+  MAX_RETENTION_CALLER_ENTRIES,
   MAX_RETENTION_CALLERS,
   validateCartographRetentionInputs,
 } from './retentions.ts';
@@ -238,6 +239,53 @@ test('호출 상한을 넘으면 잘린 목록과 계수를 실는다', () => {
   assert.deepEqual(
     evidence?.callers?.[0],
     { platform: 'dart', path: 'lib/camera_bridge.dart', line: 6 },
+  );
+});
+
+test('문서 전체 호출자 예산을 넘으면 실패한다', () => {
+  // 핸들러마다 근거가 하나씩 나오고 각 근거가 호출자를 다시 실으므로,
+  // 1,000 메서드 × 핸들러 100 × 호출자 100 = 1,000,000건으로 예산을 넘는다.
+  const methodCount = 1_000;
+  const callersPerMethod = MAX_RETENTION_CALLERS;
+  const handlersPerMethod = 100;
+  const invocationFacts = [];
+  const handlerFacts = [];
+  for (let m = 0; m < methodCount; m++) {
+    const channel = `dev.isthmus/c${m}`;
+    for (let i = 0; i < callersPerMethod; i++) {
+      invocationFacts.push({
+        kind: 'method-invoke',
+        channel,
+        method: 'go',
+        dynamic: false,
+        location: { path: `lib/f${i}.dart`, line: i + 1, column: 1 },
+      });
+    }
+    for (let h = 0; h < handlersPerMethod; h++) {
+      handlerFacts.push({
+        kind: 'method-handle',
+        channel,
+        method: 'go',
+        dynamic: false,
+        location: { path: `src/P${h}/M${m}.swift`, line: h + 1, column: 3 },
+        symbol: { qualifiedName: `P${h}.M${m}.go`, usr: `s:p${h}m${m}` },
+      });
+    }
+  }
+  const joined = joinBridgeDocuments([
+    parseBridgeFactsDocument({
+      ...dartDocument,
+      facts: invocationFacts,
+    }),
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      facts: handlerFacts,
+    }),
+  ]);
+
+  assert.throws(
+    () => createCartographRetentionsDocument(joined, '2026-09-10T00:00:00Z', '0.0.0'),
+    /caller entries/u,
   );
 });
 
