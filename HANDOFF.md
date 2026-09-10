@@ -1,5 +1,10 @@
 # Handoff
 
+## 2026-09-10 — git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료
+
+- 누락되었던 버전(`v0.1.5` ~ `v0.4.0`)을 포함하여 최신 `v0.4.1`까지 각 릴리스 커밋에 맞춰 태그를 생성하고 원격 푸시 완료 (`v0.1.0` ~ `v0.4.1` 12개 버전 정렬).
+- GitHub Release에 `isthmus-cli 0.4.1`(`v0.4.1`)을 최신(Latest)으로 발행 완료 (PR #63 머지).
+
 ## 2026-09-10 — 0.4.1 발행 완료
 
 PR #61(`fabe186`)로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
@@ -432,6 +437,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #56(이번 세션): 0.4.0 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행.
 - PR #59 `c6b5ddb`(이번 세션): 0.4.0 구조·보안·성능 리뷰 반영(mixed-targets 단어 경계, 서러게이트 거부, retentions 호출자 예산, 빈 플래그 값 64, atomic-write 0o600 및 모드 단언, parse 고정 문구 갱신, GRAPH-EXCHANGE·RESEARCH·CHANGELOG 문서화). GLM packet-review 2회 반영 완료.
 - PR #61 `fabe186`(이번 세션): 0.4.1 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행. 발행 후 검증 완료.
+- PR #62 `7912e34`(이번 세션): 0.4.1 발행 기록 및 HANDOFF.md 갱신.
+- PR #63 `ea796d8`(이번 세션): v0.1.5~v0.4.1 git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료 기록.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -624,7 +631,7 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-**0.4.1까지 발행 완료(registry·tarball·발행본 검증까지), Blockers는 전부 종결됐어.**
+**0.4.1까지 발행 완료(registry·tarball·발행본 검증까지), git 태그(v0.1.0~v0.4.1) 및 GitHub Release(v0.4.1) 완료, Blockers는 전부 종결됐어.**
 현재 `main`이 깨끗하며 `npm run verify` 전체 통과 상태야.
 CHANGELOG `Unreleased`는 비어 있어.
 발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
