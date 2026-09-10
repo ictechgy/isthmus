@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-09-10 — 0.4.0 발행 완료
+
+PR #56(`5a0c733`)으로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
+
+- registry latest 0.4.0(비동기 — 직후 조회는 0.3.0, 첫 재시도에 반영).
+- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 59개 파일
+  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.4.0.
+- 발행본 CLI: `--version` 0.4.0, phase-0 check 코드 0(error 1·warning 2·
+  observedFacts 10·observedLimitations 7), `--strict` 코드 1, 베이스라인 왕복
+  (update → strict+baseline 억제 3·stale 0·코드 0), SARIF(2.1.0·driver isthmus
+  0.4.0·results 3)까지 확인.
+
+Unreleased는 비어 있다. 0.4.0 구성: SARIF 리포터, check summary 관찰량, retentions
+다중 호출자 근거(cartograph 0.11.0과 왕복 검증), ObjC usr 없는 이름 신원(cartograph
+0.11.0과 종단 검증).
+
 ## 2026-09-10 — cartograph #74·#75 이행(0.11.0) 검증 — Blockers 2·5 완전 종결
 
 cartograph PR #76(릴리스 0.11.0)이 두 제안을 모두 구현했다. 소스 빌드(0.11.0)로
@@ -284,7 +300,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (cartograph 0.11.0 이행 검증 — Blockers 2·5 완전 종결)_
+_Last updated: 2026-09-10 (0.4.0 발행 완료 — Blockers 전부 종결)_
 
 ## Goal
 
@@ -293,9 +309,9 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- 0.3.0 릴리스 소스는 `92b160b`(PR #34)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
-- npm `isthmus-cli@0.3.0`이 최신 발행본이고 registry latest도 0.3.0이다(2026-09-09 발행,
-  tarball·발행본 검증은 위 "0.3.0 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
+- 0.4.0 릴리스 소스는 `5a0c733`(PR #56)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
+- npm `isthmus-cli@0.4.0`이 최신 발행본이고 registry latest도 0.4.0이다(2026-09-10 발행,
+  tarball·발행본 검증은 위 "0.4.0 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
   않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
@@ -361,6 +377,14 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   `limitations` 문자열 동작 명문화. 리뷰 기록은 RESEARCH 해당 절.
 - PR #46(이번 세션): 사용자 소유 `.gitignore` 수정 커밋(Phase 0 산출물·serena 무시).
 - PR #47(이번 세션): `check --format sarif` SARIF 2.1.0 리포터(리뷰 반영 포함).
+- PR #48~#50(이번 세션): HANDOFF 기록 두 건과 check summary 관찰량
+  observedFacts·observedLimitations(Blockers 6 종결, 골든 재생성).
+- PR #51(이번 세션): retentions 다중 호출자 근거 callers·callersOmitted(Blockers 5
+  isthmus 쪽, 하위호환 실측 포함).
+- PR #52(이번 세션): cartograph#74 등록 기록·자매 저장소 쓰기 권한 정정.
+- PR #53~#55(이번 세션): ObjC usr 없는 qualifiedName 신원 허용(SCIP 기각 근거와 함께),
+  cartograph#75 등록, 0.11.0 이행 검증 기록(Blockers 2·5 완전 종결).
+- PR #56(이번 세션): 0.4.0 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행.
 - PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
   정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
   dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
@@ -453,7 +477,7 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. 0.3.0까지 발행을 마쳤고 통합 검증도 전체 그린이다.
+배포 blocker는 없다. 0.4.0까지 발행을 마쳤고 Blockers는 전부 종결됐다.
 
 1. ~~**완화 범위**~~ — **완전 종결(2026-09-09).** target 절반은 #18, 파일·채널 절반은 #25의
    선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
@@ -543,8 +567,6 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
    지금은 충분하다고 판단.
 3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
-4. Unreleased 3건(다중 호출자·관찰량·SARIF·ObjC 이름 신원) 쌓임 — 다음 릴리스
-   (0.4.0) 준비 요청 시 진행.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
