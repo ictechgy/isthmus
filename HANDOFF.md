@@ -539,10 +539,12 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 
 1. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
-4. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
+2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-5. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
+3. 태그·GitHub release가 필요한지는 이전 관행을 확인한다(0.1.4~0.3.0 모두 isthmus는
    태그가 없다. cartograph는 GitHub Release를 한다).
+4. Unreleased 3건(다중 호출자·관찰량·SARIF·ObjC 이름 신원) 쌓임 — 다음 릴리스
+   (0.4.0) 준비 요청 시 진행.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
