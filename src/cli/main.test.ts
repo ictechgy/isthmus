@@ -59,6 +59,40 @@ test('실제 CLI 프로세스가 명령별 도움말을 출력한다', async () 
   assert.equal(stdout.startsWith('Usage: isthmus graph'), true);
 });
 
+test('긴 호출 끝의 -h도 입력을 읽기 전에 명령 사용법을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'graph',
+    dartPath,
+    swiftPath,
+    '--help',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('Usage: isthmus graph'), true);
+});
+
+test('help 명령이 명령별 사용법을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'help',
+    'retentions',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('Usage: isthmus retentions'), true);
+});
+
+test('help 명령만 있으면 루트 도움말을 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    mainPath,
+    'help',
+  ]);
+
+  assert.equal(stderr, '');
+  assert.equal(stdout.startsWith('Usage: isthmus <command> [options]\n'), true);
+});
+
 test('실제 CLI 프로세스가 check JSON을 stdout으로 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     mainPath,

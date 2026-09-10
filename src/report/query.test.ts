@@ -375,6 +375,64 @@ test('보류된 조인을 notFound query로 만들지 않는다', () => {
   );
 });
 
+test('`:`가 든 채널도 qualifiedName에서 구분자와 구분되고 되돌아온다', () => {
+  const joined = joinBridgeDocuments([
+    parseBridgeFactsDocument({
+      ...dartDocument,
+      facts: [
+        {
+          kind: 'channel-create',
+          channel: 'com:example/camera',
+          dynamic: false,
+          location: { path: 'lib/colon.dart', line: 1, column: 3 },
+        },
+        {
+          kind: 'method-invoke',
+          channel: 'com:example/camera',
+          method: 'takePhoto',
+          dynamic: false,
+          location: { path: 'lib/colon.dart', line: 2, column: 3 },
+        },
+      ],
+    }),
+    parseBridgeFactsDocument({
+      ...swiftDocument,
+      facts: [
+        {
+          kind: 'channel-register',
+          channel: 'com:example/camera',
+          dynamic: false,
+          location: { path: 'ios/Colon.swift', line: 4, column: 7 },
+        },
+        {
+          kind: 'method-handle',
+          channel: 'com:example/camera',
+          method: 'takePhoto',
+          dynamic: false,
+          location: { path: 'ios/Colon.swift', line: 5, column: 7 },
+        },
+      ],
+    }),
+  ]);
+
+  const byName = createBridgeQuery(joined, 'com:example/camera');
+  assert.equal(byName.status, 'found');
+  assert.equal(byName.result?.subject.qualifiedName, 'flutter:com%3Aexample/camera');
+
+  // 구분자 세 문자가 모두 이스케이프되므로 첫 `:`와 `#` 기준 분해가 가역이다.
+  const byQualifiedName = createBridgeQuery(
+    joined,
+    'flutter:com%3Aexample/camera#takePhoto',
+  );
+  assert.equal(byQualifiedName.status, 'found');
+  assert.equal(byQualifiedName.result?.subject.kind, 'method');
+  const [target, ...rest] = (byQualifiedName.result?.subject.qualifiedName ?? '').split(':');
+  const [encodedChannel = '', encodedMethod = ''] = rest.join(':').split('#');
+  assert.equal(target, 'flutter');
+  assert.equal(decodeURIComponent(encodedChannel), 'com:example/camera');
+  assert.equal(decodeURIComponent(encodedMethod), 'takePhoto');
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

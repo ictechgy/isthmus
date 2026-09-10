@@ -105,6 +105,14 @@ isthmus --version
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
+옵션은 어떤 명령에서든 입력 파일 앞뒤 어디에 와도 된다
+(`isthmus graph --format dot dart-bridges.json swift-bridges.json`도 동작).
+`-`로 시작하는 값은 항상 다음 옵션으로 읽히므로, `-`로 시작하는 경로나 이름은
+옵션 해석을 끝내는 `--` 구분자 뒤에 쓴다:
+`isthmus query -- -unusual-name dart-bridges.json swift-bridges.json`.
+`-h`/`--help`는 어느 위치에 있든 도움말을 내고, `isthmus help <command>`로 명령의
+사용법을 볼 수 있으며, 모르는 명령은 루트 도움말을 출력한다.
+
 ### SARIF 출력
 
 check 결과를 GitHub code scanning(또는 그 밖의 SARIF 2.1.0 소비자)에 올리려면
@@ -164,7 +172,8 @@ cartograph dead --external-retentions external-retentions.json
 여러 위치에서 호출하면 근거가 전체 호출 위치를 `callers`로 실고(대표 `caller`는 옛
 소비자를 위해 유지), 근거당 100개 상한을 넘은 호출은 조용히 버리지 않고
 `callersOmitted`로 계수를 밝힌다. `mixed-targets` 문서는 v1에서 사실별 target을
-복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류한다. 먼저 생산 단계에서
+복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류하며, 이때 몇 개의 문서에서
+관찰한 fact 몇 개가 조인되지 못했는지를 함께 알린다. 먼저 생산 단계에서
 target별 문서로 분리해야 한다.
 
 cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소
@@ -217,6 +226,11 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 
 `query`는 같은 메서드가 여러 채널에 있으면 후보를 반환하고 임의로 고르지 않는다.
 반환된 `qualifiedName`을 같은 subject 자리에 넣어 정확한 후보를 다시 조회할 수 있다.
+`qualifiedName`은 `target:` 뒤에 퍼센트 이스케이프된 구성 요소가 붙는 형태로
+`%`·`#`·`:`가 모두 이스케이프되므로, 첫 `:`와 `#` 기준으로 나눈 뒤 디코딩하면
+채널·메서드 이름이 항상 되돌아온다. `notFound`·`ambiguous` 질의는 종료 코드 64와
+함께 원인 한 줄을 stderr에 출력하므로, 스크립트가 stdout을 파싱하지 않고도
+호출 오류와 이름 부재를 구분할 수 있다.
 `graph`는 매치된 간선만 내보내며, 입력의 `limitations`를 JSON 필드 또는 DOT/Mermaid
 주석으로 보존한다. 증거의 Cartesian 곱이 100,000개 간선을 넘으면 메모리 폭주를 막기
 위해 종료 코드 2로 실패한다.

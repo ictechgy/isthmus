@@ -11,13 +11,14 @@ import {
 } from '../report/retentions.ts';
 import {
   bridgeJoinDeferredError,
-  internalError,
   inputFailureResult,
+  internalError,
   readBridgeDocuments,
   type Clock,
   type CommandResult,
   type ReadTextFile,
-} from './check-command.ts';
+} from './command-support.ts';
+import { parseCommandArguments } from './parse-arguments.ts';
 
 export type { Clock };
 
@@ -33,7 +34,9 @@ export async function runRetentionsCommand(
   try {
     const documents = await readBridgeDocuments(inputPaths, readTextFile);
     const joined = joinBridgeDocuments(documents);
-    if (isBridgeJoinDeferred(joined)) return bridgeJoinDeferredError();
+    if (isBridgeJoinDeferred(joined)) {
+      return bridgeJoinDeferredError(joined.observedFacts, documents.length);
+    }
     validateCartographRetentionInputs(documents);
     const retentions = createCartographRetentionsDocument(
       joined,
@@ -59,13 +62,12 @@ export async function runRetentionsCommand(
 
 /** 지원 대상과 최소 입력 수를 검증해 파일 경로만 돌려준다. */
 function retentionInputPaths(arguments_: readonly string[]): string[] | undefined {
-  const forIndex = arguments_.indexOf('--for');
-  if (arguments_[0] !== 'retentions' || forIndex < 3) return undefined;
-  if (forIndex !== arguments_.length - 2) return undefined;
-  if (arguments_[forIndex + 1] !== 'cartograph') return undefined;
-  const paths = arguments_.slice(1, forIndex);
-  return paths.length > MAX_DOCUMENTS_PER_JOIN ||
-    paths.some((path) => path.startsWith('-'))
+  if (arguments_[0] !== 'retentions') return undefined;
+  const parsed = parseCommandArguments(arguments_.slice(1), ['--for'], []);
+  if (parsed === undefined) return undefined;
+  if (parsed.valueFlags.get('--for') !== 'cartograph') return undefined;
+  const paths = [...parsed.positionals];
+  return paths.length < 2 || paths.length > MAX_DOCUMENTS_PER_JOIN
     ? undefined
     : paths;
 }

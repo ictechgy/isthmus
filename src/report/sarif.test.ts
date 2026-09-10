@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { baselineEntryKey } from './baseline.ts';
 import type { CheckReport } from './check-report.ts';
 import { checkIssueCodes } from './check-report.ts';
 import { createSarifLog, encodeSarifLog, sarifUri } from './sarif.ts';
 
+/** 해싱은 cli 계층 소관이므로, report 테스트는 논리 키를 그대로 지문으로 쓴다. */
+const logicalKeyFingerprint = (issue: Parameters<typeof baselineEntryKey>[0]) =>
+  baselineEntryKey(issue);
+
 test('check 보고서의 이슈를 SARIF 결과로 옮긴다', () => {
-  const log = createSarifLog(reportFixture(), '9.9.9');
+  const log = createSarifLog(reportFixture(), '9.9.9', logicalKeyFingerprint);
   const [run] = log.runs;
   assert.ok(run);
 
@@ -72,7 +77,7 @@ test('이슈가 없으면 빈 결과 목록을 낸다', () => {
   const log = createSarifLog({
     ...reportFixture(),
     issues: [],
-  });
+  }, undefined, logicalKeyFingerprint);
 
   assert.deepEqual(log.runs[0]?.results, []);
 });
@@ -97,7 +102,7 @@ test('증거 위치가 1행 1열보다 앞서면 만들 수 없다', () => {
     ],
   };
 
-  assert.throws(() => createSarifLog(report), /SARIF region/u);
+  assert.throws(() => createSarifLog(report, undefined, logicalKeyFingerprint), /SARIF region/u);
 });
 
 test('베이스라인 억제 이슈는 external suppression으로 전달한다', () => {
@@ -106,7 +111,7 @@ test('베이스라인 억제 이슈는 external suppression으로 전달한다',
     issues: reportFixture().issues.map((issue, index) =>
       index === 0 ? { ...issue, suppressed: true as const } : issue,
     ),
-  });
+  }, undefined, logicalKeyFingerprint);
 
   const [first] = log.runs[0]?.results ?? [];
   assert.deepEqual(first?.suppressions, [
@@ -115,8 +120,8 @@ test('베이스라인 억제 이슈는 external suppression으로 전달한다',
 });
 
 test('논리 키 지문은 같은 이슈에서 안정적이고 다른 이슈와 다르다', () => {
-  const first = createSarifLog(reportFixture());
-  const again = createSarifLog(reportFixture());
+  const first = createSarifLog(reportFixture(), undefined, logicalKeyFingerprint);
+  const again = createSarifLog(reportFixture(), undefined, logicalKeyFingerprint);
   const fingerprints = first.runs[0]?.results.map(
     ({ partialFingerprints }) => partialFingerprints.isthmusIssueV1,
   ) ?? [];
@@ -128,14 +133,16 @@ test('논리 키 지문은 같은 이슈에서 안정적이고 다른 이슈와 
     fingerprints,
   );
   assert.equal(new Set(fingerprints).size, fingerprints.length);
-  assert.equal(fingerprints.every((value) => /^[0-9a-f]{64}$/u.test(value)), true);
 });
 
 test('버전을 모르면 driver에서 생략하고 인코딩은 결정적으로 유지한다', () => {
-  const log = createSarifLog(reportFixture());
+  const log = createSarifLog(reportFixture(), undefined, logicalKeyFingerprint);
 
   assert.equal('version' in (log.runs[0]?.tool.driver ?? {}), false);
-  assert.equal(encodeSarifLog(log), encodeSarifLog(createSarifLog(reportFixture())));
+  assert.equal(
+    encodeSarifLog(log),
+    encodeSarifLog(createSarifLog(reportFixture(), undefined, logicalKeyFingerprint)),
+  );
 });
 
 /** 두 이슈(다중 증거 포함)를 가진 최소 check 보고서다. */

@@ -113,6 +113,13 @@ To make CI fail when bridge errors exist, add `--strict`:
 isthmus check dart-bridges.json swift-bridges.json --strict
 ```
 
+Options may appear before or after the input files in any command (`isthmus graph --format dot
+dart-bridges.json swift-bridges.json` works). Because a value that starts with `-` is always
+read as the next option, paths or names that begin with `-` go after a `--` separator, which
+ends option parsing: `isthmus query -- -unusual-name dart-bridges.json swift-bridges.json`.
+`-h`/`--help` shows help from any position, `isthmus help <command>` names a command's usage,
+and an unknown command prints the root help.
+
 ### SARIF output
 
 To upload check results to GitHub code scanning (or any SARIF 2.1.0 consumer), ask for SARIF
@@ -176,7 +183,8 @@ invoked from several caller locations, the evidence carries all of them in `call
 representative first `caller` stays for older consumers) and counts any entries beyond the
 100-per-retention cap in `callersOmitted` instead of dropping them silently. A
 `mixed-targets` document cannot have per-fact targets restored in v1, so every consuming
-command defers the join with exit code 2; split such a document per target at production time
+command defers the join with exit code 2, reporting how many observed facts across how many
+documents could not be joined; split such a document per target at production time
 first.
 
 cartograph retains Swift symbols only, so `--for cartograph` requires at least one
@@ -231,7 +239,12 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 ```
 
 When the same method exists on several channels, `query` returns candidates instead of picking
-one; feed a returned `qualifiedName` back into the same subject position to disambiguate.
+one; feed a returned `qualifiedName` back into the same subject position to disambiguate. A
+`qualifiedName` is `target:` followed by percent-escaped components — `%`, `#`, and `:` are
+escaped — so splitting on the first `:` and on `#` and decoding the parts always recovers the
+channel and method names. A `notFound` or `ambiguous` query exits 64 and prints a one-line
+cause on stderr, so a script can tell a bad invocation from a missing name without parsing
+stdout.
 `graph` emits matched edges only and preserves the input `limitations` as a JSON field or as
 DOT/Mermaid comments. If the Cartesian product of evidence would exceed 100,000 edges, the
 command fails with exit code 2 to prevent a memory blowup.

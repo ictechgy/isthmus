@@ -1,6 +1,3 @@
-import { createHash } from 'node:crypto';
-
-import { baselineEntryKey } from './baseline.ts';
 import type {
   CheckIssue,
   CheckIssueCode,
@@ -8,6 +5,14 @@ import type {
 } from './check-report.ts';
 import { checkIssueCodes } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
+
+/** 논리 이슈 키를 안정 지문으로 바꾸는 주입 경계다. 해싱은 cli 계층이 담당한다. */
+export type IssueFingerprint = (issue: {
+  readonly code: string;
+  readonly target: string;
+  readonly channel: string;
+  readonly method?: string;
+}) => string;
 
 /** GitHub code scanning이 받아들이는 SARIF 2.1.0 스키마 식별자다. */
 export const sarifSchema = 'https://json.schemastore.org/sarif-2.1.0.json';
@@ -85,7 +90,8 @@ export interface SarifLog {
 /** check 보고서를 SARIF 2.1.0 로그로 바꾼다. */
 export function createSarifLog(
   report: CheckReport,
-  toolVersion?: string,
+  toolVersion: string | undefined,
+  issueFingerprint: IssueFingerprint,
 ): SarifLog {
   const rules = [...checkIssueCodes].sort().map((id) => ({
     id,
@@ -104,7 +110,9 @@ export function createSarifLog(
           rules,
         },
       },
-      results: report.issues.map((issue) => sarifResult(issue, ruleIndex)),
+      results: report.issues.map((issue) =>
+        sarifResult(issue, ruleIndex, issueFingerprint)
+      ),
     }],
   };
 }
@@ -118,6 +126,7 @@ export function encodeSarifLog(log: SarifLog): string {
 function sarifResult(
   issue: CheckIssue,
   ruleIndex: Map<string, number>,
+  issueFingerprint: IssueFingerprint,
 ): SarifResult {
   const [primary, ...related] = issue.evidence;
   if (primary === undefined) {
@@ -172,18 +181,8 @@ function physicalLocation(endpoint: {
 
 /**
  * 경로를 URI 참조로 만든다. 구분자 `/`는 보존하고 각 세그먼트를 RFC 3986으로
- * 인코딩해 공백·`#`·비ASCII 파일명이 GitHub 업로드를 깨지 않게 한다.
+ * 인코딩해 공백·`#`·비ASCII 파일명이 GitHub 업로드를 깨지지 않게 한다.
  */
 export function sarifUri(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
-}
-
-/** 베이스라인과 같은 논리 키의 안정 지문으로 소스 줄 이동에도 중복을 막는다. */
-function issueFingerprint(issue: {
-  readonly code: string;
-  readonly target: string;
-  readonly channel: string;
-  readonly method?: string;
-}): string {
-  return createHash('sha256').update(baselineEntryKey(issue)).digest('hex');
 }

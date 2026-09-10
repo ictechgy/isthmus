@@ -84,7 +84,8 @@ test('check --format sarif는 결과를 SARIF 2.1.0 로그로 출력한다', asy
   for (const result_ of log.runs[0].results) {
     assert.equal(result_.locations.length, 1);
     assert.equal(Number.isInteger(result_.locations[0].physicalLocation.region.startLine), true);
-    assert.equal(result_.partialFingerprints.isthmusIssueV1.length > 0, true);
+    // 지문 해싱은 cli 계층이 담당한다. 논리 키의 SHA-256 16진수인지 여기서 확인한다.
+    assert.equal(/^[0-9a-f]{64}$/u.test(result_.partialFingerprints.isthmusIssueV1), true);
   }
 });
 
@@ -518,7 +519,8 @@ test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 �
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+      'Bridge facts could not be joined; split mixed bridge targets and retry. '
+      + 'The inputs observed 10 facts across 2 documents.\n',
     exitCode: 2,
   });
 });

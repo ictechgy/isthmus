@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- 공유 인수 파서를 도입해 모든 명령의 옵션이 입력 파일 앞뒤 어디에 와도 동작한다
+  (`isthmus graph --format dot a.json b.json`). `--` 구분자 뒤는 모두 위치 인수로
+  읽어 `-`로 시작하는 경로·이름도 전달할 수 있다. `-h`/`--help`는 임의 위치에서
+  도움말을 내고, `help <command>`가 명령별 사용법을 출력한다.
+- 조인 보류(mixed-targets, 종료 코드 2) 메시지가 몇 개의 문서에서 관찰한 fact 몇
+  개가 조인되지 못했는지 숫자로 함께 알린다. diff의 비교 보류 메시지도 양쪽
+  스냅샷의 관찰량을 함께 알린다.
+- query `notFound`·`ambiguous`가 원인 한 줄을 stderr에 출력한다(후보 수 포함).
+  종료 코드 64와 stdout JSON 문서는 불변이다.
+
+### Changed
+
+- query `qualifiedName`이 채널·메서드 이름의 `:`까지 퍼센트 이스케이프한다
+  (`%`·`#`와 함께). 첫 `:`와 `#` 기준으로 나눈 뒤 디코딩하면 이름이 항상
+  되돌아온다. 값이 달라지는 것은 `:`를 이름에 포함하는 채널·메서드뿐이다.
+- 공유 CLI 인프라(`readBridgeDocuments`, 입력 오류 분류, 결과 형태)를
+  `src/cli/command-support.ts`로 분리했다. SARIF 지문 해싱도 cli 계층으로 옮겨
+  `createSarifLog`이 지문 함수를 주입받는다 — report 계층이 더는 Node 내장
+  모듈에 의존하지 않는다. `createBridgeDiff`의 반환 형태를 `BridgeDiffDocument`
+  인터페이스로 명시했다. 출력은 모두 이전과 같다(위 qualifiedName 항목 제외).
+
 ## [0.4.1] - 2026-09-10
 
 ### Fixed

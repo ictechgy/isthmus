@@ -27,6 +27,16 @@ test('graph가 실제 교환 파일을 Mermaid 경계 그래프로 출력한다'
   assert.equal(result.standardOutput.includes('channel dev.isthmus/camera'), true);
 });
 
+test('graph는 --format을 입력 앞에 두어도 읽는다', async () => {
+  const result = await runGraphCommand(
+    ['graph', '--format', 'mermaid', dartPath, swiftPath],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.standardOutput.startsWith('flowchart LR\n'), true);
+});
+
 test('지원하지 않는 graph 형식은 I/O 전에 종료 코드 64로 거부한다', async () => {
   let didReadFile = false;
   const result = await runGraphCommand(
@@ -129,7 +139,8 @@ test('mixed-targets로 전체 조인이 보류되면 graph를 만들지 않는�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Bridge facts could not be joined; split mixed bridge targets and retry.\n',
+      'Bridge facts could not be joined; split mixed bridge targets and retry. '
+      + 'The inputs observed 10 facts across 2 documents.\n',
     exitCode: 2,
   });
 });
