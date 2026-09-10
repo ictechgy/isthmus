@@ -14,9 +14,10 @@ external-retentions v0의 additive 확장으로 `evidence.callers`(전체 호출
 - **계약**: GRAPH-EXCHANGE "되돌려 주는 형식" 절에 예시·규칙(상한·계수 공개·소비자
   무시 근거) 명문화. README 양문·CHANGELOG 갱신.
 - **남은 것(cartograph 쪽)**: `ExternalRetention`의 `callers` decoding과 `--explain`
-  렌더링(전체 호출 나열 + `+N more`). 합의 issue 초안은
-  `$TMPDIR/opencode/issue-cartograph-callers.md` — 토큰 403이라 **사용자가 등록**한다.
-  등록 후 Blockers 5 완전 종결.
+  렌더링(전체 호출 나열 + `+N more`). 합의 issue는
+  [cartograph#74](https://github.com/ictechgy/cartograph/issues/74)로 등록 완료 —
+  이번 세션 토큰은 자매 저장소 issue 쓰기가 열려 있었다(과거 403 기록은 시점별 권한
+  차이). 렌더링 구현되면 Blockers 5 완전 종결.
 
 ## 2026-09-10 — check summary 관찰량 노출·오류 분류 경계 분리 (opencode 세션)
 
@@ -481,8 +482,9 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
   `-c credential.helper=osxkeychain`을 명령 단위로 붙인다. `.git/config` 쓰기가 막혀
   `push -u`의 upstream 저장이 실패하므로 명시적 ref(`git push origin br:br`)로 push한다.
   `gh`는 임시 GH_CONFIG_DIR + `git credential fill`로 뽑은 GH_TOKEN(x-access-token)으로
-  동작한다. 토큰은 출력하지 않는다. 이 토큰은 isthmus에서만 쓰기 가능하고 **자매
-  저장소(cartograph) issue 쓰기는 403**이다 — 자매 저장소 쓰기 작업은 사용자에게
+  동작한다. 토큰은 출력하지 않는다. 토큰의 자매 저장소 쓰기 권한은 **세션·시점마다
+  다르다**(2026-09-08 세션은 cartograph issue 쓰기 403, 2026-09-10 세션은 등록
+  성공 — cartograph#74). 단정하기 전에 직접 시도해 보고, 막히면 사용자에게
   명령과 본문을 준비해 넘긴다(#22에서 실제 적용).
 - 미해석 결과나 관찰 소실을 코드 삭제 안전성으로 해석하지 않는다.
 - 낡은 producer binary, 서로 다른 추출 범위, OS 임시경로 별칭으로 비교 결과를 오염시키지 않는다.
@@ -523,6 +525,7 @@ dartograph#38도 닫혔어. 로컬 .gitignore 미커밋 수정을 보존해줘.
 SARIF 리포터 순이야. limitationScopes 양성 실측은 완료됐어(verify-limitation-scopes.mjs,
 Blockers 1 종결).
 샌드박스에서 GLM 리뷰는 packet-review files 모드로 해줘(--diff 모드는 깨져 있음).
-자매 저장소 쓰기와 isthmus issue 코멘트·닫기는 토큰 403이라 사용자 실행으로 넘기고,
-워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는
-tmp 사본 + isthmus-js 오버라이드로 돌려줘(최상단 절).
+자매 저장소 쓰기 권한은 세션마다 다르니 직접 시도해 보고(2026-09-10 세션은 cartograph
+issue 등록 성공 #74), 막히면 사용자에게 넘겨줘. 워크스페이스 안 git init은
+`.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는 tmp 사본 + isthmus-js
+오버라이드로 돌려줘(최상단 절).
