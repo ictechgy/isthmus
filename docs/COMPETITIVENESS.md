@@ -51,6 +51,31 @@
   `selectionIssues/limitations/truncated`를 확인했다. 아직 변하는 출력이므로 연동 전 재확인 필요.
 - dartograph의 기존 `affected`는 import/export 라이브러리 수준이다. 심볼 전이 분석으로
   과장하지 않는다. bridge 호출 위치를 그래프 선언에 임의로 귀속시키지 않는다.
+- `verify-runtime` 소비자 구현: 독립 `bridge-expectations`와 `bridge-runtime` 실행 기록 대조.
+  scenario/platform/instance/revision 분리, 실패·timeout·missing-handler·pending·중단·유실·
+  stale 입력 검증. MethodChannel과 BasicMessageChannel의 라우팅 형태를 구분한다.
+  `scope: declared-scenarios`, `complete: false`이며 실제 Flutter 실행 수집기는 아직 없다.
+- 런타임 포함 `npm run verify`: 제품 331개·Phase 0 15개·build/CLI/package 통과,
+  line/branch/functions 99.06/96.39/97.23. 로그 `/tmp/isthmus-runtime-verify.log`.
+- `node scripts/benchmark-preflight.mjs` 통과(빌드된 CLI, Node 22.20.0, darwin arm64).
+  새로운 CLI 프로세스 5회, 시작/읽기/파싱/분석/JSON 직렬화 포함. 브리지 40,000 facts,
+  채널 10,000·스코프 1,000: 중앙 382ms·최대 434ms, 출력 9,178,488 bytes.
+  런타임 100,000 events·기대 1,000: 중앙 166ms·최대 167ms, 출력 1,769,531 bytes.
+  소비자 시간 예산은 5초. producer·앱 빌드·CI 전체 갱신은 미측정이며 4번 완료가 아니다.
+- 로컬 일반 PATH와 흔한 설치 경로에 Flutter SDK가 발견되지 않았다. `dart`·`swift`는 있다.
+  사용자에게 실제 검증 앱/플러그인 경로를 비동기로 질문했고 아직 답을 받지 않았다.
+  별도 지정 없으면 공개 플러그인과 재현 가능한 앱으로 진행한다. 자매 저장소는 수정하지 않았다.
+
+## 바로 이어서 할 일
+
+1. Flutter BinaryMessenger/MethodChannel 관찰 수집기와 실제 실행 fixture를 만들고, 실패·유실·
+   pending·시나리오 종료 처리를 생산부터 소비까지 검증한다. JSON 합성 통과만으로 완료 금지.
+2. cartograph의 진행 중 impact 출력 상태를 재확인한 뒤 helper→Swift handler→Dart caller와
+   Dart 내부 소비자까지 전이 연결한다. producer 고유 신원·경로·한계를 보존한다.
+3. runtime 관찰을 영향 분석에 별도 provenance로 연결하고 Pigeon/Basic 공개 사례를 추가한다.
+4. CI에서 양쪽 사실·실행 revision·변경 목록을 갱신하는 재현 workflow와 캐시 무효화/전체
+   소요 시간을 검증한다. 필요하면 증분 또는 장기 질의 세션을 추가한다.
+5. 공개 프로젝트·설치본·GLM PR 리뷰까지 통과한 뒤 네 사용자 요구 전체를 다시 감사한다.
 
 아직 전체 목표 미완료. 전이 경계 연결·런타임 수집/검증·CI 자동 갱신/성능·실제 앱 검증은
 남아 있다. 외부 사용자 도입성과 실제 앱의 탐지율도 미검증이다.

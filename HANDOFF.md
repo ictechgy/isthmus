@@ -1,5 +1,32 @@
 # Handoff
 
+## 2026-09-14 — 경쟁력 개선 목표 진행 중
+
+새 사용자 목표: (1) 특정 코드 변경 전 직접·전이 영향 점검, (2) 효율적인 AI 질의 skill/MCP,
+(3) 런타임에서 드러나는 의존성 검증, (4) CI 자동 갱신에 충분한 속도 또는 증분.
+**전체 목표는 active이며 아직 완료되지 않았다.** 단계·검증·다음 작업은
+[COMPETITIVENESS.md](docs/COMPETITIVENESS.md)가 현재 실행 기록이다.
+
+- `main`의 `fe786f9`에서 `feat/change-preflight` 분기. 첫 커밋 `1c528a6`:
+  `impact --file|--symbol|--changes`, 관련 호출/핸들러/배선·검토 파일·진단,
+  미관찰/동적 선택 보존, 공백도 실패시키는 strict, lossless compact, 배포 skill 갱신.
+- 추가 구현 `verify-runtime --expectations`: 시나리오/플랫폼/인스턴스/revision별 통신
+  관찰 대조. 실패/timeout/missing-handler/pending/중단/유실/stale을 구분한다.
+  현재는 합성 입력으로 소비자를 검증했고 실제 Flutter 수집기는 후속이다.
+- 최신 `npm run verify`: 제품 331개, Phase 0 15개, build/CLI/package 통과.
+  line/branch/functions 99.06/96.39/97.23, `/tmp/isthmus-runtime-verify.log`.
+- CLI 성능 5회 측정: 영향 40k facts 최대 434ms, 런타임 100k events+1k 기대 최대 167ms.
+  시작·I/O·파싱·분석·직렬화 포함, producer/앱 빌드 제외.
+  `node scripts/benchmark-preflight.mjs` (먼저 최신 build 필요).
+- cartograph에서 다른 세션이 `feature/change-impact-workflow`를 수정 중이다. 변경 보존.
+  `change-impact` v1 schema는 읽었지만 연동 전에 현재 상태를 재확인한다.
+- 새 명령은 개발 소스에만 있다. npm 0.5.0 발행본에 있다고 안내하지 않는다.
+- 계속할 일: 실제 런타임 수집기/앱 검증 → producer 전이 영향 연결 → runtime 근거와 영향
+  연결 → CI 자동 갱신/성능·신선도 검증 → 공개 사례·설치본·GLM 리뷰.
+
+이전 발행 기록은 아래에 남긴다. 아래의 "다음 단계"와 "깨끗한 main" 문장은 이전 릴리스
+시점의 기록이며 현재 작업 시작점은 위 active 목표다.
+
 ## 2026-09-13 — 0.5.0 발행 완료
 
 사용자가 main(`fc05be2`, PR #67 릴리스 준비)에서 `npm publish --otp`로 발행했다.

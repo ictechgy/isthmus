@@ -49,6 +49,13 @@ If inputs are missing, identify the required files and proceed with independent 
   Inspect added/removed logical methods, introduced/resolved issues, both sets of limitations,
   and producer versions/timestamps. Revisions come from the caller's before/after choice.
   Same-key endpoint changes and rename inference are outside this comparison.
+- Verify recorded runtime calls (development source, after 0.5.0):
+  `isthmus verify-runtime --expectations <checks.json> <runtime.json> [more...] --strict --compact`.
+  Expectations must be specified independently of the observed log. Check `status`,
+  `summary`, unsuccessful `checks`, `failures`, and stale/incomplete `runs`.
+  `passed` covers only declared scenarios; missing, stale, dropped or pending evidence
+  cannot establish coverage. `evidenceOmitted` is display truncation; `droppedEvents`
+  means collection loss. Do not fabricate logs when the runtime recorder is unavailable.
 - Supply Swift retention evidence, when requested:
   `isthmus retentions <dart.json> <swift.json> --for cartograph`.
   Save stdout to a new private temporary file, check successful output, then pass its path to

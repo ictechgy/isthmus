@@ -36,6 +36,15 @@ test('실제 impact 프로세스가 파일 선택으로 호출 근거를 컴팩�
   assert.equal(stderr, '');
 });
 
+test('실제 런타임 CLI가 합성 기록의 선언된 기대를 검증한다', async () => {
+  const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/runtime/${name}.json`, import.meta.url));
+  const { stdout, stderr } = await execFileAsync(process.execPath, [mainPath, 'verify-runtime',
+    '--expectations', fixture('expectations'), fixture('success'), '--strict']);
+  assert.equal(JSON.parse(stdout).status, 'passed');
+  assert.equal(JSON.parse(stdout).complete, false);
+  assert.equal(stderr, '');
+});
+
 test('실제 CLI 프로세스가 루트 도움말을 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     mainPath,

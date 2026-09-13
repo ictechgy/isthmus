@@ -30,6 +30,7 @@ verifyMissingQuery();
 verifyGraph();
 verifyDiff();
 verifyImpact();
+verifyRuntime();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */
@@ -46,6 +47,20 @@ function verifyImpact() {
   verify(run(['impact', '--file', 'deleted.dart', dartPath, swiftPath, '--strict']).status === 1,
     'impact unobserved selection');
   verify(run(['help', 'impact']).stdout.startsWith('Usage: isthmus impact'), 'impact help');
+}
+
+/** 합성 런타임 기록으로 빌드된 소비자의 성공·실패·문서 범위를 검증한다. */
+function verifyRuntime() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/runtime/${name}.json`, import.meta.url));
+  const args = ['verify-runtime', '--expectations', fixture('expectations'), '--strict', '--compact'];
+  const success = run([...args, fixture('success')]);
+  verify(success.status === 0, 'runtime success exit code');
+  const report = JSON.parse(success.stdout);
+  verify(report.status === 'passed' && report.scope === 'declared-scenarios' && report.complete === false,
+    'runtime scoped result');
+  const failure = run([...args, fixture('success'), fixture('missing-handler')]);
+  verify(failure.status === 1 && JSON.parse(failure.stdout).summary.failedCalls === 1,
+    'runtime observed failure');
 }
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
