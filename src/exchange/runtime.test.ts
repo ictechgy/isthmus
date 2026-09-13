@@ -46,6 +46,13 @@ test('인스턴스를 지정한 기대와 전체 인스턴스 기대를 구분�
   assert.equal(parsed.checks[0]?.instance, 'background');
 });
 
+test('기대 결과는 terminal outcome만 허용하고 생략 시 성공만 허용한다', () => {
+  assert.deepEqual(parseRuntimeExpectations(expectations).checks[0]?.allowedOutcomes, ['success']);
+  const parsed = parseRuntimeExpectations({ ...expectations,
+    checks: [{ ...expectations.checks[0], allowedOutcomes: ['error', 'missing-handler'] }] });
+  assert.deepEqual(parsed.checks[0]?.allowedOutcomes, ['error', 'missing-handler']);
+});
+
 test('런타임 스키마·시각·플랫폼·라우팅·중복·상한 오류는 값 노출 없이 거부한다', () => {
   const bad = [null, [], {}, { ...trace, version: 2 }, { ...trace, project: '' },
     { ...trace, revision: '' }, { ...trace, tool: {} }, { ...trace, events: null },
@@ -76,7 +83,13 @@ test('검증 대상 없는 기대 문서와 중복 id는 빈 통과를 만들 �
     { ...expectations, checks: [] }, { ...expectations, checks: {} },
     { ...expectations, checks: Array(10001).fill(expectations.checks[0]) },
     { ...expectations, checks: [expectations.checks[0], expectations.checks[0]] },
-    { ...expectations, checks: [{ ...expectations.checks[0], instance: '' }] }]) {
+    { ...expectations, checks: [{ ...expectations.checks[0], instance: '' }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: [] }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: ['pending'] }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: ['success', 'success'] }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: ['success', 'error', 'missing-handler', 'timeout', 'success'] }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: 'success' }] },
+    { ...expectations, checks: [{ ...expectations.checks[0], allowedOutcomes: [1] }] }]) {
     assert.throws(() => parseRuntimeExpectations(input), RuntimeValidationError);
   }
 });

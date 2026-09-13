@@ -7,6 +7,11 @@ export type RuntimePlatform = 'ios' | 'macos' | 'android' | 'linux' | 'windows';
 export type RuntimeTransport = 'method-channel' | 'basic-message-channel';
 /** 원문 예외나 payload 없이 통신 결과만 분류한다. */
 export type RuntimeOutcome = 'success' | 'missing-handler' | 'error' | 'timeout' | 'pending';
+/** 기대 목록에서 허용할 수 있는 응답 결과다. pending은 종료 결과가 아니므로 제외한다. */
+export type RuntimeTerminalOutcome = Exclude<RuntimeOutcome, 'pending'>;
+
+/** 결과 허용 목록이 입력을 통한 비용 증폭을 일으키지 않도록 제한한다. */
+export const MAX_RUNTIME_ALLOWED_OUTCOMES = 4;
 
 /** 실제 라우팅 주소다. BasicMessageChannel에는 가상의 method를 만들지 않는다. */
 export interface RuntimeRoute {
@@ -48,6 +53,7 @@ export interface RuntimeExpectation extends RuntimeRoute {
   readonly scenario: string;
   readonly platform: RuntimePlatform;
   readonly instance?: string;
+  readonly allowedOutcomes?: readonly RuntimeTerminalOutcome[];
 }
 
 /** CI가 실행해야 하는 검증 목록. 런타임 로그에서 기대값을 역생성하지 않는다. */
@@ -120,6 +126,7 @@ export function parseRuntimeExpectations(input: unknown): RuntimeExpectations {
     return {
       ...route(check), id, scenario: safeString(check.scenario), platform: platform(check.platform),
       ...(check.instance === undefined ? {} : { instance: safeString(check.instance) }),
+      allowedOutcomes: allowedOutcomes(check.allowedOutcomes),
     };
   });
   return { format: 'bridge-expectations', version: 1,
@@ -181,6 +188,25 @@ function outcome(input: unknown): RuntimeOutcome {
     fail('Unsupported runtime outcome.');
   }
   return input;
+}
+
+/** 기대 결과는 비어 있지 않은 고유 terminal outcome 목록으로 제한한다. */
+function allowedOutcomes(input: unknown): readonly RuntimeTerminalOutcome[] {
+  if (input === undefined) return ['success'];
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_RUNTIME_ALLOWED_OUTCOMES) {
+    fail('Runtime allowed outcomes require 1 to 4 terminal outcomes.');
+  }
+  const seen = new Set<RuntimeTerminalOutcome>();
+  const outcomes: RuntimeTerminalOutcome[] = [];
+  for (const item of input) {
+    if (item !== 'success' && item !== 'missing-handler' && item !== 'error' && item !== 'timeout') {
+      fail('Runtime allowed outcomes must be unique terminal outcomes.');
+    }
+    if (seen.has(item)) fail('Runtime allowed outcomes must be unique terminal outcomes.');
+    seen.add(item);
+    outcomes.push(item);
+  }
+  return outcomes;
 }
 
 /** 자동 추측한 호출 스택 대신 생산자가 선언한 상대 소스 위치를 검증한다. */

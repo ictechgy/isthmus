@@ -64,7 +64,8 @@ flutter test tool/benchmark_recorder.dart --no-pub
     "instance": "main",
     "transport": "method-channel",
     "channel": "example/camera",
-    "method": "takePhoto"
+    "method": "takePhoto",
+    "allowedOutcomes": ["success"]
   }]
 }
 ```
@@ -72,6 +73,9 @@ flutter test tool/benchmark_recorder.dart --no-pub
 실행 로그를 보고 기대 목록을 역생성하면 누락된 실행을 발견할 수 없다. 검증할 기능에서
 목록을 먼저 정한다. checks 1~10,000개, 고유한 id가 필요하다. 인스턴스 생략은 어떤
 인스턴스든 허용한다는 뜻이다. 엔진별 검증이 필요하면 인스턴스를 명시한다.
+`allowedOutcomes`는 선택 사항이며 `success`, `error`, `missing-handler`, `timeout` 중
+1~4개의 중복 없는 terminal outcome만 허용한다. 생략하면 `success`만 허용하고,
+`pending`은 응답 대기 상태라 기대 결과로 지정할 수 없다.
 
 ## 실행 기록
 
@@ -100,10 +104,19 @@ project와 revision은 생산자의 선언이다. 소비자는 서로 일치하�
 현재 revision의 run만 기대와 대조한다. 오래된 run은 `staleRuns`로 세고 전체 결과를 incomplete로
 만든다. 시나리오·플랫폼·transport·channel·method·선택한 instance가 모두 맞아야 관찰 근거다.
 
-- `passed`: 해당 라우팅의 성공 관찰이 있고 실행 중단·유실·대기·실패가 없다.
-- `failed`: 같은 호출이 한 번 성공했어도 실패/미구현/timeout이 하나라도 있다.
+- `passed`: 해당 라우팅의 관찰이 하나 이상 있고 모든 terminal outcome이 기대의
+  `allowedOutcomes`에 포함되며 실행 중단·유실·대기가 없다.
+- `failed`: 같은 호출에 기대하지 않은 terminal outcome이 하나라도 있다. 기대한
+  `error`·`missing-handler`·`timeout`도 원본 `failures`와 `failedCalls`에는 남기며,
+  `expectedFailedCalls`와 `unexpectedFailedCalls`로 구분한다. 기대 목록 밖의 실패는
+  `unexpectedFailedCalls`로 전체 상태를 실패로 만든다.
 - `unobserved`: 해당 기대와 맞는 호출을 관찰하지 못했다.
 - `incomplete`: 맞는 관찰이 있지만 실행 중단·유실·대기가 남았다.
+
+라우팅과 인스턴스가 겹치는 기대가 있으면 이벤트는 적용 가능한 모든 기대의
+`allowedOutcomes`를 만족해야 한다. 넓은 인스턴스 기대가 특정 인스턴스 기대의 실패를
+가리지 않는다. 기대하지 않은 성공도 해당 check를 `failed`로 만들며 terminal 실패가
+없어도 전체 상태에 반영한다.
 
 기대 밖 통신 실패도 `failures`와 전체 status에 반영한다. 전체 결과는 실행 공백이나 미충족
 기대가 있으면 incomplete다. `scope: declared-scenarios`, `complete: false`를 항상 보존하므로

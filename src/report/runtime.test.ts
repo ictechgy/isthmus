@@ -47,6 +47,61 @@ test('같은 호출이 한 번 성공해도 실패·timeout·미구현이 함께
   }
 });
 
+test('허용한 error·missing-handler 결과는 기대를 통과시키고 실패 집계를 보존한다', () => {
+  for (const outcome of ['error', 'missing-handler']) {
+    const expectations = parseRuntimeExpectations({ ...rawExpected,
+      checks: [{ ...rawExpected.checks[0], allowedOutcomes: [outcome] }] });
+    const report = verifyRuntimeEvidence(expectations, [parseBridgeRuntime({ ...rawTrace,
+      events: [{ ...call, outcome }] })]);
+    assert.equal(report.status, 'passed');
+    assert.equal(report.checks[0]?.status, 'passed');
+    assert.equal(report.summary.failedCalls, 1);
+    assert.equal(report.summary.expectedFailedCalls, 1);
+    assert.equal(report.summary.unexpectedFailedCalls, 0);
+  }
+});
+
+test('성공만 허용하지 않는 기대는 예기치 않은 성공으로 실패한다', () => {
+  const expectations = parseRuntimeExpectations({ ...rawExpected,
+    checks: [{ ...rawExpected.checks[0], allowedOutcomes: ['error'] }] });
+  const report = verifyRuntimeEvidence(expectations, [parseBridgeRuntime(rawTrace)]);
+  assert.equal(report.status, 'failed');
+  assert.equal(report.checks[0]?.status, 'failed');
+  assert.equal(report.summary.failedCalls, 0);
+  assert.equal(report.summary.expectedFailedCalls, 0);
+  assert.equal(report.summary.unexpectedFailedCalls, 0);
+});
+
+test('겹치는 전체·특정 인스턴스 기대는 각 허용 목록을 모두 적용한다', () => {
+  const expectations = parseRuntimeExpectations({ ...rawExpected, checks: [
+    { ...rawExpected.checks[0], id: 'any', instance: undefined, allowedOutcomes: ['error'] },
+    { ...rawExpected.checks[0], id: 'main', instance: 'main', allowedOutcomes: ['success'] },
+  ] });
+  const report = verifyRuntimeEvidence(expectations, [parseBridgeRuntime({ ...rawTrace,
+    events: [{ ...call, outcome: 'error' }] })]);
+  assert.equal(report.status, 'failed');
+  assert.equal(report.checks.find(({ expected }) => expected.id === 'any')?.status, 'passed');
+  assert.equal(report.checks.find(({ expected }) => expected.id === 'main')?.status, 'failed');
+  assert.equal(report.summary.expectedFailedCalls, 0);
+  assert.equal(report.summary.unexpectedFailedCalls, 1);
+});
+
+test('허용된 실패라도 관찰 부재·pending·미완료 실행은 통과하지 않는다', () => {
+  const expectations = parseRuntimeExpectations({ ...rawExpected,
+    checks: [{ ...rawExpected.checks[0], allowedOutcomes: ['error'] }] });
+  const absent = verifyRuntimeEvidence(expectations, [parseBridgeRuntime({ ...rawTrace, events: [] })]);
+  assert.equal(absent.status, 'incomplete');
+  assert.equal(absent.checks[0]?.status, 'unobserved');
+  for (const trace of [
+    { ...rawTrace, run: { ...rawTrace.run, status: 'incomplete' as const }, events: [{ ...call, outcome: 'error' }] },
+    { ...rawTrace, events: [{ ...call, outcome: 'error' }, { ...call, sequence: 2, outcome: 'pending' as const }] },
+  ]) {
+    const report = verifyRuntimeEvidence(expectations, [parseBridgeRuntime(trace)]);
+    assert.equal(report.status, 'incomplete');
+    assert.equal(report.checks[0]?.status, 'incomplete');
+  }
+});
+
 test('실행 중단·이벤트 유실·응답 대기는 성공 관찰이 있어도 미완료다', () => {
   for (const trace of [{ ...rawTrace, run: { ...rawTrace.run, status: 'incomplete' } },
     { ...rawTrace, droppedEvents: 2 },
