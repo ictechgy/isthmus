@@ -56,6 +56,14 @@ swallow an error when the application ignores it. A response observation
 timeout only changes the recorded outcome; it never cancels the application's
 future.
 
+Timeout describes the observation deadline. The event keeps `timeout` even if a
+late reply or exception arrives; that reply or exception still reaches the app.
+The run can be `completed` after every underlying reply has settled. Finishing
+while a timed-out call still awaits a reply keeps the run `incomplete`, and a
+finished snapshot never changes retroactively. Explicit `allowedOutcomes:
+["timeout"]` can therefore verify a completed timeout scenario without allowing
+unfinished communication to pass.
+
 The package covers MethodChannel and BasicMessageChannel traffic observed from
 Flutter to the host. It does not infer channels from source, observe native to
 Dart traffic, discover callers from stacks, or prove that an unconfigured

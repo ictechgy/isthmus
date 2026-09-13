@@ -403,8 +403,7 @@ class IsthmusRuntimeRecorder {
         _droppedEvents > 0 ||
         _events.any(
           (event) =>
-              event.outcome == RuntimeOutcome.pending ||
-              event.outcome == RuntimeOutcome.timeout,
+              event.awaitingReply || event.outcome == RuntimeOutcome.pending,
         );
     return BridgeRuntimeDocument(
       project: project,
@@ -535,10 +534,12 @@ class IsthmusRuntimeRecorder {
     try {
       response = delegate();
     } catch (error, stack) {
+      event.awaitingReply = false;
       _complete(event, RuntimeOutcome.error);
       Error.throwWithStackTrace(error, stack);
     }
     if (response == null) {
+      event.awaitingReply = false;
       if (event.dropped || classify == null) return response;
       _complete(event, classify(null));
       return response;
@@ -554,12 +555,14 @@ class IsthmusRuntimeRecorder {
     }
     return response.then<ByteData?>(
       (reply) {
+        event.awaitingReply = false;
         if (!_finished && event.outcome == RuntimeOutcome.pending) {
           _complete(event, classify(reply));
         }
         return reply;
       },
       onError: (Object error, StackTrace stack) {
+        event.awaitingReply = false;
         if (!_finished && event.outcome == RuntimeOutcome.pending) {
           _complete(event, RuntimeOutcome.error);
         }
@@ -721,6 +724,8 @@ class _MutableEvent {
   final RuntimeCaller? caller;
   final bool dropped;
   RuntimeOutcome outcome = RuntimeOutcome.pending;
+  // A timed-out observation does not mean the application's future has settled.
+  bool awaitingReply = true;
   Timer? timer;
 }
 

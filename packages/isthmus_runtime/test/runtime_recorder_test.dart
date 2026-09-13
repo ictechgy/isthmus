@@ -504,8 +504,74 @@ void main() {
     expect(applicationFuture, isNotNull);
     reply.complete(const StandardMethodCodec().encodeSuccessEnvelope(null));
     await applicationFuture;
-    expect(recorder.finish().status, 'incomplete');
+    expect(recorder.finish().status, 'completed');
+    expect(recorder.finish().events.single.outcome, RuntimeOutcome.timeout);
   });
+
+  test(
+    'timeout with an outstanding reply stays incomplete after finish',
+    () async {
+      final reply = Completer<ByteData?>();
+      final recorder = IsthmusRuntimeRecorder(
+        messenger: _FakeMessenger((channel, message) => reply.future),
+        project: '/tmp/app',
+        revision: 'abc',
+        scenario: 'timeout-pending',
+        platform: 'ios',
+        observationTimeout: const Duration(milliseconds: 1),
+        methodChannels: const [
+          RuntimeMethodChannel(
+            channel: 'timeout',
+            codec: StandardMethodCodec(),
+          ),
+        ],
+      );
+      final call = const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('wait'),
+      );
+      final applicationFuture = recorder.binaryMessenger.send('timeout', call);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final document = recorder.finish();
+      expect(document.status, 'incomplete');
+      expect(document.events.single.outcome, RuntimeOutcome.timeout);
+      reply.complete(const StandardMethodCodec().encodeSuccessEnvelope(null));
+      await applicationFuture;
+      expect(identical(recorder.finish(), document), isTrue);
+      expect(recorder.finish().status, 'incomplete');
+    },
+  );
+
+  test(
+    'late errors still reach the application after observation timeout',
+    () async {
+      final reply = Completer<ByteData?>();
+      final recorder = IsthmusRuntimeRecorder(
+        messenger: _FakeMessenger((channel, message) => reply.future),
+        project: '/tmp/app',
+        revision: 'abc',
+        scenario: 'timeout-error',
+        platform: 'ios',
+        observationTimeout: const Duration(milliseconds: 1),
+        methodChannels: const [
+          RuntimeMethodChannel(
+            channel: 'timeout',
+            codec: StandardMethodCodec(),
+          ),
+        ],
+      );
+      final call = const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('wait'),
+      );
+      final applicationFuture = recorder.binaryMessenger.send('timeout', call);
+      final error = StateError('late-error');
+      final assertion = expectLater(applicationFuture, throwsA(same(error)));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      reply.completeError(error);
+      await assertion;
+      expect(recorder.finish().status, 'completed');
+      expect(recorder.finish().events.single.outcome, RuntimeOutcome.timeout);
+    },
+  );
 
   test('rejects unsafe metadata and omits unsafe runtime routes', () async {
     expect(
