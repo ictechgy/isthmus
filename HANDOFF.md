@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-09-13 — 0.5.0 발행 완료
+
+사용자가 main(`fc05be2`, PR #67 릴리스 준비)에서 `npm publish --otp`로 발행했다.
+발행 직후 세션에서 404로 보였던 것은 npm 로컬 캐시 문제였고 CDN 직접 조회로 해소
+— **발행 직후 조회가 실패해도 npm view 캐시를 의심하고 registry CDN을 직접 본다.**
+발행 후 검증:
+
+- registry latest 0.5.0(버전 13개 목록에 0.5.0 존재).
+- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 65개 파일
+  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.5.0.
+- 발행본 CLI: `--version` 0.5.0, phase-0 check 코드 0(error 1·warning 2·
+  observedFacts 10·observedLimitations 7)이고 stdout이 골든 check.json과 바이트
+  동일, `--strict` 코드 1, SARIF(2.1.0·driver isthmus 0.5.0·results 3), 베이스라인
+  왕복(update → strict+baseline 억제 3·stale 0·코드 0)까지 확인.
+- 0.5.0 신기능 발행본 확인: `help check`, `graph --format mermaid <files>` 플래그
+  선행, query notFound의 stderr 힌트 + 코드 64, mixed-targets 보류 메시지의
+  관찰량 숫자 보간("10 facts across 2 documents").
+- 격리 설치본(`npm install --prefix` → bin `isthmus`) 0.5.0 실행 확인.
+- git 태그 `v0.5.0`(fc05be2) 푸시, GitHub Release v0.5.0 Latest 발행.
+
 ## 2026-09-10 — 0.4.1 전체 개선 리뷰 반영 (PR #65 머지, main `f728394`)
 
 0.4.1 이후 제품 전량을 성능·보안·구조·기능·사용성 다섯 축으로 재검토했다. 보안은 새로운
@@ -374,7 +394,7 @@ Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycl
 Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
 후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
 
-_Last updated: 2026-09-10 (0.4.1 전체 개선 리뷰 반영, PR #65 머지)_
+_Last updated: 2026-09-13 (0.5.0 발행 완료)_
 
 ## Goal
 
@@ -383,9 +403,10 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Current Status
 
-- 0.4.1 릴리스 소스는 `fabe186`(PR #61)다. 이후 인수 문서 변경은 배포 파일을 바꾸지 않는다.
-- **main은 0.4.1 이후 코드 변경을 포함한다**(PR #65, main `f728394`): CHANGELOG Unreleased가
-  비어 있지 않다. 다음 발행 요청이 오면 버전·CHANGELOG·README Status 확인이 필요하다.
+- **0.5.0 릴리스 소스는 `fc05be2`(PR #67)다.** npm `isthmus-cli@0.5.0`이 최신 발행본이고
+  registry latest도 0.5.0이다(2026-09-13 발행, 검증은 최상단 절). git 태그 `v0.5.0`과
+  GitHub Release 발행 완료. CHANGELOG Unreleased는 다시 비어 있다.
+- 0.4.1 릴리스 소스는 `fabe186`(PR #61)다.
 - npm `isthmus-cli@0.4.1`이 최신 발행본이고 registry latest도 0.4.1이다(2026-09-10 발행,
   tarball·발행본 검증은 위 "0.4.1 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
@@ -465,6 +486,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #61 `fabe186`(이번 세션): 0.4.1 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행. 발행 후 검증 완료.
 - PR #62 `7912e34`(이번 세션): 0.4.1 발행 기록 및 HANDOFF.md 갱신.
 - PR #63 `ea796d8`(이번 세션): v0.1.5~v0.4.1 git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료 기록.
+- PR #67 `fc05be2`(이번 세션): 0.5.0 릴리스 준비(버전 minor — 사용자 보이는 동작 추가와
+  `:` 포함 이름의 qualifiedName 값 변경)와 npm 발행. 발행 후 검증 완료(최상단 절).
 - PR #65 `f728394`(이번 세션): 0.4.1 전체 개선 리뷰 반영 — CLI 사용성 통일(공유 파서·`--`·help),
   조인 보류·diff 보류 관찰량 노출, query stderr 힌트·`qualifiedName` `:` 이스케이프,
   command-support 분리·SARIF 지문 주입·`BridgeDiffDocument`. GLM 리뷰 1회 반영.
