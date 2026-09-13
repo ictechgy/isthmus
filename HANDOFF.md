@@ -406,9 +406,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - **0.5.0 릴리스 소스는 `fc05be2`(PR #67)다.** npm `isthmus-cli@0.5.0`이 최신 발행본이고
   registry latest도 0.5.0이다(2026-09-13 발행, 검증은 최상단 절). git 태그 `v0.5.0`과
   GitHub Release 발행 완료. CHANGELOG Unreleased는 다시 비어 있다.
-- 0.4.1 릴리스 소스는 `fabe186`(PR #61)다.
-- npm `isthmus-cli@0.4.1`이 최신 발행본이고 registry latest도 0.4.1이다(2026-09-10 발행,
-  tarball·발행본 검증은 위 "0.4.1 발행 완료" 절). CHANGELOG Unreleased는 비어 있다.
+- 이전 발행본은 0.4.1(`fabe186`, PR #61, 2026-09-10)이고 tarball·발행본 검증 기록은
+  위 "0.4.1 발행 완료" 절에 있다. 0.4.0 이하는 각 발행 절을 본다.
 - **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
   않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
   0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
@@ -488,6 +487,8 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 - PR #63 `ea796d8`(이번 세션): v0.1.5~v0.4.1 git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료 기록.
 - PR #67 `fc05be2`(이번 세션): 0.5.0 릴리스 준비(버전 minor — 사용자 보이는 동작 추가와
   `:` 포함 이름의 qualifiedName 값 변경)와 npm 발행. 발행 후 검증 완료(최상단 절).
+- PR #66 `2cd120b`·#68 `9d13a93`(이번 세션): 이 문서 갱신 두 번(#65 개선 반영 기록,
+  0.5.0 발행 기록).
 - PR #65 `f728394`(이번 세션): 0.4.1 전체 개선 리뷰 반영 — CLI 사용성 통일(공유 파서·`--`·help),
   조인 보류·diff 보류 관찰량 노출, query stderr 힌트·`qualifiedName` `:` 이스케이프,
   command-support 분리·SARIF 지문 주입·`BridgeDiffDocument`. GLM 리뷰 1회 반영.
@@ -512,10 +513,15 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   가리는 공백"과 "등록을 가리는 공백"으로 나누고 진단의 target별로 완화한다. 접두사
   목록은 닫혀 있고 계약이며, `unjoined-*`는 `tool`이 isthmus인 항목만 인정한다.
 - `src/report/diff.ts`·`src/report/graph.ts`: 한계 비교 키와 텍스트 주석
-  (`platform/target/tool`)에 target을 싣는다.
-- `src/cli/check-command.ts`: typed 입력 오류(bridge-facts 4종 + baseline 읽기·JSON·계약·
-  크기·쓰기·쓰기 상한)와 공유 매퍼 `inputFailureResult`. 보간값은 숫자 `inputPosition`·
-  `MAX_BASELINE_ENTRIES`와 parse/baseline의 정적 `reason`뿐이다.
+  (`platform/target/tool`)에 target을 싣는다. diff 문서 형태는 `BridgeDiffDocument`로
+  명시돼 있다.
+- `src/cli/command-support.ts`: 모든 명령이 쓰는 CLI 인프라(`readBridgeDocuments`,
+  bridge-facts 입력 오류 4종과 그 매퍼, `CommandResult`, 지연 조인 메시지의 관찰량
+  보간). `src/cli/parse-arguments.ts`: 공유 플래그 파서(임의 순서 플래그, `--` 관례,
+  중복·빈 값 거부).
+- `src/cli/check-command.ts`: check 고유의 baseline 입력·쓰기 오류(읽기·JSON·계약·
+  크기·쓰기·쓰기 상한)와 그 매퍼. 보간값은 숫자 `inputPosition`·`MAX_BASELINE_ENTRIES`와
+  parse/baseline의 정적 `reason`뿐이다. SARIF 지문의 sha256 구현도 여기 있다.
 - `src/report/baseline.ts`: `isthmus-baseline` v1 parse/create/encode/apply. 항목 키
   `baselineEntryKey`는 diff의 이슈 비교 키와 동일하다(단일 원천). apply는 키 교집합
   기반이라 멱등이고, 억제는 `suppressed: true` 표시로 사실·증거를 보존한다.
@@ -559,10 +565,11 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 ## Verification
 
 최근 세션에서 직접 확인한 결과:
-- `npm run verify` 전체 통과(#34 기준): typecheck, 제품 246개, Phase 0 조인 15개;
-  커버리지 게이트 충족. `Package contract verified: isthmus-cli@0.3.0`.
+- `npm run verify` 전체 통과(0.5.0 기준): typecheck, 제품 287개, Phase 0 조인 15개;
+  커버리지 98.95/95.47/98.03(게이트 90%). `Package contract verified: isthmus-cli@0.5.0`.
   `verify-cli-contract.mjs`에 발행 CLI 베이스라인 왕복 시나리오(update→strict+baseline
-  억제 3·stale 0·코드 0, 손상 파일 코드 2)가 포함됐다.
+  억제 3·stale 0·코드 0, 손상 파일 코드 2)와 query notFound stderr 힌트 단언이
+  포함돼 있다.
 - 통합 검증 그린: roundtrip·공개 플러그인 모두 cartograph 0.10.1 + dartograph 0.5.0 +
   isthmus 0.3.0으로 통과(세부·스코프 실측은 최상단 절).
 - 스코프 dogfood: `verify-limitation-scopes.mjs` 통과 — 양성 스코프 실발행과 채널 단위
@@ -573,8 +580,11 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
   스키마 가드·인과 대조 채택, 이슈 순서·default 의미론·버전 하한은 실측·코드로 기각).
   전부 packet-review files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은
   합의 원문 전사라 생략(사유 기록).
-- 0.3.0 발행 검증은 위 "0.3.0 발행 완료" 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
+- 0.5.0 발행 검증은 최상단 절, 0.3.0은 해당 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
   시점 기록을 본다.
+- GLM 리뷰 기록(추가): #65(사용성·기능·구조 9건 반영 판정 + 반영 3건·확인 3건·기각
+  4건, RESEARCH "0.4.1 전체 개선 리뷰" 절). #67은 코드 변경 없는 버전·문서만의
+  릴리스 준비라 같은 변경의 반복 리뷰를 피하고자 생략(사유는 PR 본문).
 - Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
   `CartographService.swift` `projectPath = configuration.projectPath ?? cwd`(symlink 미해결,
   `project:`로 직행) vs dartograph `dartograph_cli.dart` `_runBridges`의
@@ -583,7 +593,7 @@ Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·�
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. 0.4.0까지 발행을 마쳤고 Blockers는 전부 종결됐다.
+배포 blocker는 없다. 0.5.0까지 발행을 마쳤고 Blockers는 전부 종결됐다.
 
 1. ~~**완화 범위**~~ — **완전 종결(2026-09-09).** target 절반은 #18, 파일·채널 절반은 #25의
    선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
@@ -640,6 +650,9 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
 - **발행 전에 브랜치와 `git status`를 확인한다.** 0.1.5는 작업 트리가 기능 브랜치일 때
    발행돼 미출시 코드가 나갔다. `npm publish`는 checkout 상태를 그대로 담는다.
 - npm 발행은 `PUT 202`로 끝나고 registry 반영은 비동기다. 직후 조회로 실패를 단정하지 않는다.
+  반영이 늦어 보이면 `npm view`의 로컬 캐시를 의심하고 registry CDN
+  (`https://registry.npmjs.org/<pkg>` 직접 조회)을 본다 — 0.5.0 때 2분 넘게 404로 보인
+  것이 캐시였고 CDN은 즉시 최신을 보여줬다.
   npm 계정에 2FA가 걸려 있어 `--otp`가 필요하고, 코드가 30초면 만료되므로 사용자가 직접 실행한다.
   발행이 `PUT 404`로 실패하면 패키지 문제가 아니라 인증 문제다(레지스트리는 존재 여부를
   숨기려고 404를 쓴다). `npm whoami` → `npm owner ls isthmus-cli` → `npm config get registry`
@@ -671,8 +684,8 @@ RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계�
    저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
 2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
    지금은 충분하다고 판단.
-3. ~~태그·GitHub release~~ — **완료(2026-09-10)**: `v0.1.5`부터 `v0.4.1`까지
-   버전 태그를 전량 생성해 원격 push 완료했고, `v0.4.1` GitHub Release 발행 완료.
+3. ~~태그·GitHub release~~ — **완료(2026-09-10, 2026-09-13)**: `v0.1.5`부터
+   `v0.4.1`까지 전량 생성·push했고, `v0.5.0` 태그와 GitHub Release도 발행 완료.
 
 ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
 인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
@@ -683,11 +696,12 @@ ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋�
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-**0.4.1까지 발행 완료(registry·tarball·발행본 검증까지), git 태그(v0.1.0~v0.4.1) 및 GitHub Release(v0.4.1) 완료, Blockers는 전부 종결됐어.**
-현재 `main`이 깨끗하며 `npm run verify` 전체 통과 상태야.
+**0.5.0까지 발행 완료(registry·tarball·발행본·격리 설치본 검증까지), git 태그(v0.1.0~v0.5.0) 및 GitHub Release(v0.5.0) 완료, Blockers는 전부 종결됐어.**
+현재 `main`이 깨끗하며 `npm run verify` 전체 통과 상태야(제품 287개, 0.5.0 기준).
 CHANGELOG `Unreleased`는 비어 있어.
-발행을 요청하면 브랜치와 git status부터 확인하고 사용자에게 `--otp`로 직접 실행하게 해줘
-(PUT 404는 인증 문제 — npm login 먼저).
-샌드박스에서 GLM 리뷰는 `packet-ask review --provider glm`으로 해줘.
+발행을 요청하면 브랜치와 git status부터 확인하고 버전·CHANGELOG·README Status를 준비한 뒤
+사용자에게 `--otp`로 직접 실행하게 해줘(PUT 404는 인증 문제 — npm login 먼저).
+발행 직후 조회가 실패하면 npm 캐시를 의심하고 registry CDN을 직접 조회해줘(0.5.0 때 실측).
+샌드박스에서 GLM 리뷰는 `packet-review --files <변경 파일들> --effort high --question-stdin`으로 해줚(files 모드만 동작).
 자매 저장소 쓰기 권한은 세션마다 다르니 직접 시도해 보고, 막히면 사용자에게 넘겨줘.
 워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는 tmp 사본 + isthmus-js 오버라이드로 돌려줘.
