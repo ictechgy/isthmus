@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
 
-const [flutterBinary, isthmusOverride] = process.argv.slice(2);
-if (flutterBinary === undefined || process.platform !== 'darwin') {
-  process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js]\n');
+const [flutterBinary, isthmusOverride, cartographBinary, dartographEntry, ...unexpectedArguments] = process.argv.slice(2);
+const producerArgumentsPresent = cartographBinary !== undefined || dartographEntry !== undefined;
+if (flutterBinary === undefined || process.platform !== 'darwin' || unexpectedArguments.length > 0 ||
+  (producerArgumentsPresent && (cartographBinary === undefined || dartographEntry === undefined))) {
+  process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js] [cartograph-bin dartograph-entry]\n');
   process.exit(64);
 }
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -36,12 +38,13 @@ try {
     + '  url_launcher_macos: 3.2.2\n');
   await writeFile(join(appRoot, 'lib/main.dart'), dartSource);
   await writeFile(join(appRoot, 'macos/Runner/MainFlutterWindow.swift'), swiftSource);
+  await writeFile(join(appRoot, 'macos/Runner/NativeRuntimeHelper.swift'), swiftHelperSource);
   // 현대 Xcode가 빌드할 수 있는 최소 버전을 전용 앱과 CocoaPods 타깃에 함께 적용한다.
   const projectFile = join(appRoot, 'macos/Runner.xcodeproj/project.pbxproj');
   const originalProject = await readFile(projectFile, 'utf8');
   const updatedProject = originalProject.replace(/MACOSX_DEPLOYMENT_TARGET = [^;]+;/gu, 'MACOSX_DEPLOYMENT_TARGET = 12.0;');
   assert.notEqual(originalProject, updatedProject, 'Fixture deployment targets must be found.');
-  await writeFile(projectFile, updatedProject);
+  await writeFile(projectFile, addSwiftSourceToProject(updatedProject));
   const podfile = join(appRoot, 'macos/Podfile');
   const originalPods = await readFile(join(version.flutterRoot, 'packages/flutter_tools/templates/cocoapods/Podfile-macos'), 'utf8');
   assert.ok(originalPods.includes('flutter_additional_macos_build_settings(target)'), 'Flutter CocoaPods hook must exist.');
@@ -62,7 +65,7 @@ try {
     await writeFile(path, patched);
   }
   step(flutterBinary, ['pub', 'get'], 'Flutter app dependency resolution', appRoot);
-  const hash = createHash('sha256').update(dartSource).update(swiftSource).update(JSON.stringify({
+  const hash = createHash('sha256').update(dartSource).update(swiftSource).update(swiftHelperSource).update(JSON.stringify({
     framework: version.frameworkRevision, engine: version.engineRevision, dart: version.dartSdkVersion,
   }));
   for (const relative of (await readdir(join(packageRoot, 'lib'), { recursive: true })).filter((name) => name.endsWith('.dart')).sort()) {
@@ -73,8 +76,20 @@ try {
     hash.update(name).update((await readFile(join(appRoot, name), 'utf8')).replaceAll(packageRoot, '<recorder-package>'));
   }
   const revision = hash.digest('hex');
+  let captured;
+  if (producerArgumentsPresent) {
+    // 먼저 실제 Xcode compiler index를 만들고 그 위치를 producer에 명시한다.
+    const indexBuildArguments = ['build', 'macos', '--debug', '--no-pub',
+      `--dart-define=ISTHMUS_PROJECT=${project}`];
+    step(flutterBinary, indexBuildArguments, 'Native Flutter compiler index preparation', appRoot, 600_000);
+    step('xcodebuild', xcodeIndexArguments(appRoot), 'Xcode compiler index preparation', appRoot, 600_000);
+    const indexStore = await findIndexStore(join(appRoot, 'build'));
+    captured = await captureProducerPreflight({ project, version, indexStore });
+  }
+  const runtimeRevision = captured?.context.revision ?? revision;
+  const runtimeProject = captured?.context.project ?? project;
   await writeFile(join(artifacts, 'expectations.json'), JSON.stringify({
-    format: 'bridge-expectations', version: 1, project, revision,
+    format: 'bridge-expectations', version: 1, project: runtimeProject, revision: runtimeRevision,
     checks: [
       { id: 'method-echo', scenario: 'success', platform: 'macos', instance: 'main',
         transport: 'method-channel', channel: 'example/native-runtime', method: 'echo' },
@@ -84,42 +99,155 @@ try {
         transport: 'basic-message-channel', channel: 'dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl' },
     ],
   }, null, 2), { mode: 0o600 });
-  const buildArguments = ['build', 'macos', '--debug', '--no-pub',
-    `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`,
+  const negativeExpectationsPath = join(artifacts, 'negative-expectations.json');
+  await writeFile(negativeExpectationsPath, JSON.stringify({
+    format: 'bridge-expectations', version: 1, project: runtimeProject, revision: runtimeRevision,
+    checks: [
+      { id: 'native-error', scenario: 'failure', platform: 'macos', instance: 'main',
+        transport: 'method-channel', channel: 'example/native-runtime', method: 'failure', allowedOutcomes: ['error'] },
+      { id: 'native-missing-handler', scenario: 'failure', platform: 'macos', instance: 'main',
+        transport: 'method-channel', channel: 'example/missing-runtime', method: 'absent', allowedOutcomes: ['missing-handler'] },
+      { id: 'native-timeout', scenario: 'timeout', platform: 'macos', instance: 'main',
+        transport: 'method-channel', channel: 'example/native-runtime', method: 'slow', allowedOutcomes: ['timeout'] },
+    ],
+  }, null, 2), { mode: 0o600 });
+  const runtimeBuildArguments = ['build', 'macos', '--debug', '--no-pub',
+    `--dart-define=ISTHMUS_PROJECT=${runtimeProject}`, `--dart-define=ISTHMUS_REVISION=${runtimeRevision}`,
     `--dart-define=ISTHMUS_OUTPUT=${artifacts}`];
-  step(flutterBinary, buildArguments, 'Native Flutter app build', appRoot, 600_000);
-  step(flutterBinary, buildArguments, 'Native Flutter repeat build', appRoot, 600_000);
+  step(flutterBinary, runtimeBuildArguments, 'Native Flutter app build', appRoot, 600_000);
+  step(flutterBinary, runtimeBuildArguments, 'Native Flutter repeat build', appRoot, 600_000);
   const executable = join(appRoot, 'build/macos/Build/Products/Debug/isthmus_runtime_probe.app/Contents/MacOS/isthmus_runtime_probe');
   step(executable, [], 'Native Flutter app execution', appRoot, 60_000);
-  const verify = (...names) => runChild(process.execPath, [isthmus, 'verify-runtime',
-    '--expectations', join(artifacts, 'expectations.json'), '--strict', '--compact',
+  const verify = (expectationsPath, ...names) => runChild(process.execPath, [isthmus, 'verify-runtime',
+    '--expectations', expectationsPath, '--strict', '--compact',
     ...names.map((name) => join(artifacts, `${name}.json`))], { timeout: 30_000 });
-  const positive = verify('success');
+  const verifyRuntime = (...names) => verify(join(artifacts, 'expectations.json'), ...names);
+  const positive = verifyRuntime('success');
   assert.equal(positive.status, 0, 'Native successful calls must satisfy expectations.');
   const good = JSON.parse(positive.stdout);
   assert.equal(good.summary.passedChecks, 3);
-  const negative = verify('success', 'failure', 'timeout');
+  await assertRuntimeRevision(['success'], runtimeProject, runtimeRevision);
+  let preflightRuntime;
+  if (captured !== undefined) {
+    const preflightResult = runChild(process.execPath, [isthmus, 'preflight',
+      join(artifacts, 'preflight-context.json'), join(artifacts, 'success.json'),
+      '--expectations', join(artifacts, 'expectations.json'), '--strict', '--compact'], { timeout: 30_000 });
+    // 실제 runtime은 맞아도 Basic 정적 경계와 실행하지 않은 실패 경로는 검토 공백으로 남긴다.
+    assert.equal(preflightResult.status, 1, 'Preflight must preserve related static/runtime evidence gaps.');
+    preflightRuntime = JSON.parse(preflightResult.stdout);
+    assert.equal(preflightRuntime.runtime?.aligned, true, 'Preflight runtime must share the capture revision.');
+    assert.equal(preflightRuntime.runtime?.verification?.status, 'passed', 'Preflight runtime success must pass.');
+    assert.ok(preflightRuntime.runtime?.uncoveredBoundaries?.length > 0, 'Uncovered static boundaries must remain visible.');
+    await writeFile(join(artifacts, 'preflight-runtime.json'), JSON.stringify(preflightRuntime, null, 2), { mode: 0o600 });
+  }
+  const negative = verifyRuntime('success', 'failure', 'timeout');
   assert.equal(negative.status, 1, 'Native failures must fail the CI gate.');
   const bad = JSON.parse(negative.stdout);
   assert.deepEqual(bad.failures.map(({ event }) => event.outcome).sort(), ['error', 'missing-handler', 'timeout'],
     'Missing handler, native error and slow reply must retain distinct outcomes.');
-  const incomplete = verify('success', 'pending');
+  const incomplete = verifyRuntime('success', 'pending');
   assert.equal(incomplete.status, 1, 'Unfinished native communication must fail the CI gate.');
   const pending = JSON.parse(incomplete.stdout);
   assert.ok(pending.summary.pendingCalls > 0 || pending.summary.incompleteRuns > 0);
+  await assertRuntimeRevision(['failure', 'timeout', 'pending'], runtimeProject, runtimeRevision);
+  const allowedNegative = verify(negativeExpectationsPath, 'failure', 'timeout');
+  assert.equal(allowedNegative.status, 0, 'Declared native error, missing-handler and timeout outcomes must pass.');
+  const allowedNegativeReport = JSON.parse(allowedNegative.stdout);
+  assert.equal(allowedNegativeReport.status, 'passed');
+  assert.equal(allowedNegativeReport.summary.expectedFailedCalls, 3);
+  const allowedPending = verify(negativeExpectationsPath, 'pending');
+  assert.equal(allowedPending.status, 1, 'Pending native communication must not satisfy terminal expectations.');
   for (const name of ['success', 'failure', 'timeout', 'pending']) {
     const text = await readFile(join(artifacts, `${name}.json`), 'utf8');
     assert.equal(text.includes('fixture-private-payload'), false, 'Payload must not enter runtime evidence.');
   }
   const summary = { scope: 'real-flutter-macos-native-channels', flutter: version.frameworkVersion,
     dart: version.dartSdkVersion, publicPlugin: 'url_launcher_macos@3.2.2', deploymentTarget: '12.0',
-    revision, artifacts, elapsedMs: Math.round(performance.now() - started), steps,
-    success: good.summary, failure: bad.summary, pending: pending.summary };
+    revision: runtimeRevision, sourceRevision: revision, artifacts, elapsedMs: Math.round(performance.now() - started), steps,
+    ...(captured === undefined ? {} : {
+      preflight: { context: join(artifacts, 'preflight-context.json'), sources: join(artifacts, 'preflight-context.json.sources.json'),
+        runtime: join(artifacts, 'preflight-runtime.json'), cached: captured.cached, fingerprintScope: captured.fingerprintScope,
+        report: captured.report.summary, runtimeAligned: preflightRuntime?.runtime?.aligned ?? false },
+    }),
+    success: good.summary, failure: bad.summary, pending: pending.summary,
+    allowedNegative: allowedNegativeReport.summary,
+  };
   await writeFile(join(artifacts, 'verification.json'), JSON.stringify(summary, null, 2), { mode: 0o600 });
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }
+}
+
+/** 실제 producer를 지정한 경우, 동일한 생성 앱·compiler index에서 정적 preflight를 수집한다. */
+async function captureProducerPreflight({ project, version, indexStore }) {
+  const cartograph = await realpath(cartographBinary);
+  const dartograph = await realpath(dartographEntry);
+  const dartographRoot = dirname(dirname(dartograph));
+  // Flutter build와 index 경로 발견은 capture 호출 직전에 끝냈다. capture의 prepare는
+  // 같은 DerivedData를 다시 인덱싱해 producer가 읽은 index가 최신임을 확인한다.
+  const prepare = [['xcodebuild', ...xcodeIndexArguments(appRoot)]];
+  const { capturePreflight } = await import('./capture-preflight.mjs');
+  const config = {
+    project,
+    inputs: ['lib', 'macos/Runner', 'macos/Runner.xcodeproj/project.pbxproj', 'macos/Podfile',
+      'pubspec.yaml', 'pubspec.lock', '.dart_tool/package_config.json'],
+    toolInputs: [cartograph, dartograph, join(dartographRoot, 'lib'), join(dartographRoot, '.dart_tool/package_config.json'),
+      join(version.flutterRoot, 'version'), join(version.flutterRoot, 'bin/cache/dart-sdk/version'), packageRoot],
+    prepare,
+    dartograph: ['dart', dartograph],
+    cartograph: [cartograph],
+    selection: { swift: { files: ['macos/Runner/NativeRuntimeHelper.swift'], symbols: [] } },
+    indexStore,
+    output: join(artifacts, 'preflight-context.json'),
+    cache: join(artifacts, 'preflight-cache.json'),
+  };
+  const result = await capturePreflight(config);
+  assert.equal(result.context.project, project, 'Producer and runtime projects must match.');
+  assert.match(result.context.revision, /^sha256:[a-f0-9]{64}$/u, 'Producer revision must be a source fingerprint.');
+  const sourcesPath = `${config.output}.sources.json`;
+  await access(sourcesPath);
+  return result;
+}
+
+/** Flutter 산출물을 유지하면서 Xcode가 실제 compiler index를 남기게 한다. */
+function xcodeIndexArguments(root) {
+  return ['-workspace', join(root, 'macos/Runner.xcworkspace'), '-scheme', 'Runner',
+    '-configuration', 'Debug', '-derivedDataPath', join(root, 'build/macos/Build'),
+    'COMPILER_INDEX_STORE_ENABLE=YES', 'CODE_SIGNING_ALLOWED=NO', 'build'];
+}
+
+/** Xcode가 생성한 Index.noindex/DataStore만 사용하며, 비슷한 이름의 산출물을 추측하지 않는다. */
+async function findIndexStore(buildRoot) {
+  const pending = [buildRoot];
+  const matches = [];
+  while (pending.length > 0) {
+    const directory = pending.shift();
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); }
+    catch { continue; }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (!entry.isDirectory()) continue;
+      if (entry.name === 'DataStore' && directory.endsWith('/Index.noindex')) {
+        await access(path);
+        matches.push(path);
+        continue;
+      }
+      pending.push(path);
+    }
+  }
+  if (matches.length !== 1) throw new Error(`Flutter build produced ${matches.length} compiler index stores; refusing to guess.`);
+  return matches[0];
+}
+
+/** 모든 runtime 파일이 같은 capture project/revision을 선언하는지 확인한다. */
+async function assertRuntimeRevision(names, project, revision) {
+  for (const name of names) {
+    const value = JSON.parse(await readFile(join(artifacts, `${name}.json`), 'utf8'));
+    assert.equal(value.project, project, `${name} runtime project must match preflight capture.`);
+    assert.equal(value.revision, revision, `${name} runtime revision must match preflight capture.`);
+  }
 }
 
 /** SDK와 네이티브 프로세스는 인수 배열로 실행하고 실패를 단계명으로 구분한다. */
@@ -139,6 +267,33 @@ function step(command, args, label, cwd = repository, timeout = 180_000) {
     writeFileSync(join(artifacts, 'failure.log'), diagnostic, { mode: 0o600 });
     throw new Error(`${label} failed (exit ${result.status ?? 'unavailable'}).`);
   }
+  return result;
+}
+
+/** Flutter가 만든 Xcode project에 별도 helper를 실제 Sources build phase로 등록한다. */
+function addSwiftSourceToProject(project) {
+  const buildFileId = 'A1B2C3D4E5F60718293A4B5C';
+  const fileReferenceId = 'A1B2C3D4E5F60718293A4B5D';
+  const buildFile = `\t\t${buildFileId} /* NativeRuntimeHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = ${fileReferenceId} /* NativeRuntimeHelper.swift */; };\n`;
+  const fileReference = `\t\t${fileReferenceId} /* NativeRuntimeHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRuntimeHelper.swift; sourceTree = "<group>"; };\n`;
+  const withBuildFile = project.replace(
+    '\t\t33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };\n',
+    (match) => match + buildFile,
+  );
+  const withReference = withBuildFile.replace(
+    '\t\t33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };\n',
+    (match) => match + fileReference,
+  );
+  const withGroup = withReference.replace(
+    '\t\t\t\t33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,\n',
+    (match) => match + `\t\t\t\t${fileReferenceId} /* NativeRuntimeHelper.swift */,\n`,
+  );
+  const result = withGroup.replace(
+    '\t\t\t\t33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,\n',
+    (match) => match + `\t\t\t\t${buildFileId} /* NativeRuntimeHelper.swift in Sources */,\n`,
+  );
+  assert.notEqual(result, project, 'Native helper must be registered in the Xcode project.');
+  assert.equal(result.match(/NativeRuntimeHelper\.swift/gu)?.length, 6, 'Native helper Xcode entries must be complete.');
   return result;
 }
 
@@ -210,6 +365,8 @@ Future<void> probe() async {
   if (await channel.invokeMethod<String>(method, 'fixture-private-payload') != 'ok') {
     throw StateError('Method response changed.');
   }
+  // 정적 producer가 native helper 변경에서 Dart 소비자까지 전파하는지 확인할 호출 체인이다.
+  if (await runtimeScreen(success.binaryMessenger) != 'ok') throw StateError('Dart consumer response changed.');
   final basic = BasicMessageChannel<Object?>(basicName, const StandardMessageCodec(),
     binaryMessenger: success.binaryMessenger);
   final reply = await basic.send('fixture-private-payload');
@@ -243,6 +400,13 @@ Future<void> probe() async {
   unawaited(unfinished.invokeMethod<void>('never'));
   await save('pending', pending);
 }
+
+Future<String?> runtimeBridge(BinaryMessenger messenger) {
+  final channel = MethodChannel(methodName, const StandardMethodCodec(), messenger);
+  return channel.invokeMethod<String>('echo');
+}
+Future<String?> runtimeService(BinaryMessenger messenger) => runtimeBridge(messenger);
+Future<String?> runtimeScreen(BinaryMessenger messenger) => runtimeService(messenger);
 `;
 
 const swiftSource = String.raw`
@@ -259,7 +423,7 @@ class MainFlutterWindow: NSWindow {
     let channel = FlutterMethodChannel(name: "example/native-runtime", binaryMessenger: controller.engine.binaryMessenger)
     channel.setMethodCallHandler { call, result in
       switch call.method {
-      case "echo": result("ok")
+      case "echo": result(runtimeNativeValue())
       case "failure": result(FlutterError(code: "fixture-error", message: "fixture-private-payload", details: nil))
       case "slow": DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { result("ok") }
       case "never": break
@@ -274,6 +438,11 @@ class MainFlutterWindow: NSWindow {
 }
 `;
 
+// 브리지 핸들러가 별도 Swift 선언을 호출하는 실제 compiler-index 경계를 만든다.
+const swiftHelperSource = String.raw`
+func runtimeNativeValue() -> String { "ok" }
+`;
+
 // 우리가 생성하는 fixture의 명시된 호출 표현식 위치만 기록한다. 임의 앱의 스택을 추측하지 않는다.
 const dartSource = locateCallers(dartSourceTemplate);
 
@@ -282,6 +451,7 @@ function locateCallers(template) {
   let result = template;
   for (const [name, expression] of [
     ['ECHO', 'channel.invokeMethod<String>(method'],
+    ['STATIC_ECHO', "channel.invokeMethod<String>('echo')"],
     ['FAILURE', "failing.invokeMethod<void>('failure')"],
     ['ABSENT', "missing.invokeMethod<void>('absent')"],
     ['SLOW', "delayed.invokeMethod<String>('slow')"],
