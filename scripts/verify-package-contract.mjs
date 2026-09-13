@@ -43,6 +43,9 @@ for (const requiredPath of [
   'scripts/capture-preflight.mjs',
   'scripts/run-child.mjs',
   'docs/PREFLIGHT.md',
+  'docs/BRIDGE-MESSAGES.md',
+  'docs/IMPACT.md',
+  'docs/GRAPH-EXCHANGE.md',
   'package.json',
 ]) {
   verify(paths.has(requiredPath), `artifact file ${requiredPath}`);

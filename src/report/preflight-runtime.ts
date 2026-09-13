@@ -4,6 +4,7 @@ import type { PreflightContext } from '../exchange/preflight-context.ts';
 import type { BridgeRuntimeDocument, RuntimeExpectations, RuntimeOutcome, RuntimePlatform, RuntimeRoute } from '../exchange/runtime.ts';
 import { RuntimeValidationError } from '../exchange/runtime.ts';
 import type { BridgeEndpoint } from '../join/join.ts';
+import { MessageAddressIndex } from '../join/message-address.ts';
 import type { PreflightLimitation, PreflightReport } from './preflight.ts';
 import { verifyRuntimeEvidence } from './runtime.ts';
 import type { RuntimeVerificationReport } from './runtime.ts';
@@ -28,7 +29,9 @@ export interface PreflightRuntimeRoute extends RuntimeRoute {
 export interface PreflightRuntimeCandidates {
   readonly key: string;
   readonly channel: string;
-  readonly method: string;
+  readonly method?: string;
+  readonly transport?: 'basic-message-channel';
+  readonly matching?: 'literal' | 'prefix';
   readonly handlers: readonly BridgeEndpoint[];
   readonly handlersOmitted: number;
 }
@@ -56,9 +59,14 @@ export function attachPreflightRuntime(
   const files = new Set(report.reviewFiles);
   const addedFiles = new Set<string>();
   const byRoute = new Map<string, string[]>();
+  const messageBoundaries = new MessageAddressIndex<string>();
   const methodChannels = new Set<string>();
   for (const { subject } of report.boundaries) {
     if (subject.target !== 'flutter') continue;
+    if (subject.transport === 'basic-message-channel') {
+      messageBoundaries.add(subject.channel, subject.matching ?? 'literal', subject.key);
+      continue;
+    }
     const key = routeKey(subject.channel, subject.method);
     const keys = byRoute.get(key) ?? [];
     keys.push(subject.key);
@@ -66,9 +74,12 @@ export function attachPreflightRuntime(
     if (subject.method !== undefined) methodChannels.add(subject.channel);
   }
   const required = report.boundaries.filter(({ subject }) => subject.target === 'flutter' &&
-    (subject.method !== undefined || !methodChannels.has(subject.channel)));
-  const declared = new Set(expectations.checks.filter((check) => apple(check.platform) && check.transport === 'method-channel')
-    .flatMap((check) => [routeKey(check.channel, check.method), routeKey(check.channel, undefined)]));
+    (subject.transport === 'basic-message-channel' || subject.method !== undefined || !methodChannels.has(subject.channel)));
+  const boundaryKeys = (channel: string, method: string | undefined, transport: string) => transport === 'basic-message-channel'
+    ? messageBoundaries.matching(channel)
+    : [...(byRoute.get(routeKey(channel, method)) ?? []), ...(byRoute.get(routeKey(channel, undefined)) ?? [])];
+  const declared = new Set(expectations.checks.filter((check) => apple(check.platform))
+    .flatMap((check) => boundaryKeys(check.channel, check.method, check.transport)));
   const observed = new Set<string>();
   const handlers = new Map<string, { channel: string; method: string; endpoints: Map<string, BridgeEndpoint> }>();
   for (const document of context.bridges) {
@@ -90,6 +101,19 @@ export function attachPreflightRuntime(
     }
   }
   const candidateGroups = new Map<string, PreflightRuntimeCandidates>();
+  const nativeMessages = new MessageAddressIndex<{ endpoint: BridgeEndpoint; matching: 'literal' | 'prefix' }>();
+  for (const document of context.messages ?? []) {
+    if (document.platform !== 'swift') continue;
+    for (const fact of document.facts) {
+      const address = fact.dynamic ? fact.channelPrefix : fact.channel;
+      if (!address) continue;
+      nativeMessages.add(address, fact.dynamic ? 'prefix' : 'literal', { matching: fact.dynamic ? 'prefix' : 'literal',
+        endpoint: { platform: 'swift', location: fact.location, ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
+          ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
+          ...(fact.dynamic ? { channelExpression: fact.channel, channelPrefix: fact.channelPrefix } : {}) } });
+    }
+  }
+  let messageCandidateWork = 0;
   const groups = new Map<string, {
     route: Omit<PreflightRuntimeRoute, 'callers' | 'callersOmitted' | 'selectionReasons' | 'observedCalls' | 'outcomes'>;
     count: number; outcomes: Record<RuntimeOutcome, number>;
@@ -99,29 +123,42 @@ export function attachPreflightRuntime(
     // 기대 문서가 이전 revision이어도 현재 정적 분석과 같은 실행만 경계 근거에 연결한다.
     if (document.revision !== context.revision) continue;
     for (const event of document.events) {
-      const supported = apple(document.run.platform) && event.transport === 'method-channel';
-      const route = routeKey(event.channel, event.method);
-      const channel = routeKey(event.channel, undefined);
-      const keys = supported ? [...(byRoute.get(route) ?? []), ...(byRoute.get(channel) ?? [])] : [];
+      const supported = apple(document.run.platform) && (event.transport === 'method-channel' || (context.messages?.length ?? 0) > 0);
+      const route = routeKey(event.channel, event.method, event.transport);
+      const keys = supported ? boundaryKeys(event.channel, event.method, event.transport) : [];
       const fromFile = event.caller !== undefined && files.has(event.caller.path);
       if (keys.length === 0 && !fromFile) continue;
-      if (supported) { observed.add(route); observed.add(channel); }
-      const candidates = supported ? handlers.get(route) : undefined;
+      for (const key of keys) observed.add(key);
+      const candidates = supported && event.transport === 'method-channel' ? handlers.get(route) : undefined;
       if (candidates !== undefined && !candidateGroups.has(route)) {
         const endpoints = [...candidates.endpoints.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, value]) => value);
         for (const endpoint of endpoints) addedFiles.add(endpoint.location.path);
         candidateGroups.set(route, { key: route, channel: candidates.channel, method: candidates.method,
           handlers: endpoints.slice(0, 20), handlersOmitted: Math.max(0, endpoints.length - 20) });
       }
+      if (supported && event.transport === 'basic-message-channel' && !candidateGroups.has(route)) {
+        const matches = nativeMessages.matching(event.channel);
+        messageCandidateWork += matches.length;
+        if (messageCandidateWork > 1_000_000) throw new RuntimeValidationError('Message runtime candidate budget exceeded.');
+        if (matches.length > 0) {
+          const unique = [...new Map(matches.map(({ endpoint }) => [JSON.stringify(endpoint), endpoint])).entries()]
+            .sort(([a], [b]) => compareStrings(a, b)).map(([, endpoint]) => endpoint);
+          for (const endpoint of unique) addedFiles.add(endpoint.location.path);
+          candidateGroups.set(route, { key: route, channel: event.channel, transport: 'basic-message-channel',
+            matching: matches.some(({ matching }) => matching === 'prefix') ? 'prefix' : 'literal',
+            handlers: unique.slice(0, 20), handlersOmitted: Math.max(0, unique.length - 20) });
+        }
+      }
+      const hasCandidates = candidateGroups.has(route);
       const key = JSON.stringify([document.run.id, event.transport, event.channel, event.method ?? null, event.instance]);
       let group = groups.get(key);
       if (group === undefined) {
         group = { route: {
           runId: document.run.id, scenario: document.run.scenario, platform: document.run.platform,
           transport: event.transport, channel: event.channel, ...(event.method === undefined ? {} : { method: event.method }),
-          instance: event.instance, staticStatus: !supported ? 'unsupported' : candidates !== undefined ? 'candidates' : 'unobserved',
+          instance: event.instance, staticStatus: !supported ? 'unsupported' : hasCandidates ? 'candidates' : 'unobserved',
           boundaryKeys: [...new Set(keys)].sort(compareStrings),
-          ...(candidates === undefined ? {} : { candidateKey: route }),
+          ...(!hasCandidates ? {} : { candidateKey: route }),
         }, count: 0, outcomes: { success: 0, error: 0, timeout: 0, pending: 0, 'missing-handler': 0 },
         callers: new Map(), reasons: new Set() };
         groups.set(key, group);
@@ -141,9 +178,9 @@ export function attachPreflightRuntime(
     callers: [...group.callers.entries()].sort(([a], [b]) => compareStrings(a, b)).slice(0, 20).map(([, caller]) => caller),
     callersOmitted: Math.max(0, group.callers.size - 20), selectionReasons: [...group.reasons].sort(compareStrings),
   }));
-  const unobservedBoundaries = required.filter(({ subject }) => !observed.has(routeKey(subject.channel, subject.method)))
+  const unobservedBoundaries = required.filter(({ subject }) => !observed.has(subject.key))
     .map(({ subject }) => subject.key).sort(compareStrings);
-  const uncoveredBoundaries = required.filter(({ subject }) => !aligned || !declared.has(routeKey(subject.channel, subject.method)))
+  const uncoveredBoundaries = required.filter(({ subject }) => !aligned || !declared.has(subject.key))
     .map(({ subject }) => subject.key).sort(compareStrings);
   const gaps: PreflightLimitation[] = [];
   if (!aligned) gaps.push({ code: 'stale-runtime-expectations', message: 'Runtime expectations target a different capture revision.' });
@@ -162,5 +199,7 @@ export function attachPreflightRuntime(
     summary: { ...report.summary, reviewFiles: reviewFiles.length, evidenceGaps: report.summary.evidenceGaps + gaps.length } };
 }
 
-function routeKey(channel: string, method: string | undefined): string { return JSON.stringify([channel, method ?? null]); }
+function routeKey(channel: string, method: string | undefined, transport = 'method-channel'): string {
+  return JSON.stringify(transport === 'basic-message-channel' ? [transport, channel, null] : [channel, method ?? null]);
+}
 function apple(platform: RuntimePlatform): boolean { return platform === 'ios' || platform === 'macos'; }

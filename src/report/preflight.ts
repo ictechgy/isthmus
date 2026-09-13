@@ -7,6 +7,10 @@ import { createCheckReport } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 import type { PreflightRuntimeReport } from './preflight-runtime.ts';
+import { joinMessageBridges } from '../join/messages.ts';
+import type { MessageEndpoint } from '../join/messages.ts';
+import type { BridgeHandlerDependency } from '../exchange/messages.ts';
+import type { BridgeSymbol } from '../exchange/parse.ts';
 
 type Language = 'dart' | 'swift';
 
@@ -16,13 +20,20 @@ export type PreflightSubject = {
 } | {
   readonly key: string; readonly kind: 'bridge'; readonly target: BridgeTarget;
   readonly channel: string; readonly method?: string;
+  readonly transport?: 'basic-message-channel';
+  readonly matching?: 'literal' | 'prefix';
 };
 
 /** 실제 producer 사용 관계와 문자열 브리지 관계를 서로 다른 근거로 표시한다. */
 export type PreflightRelation = {
   readonly kind: 'language'; readonly analysis: string; readonly relationships: readonly string[];
 } | {
-  readonly kind: 'bridge-handler' | 'bridge-registration' | 'bridge-invocation' | 'bridge-creation';
+  readonly kind: 'bridge-message-dependency'; readonly evidence: BridgeEndpoint;
+  readonly dependency: Omit<BridgeHandlerDependency, 'dispatchTargets'>;
+  readonly dispatchTarget?: BridgeSymbol;
+} | {
+  readonly kind: 'bridge-handler' | 'bridge-registration' | 'bridge-invocation' | 'bridge-creation'
+    | 'bridge-message-send' | 'bridge-message-handler';
   readonly evidence: BridgeEndpoint;
 };
 
@@ -61,6 +72,7 @@ export interface PreflightReport {
   readonly issues: readonly CheckIssue[];
   readonly limitations: readonly PreflightLimitation[];
   readonly bridgeLimitations: readonly JoinLimitation[];
+  readonly messageLimitations?: readonly JoinLimitation[];
   readonly runtime?: PreflightRuntimeReport;
   readonly producers: ReadonlyArray<{ analysis: string; platform: Language; tool: { name: string; version: string }; truncated: boolean }>;
   readonly summary: {
@@ -77,6 +89,7 @@ const MAX_RELATIONS = 1_000_000;
 /** 전체 언어 그래프가 아닌 producer의 영향 숲을 경계에서 연결한다. */
 export function createPreflightReport(context: PreflightContext): PreflightReport {
   const joined = joinBridgeDocuments(context.bridges);
+  const messages = joinMessageBridges(context.messages ?? [], context.project);
   if (joined.deferred) throw new PreflightGraphError('Preflight cannot use mixed-target bridge documents.');
   const nodes = new Map<string, PreflightSubject>();
   const roots = new Set<string>();
@@ -146,28 +159,56 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   const routes: Array<{
     subject: Extract<PreflightSubject, { kind: 'bridge' }>;
     callers: readonly BridgeEndpoint[]; receivers: readonly BridgeEndpoint[];
-    callerKeys: string[]; receiverKeys: string[]; missing: BridgeEndpoint[];
+    callerKeys: string[]; receiverKeys: string[]; missing: BridgeEndpoint[]; imprecise: BridgeEndpoint[];
   }> = [];
 
   function boundary(target: BridgeTarget, channel: string, method: string | undefined,
-    callers: readonly BridgeEndpoint[], handlers: readonly BridgeEndpoint[], wire: readonly BridgeEndpoint[]): void {
-    const key = JSON.stringify(['bridge', target, channel, method ?? null]);
-    const subject = { key, kind: 'bridge' as const, target, channel, ...(method === undefined ? {} : { method }) };
+    callers: readonly BridgeEndpoint[], handlers: readonly MessageEndpoint[], wire: readonly BridgeEndpoint[],
+    matching?: 'literal' | 'prefix'): void {
+    const key = matching === undefined ? JSON.stringify(['bridge', target, channel, method ?? null])
+      : JSON.stringify(['bridge', target, 'basic-message-channel', matching, channel]);
+    const subject = { key, kind: 'bridge' as const, target, channel, ...(method === undefined ? {} : { method }),
+      ...(matching === undefined ? {} : { transport: 'basic-message-channel' as const, matching }) };
     nodes.set(key, subject);
-    const route = { subject, callers, receivers: [...handlers, ...wire], callerKeys: [] as string[], receiverKeys: [] as string[], missing: [] as BridgeEndpoint[] };
+    const route = { subject, callers, receivers: [...handlers, ...wire], callerKeys: [] as string[], receiverKeys: [] as string[],
+      missing: [] as BridgeEndpoint[], imprecise: [] as BridgeEndpoint[] };
     for (const [endpoints, kind] of [[handlers, 'bridge-handler'], [wire, 'bridge-registration']] as const) {
       for (const endpoint of endpoints) {
         const receiver = endpointKey(endpoint);
         if (receiver === undefined) { route.missing.push(endpoint); continue; }
+        let linkEvidence: BridgeEndpoint = endpoint;
+        if (matching !== undefined) {
+          const { handlerScope, dependencies, ...evidence } = endpoint as MessageEndpoint;
+          linkEvidence = evidence;
+          if (handlerScope?.complete === true && dependencies !== undefined) {
+            // 공통 등록 선언은 직접 선택했을 때 전체 배선을 검토한다. 다른 handler의 호출로
+            // 선언에 도달한 경우에는 발생 위치로 구분한 사용 관계만 해당 boundary로 전파한다.
+            if (roots.has(receiver)) {
+              route.receiverKeys.push(receiver);
+              link(receiver, key, { kind: 'bridge-message-handler', evidence });
+            }
+            for (const { dispatchTargets, ...dependency } of dependencies) {
+              for (const target of [dependency.symbol, ...(dispatchTargets ?? [])]) {
+                const dependencyKey = symbolKey('swift', target.usr!);
+                if (!nodes.has(dependencyKey)) continue;
+                route.receiverKeys.push(dependencyKey);
+                link(dependencyKey, key, { kind: 'bridge-message-dependency', evidence, dependency,
+                  ...(target === dependency.symbol ? {} : { dispatchTarget: target }) });
+              }
+            }
+            continue;
+          }
+          route.imprecise.push(evidence);
+        }
         route.receiverKeys.push(receiver);
-        link(receiver, key, { kind, evidence: endpoint });
+        link(receiver, key, { kind: matching === undefined ? kind : 'bridge-message-handler', evidence: linkEvidence });
       }
     }
     for (const endpoint of callers) {
       const caller = endpointKey(endpoint);
       if (caller === undefined) { route.missing.push(endpoint); continue; }
       route.callerKeys.push(caller);
-      link(key, caller, { kind: method === undefined ? 'bridge-creation' : 'bridge-invocation', evidence: endpoint });
+      link(key, caller, { kind: matching !== undefined ? 'bridge-message-send' : method === undefined ? 'bridge-creation' : 'bridge-invocation', evidence: endpoint });
     }
     routes.push(route);
   }
@@ -179,6 +220,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     ...joined.handlersWithoutInvocations.map((value) => ({ ...value, invocations: [] })),
   ]) boundary(item.target, item.channel, item.method, item.invocations, item.handlers,
     registrations.get(JSON.stringify([item.target, item.channel])) ?? []);
+  for (const route of messages.routes) boundary('flutter', route.channel, undefined, route.senders, route.handlers, [], route.matching);
 
   const depths = new Map([...roots].map((key) => [key, 0]));
   const visits = new Map<string, PreflightAffected>();
@@ -205,6 +247,14 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   const relevant = routes.filter((route) => depths.has(route.subject.key) || route.callerKeys.some((key) => depths.has(key)) ||
     route.receiverKeys.some((key) => depths.has(key)) || route.missing.some(({ location }) => reachedFiles.has(location.path)));
   for (const route of relevant) {
+    if (route.subject.transport === 'basic-message-channel') {
+      for (const evidence of route.imprecise) limits.push({ code: 'unresolved-message-handler-scope',
+        message: 'Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.', evidence });
+      if (route.subject.matching === 'prefix') limits.push({ code: 'dynamic-message-address',
+        message: 'Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.' });
+      if (route.callers.length === 0 || route.receivers.length === 0) limits.push({ code: 'unmatched-message-boundary',
+        message: 'A related message boundary has no observed counterpart in the Basic extraction scope.' });
+    }
     for (const evidence of route.missing) limits.push({ code: 'unresolved-bridge-binding',
       message: 'A bridge endpoint has no verified language symbol binding.', evidence });
     if (depths.has(route.subject.key)) for (const key of route.callerKeys) {
@@ -229,10 +279,19 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
       evidence: { platform: document.platform, location: fact.location },
     });
   }
-  if (relevant.length > 0) for (const limit of joined.limitations) limits.push({ code: 'bridge-limitation', message: limit.message });
+  for (const evidence of messages.unresolved) if (reachedFiles.has(evidence.location.path)) limits.push({
+    code: 'unresolved-message-boundary', message: 'A related message address could not be resolved to a literal or proven prefix.', evidence,
+  });
+  if (relevant.some(({ subject }) => subject.transport === undefined)) {
+    for (const limit of joined.limitations) limits.push({ code: 'bridge-limitation', message: limit.message });
+  }
+  if (relevant.some(({ subject }) => subject.transport === 'basic-message-channel')) {
+    for (const limit of messages.limitations) limits.push({ code: 'message-producer-limitation', message: limit.message });
+  }
   const uniqueLimits = [...new Map(limits.map((item) => [encodeSortedJson(item, true), item])).entries()]
     .sort(([a], [b]) => compareStrings(a, b)).map(([, item]) => item);
-  const routeKeys = new Set(relevant.map(({ subject }) => JSON.stringify([subject.target, subject.channel, subject.method ?? null])));
+  const routeKeys = new Set(relevant.filter(({ subject }) => subject.transport === undefined)
+    .map(({ subject }) => JSON.stringify([subject.target, subject.channel, subject.method ?? null])));
   const issues = createCheckReport(joined).issues.filter((issue) => routeKeys.has(JSON.stringify([issue.target, issue.channel, issue.method ?? null])));
   for (const route of relevant) for (const endpoint of [...route.callers, ...route.receivers]) reachedFiles.add(endpoint.location.path);
   const reviewFiles = [...reachedFiles].sort(compareStrings);
@@ -245,6 +304,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     boundaries: relevant.sort((a, b) => compareStrings(a.subject.key, b.subject.key)).map((route) => ({
       subject: route.subject, relationship: depths.has(route.subject.key) ? 'consumer' : 'dependency', callers: route.callers, receivers: route.receivers,
     })), reviewFiles, issues, limitations: uniqueLimits, bridgeLimitations: joined.limitations,
+    ...(context.messages === undefined ? {} : { messageLimitations: messages.limitations }),
     producers: analyses.map(({ id, platform, tool, truncated }) => ({ analysis: id, platform, tool, truncated })),
     summary: { selectedSymbols: roots.size, affectedSymbols: affected.filter(({ subject }) => subject.kind === 'symbol').length,
       bridgeBoundaries: affected.filter(({ subject }) => subject.kind === 'bridge').length, reviewFiles: reviewFiles.length,

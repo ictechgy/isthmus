@@ -89,3 +89,34 @@ test('preflight 프로세스 경계가 runtime 기대·기록·누락과 읽기 
   assert.equal((await runPreflightCommand(['preflight', 'context', 'runtime'], async () => { reads++; return ''; })).exitCode, 64);
   assert.equal(reads, 0);
 });
+
+test('preflight summary와 explain은 원본 strict 판정을 유지하면서 bounded 결과를 제공한다', async () => {
+  const summary = await runPreflightCommand(['preflight', 'context.json', '--summary', '--limit', '1'], read);
+  assert.equal(summary.exitCode, 0);
+  const summaryDocument = JSON.parse(summary.standardOutput);
+  assert.equal(summaryDocument.format, 'isthmus-preflight-summary');
+  assert.equal(summaryDocument.affected.items.length, 1);
+  assert.ok(summaryDocument.affected.omitted > 0);
+
+  const explanation = await runPreflightCommand(['preflight', 'context.json', '--explain', 'dart:screen', '--strict'], read);
+  assert.equal(explanation.exitCode, 0);
+  assert.equal(JSON.parse(explanation.standardOutput).status, 'found');
+
+  for (const args of [
+    ['preflight', 'context.json', '--summary', '--explain', 'dart:screen'],
+    ['preflight', 'context.json', '--limit', '1'],
+    ['preflight', 'context.json', '--summary', '--limit', '0'],
+    ['preflight', 'context.json', '--summary', '--limit', '101'],
+  ]) {
+    const invalid = await runPreflightCommand(args, async () => { assert.fail('invalid view arguments must not read'); });
+    assert.equal(invalid.exitCode, 64);
+    assert.equal(invalid.standardOutput, '');
+  }
+});
+
+test('explain notFound와 ambiguous는 JSON과 64를 반환한다', async () => {
+  const missing = await runPreflightCommand(['preflight', 'context.json', '--explain', 'missing-subject'], read);
+  assert.equal(missing.exitCode, 64);
+  assert.equal(JSON.parse(missing.standardOutput).status, 'notFound');
+  assert.match(missing.standardError, /No preflight subject/);
+});

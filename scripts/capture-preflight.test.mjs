@@ -155,3 +155,26 @@ test('실제 Git 작업 트리의 변경 목록을 CI 수집 선택으로 사용
   assert.deepEqual(result.context.selection.dart.files, ['lib/bridge.dart', 'lib/new.dart', 'lib/renamed.dart']);
   assert.deepEqual(result.context.selection.swift.files, ['ios/Helper.swift']);
 });
+
+test('선택한 v2 message producer는 같은 capture에 포함되고 캐시 설정을 구분한다', async (t) => {
+  const f = await setup(t);
+  const execute = (command, args, options) => {
+    if (args[0] === 'bridges' && args.includes('--messages')) {
+      const platform = command === 'dartograph' ? 'dart' : 'swift';
+      const source = fixture.bridges[platform === 'dart' ? 0 : 1];
+      return { status: 0, stdout: JSON.stringify({ ...source, project: f.root, version: 2,
+        transport: 'basic-message-channel', facts: source.facts.filter(({ kind }) => kind.startsWith('method-')).map(({ method, ...fact }) => ({
+          ...fact, kind: platform === 'dart' ? 'message-send' : 'message-handle',
+        })) }) };
+    }
+    return f.execute(command, args, options);
+  };
+  const before = await capturePreflight(f.config, { execute });
+  const result = await capturePreflight({ ...f.config, messages: true }, { execute });
+  assert.equal(result.cached, false);
+  assert.notEqual(result.context.revision, before.context.revision);
+  assert.equal(result.context.messages.length, 2);
+  assert.ok(result.report.boundaries.some(({ subject }) => subject.transport === 'basic-message-channel'));
+  assert.equal((await capturePreflight({ ...f.config, messages: true }, { execute })).cached, true);
+  await assert.rejects(capturePreflight({ ...f.config, messages: { kotlin: ['ignored'] } }, { execute }));
+});

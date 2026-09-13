@@ -2,6 +2,7 @@ import {
   isProjectRelativePath,
   isSafeNonEmptyString,
   parseBridgeFactsDocument,
+  BridgeFactsValidationError,
 } from './parse.ts';
 import type {
   BridgeFactsDocument,
@@ -11,6 +12,8 @@ import { parseImpactSelection } from './impact-selection.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
+import { parseMessageBridgeDocument, validateMessageDocuments } from './messages.ts';
+import type { BridgeMessageDocument } from './messages.ts';
 
 /** 영향 분석에서 사용하는, 생산자가 증명한 심볼 식별자다. */
 export interface ImpactSymbol {
@@ -57,6 +60,7 @@ export interface PreflightContext {
     readonly swift?: ImpactSelection;
   }>;
   readonly bridges: readonly BridgeFactsDocument[];
+  readonly messages?: readonly BridgeMessageDocument[];
   readonly bindings: readonly CallerBinding[];
   readonly analyses: readonly LanguageImpact[];
   readonly limitations: readonly string[];
@@ -86,14 +90,26 @@ export function parsePreflightContext(input: unknown): PreflightContext {
   const revision = safeString(value.revision, 'Invalid preflight revision.');
   const selection = parseSelectionMap(value.selection);
   const bridges = parseBridges(value.bridges, project);
+  const messages = value.messages === undefined ? undefined : parseMessages(value.messages, project);
   const analyses = parseAnalyses(value.analyses);
   validateSelectionCoverage(selection, analyses);
-  const bindings = parseBindings(value.bindings, bridges);
+  const bindings = parseBindings(value.bindings, [...bridges, ...(messages ?? [])]);
   const limitations = strings(value.limitations, 'Invalid preflight limitations.');
   return {
     format: 'isthmus-preflight-context', version: 1, project, revision,
-    selection, bridges, bindings, analyses, limitations,
+    selection, bridges, ...(messages === undefined ? {} : { messages }), bindings, analyses, limitations,
   };
+}
+
+function parseMessages(input: unknown, project: string): readonly BridgeMessageDocument[] {
+  try {
+    const documents = array(input, 256, 'Invalid preflight message documents.').map(parseMessageBridgeDocument);
+    validateMessageDocuments(documents, project);
+    return documents;
+  } catch (error) {
+    if (error instanceof BridgeFactsValidationError) fail(`Invalid preflight messages: ${error.message}`);
+    throw error;
+  }
 }
 
 /** producer adapter가 만든 분석도 context parser와 같은 그래프 규칙을 사용하게 한다. */
@@ -224,7 +240,7 @@ function validateSelectionCoverage(
   }
 }
 
-function parseBindings(input: unknown, bridges: readonly BridgeFactsDocument[]): CallerBinding[] {
+function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | BridgeMessageDocument)[]): CallerBinding[] {
   const raw = array(input, MAX_PREFLIGHT_BINDINGS, 'Invalid preflight bindings.');
   const facts = new Map<string, { path: string; qualifiedName: string }[]>();
   for (const document of bridges) {

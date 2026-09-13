@@ -1,21 +1,35 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { access, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
 
-const [flutterBinary, isthmusOverride, cartographBinary, dartographEntry, dartographExecutable, ...unexpectedArguments] = process.argv.slice(2);
+const harnessArguments = parseHarnessArguments(process.argv.slice(2));
+const [flutterBinary, isthmusOverride, cartographBinary, dartographEntry, dartographExecutable] = harnessArguments.positionals;
+const messageProducer = harnessArguments.messages;
+const messageCartographBinary = messageProducer.cartograph;
+const messageDartographEntry = messageProducer.dartograph;
+const messageDartographExecutablePath = messageProducer.executable;
+const unexpectedArguments = harnessArguments.invalid ? ['invalid'] : [];
 const producerArgumentsPresent = cartographBinary !== undefined || dartographEntry !== undefined;
+const messageProducerArgumentsPresent = messageCartographBinary !== undefined || messageDartographEntry !== undefined ||
+  messageDartographExecutablePath !== undefined;
 if (flutterBinary === undefined || process.platform !== 'darwin' || unexpectedArguments.length > 0 ||
-  (producerArgumentsPresent && (cartographBinary === undefined || dartographEntry === undefined))) {
-    process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js] [cartograph-bin dartograph-entry [dartograph-bin]]\n');
+  (producerArgumentsPresent && (cartographBinary === undefined || dartographEntry === undefined)) ||
+  (messageProducerArgumentsPresent && (!producerArgumentsPresent || messageCartographBinary === undefined))) {
+  process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js] '
+    + '[cartograph-bin dartograph-entry [dartograph-bin]] '
+    + '[--message-cartograph <path> --message-dartograph <path> '
+    + '--message-dartograph-executable <path>]\n');
   process.exit(64);
 }
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageRoot = join(repository, 'packages/isthmus_runtime');
+const basicChannel = 'dev.flutter.pigeon.runtime_probe.Api.echo';
+const publicCanLaunchPrefix = 'dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl';
 const isthmus = isthmusOverride ?? join(repository, 'dist/cli/main.js');
 const scratch = await mkdtemp(join(tmpdir(), 'isthmus-native-runtime-'));
 const artifacts = await mkdtemp(join(tmpdir(), 'isthmus-native-evidence-'));
@@ -25,6 +39,30 @@ const steps = [];
 const commandEnvironment = { ...process.env, CI: 'true', FLUTTER_SUPPRESS_ANALYTICS: 'true',
   COCOAPODS_DISABLE_STATS: 'true' };
 
+/** 기존 위치 인자를 보존하고 Basic producer 경로는 명시 플래그로 받는다. */
+function parseHarnessArguments(arguments_) {
+  const positionals = [];
+  const values = {};
+  let invalid = false;
+  for (let index = 0; index < arguments_.length; index++) {
+    const flag = arguments_[index];
+    if (!flag.startsWith('--')) {
+      positionals.push(flag);
+      continue;
+    }
+    const key = flag === '--message-cartograph' ? 'cartograph'
+      : flag === '--message-dartograph' ? 'dartograph'
+        : flag === '--message-dartograph-executable' ? 'executable' : undefined;
+    if (key === undefined || index + 1 >= arguments_.length || arguments_[index + 1].startsWith('-') || values[key] !== undefined) {
+      invalid = true;
+      continue;
+    }
+    values[key] = arguments_[++index];
+  }
+  if (positionals.length > 5) invalid = true;
+  return { positionals, messages: values, invalid };
+}
+
 async function verifyNativeRuntime() {
 try {
   if (isthmusOverride === undefined) step('npm', ['run', 'build'], 'isthmus build', repository);
@@ -32,10 +70,12 @@ try {
   step(flutterBinary, ['create', '--platforms=macos', '--project-name=isthmus_runtime_probe',
     '--no-pub', '--offline', appRoot], 'Flutter app creation');
   const project = await realpath(appRoot);
+  const publicPluginRoot = producerArgumentsPresent ? await stagePublicPlugin(project) : undefined;
   await writeFile(join(appRoot, 'pubspec.yaml'), `name: isthmus_runtime_probe\nversion: 1.0.0+1\n`
     + `environment:\n  sdk: '>=3.7.0 <4.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\n`
     + `  isthmus_runtime:\n    path: ${JSON.stringify(packageRoot)}\n`
-    + '  url_launcher_macos: 3.2.2\n');
+    + (publicPluginRoot === undefined ? '  url_launcher_macos: 3.2.2\n'
+      : '  url_launcher_macos:\n    path: vendor/url_launcher_macos\n'));
   await writeFile(join(appRoot, 'lib/main.dart'), dartSource);
   await writeFile(join(appRoot, 'macos/Runner/MainFlutterWindow.swift'), swiftSource);
   await writeFile(join(appRoot, 'macos/Runner/NativeRuntimeHelper.swift'), swiftHelperSource);
@@ -84,7 +124,7 @@ try {
     step(flutterBinary, indexBuildArguments, 'Native Flutter compiler index preparation', appRoot, 600_000);
     step('xcodebuild', xcodeIndexArguments(appRoot), 'Xcode compiler index preparation', appRoot, 600_000);
     const indexStore = await findIndexStore(join(appRoot, 'build'));
-    captured = await captureProducerPreflight({ project, version, indexStore });
+    captured = await captureProducerPreflight({ project, version, indexStore, publicPluginRoot });
   }
   const runtimeRevision = captured?.context.revision ?? revision;
   const runtimeProject = captured?.context.project ?? project;
@@ -140,6 +180,18 @@ try {
     assert.equal(preflightRuntime.runtime?.aligned, true, 'Preflight runtime must share the capture revision.');
     assert.equal(preflightRuntime.runtime?.verification?.status, 'passed', 'Preflight runtime success must pass.');
     assert.ok(preflightRuntime.runtime?.uncoveredBoundaries?.length > 0, 'Uncovered static boundaries must remain visible.');
+    if (messageProducerArgumentsPresent) {
+      const basicRoutes = preflightRuntime.runtime?.routes?.filter(({ transport, channel }) =>
+        transport === 'basic-message-channel' && channel === basicChannel) ?? [];
+      assert.ok(basicRoutes.some(({ staticStatus, observedCalls }) => staticStatus === 'candidates' && observedCalls > 0),
+        'Basic runtime success must match a static producer candidate.');
+      if (publicPluginRoot !== undefined) {
+        const publicRoutes = preflightRuntime.runtime?.routes?.filter(({ transport, channel }) =>
+          transport === 'basic-message-channel' && channel === publicCanLaunchPrefix) ?? [];
+        assert.ok(publicRoutes.some(({ staticStatus, observedCalls }) => staticStatus === 'candidates' && observedCalls > 0),
+          'Local public Pigeon runtime must match a static prefix candidate.');
+      }
+    }
     await writeFile(join(artifacts, 'preflight-runtime.json'), JSON.stringify(preflightRuntime, null, 2), { mode: 0o600 });
   }
   const negative = verifyRuntime('success', 'chain', 'failure', 'timeout');
@@ -171,6 +223,10 @@ try {
         runtime: join(artifacts, 'preflight-runtime.json'), cached: captured.cached, fingerprintScope: captured.fingerprintScope,
         report: captured.report.summary, runtimeAligned: preflightRuntime?.runtime?.aligned ?? false },
     }),
+    ...(publicPluginRoot === undefined ? {} : {
+      publicPluginCopy: { package: 'url_launcher_macos', version: '3.2.2', source: publicPluginRoot.source,
+        vendorRelative: 'vendor/url_launcher_macos', files: publicPluginRoot.files },
+    }),
     success: good.summary, failure: bad.summary, pending: pending.summary,
     allowedNegative: allowedNegativeReport.summary,
   };
@@ -181,12 +237,51 @@ try {
 }
 }
 
+/** 공개 plugin의 실제 package source를 disposable app 안에 복사해 producer와 runtime이 같은 root를 보게 한다. */
+async function stagePublicPlugin(project) {
+  const pubCache = process.env.PUB_CACHE ?? join(homedir(), '.pub-cache');
+  const source = await realpath(join(pubCache, 'hosted/pub.dev/url_launcher_macos-3.2.2'));
+  const sourceManifest = await readFile(join(source, 'pubspec.yaml'), 'utf8');
+  assert.match(sourceManifest, /(?:^|\n)name:\s*url_launcher_macos\s*(?:\n|$)/u, 'Public plugin package name must match.');
+  assert.match(sourceManifest, /(?:^|\n)version:\s*3\.2\.2\s*(?:\n|$)/u, 'Public plugin package version must match.');
+  const destination = join(project, 'vendor/url_launcher_macos');
+  await mkdir(dirname(destination), { recursive: true });
+  await cp(source, destination, { recursive: true, errorOnExist: false, force: true });
+  const preservedFiles = [
+    'lib/src/messages.g.dart',
+    'macos/url_launcher_macos/Sources/url_launcher_macos/messages.g.swift',
+    'macos/url_launcher_macos/Sources/url_launcher_macos/UrlLauncherPlugin.swift',
+    'LICENSE',
+  ];
+  const files = [];
+  for (const relative of preservedFiles) {
+    const original = await readFile(join(source, relative));
+    assert.deepEqual(original, await readFile(join(destination, relative)),
+      `Public plugin source changed while staging: ${relative}`);
+    files.push({ path: relative, sha256: createHash('sha256').update(original).digest('hex') });
+  }
+  return {
+    root: destination,
+    source,
+    files,
+  };
+}
+
 /** 실제 producer를 지정한 경우, 동일한 생성 앱·compiler index에서 정적 preflight를 수집한다. */
-async function captureProducerPreflight({ project, version, indexStore }) {
+async function captureProducerPreflight({ project, version, indexStore, publicPluginRoot }) {
   const cartograph = await realpath(cartographBinary);
   const dartograph = await realpath(dartographEntry);
   const executable = dartographExecutable === undefined ? undefined : await realpath(dartographExecutable);
   const dartographRoot = dirname(dirname(dartograph));
+  const dartographCommand = executable === undefined ? ['dart', dartograph] : [executable];
+  const messageDartograph = messageDartographEntry === undefined ? dartograph : await realpath(messageDartographEntry);
+  const messageDartographExecutable = messageDartographExecutablePath === undefined
+    ? undefined : await realpath(messageDartographExecutablePath);
+  const messageDartographCommand = messageDartographExecutable === undefined
+    ? messageDartographEntry === undefined ? dartographCommand : ['dart', messageDartograph]
+    : [messageDartographExecutable];
+  const messageCartograph = messageCartographBinary === undefined ? undefined : await realpath(messageCartographBinary);
+  const messageDartographRoot = dirname(dirname(messageDartograph));
   // Flutter build와 index 경로 발견은 capture 호출 직전에 끝냈다. capture의 prepare는
   // 같은 DerivedData를 다시 인덱싱해 producer가 읽은 index가 최신임을 확인한다.
   const prepare = [['xcodebuild', ...xcodeIndexArguments(appRoot)]];
@@ -194,14 +289,21 @@ async function captureProducerPreflight({ project, version, indexStore }) {
   const config = {
     project,
     inputs: ['lib', 'macos/Runner', 'macos/Runner.xcodeproj/project.pbxproj', 'macos/Podfile',
-      'pubspec.yaml', 'pubspec.lock', '.dart_tool/package_config.json'],
+      'pubspec.yaml', 'pubspec.lock', '.dart_tool/package_config.json',
+      ...(producerArgumentsPresent ? ['vendor/url_launcher_macos/lib', 'vendor/url_launcher_macos/macos',
+        'vendor/url_launcher_macos/pubspec.yaml', 'vendor/url_launcher_macos/LICENSE'] : [])],
     toolInputs: [cartograph, dartograph, ...(executable === undefined ? [] : [executable]),
+      ...(messageCartograph === undefined ? [] : [messageCartograph]),
+      ...(messageDartographExecutable === undefined ? [] : [messageDartographExecutable]),
       join(dartographRoot, 'lib'), join(dartographRoot, '.dart_tool/package_config.json'),
+      ...(messageDartographEntry === undefined ? [] : [messageDartograph, join(messageDartographRoot, 'lib'),
+        join(messageDartographRoot, '.dart_tool/package_config.json')]),
       join(version.flutterRoot, 'version'), join(version.flutterRoot, 'bin/cache/dart-sdk/version'),
       join(packageRoot, 'lib'), join(packageRoot, 'pubspec.yaml')],
     prepare,
-    dartograph: executable === undefined ? ['dart', dartograph] : [executable],
+    dartograph: dartographCommand,
     cartograph: [cartograph],
+    ...(messageCartograph === undefined ? {} : { messages: { cartograph: [messageCartograph], dartograph: messageDartographCommand } }),
     selection: { swift: { files: ['macos/Runner/NativeRuntimeHelper.swift'], symbols: [] } },
     indexStore,
     output: join(artifacts, 'preflight-context.json'),
@@ -218,6 +320,28 @@ async function captureProducerPreflight({ project, version, indexStore }) {
   for (let row = screen; row; row = nodes.get(row.via)) chain.push(row.subject.kind === 'bridge' ? row.subject.channel : row.subject.symbol.qualifiedName);
   for (const name of ['runtimeNativeValue', 'awakeFromNib', 'example/native-runtime', 'runtimeBridge', 'runtimeService', 'runtimeScreen']) {
     assert.ok(chain.some((item) => item.includes(name)), `Real cross-language path must include ${name}.`);
+  }
+  if (messageProducerArgumentsPresent) {
+    const messageDocuments = result.context.messages ?? [];
+    assert.equal(messageDocuments.length, 2, 'Basic capture must include Dart and Swift v2 documents.');
+    const messageFacts = messageDocuments.flatMap(({ facts }) => facts);
+    assert.ok(messageFacts.some(({ kind, channel }) => kind === 'message-send' && channel === basicChannel),
+      'Dart Basic producer must emit a literal message-send fact.');
+    assert.ok(messageFacts.some(({ kind, channel }) => kind === 'message-handle' && channel === basicChannel),
+      'Swift Basic producer must emit a literal message-handle fact.');
+    assert.ok(messageFacts.filter(({ channel }) => channel === basicChannel).every(({ dynamic }) => !dynamic),
+      'The fixture Basic address must remain a literal in both producer documents.');
+    if (publicPluginRoot !== undefined) {
+      const publicFacts = messageFacts.filter(({ channelPrefix }) =>
+        typeof channelPrefix === 'string' && channelPrefix.startsWith(publicCanLaunchPrefix));
+      assert.ok(publicFacts.some(({ kind, dynamic }) => kind === 'message-send' && dynamic),
+        'Local public Dart Pigeon source must emit a dynamic prefix fact.');
+      assert.ok(publicFacts.some(({ kind, dynamic }) => kind === 'message-handle' && dynamic),
+        'Local public Swift Pigeon source must emit a dynamic prefix fact.');
+    }
+    const messageBoundary = result.report.boundaries.find(({ subject }) =>
+      subject.transport === 'basic-message-channel' && subject.channel === basicChannel);
+    assert.ok(messageBoundary, 'Static Basic producer facts must create a preflight boundary.');
   }
   await writeFile(join(artifacts, 'preflight-path.json'), JSON.stringify(chain, null, 2), { mode: 0o600 });
   const sourcesPath = `${config.output}.sources.json`;
@@ -385,7 +509,7 @@ Future<void> probe() async {
     ? const RuntimeCaller(path: 'lib/main.dart', line: __STATIC_ECHO_LINE__, column: __STATIC_ECHO_COLUMN__) : null);
   if (await runtimeScreen(chain.binaryMessenger) != 'ok') throw StateError('Dart consumer response changed.');
   await save('chain', chain);
-  final basic = BasicMessageChannel<Object?>(basicName, const StandardMessageCodec(),
+  final basic = BasicMessageChannel<Object?>('dev.flutter.pigeon.runtime_probe.Api.echo', const StandardMessageCodec(),
     binaryMessenger: success.binaryMessenger);
   final reply = await basic.send('fixture-private-payload');
   if (reply is! List || reply.single != 'ok') throw StateError('Basic response changed.');

@@ -34,7 +34,8 @@ try {
   const preflightRuntime = runtimeDocument('camera', 'photo');
   const preflightExpectations = { ...expectations,
     checks: expectations.checks.map((check) => ({ ...check, channel: 'camera', method: 'photo' })) };
-  const inputs = { dart, swift, runtime, expectations, preflight, preflightRuntime, preflightExpectations };
+  const scopedMessages = messagePreflight();
+  const inputs = { dart, swift, runtime, expectations, preflight, preflightRuntime, preflightExpectations, scopedMessages };
   for (const [name, value] of Object.entries(inputs)) {
     await writeFile(join(root, `${name}.json`), JSON.stringify(value), { mode: 0o600 });
   }
@@ -61,17 +62,69 @@ try {
     assert.equal(report.runtime.routes[0].observedCalls, eventCount);
     assert.equal(report.runtime.unobservedBoundaries.length, 0);
   });
+  const viewArgs = ['preflight', join(root, 'preflight.json'), join(root, 'preflightRuntime.json'),
+    '--expectations', join(root, 'preflightExpectations.json'), '--strict', '--compact'];
+  const summaryResult = measure([...viewArgs, '--summary'], (report) => {
+    assert.equal(report.summary.affectedSymbols, consumers + 2);
+    assert.equal(report.requiresReview, false);
+    assert.equal(report.affected.items.length, 20);
+    assert.equal(report.runtime.verification.declaredScenarioPlatforms, 1);
+  });
+  const explanationResult = measure([...viewArgs, '--explain', 'dart:consumer:19999'], (report) => {
+    assert.equal(report.status, 'found');
+    assert.equal(report.result.path.at(-1).subject.symbol.id, 'dart:consumer:19999');
+    assert.equal(report.result.path.length, 5);
+    assert.equal(report.summary.affectedSymbols, consumers + 2);
+  });
+  assert.ok(summaryResult.outputBytes < 100_000 && explanationResult.outputBytes < 100_000, 'AI views must stay bounded for this corpus.');
+  const messageResult = measure(['preflight', join(root, 'scopedMessages.json'), '--summary', '--strict', '--compact'], (report) => {
+    assert.equal(report.summary.bridgeBoundaries, 1, 'One implementation must not fan out through all handlers sharing setup.');
+    assert.equal(report.summary.affectedSymbols, 2);
+    assert.equal(report.requiresReview, false);
+    assert.ok(report.affected.items.some(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === 'dart:0'));
+  });
   process.stdout.write(`${JSON.stringify({
     scope: 'consumer-cli-only', node: process.version, platform: process.platform, arch: process.arch,
     repetitions, timeBudgetMs,
     impact: { facts: 40_000, channels, scopedLimitations: 1_000, ...impact },
     runtime: { events: eventCount, expectations: checks, ...runtimeResult },
     preflightWithRuntime: { consumers, events: eventCount, expectations: checks, ...preflightResult },
+    summaryView: summaryResult, explanationView: explanationResult,
+    scopedMessages: { handlers: channels, references: channels, dispatchCandidates: channels, ...messageResult },
   }, null, 2)}\n`);
-  assert.ok(impact.p95Ms < timeBudgetMs && runtimeResult.p95Ms < timeBudgetMs && preflightResult.p95Ms < timeBudgetMs,
+  assert.ok([impact, runtimeResult, preflightResult, summaryResult, explanationResult, messageResult].every(({ p95Ms }) => p95Ms < timeBudgetMs),
     'Consumer preflight exceeded the documented time budget.');
 } finally {
   await rm(root, { recursive: true, force: true });
+}
+
+/** 공통 setup에 많은 handler가 있어도 한 구현 변경은 해당 채널로만 전파하는 합성 입력이다. */
+function messagePreflight() {
+  const location = (path, line = 1) => ({ path, line, column: 1 });
+  const binding = (index) => ({ platform: 'dart', location: location(`lib/bridge${index}.dart`, 2), requested: `Bridge.call${index}`,
+    symbol: { id: `dart:${index}`, qualifiedName: `Bridge.call${index}`, location: location(`lib/bridge${index}.dart`) } });
+  const bindings = Array.from({ length: channels }, (_, index) => binding(index));
+  const metadata = (platform) => ({ format: 'bridge-facts', version: 1, platform, target: null,
+    project: '/benchmark', generatedAt: '2026-09-14T00:00:00Z', tool: { name: 'benchmark', version: '1' }, limitations: [], facts: [] });
+  const setup = { id: 's:setup', qualifiedName: 'Setup.register', location: location('ios/Setup.swift') };
+  const requested = { files: [], symbols: ['s:implementation0'] };
+  return { format: 'isthmus-preflight-context', version: 1, project: '/benchmark', revision: 'benchmark',
+    selection: { swift: requested }, bridges: ['dart', 'swift'].map(metadata), bindings, limitations: [],
+    messages: ['dart', 'swift'].map((platform) => ({ ...metadata(platform), version: 2, target: 'flutter', transport: 'basic-message-channel',
+      facts: bindings.map((entry, index) => ({ kind: platform === 'dart' ? 'message-send' : 'message-handle',
+        channel: `basic/${index}`, dynamic: false,
+        ...(platform === 'dart' ? { location: entry.location, symbol: { qualifiedName: entry.requested } }
+          : { location: location('ios/Setup.swift', index * 10 + 2), symbol: { qualifiedName: setup.qualifiedName, usr: setup.id },
+            handlerScope: { start: location('ios/Setup.swift', index * 10 + 2), end: location('ios/Setup.swift', index * 10 + 8), complete: true },
+            dependencies: [{ kind: 'call', scope: 'handler', location: location('ios/Setup.swift', index * 10 + 4),
+              symbol: { qualifiedName: `Api.method${index}`, usr: `s:requirement${index}` },
+              dispatchTargets: [{ qualifiedName: `Plugin.method${index}`, usr: `s:implementation${index}` }] }] }) })) })),
+    analyses: [{ id: 'swift', platform: 'swift', tool: { name: 'benchmark', version: '1' }, requested,
+      roots: [{ id: 's:implementation0', qualifiedName: 'Plugin.method0', location: location('ios/Plugin.swift') }],
+      affected: [{ symbol: setup, via: 's:implementation0', depth: 1, relationships: ['dispatchCaller'] }], limitations: [], truncated: false },
+      { id: 'dart', platform: 'dart', tool: { name: 'benchmark', version: '1' }, requested: { files: [], symbols: ['dart:0'] },
+        trigger: 'dart:0', roots: [bindings[0].symbol], affected: [], limitations: [], truncated: false }],
+  };
 }
 
 /** 명령마다 새 프로세스를 사용하고 매번 독립적인 집계를 확인한다. */

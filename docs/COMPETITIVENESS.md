@@ -3,6 +3,71 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
+2026-09-14 현재 체크포인트. 이전 턴은 실제 검증 근거가 다음 수정을 결정한 progress였고,
+아래 구현·검증을 추가했다. 뒤의 과거 수치와 미지원 문장은 해당 실행 시점의 기록이다.
+
+- **전이 영향 정밀도:** Basic v2의 handlerScope/dependencies/실제 overrides dispatch 후보를
+  조인한다. 직접 선택한 setup·공유 등록 의존은 전체, 개별 handler 의존은 해당 boundary로
+  전파한다. 근거가 불완전하면 넓은 후보와 공백을 남긴다. 공개 url_launcher_macos 3.2.2의
+  launch 변경→Dart launch만, canLaunch 변경→Dart canLaunch만, setup 변경→둘 다를
+  원본 source·실제 compiler index·producer로 검증했다. 초기 complete=false 원인은 인덱스에서
+  parameter 대상 종류가 사라진 것이었고 producer에서 실제 종류를 보존해 해결했다.
+  공개 근거 `isthmus-pigeon-evidence-3karpn`(macOS 임시 디렉터리), 최초 수집 11.022초,
+  canLaunch 재선택 2.470초·setup 재선택 3.082초. 캐시 실행 시간으로 해석하지 않는다.
+- **공개 source corpus:** path_provider_foundation 2.4.1의 getDirectoryPath→generated API→
+  getTemporaryPath, shared_preferences_foundation 2.5.4의 getValue→generated API→getString을
+  검증했다. production lib/native/LICENSE를 byte 동일하게 복사하고 실제 FlutterMacOS로
+  컴파일했다. 각각 첫 수집 15.155/17.169초, 단일 선택 3.054/3.119초, 근거 공백 8/7개 유지.
+  근거 `isthmus-public-foundation-evidence-2Ei1St`. 앱 실행이나 UserDefaults 접근은 하지 않았다.
+- **실제 native 통합:** 최신 producer로 자체 Basic과 공개 Pigeon의 정적 후보·runtime을
+  같은 revision에서 대조했다. Method closure의 helper가 Basic 등록 의존으로 섞이지 않는
+  것도 raw dependency로 확인했다. 성공 check 4개(2 scenario/platform 쌍), 기대 실패 3개,
+  pending 미완료를 구분했다. 전체 69.321초, runtime aligned/passed이나 정적 errors 2·gaps 20과
+  strict 1을 유지한다. 근거 `isthmus-native-evidence-tErDYr/verification.json`.
+- **AI 질의:** summary/explain을 배포 skill·양문 README·패키지 계약에 연결했다. 요약에도
+  candidateKey와 bounded native handler 위치를 제공한다. 최종 독립 forward test는 CLI 1회,
+  isthmus-preflight-summary 12,893 bytes로 2개 시나리오·4개 check·native 후보·20개 공백을
+  구분했다. 초기 스킬의 runtime 예시가 전체 출력을 쓰던 불일치와 summary의 다른 root를
+  explain 경로로 서술한 오류는 수정했다. 출력 경로는 실제 result.path를 그대로 따른다.
+  최종 tarball을 네트워크 없이 격리 설치해 같은 runtime 요약·후보 위치·2쌍/4checks를
+  확인했다. `isthmus-final-installed-v8c46uwy/verification.json`에 근거를 보존했다.
+- **검증·성능:** npm verify 제품 405개·Phase 0 15개·수집 7개·build/CLI/package 통과,
+  coverage line/branch/functions 98.26/92.84/95.17. `/tmp/isthmus-scoped-final-verify.log`.
+  10,000 Basic handler의 단일 구현 선택은 5회 중앙 189ms·최대 190ms, summary 1,817 bytes.
+  다른 소비자 대형 입력도 5초 예산 통과(`/tmp/isthmus-scoped-final-benchmark.log`). CI에 같은
+  소비자 성능 검사를 추가했다. producer/인덱스/앱 빌드 시간은 이 게이트 밖이다.
+- **GLM 소비자 검토:** packet SHA 133e2228e52d, 179,019 bytes, low. F4(같은 위치의 다른
+  동적 표현식 소실)를 재현·수정했다. F1은 endpointKey의 nodes.has guard로 반증했고,
+  F2의 미변경 dependency는 관련 boundary.receiver에 보존됨을 확인했다. F3은 공통
+  inputFailureResult가 BridgeJoinValidationError를 처리한다. F5의 혼합 metadata는 의도한
+  보수적 전파이며 회귀·문서로 고정했다. `/tmp/isthmus-basic-final-glm-review.log`.
+- **자매 저장소:** 격리 Cartograph d8870e7·723d788, Dartograph 7d96f3b로 커밋했다.
+  Swift coverage 90.43%와 CLI/fixture/self 분석 필수 게이트가 통과했다. Dart analyze·391tests·
+  compile·CLI·pub dry-run은 통과했으나 기존 runtime_scanner의 analyzer 경계 게이트 실패를
+  parent에서도 재현했다. 현재 그 구조 경계를 보강 중이다. 원본 dirty 자매 worktree는 보존했다.
+  자매 PR별 GLM 검토·공개 호환 버전·원격 CI는 아직 남았다.
+
+위 macOS 임시 근거의 상위 경로는
+`/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/`이며 일부 realpath 표기는 `/private`로 시작한다.
+source 프로젝트는 하네스 종료 때 정리되므로 보고서의 source 경로를 실제 로컬 파일 링크로
+만들지 않는다. 재현은 scripts의 검증 진입점을 사용한다. Basic Dartograph AOT는
+`isthmus-dartograph-basic-aot-ekr6kosa/dartograph`에 있고 준비 12.027초·source hash 전후 일치를
+확인했다. 원본 source는 이후 구조 보강될 수 있으므로 이 AOT의 build-time hash와 구분한다.
+
+다음 순서: Dart analyzer 구조 게이트 정합성 → 최종 배포 산출물·diff·로컬 커밋 → 자매 PR
+리뷰·호환 버전 통합·실제 원격 CI/첫 사용자 구축 검증. 더 넓은 변경 표본의 누락/오탐·검토
+시간 비교와 prefix/instance·플랫폼별 미검증 범위는 계속 평가한다. 전체 네 목표는 active다.
+
+2026-09-14 실용성 재검증: 미커밋 Basic/Pigeon·summary/explain 변경을 포함한
+`npm run verify`가 제품 396개·Phase 0 15개·수집 7개·build/CLI/package를 통과했다
+(line/branch/functions 98.23/92.49/94.75, `/tmp/isthmus-feasibility-current-verify.log`).
+공개 Pigeon의 실제 producer context를 최신 CLI로 재생해 두 경계·공개 Dart 소비자 경로와
+errors 0·evidenceGaps 9·requiresReview true·strict 1을 확인했다. 기존 native 앱 실행 근거는
+재사용했으며 이번에 native 앱을 재빌드하지 않았다. 공통 `setUp` 신원에 의한 메서드별
+영향 후보의 과잉 전파 가능성을 후속 정밀도 검증에 포함한다. 경쟁·대안·실패 요인과
+외부인 구축 검증 제안은 [FEASIBILITY.md](FEASIBILITY.md)를 갱신했다. 아래 Basic 미지원·
+요약 개선 예정 문장은 이전 실행 시점의 기록이며 최신 소스의 전면 미구현을 뜻하지 않는다.
+
 2026-09-14 최신 구현: `preflight`에 독립 runtime 기대/기록 대조도 연결됐다.
 실제 macOS 앱에서 compiler index→producer→Swift helper→Dart 소비자와 실행을 같은
 capture revision으로 검증했다. 아래의 합성 source 검증과 구별한다.

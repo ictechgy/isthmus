@@ -231,12 +231,7 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
   validateLocation(value.location, index);
   validateSymbol(value.symbol, index);
-  if (value.sourceLanguage !== undefined && (
-    value.sourceLanguage !== 'objective-c' || platform !== 'swift' ||
-    !/\.(?:m|mm)$/u.test((value.location as BridgeLocation).path) ||
-    (value.symbol !== undefined && (value.symbol as BridgeSymbol).usr !== undefined &&
-      !(value.symbol as BridgeSymbol).usr?.startsWith('c:'))
-  )) fail(`Invalid source language at index ${index}.`);
+  validateSourceLanguage(value.sourceLanguage, platform, value.location as BridgeLocation, value.symbol as BridgeSymbol | undefined, index);
 }
 
 /** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */
@@ -278,7 +273,7 @@ function hasUnpairedSurrogate(value: string): boolean {
 }
 
 /** 사실 위치가 상대 경로와 1부터 시작하는 줄·열을 갖는지 검증한다. */
-function validateLocation(value: unknown, index: number): void {
+export function validateLocation(value: unknown, index: number): void {
   if (
     !isJsonObject(value) ||
     !isProjectRelativePath(value.path) ||
@@ -300,7 +295,7 @@ export function isProjectRelativePath(value: unknown): value is string {
 }
 
 /** 선택 symbol의 이름과 USR이 비어 있지 않은지 검증한다. */
-function validateSymbol(value: unknown, index: number): void {
+export function validateSymbol(value: unknown, index: number): void {
   if (value === undefined) return;
   if (
     !isJsonObject(value) ||
@@ -308,6 +303,16 @@ function validateSymbol(value: unknown, index: number): void {
     (value.usr !== undefined && !isSafeNonEmptyString(value.usr))
   ) {
     fail(`Invalid fact symbol at index ${index}.`);
+  }
+}
+
+/** 교환 계약별 파서가 Objective-C 출처·경로·실제 Clang 신원 규칙을 공유한다. */
+export function validateSourceLanguage(value: unknown, platform: unknown, location: BridgeLocation,
+  symbol: BridgeSymbol | undefined, index: number): void {
+  if (value !== undefined && (value !== 'objective-c' || platform !== 'swift' ||
+    !/\.(?:m|mm)$/u.test(location.path) ||
+    (symbol?.usr !== undefined && !symbol.usr.startsWith('c:')))) {
+    fail(`Invalid source language at index ${index}.`);
   }
 }
 

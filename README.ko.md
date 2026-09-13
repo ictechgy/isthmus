@@ -99,7 +99,8 @@ npx isthmus-cli --help
 개발 소스의 `verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
 통신 기록을 대조한다([계약](docs/RUNTIME.md)). 선택적 [Flutter 수집기](packages/isthmus_runtime/README.md)는
 실제 macOS 앱의 Swift 핸들러와 `url_launcher_macos 3.2.2`의 Pigeon 생성 API로 검증했다.
-언어 내부 전이 영향 연결과 CI 스냅샷 자동 갱신은 개발 중이다.
+언어 내부 전이 영향 연결과 스냅샷 수집은 개발 소스에 구현됐으며, 더 넓은 앱 적용 범위와
+처음 설치하는 사용자의 재현 절차는 검증 중이다.
 
 개발 소스의 `preflight <context.json> --strict --compact`는 producer의 전이 영향과
 브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
@@ -107,6 +108,13 @@ npx isthmus-cli --help
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
 runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
 전이 분석을 대조하고, native 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
+
+`preflight <context.json> --summary --strict --compact`로 작은 개요를 읽고,
+`--explain <exact-producer-symbol-id>`로 한 심볼의 전체 원인 경로를 조회한다.
+summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 항목도 검토 상태에 반영한다.
+선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 개발 producer로 literal 주소와
+증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
+이 추가 기능은 npm 0.5.0 발행본에는 없다.
 
 isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
 명시한 준비·producer 명령을 실행한다.

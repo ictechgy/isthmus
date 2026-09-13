@@ -32,6 +32,9 @@
     "scripts/run-child.mjs",
     "docs/PREFLIGHT.md",
     "docs/RUNTIME.md",
+    "docs/IMPACT.md",
+    "docs/BRIDGE-MESSAGES.md",
+    "docs/GRAPH-EXCHANGE.md",
     "LICENSE",
     "README.md",
     "README.ko.md"

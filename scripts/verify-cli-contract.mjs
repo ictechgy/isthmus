@@ -43,6 +43,16 @@ function verifyPreflight() {
   const report = JSON.parse(result.stdout);
   verify(report.format === 'isthmus-preflight' && report.reviewFiles.includes('lib/screen.dart'), 'preflight transitive consumer');
   verify(report.complete === false, 'preflight scope');
+  const summary = run(['preflight', fixture, '--summary', '--limit', '1', '--compact']);
+  const summaryDocument = JSON.parse(summary.stdout);
+  verify(summary.status === 0 && summaryDocument.format === 'isthmus-preflight-summary', 'preflight bounded summary');
+  verify(summaryDocument.affected.items.length <= 1 && summaryDocument.affected.omitted >= 0, 'preflight summary limit');
+  const explanation = run(['preflight', fixture, '--explain', 'dart:screen', '--compact']);
+  verify(explanation.status === 0 && JSON.parse(explanation.stdout).status === 'found', 'preflight explanation');
+  const missingExplanation = run(['preflight', fixture, '--explain', 'missing-subject', '--compact']);
+  verify(missingExplanation.status === 64 && JSON.parse(missingExplanation.stdout).status === 'notFound', 'preflight missing explanation');
+  verify(run(['preflight', fixture, '--summary', '--explain', 'dart:screen']).status === 64, 'preflight view exclusivity');
+  verify(run(['preflight', fixture, '--limit', '1']).status === 64, 'preflight limit scope');
   verify(run([...args, '--revision', 'other']).status === 1, 'preflight stale context');
   verify(run(['preflight', dartPath]).status === 2, 'preflight invalid context');
   verify(run(['preflight']).status === 64, 'preflight usage');

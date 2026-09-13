@@ -6,6 +6,14 @@
 
 ### Added
 
+- `preflight --summary [--limit 1..100]`와 `--explain <selector>`: 전체 검토 상태와 항목 수를
+  보존하는 작은 요약, 정확한 key/producer ID/qualifiedName의 전체 원인 경로를 제공한다.
+  모호하거나 없는 조회는 근거 JSON과 코드 64를 반환한다. 배포 skill에 이 질의 흐름을 연결했다.
+- 선택적 preflight `messages` 입력과 수집 설정: BasicMessageChannel v2의 literal 주소·
+  증명된 Pigeon prefix를 MethodChannel과 분리해 정적 후보 및 runtime 근거에 연결한다.
+  prefix의 suffix/instance 불확실성을 보존한다. 양쪽 producer의 개발 버전이 필요하다.
+- 실제 macOS 앱에서 원본 공개 Pigeon 소스를 명시된 입력에 포함해 정적/native runtime을
+  같은 revision으로 검증한다. 소비자 대형 입력과 Basic handler 10,000개 성능 검사를 CI에 추가했다.
 - `preflight --expectations <checks.json> [runtime.json ...]`: 전이 분석과 실행 기록을 같은
   revision에서 대조한다. 다른 주소·누락 시나리오·오래된 기대/실행·미완료를 공백으로 보존하고,
   동적 호출에서 찾은 native 후보의 위치를 공유 목록으로 제공한다. 후보를 실제 실행 신원으로 바꾸지 않는다.
@@ -37,6 +45,10 @@
 
 ### Fixed
 
+- 같은 위치에 다른 동적 채널 표현식이 관찰되면 prefix 후보와 미해석 근거에 모두 보존한다.
+- Basic handler의 범위·참조·실제 dispatch 후보 근거가 있으면 공통 등록 함수에서 서로
+  독립적인 handler로 영향이 퍼지는 것을 막는다. 등록 선언 자체와 공유 등록 의존 변경은
+  모든 관련 채널에 전파하며, 근거가 없거나 불완전하면 넓은 후보와 정밀도 공백을 보존한다.
 - Flutter recorder는 timeout 관찰 후 실제 Future가 끝나면 실행 완료를 허용한다.
   timeout 결과와 늦은 응답·예외 전달은 유지하고, 아직 응답 대기 중인 호출과 finish 후
   동결된 미완료 기록은 통과로 바뀌지 않는다.

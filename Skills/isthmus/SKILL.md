@@ -3,7 +3,7 @@ name: isthmus
 description: >-
   Inspect file or symbol changes across Flutter Dart-to-Swift bridges, trace callers,
   compare snapshots, or produce cartograph retention evidence. Use before changing
-  MethodChannel handlers or their Dart callers; RN and Kotlin extraction are not supported.
+  MethodChannel or Pigeon/Basic handlers and their Dart callers; RN and Kotlin extraction are not supported.
 ---
 
 # isthmus
@@ -23,10 +23,20 @@ If inputs are missing, identify the required files and proceed with independent 
 
 - Trace transitive cross-language impact when a current producer context is available
   (development source, after 0.5.0):
-  `isthmus preflight <context.json> --strict --compact`.
+  `isthmus preflight <context.json> --summary --strict --compact`.
   Add `--revision <expected-capture-revision>` when the workflow supplied that revision.
-  Read `roots`, `affected` (`via` points toward the selected root), `boundaries`,
-  `reviewFiles`, and all limitations in one response. Distinguish language use edges
+  Read the whole-report `summary` and `requiresReview`, then bounded collections
+  `{total, items, omitted}` for roots, affected symbols, review files and limitations.
+  Default display limit is 20; `--limit <1..100>` only applies to summary. Omitted
+  entries were analyzed and still affect status. For a requested symbol's complete
+  root-to-target path, replace `--summary` with `--explain <exact-key-or-producer-id>`
+  from the preview. Exact qualifiedName is also accepted; ambiguous matches return
+  candidates with code 64. `result.path` is a full array; each step's relations are
+  bounded. Describe those actual steps; do not substitute a similarly named root
+  from summary. A path through shared registration may be broader than the requested
+  method's execution path. Do not combine summary and explain. Omit both flags only when the full
+  report is needed; it includes `affected[].via`, `boundaries` and all evidence.
+  Distinguish language use edges
   from bridge evidence; dependency boundaries do not imply changes to every caller
   of an unchanged native handler. Do not repeat queries for evidence already present.
   Use the source-generation workflow to refresh stale context; do not hand-author
@@ -37,15 +47,22 @@ If inputs are missing, identify the required files and proceed with independent 
   original producer reports. Report paths are relative to `project`; verify existence
   before making local links. Code 1 preserves a usable report with gaps; `noChanges`
   only means no modeled source selection. To also verify runtime evidence, use
-  `isthmus preflight <context.json> <runtime.json> [more...] --expectations <checks.json> --strict --compact`.
+  `isthmus preflight <context.json> <runtime.json> [more...] --expectations <checks.json> --summary --strict --compact`.
   Read `runtime.aligned` as well as `runtime.verification.status`, `unobservedBoundaries`,
   `uncoveredBoundaries`, and route `staticStatus`. Passing unrelated scenarios or matching
-  old expectations/logs cannot verify the current change. Basic/Pigeon runtime success
-  does not establish static Basic support, and address matches remain native candidates.
+  old expectations/logs cannot verify the current change. Basic/Pigeon static support
+  requires optional v2 `context.messages` from both producers; without it Basic is
+  unsupported for static matching. `matching: prefix` remains a possible address
+  family, with unresolved suffix/instance wiring even after a successful runtime call.
+  Address matches remain native candidates. Raw message limitations appear separately
+  as `messageLimitations` when message inputs are present.
   For a runtime-only dynamic route, follow `candidateKey` into `runtime.candidates` for
-  native source evidence; include `handlersOmitted` when the candidate list is capped.
-  `passedChecks` counts expectations, not distinct scenarios. Count unique scenario/platform
-  pairs separately when asked for scenario coverage; multiple checks can share one scenario.
+  native source evidence. In summary/explanation, `candidates.items[].handlers` is a
+  bounded collection of source locations/symbols; report its `omitted` count. The full
+  report uses `handlersOmitted` for its native-candidate display cap.
+  `passedChecks` counts expectations, not distinct scenarios. In summary/explanation,
+  `runtime.verification.declaredScenarioPlatforms` counts unique declared scenario/platform
+  pairs; it is not a count of passing scenarios. Multiple checks can share one scenario.
 - Preflight a source change: check `isthmus --help` for `impact` (added after the
   published 0.5.0; currently requires a build of the development source).
   Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;

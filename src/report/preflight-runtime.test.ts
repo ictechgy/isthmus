@@ -67,6 +67,47 @@ test('Objective-C native 후보의 출처를 보존하고 Swift 그래프 신원
   assert.equal(hasPreflightBlockers(result), true);
 });
 
+test('Basic v2 근거가 있을 때만 message runtime을 해당 transport 경계와 대조한다', () => {
+  const value = structuredClone(raw);
+  value.bridges = value.bridges.map((document: any) => ({ ...document, target: null, facts: [] }));
+  value.messages = ['dart', 'swift'].map((platform) => ({ format: 'bridge-facts', version: 2, transport: 'basic-message-channel',
+    project: context.project, generatedAt: '2026-09-14T00:00:00Z', platform, target: 'flutter', tool: { name: platform, version: 'dev' },
+    limitations: [], facts: [{ kind: platform === 'dart' ? 'message-send' : 'message-handle', channel: 'camera', dynamic: false,
+      location: { path: platform === 'dart' ? 'lib/bridge.dart' : 'ios/Handler.swift', line: 4, column: 1 },
+      symbol: platform === 'dart' ? { qualifiedName: 'Bridge.photo' } : { qualifiedName: 'Handler.handle', usr: 's:handler' },
+      ...(platform !== 'swift' ? {} : { handlerScope: {
+        start: { path: 'ios/Handler.swift', line: 4, column: 1 }, end: { path: 'ios/Handler.swift', line: 10, column: 1 }, complete: true },
+        dependencies: [{ kind: 'call', scope: 'handler', location: { path: 'ios/Handler.swift', line: 6, column: 1 },
+          symbol: { qualifiedName: 'Native.helper', usr: 's:helper' } }] }) }] }));
+  value.bindings = value.bindings.filter(({ location }: { location: { line: number } }) => location.line === 4);
+  const basic = parsePreflightContext(value);
+  const { method: _method, ...basicCheck } = check;
+  const expectations = parseRuntimeExpectations({ format: 'bridge-expectations', version: 1,
+    project: context.project, revision: context.revision, checks: [{ ...basicCheck, transport: 'basic-message-channel' }] });
+  const { method: _eventMethod, ...basicEvent } = event;
+  const result = attachPreflightRuntime(basic, createPreflightReport(basic), expectations,
+    [observed({ events: [{ ...basicEvent, transport: 'basic-message-channel' }] })]);
+  assert.equal(result.runtime?.routes[0]?.staticStatus, 'candidates');
+  assert.equal(result.runtime?.candidates[0]?.method, undefined);
+  assert.equal(result.runtime?.candidates[0]?.transport, 'basic-message-channel');
+  assert.equal(result.runtime?.unobservedBoundaries.length, 0);
+  assert.equal(hasPreflightBlockers(result), false);
+  const mismatch = attachPreflightRuntime(basic, createPreflightReport(basic), expected(), [observed()]);
+  assert.ok(mismatch.runtime!.unobservedBoundaries.length > 0, 'Method calls cannot cover Basic boundaries with the same name');
+  for (const document of value.messages) for (const fact of document.facts) {
+    fact.channel = 'prefixWithSuffix'; fact.dynamic = true; fact.channelPrefix = 'camera';
+  }
+  const prefixed = parsePreflightContext(value);
+  const prefixChecks = parseRuntimeExpectations({ format: 'bridge-expectations', version: 1,
+    project: context.project, revision: context.revision, checks: [{ ...basicCheck, channel: 'camera.engine', transport: 'basic-message-channel' }] });
+  const prefixResult = attachPreflightRuntime(prefixed, createPreflightReport(prefixed), prefixChecks,
+    [observed({ events: [{ ...basicEvent, channel: 'camera.engine', transport: 'basic-message-channel' }] })]);
+  assert.equal(prefixResult.runtime?.verification.status, 'passed');
+  assert.equal(prefixResult.runtime?.candidates[0]?.matching, 'prefix');
+  assert.equal(prefixResult.runtime?.unobservedBoundaries.length, 0);
+  assert.equal(hasPreflightBlockers(prefixResult), true, 'one observed suffix does not erase the static prefix limitation');
+});
+
 test('오래된 기대와 기록이 서로 통과해도 현재 정적 분석의 실행 근거가 되지 않는다', () => {
   const result = attachPreflightRuntime(context, report, expected([check], 'old'), [observed({ revision: 'old' })]);
   assert.equal(result.runtime?.verification.status, 'passed');

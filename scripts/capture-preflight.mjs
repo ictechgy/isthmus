@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseImpactSelection } from '../dist/exchange/impact-selection.js';
 import { isProjectRelativePath, isSafeNonEmptyString, parseBridgeFactsDocument } from '../dist/exchange/parse.js';
 import { parsePreflightContext } from '../dist/exchange/preflight-context.js';
+import { parseMessageBridgeDocument } from '../dist/exchange/messages.js';
 import { adaptCartographImpact, adaptDartographImpact } from '../dist/exchange/producer-impact.js';
 import { createPreflightReport, hasPreflightBlockers } from '../dist/report/preflight.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
@@ -73,9 +74,18 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported producer version response.');
     tools[name] = { name, version };
   }
+  const messageCommands = config.messages === undefined ? undefined : Object.fromEntries(['dartograph', 'cartograph']
+    .map((name) => [name, config.messages === true ? config[name] : config.messages[name] ?? config[name]]));
+  if (messageCommands) for (const name of ['dartograph', 'cartograph']) {
+    if (JSON.stringify(messageCommands[name]) === JSON.stringify(config[name])) continue;
+    const value = (await run(messageCommands[name], ['--version'], `${name}-messages-version`)).trim();
+    const version = name === 'dartograph' ? value.replace(/^dartograph /, '') : value;
+    if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported message producer version response.');
+    tools[`${name}Messages`] = { name, version };
+  }
   const keyConfig = { project, inputs: config.inputs, toolInputs: config.toolInputs, prepare: config.prepare,
     dartograph: config.dartograph, cartograph: config.cartograph, selection, selectionBase, limitations,
-    indexStore: config.indexStore ?? null, tools,
+    indexStore: config.indexStore ?? null, messageCommands: messageCommands ?? null, tools,
     host: { node: process.version, platform: process.platform, arch: process.arch },
     toolchainEnvironment: digest(Object.fromEntries(['PATH', 'SDKROOT', 'DEVELOPER_DIR', 'FLUTTER_ROOT', 'DART_SDK', 'SWIFT_EXEC']
       .map((name) => [name, process.env[name] ?? null]))) };
@@ -138,6 +148,10 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
       parseBridgeFactsDocument(await json(config.dartograph, ['bridges', '--format', 'json', '--project', project, project], 'dart-bridges')),
       parseBridgeFactsDocument(await json(config.cartograph, ['bridges', '--target', 'flutter', '--format', 'json', ...nativeArgs], 'swift-bridges')),
     ];
+    const messages = messageCommands === undefined ? undefined : [
+      parseMessageBridgeDocument(await json(messageCommands.dartograph, ['bridges', '--messages', '--format', 'json', '--project', project, project], 'dart-messages')),
+      parseMessageBridgeDocument(await json(messageCommands.cartograph, ['bridges', '--messages', '--target', 'flutter', '--format', 'json', ...nativeArgs], 'swift-messages')),
+    ];
     const analyses = [];
     const artifacts = {};
     const metadata = (platform, requested, trigger) => ({ id: `${platform}-${analyses.length}`, project, requested,
@@ -174,7 +188,8 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
       if (selection.dart.files.length > 0) await dartImpact({ files: selection.dart.files, symbols: [] });
       for (const symbol of selection.dart.symbols) await dartImpact({ files: [], symbols: [symbol] });
     }
-    const names = [...new Set(bridges[0].facts.flatMap((fact) => fact.symbol ? [fact.symbol.qualifiedName] : []))].sort();
+    const dartFacts = [...bridges[0].facts, ...(messages?.[0].facts ?? [])];
+    const names = [...new Set(dartFacts.flatMap((fact) => fact.symbol ? [fact.symbol.qualifiedName] : []))].sort();
     const subjects = new Map();
     for (let offset = 0; offset < names.length; offset += 1000) {
       const requests = names.slice(offset, offset + 1000);
@@ -198,13 +213,13 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
           location: { path: source, line: location.line, column: location.column } });
       }
     }
-    const bindings = bridges[0].facts.flatMap((fact) => {
+    const bindings = dartFacts.flatMap((fact) => {
       const symbol = subjects.get(fact.symbol?.qualifiedName);
       return symbol?.location.path === fact.location.path
         ? [{ platform: 'dart', location: fact.location, requested: fact.symbol.qualifiedName, symbol }] : [];
     });
     const makeContext = () => parsePreflightContext({ format: 'isthmus-preflight-context', version: 1, project,
-      revision: `sha256:${state.key}`, selection, bridges, bindings, analyses, limitations });
+      revision: `sha256:${state.key}`, selection, bridges, ...(messages === undefined ? {} : { messages }), bindings, analyses, limitations });
     const initial = createPreflightReport(makeContext());
     const reached = new Set([...initial.roots, ...initial.affected.map(({ subject }) => subject)]
       .filter((subject) => subject.kind === 'symbol' && subject.platform === 'dart').map(({ symbol }) => symbol.id));
@@ -260,6 +275,9 @@ function validateConfig(config, project) {
   const command = (value) => Array.isArray(value) && value.length > 0 && value.every(isSafeNonEmptyString);
   if (!command(config.dartograph) || !command(config.cartograph) || !Array.isArray(config.prepare) ||
     config.prepare.length === 0 || !config.prepare.every(command)) throw new CaptureError('Configure producer commands and a native index preparation command.');
+  if (config.messages !== undefined && config.messages !== true && (config.messages === null || typeof config.messages !== 'object' ||
+    Array.isArray(config.messages) || Object.entries(config.messages).some(([name, value]) =>
+      (name !== 'dartograph' && name !== 'cartograph') || !command(value)))) throw new CaptureError('Invalid message producer configuration.');
   if (!Array.isArray(config.inputs) || config.inputs.length === 0 || !config.inputs.every(isProjectRelativePath) ||
     !Array.isArray(config.toolInputs) || config.toolInputs.length === 0 || !config.toolInputs.every(isSafeNonEmptyString)) {
     throw new CaptureError('Declare source/config inputs and producer implementation files for fingerprinting.');

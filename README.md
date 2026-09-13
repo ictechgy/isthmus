@@ -109,8 +109,8 @@ Development source also adds `verify-runtime --expectations` to check recorded c
 by revision, scenario, platform, and engine instance. See the [runtime contract](docs/RUNTIME.md).
 The optional [Flutter recorder](packages/isthmus_runtime/README.md) has been exercised
 in a real macOS app with Swift handlers and the Pigeon-generated API of
-`url_launcher_macos 3.2.2`; transitive language-internal impact and CI snapshot automation
-are still being developed.
+`url_launcher_macos 3.2.2`. Transitive producer impact and snapshot capture are implemented
+in development source; broader application coverage and first-time setup remain under validation.
 
 Development source now exposes `preflight <context.json> --strict --compact` to compose
 producer impact paths across the bridge. A separate capture workflow caches declared
@@ -120,6 +120,13 @@ real-application validation.
 To combine that context with recorded execution, pass runtime JSON files and
 `--expectations <checks.json>`. Preflight reports revision alignment, native candidates,
 and static boundaries missing observations or declared scenarios; existing static gaps remain visible.
+
+Use `preflight <context.json> --summary --strict --compact` for a bounded overview, then
+`--explain <exact-producer-symbol-id>` for a complete path to one symbol. Summary defaults
+to 20 items per collection (`--limit 1..100`); omitted items still affect review status.
+Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addresses and
+proven prefix candidates with development producers. Prefix matches preserve unresolved
+suffix and instance wiring. These additions are not in the published 0.5.0 package.
 
 The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
 runs the preparation and producer commands declared in its configuration:
