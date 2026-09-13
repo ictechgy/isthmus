@@ -7,11 +7,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
 
-const [flutterBinary, isthmusOverride, cartographBinary, dartographEntry, ...unexpectedArguments] = process.argv.slice(2);
+const [flutterBinary, isthmusOverride, cartographBinary, dartographEntry, dartographExecutable, ...unexpectedArguments] = process.argv.slice(2);
 const producerArgumentsPresent = cartographBinary !== undefined || dartographEntry !== undefined;
 if (flutterBinary === undefined || process.platform !== 'darwin' || unexpectedArguments.length > 0 ||
   (producerArgumentsPresent && (cartographBinary === undefined || dartographEntry === undefined))) {
-  process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js] [cartograph-bin dartograph-entry]\n');
+    process.stderr.write('Usage (macOS): verify-flutter-runtime.mjs <flutter-bin> [isthmus-js] [cartograph-bin dartograph-entry [dartograph-bin]]\n');
   process.exit(64);
 }
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -93,6 +93,8 @@ try {
     checks: [
       { id: 'method-echo', scenario: 'success', platform: 'macos', instance: 'main',
         transport: 'method-channel', channel: 'example/native-runtime', method: 'echo' },
+      { id: 'transitive-echo', scenario: 'chain', platform: 'macos', instance: 'main',
+        transport: 'method-channel', channel: 'example/native-runtime', method: 'echo' },
       { id: 'pigeon-echo', scenario: 'success', platform: 'macos', instance: 'main',
         transport: 'basic-message-channel', channel: 'dev.flutter.pigeon.runtime_probe.Api.echo' },
       { id: 'public-pigeon', scenario: 'success', platform: 'macos', instance: 'main',
@@ -122,15 +124,15 @@ try {
     '--expectations', expectationsPath, '--strict', '--compact',
     ...names.map((name) => join(artifacts, `${name}.json`))], { timeout: 30_000 });
   const verifyRuntime = (...names) => verify(join(artifacts, 'expectations.json'), ...names);
-  const positive = verifyRuntime('success');
+  const positive = verifyRuntime('success', 'chain');
   assert.equal(positive.status, 0, 'Native successful calls must satisfy expectations.');
   const good = JSON.parse(positive.stdout);
-  assert.equal(good.summary.passedChecks, 3);
-  await assertRuntimeRevision(['success'], runtimeProject, runtimeRevision);
+  assert.equal(good.summary.passedChecks, 4);
+  await assertRuntimeRevision(['success', 'chain'], runtimeProject, runtimeRevision);
   let preflightRuntime;
   if (captured !== undefined) {
     const preflightResult = runChild(process.execPath, [isthmus, 'preflight',
-      join(artifacts, 'preflight-context.json'), join(artifacts, 'success.json'),
+      join(artifacts, 'preflight-context.json'), join(artifacts, 'success.json'), join(artifacts, 'chain.json'),
       '--expectations', join(artifacts, 'expectations.json'), '--strict', '--compact'], { timeout: 30_000 });
     // 실제 runtime은 맞아도 Basic 정적 경계와 실행하지 않은 실패 경로는 검토 공백으로 남긴다.
     assert.equal(preflightResult.status, 1, 'Preflight must preserve related static/runtime evidence gaps.');
@@ -140,12 +142,12 @@ try {
     assert.ok(preflightRuntime.runtime?.uncoveredBoundaries?.length > 0, 'Uncovered static boundaries must remain visible.');
     await writeFile(join(artifacts, 'preflight-runtime.json'), JSON.stringify(preflightRuntime, null, 2), { mode: 0o600 });
   }
-  const negative = verifyRuntime('success', 'failure', 'timeout');
+  const negative = verifyRuntime('success', 'chain', 'failure', 'timeout');
   assert.equal(negative.status, 1, 'Native failures must fail the CI gate.');
   const bad = JSON.parse(negative.stdout);
   assert.deepEqual(bad.failures.map(({ event }) => event.outcome).sort(), ['error', 'missing-handler', 'timeout'],
     'Missing handler, native error and slow reply must retain distinct outcomes.');
-  const incomplete = verifyRuntime('success', 'pending');
+  const incomplete = verifyRuntime('success', 'chain', 'pending');
   assert.equal(incomplete.status, 1, 'Unfinished native communication must fail the CI gate.');
   const pending = JSON.parse(incomplete.stdout);
   assert.ok(pending.summary.pendingCalls > 0 || pending.summary.incompleteRuns > 0);
@@ -157,7 +159,7 @@ try {
   assert.equal(allowedNegativeReport.summary.expectedFailedCalls, 3);
   const allowedPending = verify(negativeExpectationsPath, 'pending');
   assert.equal(allowedPending.status, 1, 'Pending native communication must not satisfy terminal expectations.');
-  for (const name of ['success', 'failure', 'timeout', 'pending']) {
+  for (const name of ['success', 'chain', 'failure', 'timeout', 'pending']) {
     const text = await readFile(join(artifacts, `${name}.json`), 'utf8');
     assert.equal(text.includes('fixture-private-payload'), false, 'Payload must not enter runtime evidence.');
   }
@@ -183,6 +185,7 @@ try {
 async function captureProducerPreflight({ project, version, indexStore }) {
   const cartograph = await realpath(cartographBinary);
   const dartograph = await realpath(dartographEntry);
+  const executable = dartographExecutable === undefined ? undefined : await realpath(dartographExecutable);
   const dartographRoot = dirname(dirname(dartograph));
   // Flutter build와 index 경로 발견은 capture 호출 직전에 끝냈다. capture의 prepare는
   // 같은 DerivedData를 다시 인덱싱해 producer가 읽은 index가 최신임을 확인한다.
@@ -192,10 +195,12 @@ async function captureProducerPreflight({ project, version, indexStore }) {
     project,
     inputs: ['lib', 'macos/Runner', 'macos/Runner.xcodeproj/project.pbxproj', 'macos/Podfile',
       'pubspec.yaml', 'pubspec.lock', '.dart_tool/package_config.json'],
-    toolInputs: [cartograph, dartograph, join(dartographRoot, 'lib'), join(dartographRoot, '.dart_tool/package_config.json'),
-      join(version.flutterRoot, 'version'), join(version.flutterRoot, 'bin/cache/dart-sdk/version'), packageRoot],
+    toolInputs: [cartograph, dartograph, ...(executable === undefined ? [] : [executable]),
+      join(dartographRoot, 'lib'), join(dartographRoot, '.dart_tool/package_config.json'),
+      join(version.flutterRoot, 'version'), join(version.flutterRoot, 'bin/cache/dart-sdk/version'),
+      join(packageRoot, 'lib'), join(packageRoot, 'pubspec.yaml')],
     prepare,
-    dartograph: ['dart', dartograph],
+    dartograph: executable === undefined ? ['dart', dartograph] : [executable],
     cartograph: [cartograph],
     selection: { swift: { files: ['macos/Runner/NativeRuntimeHelper.swift'], symbols: [] } },
     indexStore,
@@ -205,6 +210,16 @@ async function captureProducerPreflight({ project, version, indexStore }) {
   const result = await capturePreflight(config);
   assert.equal(result.context.project, project, 'Producer and runtime projects must match.');
   assert.match(result.context.revision, /^sha256:[a-f0-9]{64}$/u, 'Producer revision must be a source fingerprint.');
+  const screen = result.report.affected.find(({ subject }) => subject.kind === 'symbol' && subject.symbol.id.endsWith('::runtimeScreen'));
+  assert.ok(screen, 'Real compiler/producer path must reach the Dart screen consumer.');
+  const nodes = new Map([...result.report.roots.map((subject) => [subject.key, { subject }]),
+    ...result.report.affected.map((row) => [row.subject.key, row])]);
+  const chain = [];
+  for (let row = screen; row; row = nodes.get(row.via)) chain.push(row.subject.kind === 'bridge' ? row.subject.channel : row.subject.symbol.qualifiedName);
+  for (const name of ['runtimeNativeValue', 'awakeFromNib', 'example/native-runtime', 'runtimeBridge', 'runtimeService', 'runtimeScreen']) {
+    assert.ok(chain.some((item) => item.includes(name)), `Real cross-language path must include ${name}.`);
+  }
+  await writeFile(join(artifacts, 'preflight-path.json'), JSON.stringify(chain, null, 2), { mode: 0o600 });
   const sourcesPath = `${config.output}.sources.json`;
   await access(sourcesPath);
   return result;
@@ -328,13 +343,13 @@ Future<void> main() async {
   }
 }
 
-IsthmusRuntimeRecorder recorder(String scenario, {Duration? timeout}) => IsthmusRuntimeRecorder(
+IsthmusRuntimeRecorder recorder(String scenario, {Duration? timeout, RuntimeCaller? Function(String)? callerForMethod}) => IsthmusRuntimeRecorder(
   messenger: ServicesBinding.instance.defaultBinaryMessenger,
   project: const String.fromEnvironment('ISTHMUS_PROJECT'),
   revision: const String.fromEnvironment('ISTHMUS_REVISION'),
   scenario: scenario, platform: 'macos', runId: scenario, observationTimeout: timeout,
   methodChannels: [
-    RuntimeMethodChannel(channel: methodName, codec: const StandardMethodCodec(), callerForMethod: methodCaller),
+    RuntimeMethodChannel(channel: methodName, codec: const StandardMethodCodec(), callerForMethod: callerForMethod ?? methodCaller),
     RuntimeMethodChannel(channel: 'example/missing-runtime', codec: const StandardMethodCodec(), callerForMethod: methodCaller),
   ],
   basicMessageChannels: [RuntimeBasicMessageChannel(channel: basicName,
@@ -366,7 +381,10 @@ Future<void> probe() async {
     throw StateError('Method response changed.');
   }
   // 정적 producer가 native helper 변경에서 Dart 소비자까지 전파하는지 확인할 호출 체인이다.
-  if (await runtimeScreen(success.binaryMessenger) != 'ok') throw StateError('Dart consumer response changed.');
+  final chain = recorder('chain', callerForMethod: (method) => method == 'echo'
+    ? const RuntimeCaller(path: 'lib/main.dart', line: __STATIC_ECHO_LINE__, column: __STATIC_ECHO_COLUMN__) : null);
+  if (await runtimeScreen(chain.binaryMessenger) != 'ok') throw StateError('Dart consumer response changed.');
+  await save('chain', chain);
   final basic = BasicMessageChannel<Object?>(basicName, const StandardMessageCodec(),
     binaryMessenger: success.binaryMessenger);
   final reply = await basic.send('fixture-private-payload');

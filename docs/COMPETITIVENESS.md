@@ -3,7 +3,51 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
-2026-09-14 최신 구현: `preflight` CLI와 별도 producer 수집 workflow가 연결됐다.
+2026-09-14 최신 구현: `preflight`에 독립 runtime 기대/기록 대조도 연결됐다.
+실제 macOS 앱에서 compiler index→producer→Swift helper→Dart 소비자와 실행을 같은
+capture revision으로 검증했다. 아래의 합성 source 검증과 구별한다.
+
+- 전체 Node verify: 제품 378개·Phase 0 15개·수집 workflow 6개, coverage
+  line/branch/functions 98.49/93.03/96.00, build/CLI/package 통과.
+  `/tmp/isthmus-runtime-preflight-final-verify.log`. 이후 GLM 지적 재현을 위한 테스트 2개를
+  추가해 해당 파일 전체 11개와 typecheck를 통과했다(제품 구현은 변경되지 않음).
+- Flutter recorder 16개 테스트·analyze 통과. timeout 관찰과 실제 Future의 응답 대기를
+  분리해 늦은 응답 후 completed를 허용한다. timeout 결과·늦은 예외 전달은 유지하며,
+  아직 응답이 남거나 finish로 동결된 미완료 기록은 완료로 바뀌지 않는다.
+- 실제 native 실행: 성공 기대 4개(동적 MethodChannel·전이 소비자·자체 Basic·공개 Pigeon),
+  의도된 error/missing-handler/timeout 기대 3개 통과. pending은 strict 실패 유지.
+  `runtime.aligned: true`, `runtime.verification.status: passed` 확인.
+  전체 58.539초: Flutter index 준비 19.672초·Xcode index 15.694초·runtime 빌드 7.279초·
+  재빌드 4.454초·앱 실행 1.117초(나머지는 수집·도구 실행·의존성 준비 등).
+  근거 `/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-native-evidence-jn0EwY/verification.json`.
+- 해당 실제 기록을 최종 CLI로 재생해 native 후보 위치·누락된 전이 시나리오·오래된 기대·
+  비기대 실패 3개를 확인했다. 정적 오류 2개는 의도적으로 등록하지 않은 missing-runtime
+  채널에서 발생했고, Basic 정적 미지원·미관찰/미포함 경계는 preflight strict 1로 남았다.
+  정적 후보는 실행한 native 심볼의 확정이 아니다.
+- 소비자만 측정: 20,000 전이 소비자 + 100,000 runtime events + 1,000 기대를 새 CLI
+  프로세스 5회에서 중앙 316ms·최대 319ms. 출력 9,540,579 bytes.
+  `/tmp/isthmus-runtime-preflight-benchmark-final.log`. 출력량이 커서 AI용 요약·경로 조회의
+  명시적 한도 제공은 다음 개선 후보이며 compact의 정보 보존 원칙과 구분해야 한다.
+- Dartograph 0.8.0을 원본 저장소 밖의 `/tmp/isthmus-dartograph-aot-Yjb0Yf/dartograph`로
+  컴파일해 native 통합에 사용했다. 원본 bin/lib/pubspec/lock/package_config 해시가 컴파일
+  전후 같은지 검증했고 빌드는 11.605초였다. 이 최초 도구 준비 시간은 위 native 실행 시간 밖이다.
+  형제 저장소의 소스 변경은 하지 않았다.
+- GLM 검토(packet SHA `d2eb76df713b`, 129,582 bytes, low, 약 315.7초): runtime/preflight·
+  recorder·관련 테스트/계약 범위. F1은 성립하지 않는다: required 경계 키는 반드시 byRoute에
+  있어 그 경계를 관찰한 주소라면 keys.length가 0일 수 없다. 같은 파일의 다른 주소를
+  caller-file로 수집해도 원래 경계는 미관찰로 남는 테스트와, 같은 주소의 다른 시나리오가
+  독립 기대를 통과하지 못하는 테스트로 확인했다. F2는 후보의 sourceLanguage를 보존하는
+  의도된 동작이며 Objective-C 신원을 Swift 그래프에 연결하지 않는 회귀를 추가했다.
+  F3는 주소 수준의 배선 관찰이며 알려진 메서드별 검증·독립 시나리오와 구분하도록 문서를
+  명확히 했다. 이 범위에 검증된 blocker는 남지 않았다. 전체 PR 범위의 나머지 검토는 별도다.
+- 최종 기능을 tarball로 만들어 네트워크 없이 격리 설치했다. 설치된 CLI의 runtime 결합·
+  native 후보 신원 출력과 skill 구조 검증이 통과했다. npm 발행·원격 PR/CI는 하지 않았다.
+- 새 verifier의 skill forward check도 통과했다. preflight CLI 1회로 strict 1과 runtime
+  passed/정렬 일치를 구분하고, Basic 공백과 현재 없는 source project를 확인해 잘못된 로컬
+  링크를 만들지 않았다. 전체 조사에는 읽기/진단 17개(8개 orchestration call), jq shape 실수
+  2개가 있어 대형 JSON의 안정된 요약/개별 경로 조회는 여전히 효율 개선 근거가 된다.
+
+이전 단계: `preflight` CLI와 별도 producer 수집 workflow 연결.
 현재 계약·실행 방법은 [PREFLIGHT.md](PREFLIGHT.md), 실용성 조사 당시 판단은
 [오픈소스 가능성·실패 요인 10개·경쟁/대체 수단](FEASIBILITY.md)에 있다.
 
@@ -25,8 +69,8 @@
 - adapter가 실제 Dartograph의 정수 truncation·중첩 미귀속 목록·선언 위치와 query 전체 ID를
   처리하도록 고쳤다. Cartograph의 미관찰 선택과 runtime review를 공백으로 보존한다.
 
-아래 이전 검증 수치와 negative outcome 정책은 해당 시점의 기록이다. 공개 앱의 적용 범위,
-Pigeon/Basic 정적 연결, runtime+전이 통합, 실제 앱 CI 및 최종 PR GLM 리뷰는 여전히 남아 있다.
+아래 이전 검증 수치와 negative outcome 정책은 해당 시점의 기록이다. 공개 앱의 더 넓은 적용
+범위, Pigeon/Basic 정적 연결, 재현 가능한 실제 앱 CI 및 최종 PR 범위 검토는 여전히 남아 있다.
 
 ## 완료 기준
 
@@ -128,16 +172,18 @@ Pigeon/Basic 정적 연결, runtime+전이 통합, 실제 앱 CI 및 최종 PR G
    작업이 진행 중이므로 변경을 보존한다. Cartograph의 impact는 files/symbols 혼용 금지·
    limit 최대 10,000이다. Dart caller는 batch query found+유일 신원+같은 파일로 연결한다.
    constructor/extension의 bridge symbol 부재는 아직 공백이다. producer 원문은 sidecar에 있다.
-2. Pigeon/Basic의 정적 producer 지원과 실제 앱 producer→runtime→preflight 통합을 검증한다.
+2. Pigeon/Basic의 정적 producer 지원과 공개 앱 적용 범위를 구현·검증한다. macOS의
+   producer→runtime→preflight 통합은 위 기록대로 통과했다.
    runtime Basic 성공을 정적 Basic 지원으로 표기하지 않는다. iOS/Android 실검증은 아직 없다.
-3. 구현된 `allowedOutcomes`를 실제 native 실패 시나리오에도 적용한다. 기본 success와
-   명시된 terminal 실패를 구분하고 expected/unexpectedFailedCalls를 유지한다.
-   기존 native 하네스의 기본 실패 감지는 검증됐으며 새 기대 정책의 native 실행은 남아 있다.
+3. `allowedOutcomes`와 timeout 완료 상태는 실제 native 실행까지 통과했다. 이 검증을
+   재사용하고 같은 코드를 반복 빌드하지 않는다. 다른 앱/플랫폼 또는 수집기 변경 때 확대한다.
 4. 실제 앱에서 수집 설정의 입력 범위와 native prepare 명령·index 신선도를 검증한다.
    현재 내용 해시는 명시된 입력만 커버한다. producer를 소스로 실행하면 매번 약 4초가
    소요되므로 설치된 실행 파일 또는 별도 출력 위치의 컴파일본으로 전체/반복 시간을 비교한다.
    외부 SDK·설정·로컬 패키지까지 포함한 입력 목록, 공개 사례 CI 재현을 완성한다.
-5. 공개 프로젝트·설치본·GLM PR 리뷰까지 통과한 뒤 네 사용자 요구 전체를 다시 감사한다.
+5. 공개 프로젝트·실제 CI·최종 PR 범위의 GLM 리뷰를 완료한 뒤 네 사용자 요구 전체를 다시
+   감사한다. 새 runtime 결합의 설치본은 검증됐다. AI의 대형 결과 취득에는 출력량을 줄이는
+   요약/개별 경로 조회를 고려하고 전체 근거와 생략 계수를 함께 보존한다.
 
 아직 전체 목표 미완료. 전이 영향 연결·더 넓은 runtime/정적 coverage·CI 자동 갱신과
 신선도 검증·최종 배포/리뷰가 남았다. 외부 사용자 도입성과 실제 앱의 탐지율도 미검증이다.

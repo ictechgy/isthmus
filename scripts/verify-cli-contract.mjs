@@ -47,6 +47,13 @@ function verifyPreflight() {
   verify(run(['preflight', dartPath]).status === 2, 'preflight invalid context');
   verify(run(['preflight']).status === 64, 'preflight usage');
   verify(run(['help', 'preflight']).stdout.startsWith('Usage: isthmus preflight'), 'preflight help');
+  const runtime = fileURLToPath(new URL('../fixtures/preflight/runtime.json', import.meta.url));
+  const expectations = fileURLToPath(new URL('../fixtures/preflight/expectations.json', import.meta.url));
+  const verified = run([...args, runtime, '--expectations', expectations]);
+  verify(verified.status === 0, 'preflight runtime success');
+  verify(JSON.parse(verified.stdout).runtime.aligned === true && JSON.parse(verified.stdout).runtime.verification.status === 'passed',
+    'preflight runtime alignment');
+  verify(run([...args, '--expectations', expectations]).status === 1, 'preflight absent runtime observations');
 }
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */

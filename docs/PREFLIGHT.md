@@ -8,6 +8,7 @@ Pigeon/Basic 정적 연결·Android/Kotlin·앱 전체 실행 정확도를 지�
 ```bash
 isthmus preflight context.json --strict --compact
 isthmus preflight context.json --revision <expected-capture-revision> --strict --compact
+isthmus preflight context.json success.json failure.json --expectations checks.json --strict --compact
 ```
 
 `impact`는 bridge-facts에서 직접 관련된 경계를 찾는다. `preflight`는 언어별 전이 분석도
@@ -55,6 +56,43 @@ binding 100,000개, 각 producer depth 128, 관계 문자열 32개, 조합된 �
   코드 1을 반환하고 JSON을 유지한다. 입력 계약/읽기 실패는 2, 사용 오류는 64다.
 - `noChanges`는 모델링한 소스 선택이 없다는 뜻이다. 설정·리소스 변경 공백이 있으면 strict는
   여전히 실패한다. 알 수 없는 선택을 영향 없는 변경으로 처리하지 않는다.
+
+## 전이 분석과 runtime 대조
+
+`--expectations <checks.json>`를 주면 context 뒤의 위치 인자는 bridge-runtime v1 기록이다.
+기대만 주고 기록을 생략할 수도 있으며 이는 미관찰 검증으로 남는다. 기록만 주고 기대를
+생략하면 사용 오류다. 각 기대/기록은 UTF-16 16 Mi, context를 포함한 전체 입력은 64 Mi,
+runtime 문서는 최대 256개다. [런타임 계약](RUNTIME.md)의 독립 기대·실패·미완료 규칙을 재사용한다.
+
+- `runtime.verification`: 선언된 시나리오 자체의 검증. 기대 목록과 기록이 과거 revision에서
+  서로 일치하면 이 부분만 passed일 수 있으므로 `runtime.aligned`도 확인해야 한다.
+- `runtime.aligned`: 기대 목록의 revision과 정적 context revision의 일치 여부. 다르면
+  `stale-runtime-expectations` 공백을 추가해 strict가 실패한다. 원본 revision을 고쳐 쓰지 않는다.
+- `runtime.routes`: 현재 context revision의 관련 실행 주소. run·scenario·OS·instance·outcome
+  집계를 보존하며 정적 후보는 `candidates`라고 표시한다. 특정 native 심볼이 실제 실행됐다는
+  증명이 아니다. 기존 `affected` 경로나 정적 동적/미귀속 공백은 덮어쓰지 않는다.
+- `runtime.candidates`: 동적 호출로 새로 찾은 native 후보의 실제 fact 위치·심볼. route의
+  `candidateKey`로 찾으며 여러 runtime 인스턴스에서도 후보 목록은 한 번만 저장한다.
+  후보는 주소당 20개까지 표시하고 `handlersOmitted`로 생략 수를 알린다. 검토 파일에는
+  표시 상한 밖의 후보도 포함한다. 후보 존재를 실제 native 실행 심볼의 확정으로 바꾸지 않는다.
+  Swift producer가 실은 Objective-C fact는 `sourceLanguage: objective-c`를 유지하며,
+  Swift 언어 그래프의 신원으로 변환하지 않는다.
+- `selectionReasons`는 주소 일치(`route`)와 검토 파일에서 선언한 caller(`caller-file`)를
+  구분한다. 기록의 caller는 수집기가 명시한 위치이며 주변 선언이나 stack에서 추측하지 않는다.
+  caller 표시는 route당 20개까지이며 생략 수를 알리고 reviewFiles에는 모든 관련 파일을 남긴다.
+- `unobservedBoundaries`: 현재 실행 기록이 없는 관련 정적 경계. `uncoveredBoundaries`는
+  현재 기대 시나리오에 들어 있지 않은 관련 경계다. 다른 주소의 통신만 성공하면 이 공백은 남는다.
+- Basic/Pigeon 및 Android 기록을 Swift MethodChannel 정적 경계로 연결하지 않는다.
+  관련 caller에서 관찰됐다면 `unsupported`로 표시한다. runtime 통신 검증과 정적 후보 연결의
+  지원 범위는 서로 다르다. 하나의 성공한 플랫폼으로 다른 플랫폼의 정확성을 증명하지 않는다.
+
+기대 실패는 `allowedOutcomes`로 명시한다. `runtime.verification.status`가 passed이고
+aligned가 true여도 정적 공백·미관찰/미포함 경계가 남으면 전체 strict는 1이다.
+
+경계의 관찰/기대 포함 여부는 **주소 수준**이다. 같은 주소를 공유하는 기능·인자 분기·호출
+경로가 모두 실행됐다는 뜻이 아니다. 원하는 기능은 독립 기대 목록에 해당 scenario로 지정해야
+한다. 알려진 관련 메서드는 각각 대조하며, 메서드가 알려지지 않은 channel-only 경계는 해당
+채널의 메서드 통신을 배선 관찰로만 인정한다. 그것으로 모든 메서드나 소스 경로의 실행을 보증하지 않는다.
 
 ## 자동 수집과 CI
 

@@ -1,0 +1,9 @@
+{
+  "format": "bridge-runtime", "version": 1, "project": "/fixture", "revision": "fixture-revision",
+  "tool": { "name": "fixture-recorder", "version": "1" },
+  "run": { "id": "capture", "scenario": "capture", "platform": "macos", "status": "completed",
+    "startedAt": "2026-09-14T00:00:00Z", "finishedAt": "2026-09-14T00:00:01Z" },
+  "droppedEvents": 0,
+  "events": [{ "sequence": 1, "instance": "main", "transport": "method-channel", "channel": "camera",
+    "method": "photo", "outcome": "success", "caller": { "path": "lib/bridge.dart", "line": 4, "column": 1 } }]
+}

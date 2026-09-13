@@ -6,6 +6,11 @@
 
 ### Added
 
+- `preflight --expectations <checks.json> [runtime.json ...]`: 전이 분석과 실행 기록을 같은
+  revision에서 대조한다. 다른 주소·누락 시나리오·오래된 기대/실행·미완료를 공백으로 보존하고,
+  동적 호출에서 찾은 native 후보의 위치를 공유 목록으로 제공한다. 후보를 실제 실행 신원으로 바꾸지 않는다.
+- 실제 macOS Flutter 앱의 compiler index→producer→전이 분석→runtime 결합을 검증하고,
+  전이 소비자의 호출과 동적 호출을 각각의 시나리오·호출 위치로 기록한다.
 - `preflight <context.json>`: producer 전이 영향과 브리지 근거를 연결하고 가장 가까운
   변경 심볼까지의 경로·검토 파일·공백을 출력한다. 실제 Dartograph/Cartograph의 합성
   source→compiler index→전이 분석 연결을 검증했다. 앱 전체 탐지율 검증과는 구분한다.
@@ -29,6 +34,12 @@
   인자·반환값·원문 오류를 저장하지 않는다. 실제 macOS Swift/Pigeon 왕복과 실패 경로를 검증했다.
 - impact/runtime 보고서에 증거 위치의 기준 `project`를 명시하고 배포 skill의
   snapshot 위치·로컬 파일 링크 구분과 중복 조회 지침을 보강했다.
+
+### Fixed
+
+- Flutter recorder는 timeout 관찰 후 실제 Future가 끝나면 실행 완료를 허용한다.
+  timeout 결과와 늦은 응답·예외 전달은 유지하고, 아직 응답 대기 중인 호출과 finish 후
+  동결된 미완료 기록은 통과로 바뀌지 않는다.
 
 ## [0.5.0] - 2026-09-13
 

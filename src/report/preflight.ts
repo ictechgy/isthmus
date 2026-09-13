@@ -6,6 +6,7 @@ import type { BridgeTarget } from '../exchange/parse.ts';
 import { createCheckReport } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
+import type { PreflightRuntimeReport } from './preflight-runtime.ts';
 
 type Language = 'dart' | 'swift';
 
@@ -60,6 +61,7 @@ export interface PreflightReport {
   readonly issues: readonly CheckIssue[];
   readonly limitations: readonly PreflightLimitation[];
   readonly bridgeLimitations: readonly JoinLimitation[];
+  readonly runtime?: PreflightRuntimeReport;
   readonly producers: ReadonlyArray<{ analysis: string; platform: Language; tool: { name: string; version: string }; truncated: boolean }>;
   readonly summary: {
     selectedSymbols: number; affectedSymbols: number; bridgeBoundaries: number;

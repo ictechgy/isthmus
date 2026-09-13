@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -12,6 +12,7 @@ const root = await mkdtemp(join(tmpdir(), 'isthmus-preflight-benchmark-'));
 const channels = 10_000;
 const eventCount = 100_000;
 const checks = 1_000;
+const consumers = 20_000;
 const repetitions = 5;
 const timeBudgetMs = 5_000;
 try {
@@ -21,7 +22,19 @@ try {
   const expectations = { format: 'bridge-expectations', version: 1, project: '/benchmark', revision: 'benchmark',
     checks: Array.from({ length: checks }, (_, index) => ({ id: `check-${index}`, scenario: 'read',
       platform: 'ios', transport: 'method-channel', channel: 'runtime/channel', method: 'read' })) };
-  const inputs = { dart, swift, runtime, expectations };
+  const preflight = JSON.parse(await readFile(new URL('../fixtures/preflight/context.json', import.meta.url), 'utf8'));
+  // fixture는 합성 자료다. 벤치마크 문서 모두의 합성 project/revision을 동일하게 생성한다.
+  preflight.project = '/benchmark'; preflight.revision = 'benchmark';
+  for (const document of preflight.bridges) document.project = preflight.project;
+  preflight.analyses[1].affected = Array.from({ length: consumers }, (_, index) => ({
+    symbol: { id: `dart:consumer:${index}`, qualifiedName: `Consumer${index}.read`,
+      location: { path: `lib/consumer${index}.dart`, line: 1, column: 1 } },
+    via: 'dart:photo', depth: 1, relationships: ['call'],
+  }));
+  const preflightRuntime = runtimeDocument('camera', 'photo');
+  const preflightExpectations = { ...expectations,
+    checks: expectations.checks.map((check) => ({ ...check, channel: 'camera', method: 'photo' })) };
+  const inputs = { dart, swift, runtime, expectations, preflight, preflightRuntime, preflightExpectations };
   for (const [name, value] of Object.entries(inputs)) {
     await writeFile(join(root, `${name}.json`), JSON.stringify(value), { mode: 0o600 });
   }
@@ -39,13 +52,23 @@ try {
     assert.equal(report.checks[0].observedCalls, eventCount);
     assert.equal(report.checks[0].evidenceOmitted, eventCount - 20);
   });
+  const preflightResult = measure(['preflight', join(root, 'preflight.json'), join(root, 'preflightRuntime.json'),
+    '--expectations', join(root, 'preflightExpectations.json'), '--strict', '--compact'], (report) => {
+    assert.equal(report.summary.affectedSymbols, consumers + 2);
+    assert.equal(report.summary.evidenceGaps, 0);
+    assert.equal(report.runtime.verification.status, 'passed');
+    assert.equal(report.runtime.verification.summary.passedChecks, checks);
+    assert.equal(report.runtime.routes[0].observedCalls, eventCount);
+    assert.equal(report.runtime.unobservedBoundaries.length, 0);
+  });
   process.stdout.write(`${JSON.stringify({
     scope: 'consumer-cli-only', node: process.version, platform: process.platform, arch: process.arch,
     repetitions, timeBudgetMs,
     impact: { facts: 40_000, channels, scopedLimitations: 1_000, ...impact },
     runtime: { events: eventCount, expectations: checks, ...runtimeResult },
+    preflightWithRuntime: { consumers, events: eventCount, expectations: checks, ...preflightResult },
   }, null, 2)}\n`);
-  assert.ok(impact.p95Ms < timeBudgetMs && runtimeResult.p95Ms < timeBudgetMs,
+  assert.ok(impact.p95Ms < timeBudgetMs && runtimeResult.p95Ms < timeBudgetMs && preflightResult.p95Ms < timeBudgetMs,
     'Consumer preflight exceeded the documented time budget.');
 } finally {
   await rm(root, { recursive: true, force: true });
@@ -89,13 +112,13 @@ function bridgeDocument(platform) {
 }
 
 /** 같은 라우팅의 반복 기대가 이벤트 전체 재순회를 일으키는지도 측정한다. */
-function runtimeDocument() {
+function runtimeDocument(channel = 'runtime/channel', method = 'read') {
   return { format: 'bridge-runtime', version: 1, project: '/benchmark', revision: 'benchmark',
     tool: { name: 'synthetic-benchmark', version: '1' },
     run: { id: 'benchmark-run', scenario: 'read', platform: 'ios', status: 'completed',
       startedAt: '2026-09-14T00:00:00Z', finishedAt: '2026-09-14T00:00:01Z' },
     droppedEvents: 0,
     events: Array.from({ length: eventCount }, (_, index) => ({ sequence: index + 1, instance: 'main',
-      transport: 'method-channel', channel: 'runtime/channel', method: 'read', outcome: 'success' })),
+      transport: 'method-channel', channel, method, outcome: 'success' })),
   };
 }

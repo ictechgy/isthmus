@@ -117,6 +117,9 @@ producer impact paths across the bridge. A separate capture workflow caches decl
 input content and has passed a synthetic source test with real producers. See
 [cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
 real-application validation.
+To combine that context with recorded execution, pass runtime JSON files and
+`--expectations <checks.json>`. Preflight reports revision alignment, native candidates,
+and static boundaries missing observations or declared scenarios; existing static gaps remain visible.
 
 The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
 runs the preparation and producer commands declared in its configuration:

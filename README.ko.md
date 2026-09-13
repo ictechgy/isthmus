@@ -105,6 +105,8 @@ npx isthmus-cli --help
 브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
 실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
+runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
+전이 분석을 대조하고, native 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
 
 isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
 명시한 준비·producer 명령을 실행한다.

@@ -61,3 +61,31 @@ test('인수 실패는 읽기 전에 64, 입력 실패는 값 노출 없이 2다
     assert.equal(result.standardError.includes('private'), false);
   }
 });
+
+test('preflight 프로세스 경계가 runtime 기대·기록·누락과 읽기 실패를 함께 평가한다', async () => {
+  const context = JSON.parse(input);
+  const expectations = { format: 'bridge-expectations', version: 1, project: context.project, revision: context.revision,
+    checks: [{ id: 'capture', scenario: 'capture', platform: 'macos', transport: 'method-channel', channel: 'camera', method: 'photo' }] };
+  const runtime = { format: 'bridge-runtime', version: 1, project: context.project, revision: context.revision,
+    tool: { name: 'recorder', version: '1' }, run: { id: 'capture', scenario: 'capture', platform: 'macos', status: 'completed',
+      startedAt: '2026-09-14T00:00:00Z', finishedAt: '2026-09-14T00:00:01Z' }, droppedEvents: 0,
+    events: [{ sequence: 1, instance: 'main', transport: 'method-channel', channel: 'camera', method: 'photo', outcome: 'success' }] };
+  const inputs = new Map([['context', input], ['expectations', JSON.stringify(expectations)], ['runtime', JSON.stringify(runtime)]]);
+  const reader = async (path: string) => { const text = inputs.get(path); if (text === undefined) throw new Error('private'); return text; };
+  const base = ['preflight', 'context', '--expectations', 'expectations', '--strict', '--compact'];
+  const success = await runPreflightCommand([...base, 'runtime'], reader);
+  assert.equal(success.exitCode, 0);
+  assert.equal(JSON.parse(success.standardOutput).runtime.verification.status, 'passed');
+  const missing = await runPreflightCommand(base, reader);
+  assert.equal(missing.exitCode, 1);
+  assert.equal(JSON.parse(missing.standardOutput).runtime.verification.summary.unobservedChecks, 1);
+  const invalid = await runPreflightCommand([...base, 'private'], reader);
+  assert.equal(invalid.exitCode, 2);
+  assert.equal(invalid.standardOutput, '');
+  assert.equal(invalid.standardError.includes('private'), false);
+  inputs.set('expectations', '{}');
+  assert.equal((await runPreflightCommand([...base, 'runtime'], reader)).exitCode, 2);
+  let reads = 0;
+  assert.equal((await runPreflightCommand(['preflight', 'context', 'runtime'], async () => { reads++; return ''; })).exitCode, 64);
+  assert.equal(reads, 0);
+});

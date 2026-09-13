@@ -36,7 +36,14 @@ If inputs are missing, identify the required files and proceed with independent 
   inputs; inspect that scope before reusing the cache. The `.sources.json` sidecar retains
   original producer reports. Report paths are relative to `project`; verify existence
   before making local links. Code 1 preserves a usable report with gaps; `noChanges`
-  only means no modeled source selection. This command does not verify runtime behavior.
+  only means no modeled source selection. To also verify runtime evidence, use
+  `isthmus preflight <context.json> <runtime.json> [more...] --expectations <checks.json> --strict --compact`.
+  Read `runtime.aligned` as well as `runtime.verification.status`, `unobservedBoundaries`,
+  `uncoveredBoundaries`, and route `staticStatus`. Passing unrelated scenarios or matching
+  old expectations/logs cannot verify the current change. Basic/Pigeon runtime success
+  does not establish static Basic support, and address matches remain native candidates.
+  For a runtime-only dynamic route, follow `candidateKey` into `runtime.candidates` for
+  native source evidence; include `handlersOmitted` when the candidate list is capped.
 - Preflight a source change: check `isthmus --help` for `impact` (added after the
   published 0.5.0; currently requires a build of the development source).
   Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;

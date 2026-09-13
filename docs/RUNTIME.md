@@ -3,7 +3,8 @@
 개발 소스의 `verify-runtime`은 명시한 시나리오에서 실제 관찰한 통신 결과를 검증한다.
 아직 npm 0.5.0에는 없다. [Flutter 수집기](../packages/isthmus_runtime/README.md)는 앱의
 BinaryMessenger에 주입해 실제 outgoing 호출을 기록한다. 정적 후보 연결은
-[impact의 런타임 입력](IMPACT.md#런타임-관찰-연결)을 사용한다.
+[impact의 런타임 입력](IMPACT.md#런타임-관찰-연결)과
+[preflight의 실행 대조](PREFLIGHT.md#전이-분석과-runtime-대조)를 사용한다.
 
 아래 fixtures/runtime JSON은 합성 소비자 검증이다. 실제 native 검증은 별도 절차로 구분한다.
 
@@ -17,6 +18,8 @@ node dist/cli/main.js verify-runtime \
 
 ```bash
 node scripts/verify-flutter-runtime.mjs /path/to/flutter/bin/flutter
+# 실제 producer와 전이 분석까지 연결할 때(최신 isthmus build 필요)
+node scripts/verify-flutter-runtime.mjs /path/to/flutter/bin/flutter dist/cli/main.js /path/to/cartograph /path/to/dartograph/bin/dartograph.dart
 ```
 
 macOS·Xcode·CocoaPods·Flutter SDK가 필요하며 최초 준비에는 네트워크를 사용한다. 스크립트는 임시 앱을
@@ -24,10 +27,17 @@ macOS·Xcode·CocoaPods·Flutter SDK가 필요하며 최초 준비에는 네트�
 `canLaunchUrl`만 실행한다. 자체 Swift MethodChannel/BasicMessageChannel도 함께 검사한다.
 공개 의존성은 pub.dev에서 해결한다. 앱·Pods 배포 대상은 macOS 12이며 시스템/사용자 앱 설정은 수정하지 않는다.
 
-성공 3개 기대, 네이티브 error·missing-handler·timeout의 구분, 앱 Future의 원래 지연 응답,
+성공 4개 기대(동적 호출·전이 소비자 호출·자체 Basic·공개 Pigeon), 네이티브 error·missing-handler·timeout의 구분, 앱 Future의 원래 지연 응답,
 pending 실행의 미완료와 payload 미기록을 확인한다. 소스·의존성 잠금·SDK revision으로
 검증 revision을 만들며, 임시 앱은 정리하고 기록 JSON과 검증 요약 디렉터리를 출력한다.
 이 검사는 실제 macOS native 통신이며 iOS/Android 앱 검증으로 확대 해석하지 않는다.
+
+producer 인자를 주면 실제 Xcode compiler index와 양쪽 producer로 별도 Swift helper에서
+Dart runtimeBridge→runtimeService→runtimeScreen까지의 경로를 확인한다. context의 입력
+해시를 앱의 recorder revision으로 전달하고 같은 revision의 runtime과 preflight를 대조한다.
+동적 echo와 전이 소비자의 echo는 별도 시나리오·recorder로 기록해 다른 호출 위치를 공유하지 않는다.
+Basic 정적 미지원·실행하지 않은 경계 때문에 preflight strict가 1인 경우도 근거로 보존한다.
+선택적 마지막 인자로 준비된 dartograph 실행 파일을 주면 소스 실행의 반복 JIT 비용을 줄일 수 있다.
 
 검증 SDK는 Flutter 3.32.2/Dart 3.8.1이다. 최초 SDK/공개 패키지 준비 시간과 소비자 CLI
 시간은 분리한다. 같은 앱의 첫 빌드와 변경 없는 재빌드를 둘 다 측정해 `steps`에 남긴다.
@@ -76,6 +86,11 @@ flutter test tool/benchmark_recorder.dart --no-pub
 `allowedOutcomes`는 선택 사항이며 `success`, `error`, `missing-handler`, `timeout` 중
 1~4개의 중복 없는 terminal outcome만 허용한다. 생략하면 `success`만 허용하고,
 `pending`은 응답 대기 상태라 기대 결과로 지정할 수 없다.
+
+Flutter recorder에서 timeout은 관찰 제한시간을 넘겼다는 뜻이다. 늦은 응답이나 예외는 앱에
+그대로 전달하고 기록의 timeout은 유지한다. 실제 Future가 모두 끝난 뒤 finish하면 completed가
+될 수 있지만, 응답이 아직 남은 상태로 finish하면 incomplete다. 따라서 명시한 timeout 기대가
+아직 진행 중인 통신까지 허용하지 않는다. finish 후 기록은 나중 응답으로 변경되지 않는다.
 
 ## 실행 기록
 
