@@ -28,9 +28,16 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 ## 상태
 
-**0.4.1.** 0.4.0에 구조·보안·성능 리뷰 반영(패치): `mixed-targets` 단어 경계 일치,
-짝 없는 서러게이트 사전 거부(`toWellFormed()`), retentions 호출자 총예산(100만)과
-할당 절감, 빈 플래그 값(exit 64) 거부, atomic-write(0o600) 경화를 적용했다.
+**0.5.0.** CLI 사용성을 통일하고 진단 가독성을 높였다: 모든 명령에서 옵션이 입력
+파일 앞뒤 어디에 와도 동작하고(`-`로 시작하는 경로는 `--` 구분자 뒤에 쓴다),
+`-h`/`--help`는 임의 위치에서 이기며 `help <command>`가 명령별 사용법을 낸다.
+조인이 보류되면 어느 명령이든 관찰한 fact 수·문서 수를 함께 알리고
+(check·graph·query·retentions·diff), query의 `notFound`·`ambiguous`는 원인 한 줄을
+stderr에 출력한다. query `qualifiedName`은 `:`까지 이스케이프해 첫 `:`와 `#` 기준
+분해가 가역이다. 내부로는 공유 CLI 인프라를 check-command에서 분리하고 SARIF 지문
+해싱을 주입해 report 계층이 Node 내장 모듈에 의존하지 않으며, diff 문서 형태를
+`BridgeDiffDocument`로 명시했다. 출력 문서·종료 코드·필드는 불변이고 0.4.1과 값이
+달라지는 것은 이름에 `:`를 포함하는 채널·메서드의 `qualifiedName`뿐이다.
 0.4.0의 추가 사항 — GitHub code scanning용 check SARIF 2.1.0 렌더링(`check --format sarif`,
 additive, 소스 줄 이동에 강한 논리 키 지문), 브리지가 없는 프로젝트와 아무것도
 관찰하지 못한 실행을 구분하는 check summary 관찰량(`observedFacts`·`observedLimitations`),

@@ -30,10 +30,17 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.4.1.** Hardens 0.4.0 with structure, security, and performance review follow-ups:
-word-boundary matching for `mixed-targets`, lone surrogate rejection via `toWellFormed()`,
-a 1,000,000 caller budget for retention documents with pre-slice allocation savings, empty
-flag validation (exit 64), and atomic-write permission hardening (`0o600`).
+**0.5.0.** Makes the CLI consistent and its diagnostics more legible: options may appear
+before or after the input files in every command (with a `--` escape for `-`-leading paths),
+`-h`/`--help` wins from any position alongside `help <command>`, deferred joins report how
+many observed facts could not be joined (check, graph, query, retentions, and diff),
+`notFound`/`ambiguous` queries state their cause on stderr, and query `qualifiedName` escapes
+`:` so splitting on the first `:` and `#` always recovers the names. Internally, shared CLI
+infrastructure moved out of check-command, the SARIF fingerprint hash is injected so the
+report layer stays free of Node built-ins, and the diff document shape is named
+(`BridgeDiffDocument`). Output documents, exit codes, and fields are unchanged — the only
+value that differs from 0.4.1 is the `qualifiedName` of channels or methods whose names
+contain `:`.
 The 0.4.0 additions — SARIF 2.1.0 rendering of check results for GitHub code scanning
 (`check --format sarif`, additive, with logic-key fingerprints that survive source line
 moves), observation volume in the check summary (`observedFacts`, `observedLimitations`),
