@@ -44,6 +44,8 @@ If inputs are missing, identify the required files and proceed with independent 
   does not establish static Basic support, and address matches remain native candidates.
   For a runtime-only dynamic route, follow `candidateKey` into `runtime.candidates` for
   native source evidence; include `handlersOmitted` when the candidate list is capped.
+  `passedChecks` counts expectations, not distinct scenarios. Count unique scenario/platform
+  pairs separately when asked for scenario coverage; multiple checks can share one scenario.
 - Preflight a source change: check `isthmus --help` for `impact` (added after the
   published 0.5.0; currently requires a build of the development source).
   Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;

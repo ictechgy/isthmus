@@ -46,6 +46,8 @@ capture revision으로 검증했다. 아래의 합성 source 검증과 구별한
   passed/정렬 일치를 구분하고, Basic 공백과 현재 없는 source project를 확인해 잘못된 로컬
   링크를 만들지 않았다. 전체 조사에는 읽기/진단 17개(8개 orchestration call), jq shape 실수
   2개가 있어 대형 JSON의 안정된 요약/개별 경로 조회는 여전히 효율 개선 근거가 된다.
+  검증자 답변에서 4개 check를 4개 scenario로 부른 표현은 수정이 필요했다. 실제 scenario는
+  success·chain 두 개이며 skill에 check 수와 scenario/platform 쌍의 수를 구분하도록 보강했다.
 
 이전 단계: `preflight` CLI와 별도 producer 수집 workflow 연결.
 현재 계약·실행 방법은 [PREFLIGHT.md](PREFLIGHT.md), 실용성 조사 당시 판단은
