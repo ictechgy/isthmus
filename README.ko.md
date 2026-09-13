@@ -101,7 +101,13 @@ npx isthmus-cli --help
 실제 macOS 앱의 Swift 핸들러와 `url_launcher_macos 3.2.2`의 Pigeon 생성 API로 검증했다.
 언어 내부 전이 영향 연결과 CI 스냅샷 자동 갱신은 개발 중이다.
 
-isthmus는 자매 도구를 직접 실행하지 않는다. 각 도구가 만든 JSON 파일을 전달하면 된다.
+개발 소스의 `preflight <context.json> --strict --compact`는 producer의 전이 영향과
+브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
+실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
+[언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
+
+isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
+명시한 준비·producer 명령을 실행한다.
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json

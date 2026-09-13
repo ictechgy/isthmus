@@ -6,6 +6,14 @@
 
 ### Added
 
+- `preflight <context.json>`: producer 전이 영향과 브리지 근거를 연결하고 가장 가까운
+  변경 심볼까지의 경로·검토 파일·공백을 출력한다. 실제 Dartograph/Cartograph의 합성
+  source→compiler index→전이 분석 연결을 검증했다. 앱 전체 탐지율 검증과는 구분한다.
+- 별도 `scripts/capture-preflight.mjs`: 명시된 소스·설정·producer 입력의 내용 해시,
+  수집 전후 일치 확인, 캐시 복원, Git 변경/rename/미추적 소스 선택, 원래 producer 근거 저장.
+  workflow 회귀 검사를 npm verify에 포함하고 실행 스크립트와 사용 문서를 패키지에 넣었다.
+- runtime 기대의 `allowedOutcomes`: 정상적인 실패 시나리오를 명시적으로 검증하며
+  기대 실패·비기대 실패 집계를 나눈다. 미완료·pending·stale·유실의 검증 조건은 유지한다.
 - `impact --file|--symbol|--changes`: 수정 대상에서 관련 브리지 호출·핸들러·배선과
   검토 파일·진단을 찾는다. 미관찰·동적/미귀속 선택을 보존하며 `--strict`는 관련
   오류뿐 아니라 분석 공백도 실패시킨다. `--compact`는 JSON 정보 손실 없이 공백만 줄인다.

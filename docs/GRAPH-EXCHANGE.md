@@ -1,6 +1,7 @@
 # 브리지 사실 교환 형식 (버전 1)
 
-isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.md)과
+isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.md),
+[언어 간 전이 분석과 수집](PREFLIGHT.md),
 [런타임 통신 검증](RUNTIME.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
 변경하지 않는다. 런타임에서 지원하는 transport를 정적 producer 지원으로 해석하지 않는다.
 

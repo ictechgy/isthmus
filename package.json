@@ -28,6 +28,10 @@
   "files": [
     "dist",
     "Skills",
+    "scripts/capture-preflight.mjs",
+    "scripts/run-child.mjs",
+    "docs/PREFLIGHT.md",
+    "docs/RUNTIME.md",
     "LICENSE",
     "README.md",
     "README.ko.md"
@@ -43,7 +47,7 @@
     "verify:build": "node scripts/verify-build-contract.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

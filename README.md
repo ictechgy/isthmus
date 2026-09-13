@@ -112,7 +112,14 @@ in a real macOS app with Swift handlers and the Pigeon-generated API of
 `url_launcher_macos 3.2.2`; transitive language-internal impact and CI snapshot automation
 are still being developed.
 
-isthmus never runs the sister tools itself. You hand it the JSON files they produced:
+Development source now exposes `preflight <context.json> --strict --compact` to compose
+producer impact paths across the bridge. A separate capture workflow caches declared
+input content and has passed a synthetic source test with real producers. See
+[cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
+real-application validation.
+
+The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
+runs the preparation and producer commands declared in its configuration:
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json

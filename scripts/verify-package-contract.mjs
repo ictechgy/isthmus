@@ -39,6 +39,10 @@ for (const requiredPath of [
   'README.md',
   'Skills/isthmus/SKILL.md',
   'dist/cli/main.js',
+  'dist/cli/preflight-command.js',
+  'scripts/capture-preflight.mjs',
+  'scripts/run-child.mjs',
+  'docs/PREFLIGHT.md',
   'package.json',
 ]) {
   verify(paths.has(requiredPath), `artifact file ${requiredPath}`);

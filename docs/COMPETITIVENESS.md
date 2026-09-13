@@ -3,6 +3,31 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
+2026-09-14 최신 구현: `preflight` CLI와 별도 producer 수집 workflow가 연결됐다.
+현재 계약·실행 방법은 [PREFLIGHT.md](PREFLIGHT.md), 실용성 조사 당시 판단은
+[오픈소스 가능성·실패 요인 10개·경쟁/대체 수단](FEASIBILITY.md)에 있다.
+
+- `npm run verify` 통과: 제품 367개·Phase 0 15개·수집 workflow 6개,
+  line/branch/functions 98.35/92.54/95.38, build/CLI/package 통과.
+  로그 `/tmp/isthmus-preflight-capture-verify.log`.
+- 실제 Dartograph와 Cartograph/Swift compiler index로 helper→handler→channel→Dart caller→
+  service→screen 경로와 다섯 소스 파일을 확인했다. 첫 수집 23.811초, 동일 입력 캐시 3.735초,
+  Swift 소스 변경 후 재수집 18.458초. 코드 변경 시 revision이 바뀌고 영향 경로는 유지됐다.
+  근거 `/private/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-preflight-evidence-UjoiTx/verification.json`.
+  합성 소스와 Flutter 타입 stub을 쓴 실제 producer 검증이며 native IPC 검증이 아니다.
+- 수집기는 명시된 소스/설정·producer 구현·isthmus 코드·주요 toolchain 환경의 내용 해시를
+  사용한다. 캐시 변조·수집 중 변경·소스/도구 변경·삭제·Git rename을 검증했고 raw producer
+  근거를 sidecar/캐시에 보존한다. 범위는 `declared-inputs`이며 실제 앱의 입력 목록 완전성은 미검증이다.
+- 실제 임시 Git 저장소에서 since 선택·rename 양쪽·미추적 소스를 검증했다. 설정/리소스
+  변경은 별도 검토로 남긴다. iOS CI 설정은 문서 예시이며 실제 앱의 원격 CI 실행은 남아 있다.
+- 로컬 tarball을 네트워크 없이 격리 설치해 bin의 preflight→Dart screen, 도움말,
+  수집 모듈 import를 확인했다. skill 구조 검증도 통과했다. npm 발행은 하지 않았다.
+- adapter가 실제 Dartograph의 정수 truncation·중첩 미귀속 목록·선언 위치와 query 전체 ID를
+  처리하도록 고쳤다. Cartograph의 미관찰 선택과 runtime review를 공백으로 보존한다.
+
+아래 이전 검증 수치와 negative outcome 정책은 해당 시점의 기록이다. 공개 앱의 적용 범위,
+Pigeon/Basic 정적 연결, runtime+전이 통합, 실제 앱 CI 및 최종 PR GLM 리뷰는 여전히 남아 있다.
+
 ## 완료 기준
 
 1. 특정 파일·심볼 변경 전에 직접·전이 영향을 찾고 원인이 되는 경로와 양쪽 소스 위치를
@@ -19,7 +44,7 @@
 ## 구현 순서
 
 - [x] 파일·심볼·변경 목록에서 브리지 영향과 관련 진단을 찾는 `impact` 명령.
-- [ ] 언어 내부 의존성 producer 연결과 전이 영향 경로. 단순한 브리지 영향만으로 1번 완료 금지.
+- [x] 언어 내부 의존성 producer 연결과 전이 영향 경로(합성 소스·실제 producer). 공개 앱 적용 범위 검증은 남음.
 - [x] 영향 질의용 배포 skill·compact/변경 목록 인터페이스·실제 CLI forward test.
 - [x] 런타임 관찰 계약·Flutter 수집기·정적 후보 연결·시나리오 누락과 실패 검증(macOS).
 - [ ] Pigeon/BasicMessageChannel 및 공개 프로젝트에서 적용 범위 실측.
@@ -97,19 +122,21 @@
 
 ## 바로 이어서 할 일
 
-1. cartograph의 진행 중 impact 출력 상태를 재확인한 뒤 helper→Swift handler→Dart caller와
-   Dart 내부 소비자까지 전이 연결한다. producer 고유 신원·경로·한계를 보존한다.
-   `ImpactDocument`에는 아직 project/revision/fingerprint가 없다. `SymbolQuery.Subject`는
-   usr와 선언 위치가 있다. Dart bridge symbol은 AST의 짧은 qualifiedName뿐이며 constructor/
-   extension에서 누락된다(`lib/src/index/bridge_index.dart`의 `_enclosingSymbol`). query의 usr는
-   graph node id다. query found + 유일 신원/소스 일치로 연결하고 가장 가까운 선언 추측은 금지.
-2. Pigeon/Basic의 정적 producer 지원과 실제 앱 producer→runtime→impact 통합을 검증한다.
+1. 공개 앱·플러그인의 실제 producer→preflight 적용 범위를 측정한다. 현재 검증 실행은
+   `node scripts/verify-preflight-producers.mjs <cartograph-bin> <dartograph.dart> <flutter-bin>`.
+   자매 저장소는 각각 `feature/change-impact-workflow`, `feat/impact-precheck`에서 다른
+   작업이 진행 중이므로 변경을 보존한다. Cartograph의 impact는 files/symbols 혼용 금지·
+   limit 최대 10,000이다. Dart caller는 batch query found+유일 신원+같은 파일로 연결한다.
+   constructor/extension의 bridge symbol 부재는 아직 공백이다. producer 원문은 sidecar에 있다.
+2. Pigeon/Basic의 정적 producer 지원과 실제 앱 producer→runtime→preflight 통합을 검증한다.
    runtime Basic 성공을 정적 Basic 지원으로 표기하지 않는다. iOS/Android 실검증은 아직 없다.
-3. 정상적인 negative 시나리오의 의도된 오류도 검증할 수 있게 기대 outcome 정책을 검토한다.
-   현재 verifier는 모든 error/missing-handler/timeout을 실패로 센다. 의도된 실패를 숨기는
-   blanket ignore 대신 독립 기대에 명시하는 방향이 필요하다.
-4. CI에서 양쪽 사실·실행 revision·변경 목록을 갱신하는 재현 workflow와 캐시 무효화/전체
-   소요 시간을 검증한다. 필요하면 증분 또는 장기 질의 세션을 추가한다.
+3. 구현된 `allowedOutcomes`를 실제 native 실패 시나리오에도 적용한다. 기본 success와
+   명시된 terminal 실패를 구분하고 expected/unexpectedFailedCalls를 유지한다.
+   기존 native 하네스의 기본 실패 감지는 검증됐으며 새 기대 정책의 native 실행은 남아 있다.
+4. 실제 앱에서 수집 설정의 입력 범위와 native prepare 명령·index 신선도를 검증한다.
+   현재 내용 해시는 명시된 입력만 커버한다. producer를 소스로 실행하면 매번 약 4초가
+   소요되므로 설치된 실행 파일 또는 별도 출력 위치의 컴파일본으로 전체/반복 시간을 비교한다.
+   외부 SDK·설정·로컬 패키지까지 포함한 입력 목록, 공개 사례 CI 재현을 완성한다.
 5. 공개 프로젝트·설치본·GLM PR 리뷰까지 통과한 뒤 네 사용자 요구 전체를 다시 감사한다.
 
 아직 전체 목표 미완료. 전이 영향 연결·더 넓은 runtime/정적 coverage·CI 자동 갱신과

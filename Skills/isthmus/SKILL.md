@@ -21,6 +21,22 @@ If inputs are missing, identify the required files and proceed with independent 
 
 ## Choose the requested operation
 
+- Trace transitive cross-language impact when a current producer context is available
+  (development source, after 0.5.0):
+  `isthmus preflight <context.json> --strict --compact`.
+  Add `--revision <expected-capture-revision>` when the workflow supplied that revision.
+  Read `roots`, `affected` (`via` points toward the selected root), `boundaries`,
+  `reviewFiles`, and all limitations in one response. Distinguish language use edges
+  from bridge evidence; dependency boundaries do not imply changes to every caller
+  of an unchanged native handler. Do not repeat queries for evidence already present.
+  Use the source-generation workflow to refresh stale context; do not hand-author
+  missing producer identities or analyses. The separate `scripts/capture-preflight.mjs`
+  workflow executes configured preparation and producer commands, so use the project's
+  established configuration and existing authorization. Its fingerprint covers declared
+  inputs; inspect that scope before reusing the cache. The `.sources.json` sidecar retains
+  original producer reports. Report paths are relative to `project`; verify existence
+  before making local links. Code 1 preserves a usable report with gaps; `noChanges`
+  only means no modeled source selection. This command does not verify runtime behavior.
 - Preflight a source change: check `isthmus --help` for `impact` (added after the
   published 0.5.0; currently requires a build of the development source).
   Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;
@@ -65,6 +81,9 @@ If inputs are missing, identify the required files and proceed with independent 
   `passed` covers only declared scenarios; missing, stale, dropped or pending evidence
   cannot establish coverage. `evidenceOmitted` is display truncation; `droppedEvents`
   means collection loss. Do not fabricate logs when the runtime recorder is unavailable.
+  Expected negative scenarios can declare `allowedOutcomes` explicitly; omitted means
+  success only. Preserve expected and unexpected failure counts. Pending calls, stale
+  runs, and missing observations cannot be allowed outcomes.
 - Supply Swift retention evidence, when requested:
   `isthmus retentions <dart.json> <swift.json> --for cartograph`.
   Save stdout to a new private temporary file, check successful output, then pass its path to
@@ -73,7 +92,7 @@ If inputs are missing, identify the required files and proceed with independent 
 ## Interpret and finish
 
 Code 0 means the command ran successfully, not that code is safe to delete.
-Code 1 from check/diff/impact/verify-runtime strict is a finding or evidence gap to report;
+Code 1 from check/diff/impact/preflight/verify-runtime strict is a finding or evidence gap to report;
 query code 64 with
 `notFound`/`ambiguous` is a usable answer, while usage errors require corrected arguments.
 Code 2 indicates unreadable, invalid, or deferred inputs: explain the cause category and next step.

@@ -31,7 +31,23 @@ verifyGraph();
 verifyDiff();
 verifyImpact();
 verifyRuntime();
+verifyPreflight();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
+
+/** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
+function verifyPreflight() {
+  const fixture = fileURLToPath(new URL('../fixtures/preflight/context.json', import.meta.url));
+  const args = ['preflight', fixture, '--strict', '--compact'];
+  const result = run(args);
+  verify(result.status === 0, 'preflight observed exit code');
+  const report = JSON.parse(result.stdout);
+  verify(report.format === 'isthmus-preflight' && report.reviewFiles.includes('lib/screen.dart'), 'preflight transitive consumer');
+  verify(report.complete === false, 'preflight scope');
+  verify(run([...args, '--revision', 'other']).status === 1, 'preflight stale context');
+  verify(run(['preflight', dartPath]).status === 2, 'preflight invalid context');
+  verify(run(['preflight']).status === 64, 'preflight usage');
+  verify(run(['help', 'preflight']).stdout.startsWith('Usage: isthmus preflight'), 'preflight help');
+}
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */
 function verifyImpact() {

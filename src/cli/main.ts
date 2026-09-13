@@ -10,6 +10,7 @@ import { diffUsage, runDiffCommand } from './diff-command.ts';
 import { queryUsage, runQueryCommand } from './query-command.ts';
 import { impactUsage, runImpactCommand } from './impact-command.ts';
 import { runtimeUsage, runRuntimeCommand } from './runtime-command.ts';
+import { preflightUsage, runPreflightCommand } from './preflight-command.ts';
 import {
   retentionUsage,
   runRetentionsCommand,
@@ -24,6 +25,7 @@ const commandUsages = new Map([
   ['diff', diffUsage],
   ['query', queryUsage],
   ['impact', impactUsage],
+  ['preflight', preflightUsage],
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
 ]);
@@ -34,6 +36,7 @@ Commands:
   check        Report unmatched bridge calls and handlers
   query        Find both sides of a channel or method
   impact       Inspect bridge dependencies before changing files or symbols
+  preflight    Trace cross-language impact from producer analysis context
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change
@@ -117,6 +120,8 @@ async function dispatchCommand(
       return runQueryCommand(commandArguments, readTextFile);
     case 'impact':
       return runImpactCommand(commandArguments, readTextFile);
+    case 'preflight':
+      return runPreflightCommand(commandArguments, readTextFile);
     case 'verify-runtime':
       return runRuntimeCommand(commandArguments, readTextFile);
     case 'retentions': {
