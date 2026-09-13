@@ -1,9 +1,9 @@
 ---
 name: isthmus
 description: >-
-  Trace Flutter Dart-to-Swift bridge callers, compare bridge snapshots, or produce
-  cartograph retention evidence with isthmus. Use for native MethodChannel handler
-  changes; React Native and Kotlin extraction are not supported.
+  Inspect file or symbol changes across Flutter Dart-to-Swift bridges, trace callers,
+  compare snapshots, or produce cartograph retention evidence. Use before changing
+  MethodChannel handlers or their Dart callers; RN and Kotlin extraction are not supported.
 ---
 
 # isthmus
@@ -21,6 +21,20 @@ If inputs are missing, identify the required files and proceed with independent 
 
 ## Choose the requested operation
 
+- Preflight a source change: check `isthmus --help` for `impact` (added after the
+  published 0.5.0; currently requires a build of the development source).
+  Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --compact`;
+  for a precise producer symbol use `--symbol <qualifiedName-or-usr>` instead.
+  For multiple files, pass `--changes <json>` with
+  `{"format":"isthmus-changes","version":1,"files":["lib/camera.dart","ios/Camera.swift"]}`.
+  Read `reviewFiles`, `methods` (callers and handlers), `issues`, `selectedFacts`,
+  `unmatchedSelectors`, and `relevantLimitations` in one response. Channel wiring
+  changes include every observed method on that channel. Compact output loses no evidence.
+  `--strict` fails on related errors, extraction gaps and unobserved selections.
+  For deleted code use the pre-change snapshot. `scope: bridge` and `complete: false`
+  mean this does not yet cover transitive language-internal or runtime dependencies.
+  If the installed CLI lacks impact, use `query` on bridge names found in the source
+  and report that file-based preflight requires the newer implementation.
 - Audit the boundary: `isthmus check <dart.json> <swift.json> [--strict]`.
   Read `summary`, each `issues[].code/severity/evidence`, and `limitations`.
   `-unverified` codes are undecidable findings, not clean results.

@@ -290,7 +290,7 @@ function validateLocation(value: unknown, index: number): void {
 }
 
 /** 절대·상위 경로와 제어 문자를 제외한 프로젝트 상대 경로인지 확인한다. */
-function isProjectRelativePath(value: unknown): value is string {
+export function isProjectRelativePath(value: unknown): value is string {
   if (!isNonEmptyString(value)) return false;
   if (/^(?:[/\\]|[A-Za-z]:)/u.test(value)) return false;
   if (controlCharacterPattern.test(value) || hasUnpairedSurrogate(value)) {

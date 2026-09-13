@@ -29,7 +29,24 @@ verifyQuery();
 verifyMissingQuery();
 verifyGraph();
 verifyDiff();
+verifyImpact();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
+
+/** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */
+function verifyImpact() {
+  const args = ['impact', '--file', 'ios/Runner/CameraPlugin.swift', dartPath, swiftPath];
+  const result = run([...args, '--compact']);
+  verify(result.status === 0, 'impact exit code');
+  const report = JSON.parse(result.stdout);
+  verify(report.format === 'isthmus-impact' && report.status === 'observed', 'impact document');
+  verify(report.methods.some(({ method }) => method === 'takePhoto'), 'impact caller evidence');
+  verify(report.reviewFiles.includes('lib/camera_bridge.dart'), 'impact review files');
+  verify(report.complete === false && report.limitations.length > 0, 'impact limitations');
+  verify(run([...args, '--strict']).status === 1, 'impact strict gaps');
+  verify(run(['impact', '--file', 'deleted.dart', dartPath, swiftPath, '--strict']).status === 1,
+    'impact unobserved selection');
+  verify(run(['help', 'impact']).stdout.startsWith('Usage: isthmus impact'), 'impact help');
+}
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
 function verifyUsageError() {

@@ -101,6 +101,11 @@ Do not use `npx isthmus` — that installs a different package with the same nam
 
 ## Usage
 
+Development source adds change preflight with `impact --file`, `--symbol`, or
+`--changes`, plus lossless `--compact` JSON and a gap-aware `--strict` gate.
+This is not in the published 0.5.0 package yet. See [change preflight](docs/IMPACT.md)
+for the build command, contract, and current bridge-only scope.
+
 isthmus never runs the sister tools itself. You hand it the JSON files they produced:
 
 ```bash

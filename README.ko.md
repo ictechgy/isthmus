@@ -93,6 +93,10 @@ npx isthmus-cli --help
 
 ## 사용
 
+개발 소스에는 `impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는
+`--compact`, 분석 공백도 실패시키는 `--strict`가 추가됐다. 아직 npm 0.5.0 발행본에는
+없다. 빌드·계약·현재 브리지 한정 범위는 [변경 사전 점검](docs/IMPACT.md)을 참조한다.
+
 isthmus는 자매 도구를 직접 실행하지 않는다. 각 도구가 만든 JSON 파일을 전달하면 된다.
 
 ```bash
