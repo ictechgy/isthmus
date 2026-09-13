@@ -35,6 +35,7 @@ const select = (files: string[] = [], symbols: string[] = []) =>
 test('Swift 파일 변경은 모든 관련 Dart 호출자와 기존 진단을 찾고 다른 채널은 제외한다', () => {
   const report = createBridgeImpact([dart, swift], select(['ios/Camera.swift']));
   assert.equal(report.status, 'observed');
+  assert.equal(report.project, '/project');
   assert.deepEqual(report.methods.map(({ method }) => method), ['recordVideo', 'takePhoto']);
   assert.deepEqual(report.methods.find(({ method }) => method === 'takePhoto')?.invocations,
     [{ platform: 'dart', location: location('lib/photo.dart', 5) }]);

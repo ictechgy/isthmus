@@ -34,6 +34,9 @@ isthmus impact --changes changes.json dart.json swift.json --strict
 
 `isthmus-impact` v1은 다음을 보존한다.
 
+- `project`: 증거 상대 경로의 기준. CLI 실행 디렉터리와 동일하다고 추측하지 않는다.
+  파일 존재를 확인하지 않은 snapshot 위치를 실제 로컬 파일 링크로 만들지 않는다.
+
 - `selection` / `unmatchedSelectors`: 요청 목록과 관찰하지 못한 선택. 삭제된 코드는
   삭제 전 snapshot으로 조회한다. 새 snapshot에서 없다는 것은 영향이 없다는 증거가 아니다.
 - `selectedFacts`: 실제 선택된 위치·플랫폼·target·종류·심볼·동적 여부. 동적/미귀속 사실도
@@ -59,9 +62,35 @@ isthmus impact --changes changes.json dart.json swift.json --strict
 
 이 명령의 strict는 check strict보다 분석 공백에 엄격하다. 기존 check/diff 동작은 유지한다.
 
+## 런타임 관찰 연결
+
+```bash
+isthmus impact --file lib/dynamic.dart dart.json swift.json \
+  --runtime runtime.json --revision current-source-revision --compact
+```
+
+두 옵션은 함께 지정한다. runtime의 project는 정적 입력과 같아야 하고 revision은 호출자가
+선언한 분석 revision과 같아야 한다. 정적 bridge-facts v1에는 revision 필드가 없으므로,
+CI/호출자가 같은 소스에서 사실을 생산했다는 문맥을 제공해야 한다. 소비자가 이를 추측하지 않는다.
+
+선택된 호출 파일·정확한 fact 위치 또는 선택된 정적 주소와 관련된 런타임 이벤트를 모은다.
+동적 Dart 호출에서 관찰된 구체적인 MethodChannel 주소로 Swift 핸들러 후보를 찾으면
+`reason: runtime-observation`으로 관련 메서드와 검토 파일을 넓힌다. 정적 invocation 사실을
+합성하지 않고 `runtime` 필드에 별도 근거를 둔다. 정적 미해석 수와 기존 진단은 그대로 남는다.
+
+런타임 run의 platform이 ios/macos이고 transport가 MethodChannel인 경우에만 현재 Swift
+정적 핸들러 후보를 찾는다. native 심볼이나 엔진이 실제 실행됐다고 확정하지 않는다.
+BasicMessageChannel과 다른 OS는 `unsupported`, 정적 후보가 없으면 `unobserved`다.
+revision이 오래되면 이벤트를 연결하지 않고 `stale`로 보존한다.
+
+주소·인스턴스별 호출을 묶고 호출 위치는 20개까지만 보여 주며 `callersOmitted`를 기록한다.
+`reviewFiles`는 표시 생략과 무관하게 관찰한 전체 관련 파일을 유지한다. 런타임 실패·대기·
+중단·유실·오래된 기록·관련 관찰 부재·정적 후보 공백도 strict 실패 조건이다.
+
 ## 현재 경계
 
 `scope: "bridge"`, `complete: false`는 항상 명시한다. 현재 기능은 브리지에 직접 등장한
 코드의 변경 범위를 찾는다. 언어 내부 helper→handler→Dart 화면으로 이어지는 전이 경로,
-실제 엔진·등록 수명·런타임 데이터·테스트 시나리오의 포괄성은 아직 검증하지 않는다.
+실제 엔진·등록 수명과 테스트 시나리오의 포괄성은 아직 검증하지 않는다. 런타임 관찰은
+위 방식으로 후보를 넓히는 근거이며, 전체 의존성의 완전성이나 실제 핸들러 실행 증명은 아니다.
 이들은 [전체 목표](COMPETITIVENESS.md)의 남은 구현이며 이 명령의 존재로 완료 처리하지 않는다.

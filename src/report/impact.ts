@@ -7,6 +7,8 @@ import type { BridgeEndpoint, JoinLimitation, MatchedChannel, MatchedMethod } fr
 import { createCheckReport } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
+import { collectRuntimeImpact, hasRuntimeImpactGaps } from './runtime-impact.ts';
+import type { ImpactRuntimeInput, RuntimeImpactEvidence } from './runtime-impact.ts';
 
 /** 선택된 원본 사실. 조인 불가 사실도 위치·식별자와 함께 보존한다. */
 export interface SelectedBridgeFact extends BridgeEndpoint {
@@ -18,7 +20,7 @@ export interface SelectedBridgeFact extends BridgeEndpoint {
 }
 
 /** 채널 배선 변경은 같은 채널의 모든 메서드에 영향을 준다. */
-export type ImpactReason = 'channel-wiring' | 'method';
+export type ImpactReason = 'channel-wiring' | 'method' | 'runtime-observation';
 
 /** 변경과 관련된 채널 생성·등록 위치다. */
 export interface ImpactChannel extends MatchedChannel {
@@ -34,6 +36,8 @@ export interface ImpactMethod extends MatchedMethod {
 export interface BridgeImpactReport {
   readonly format: 'isthmus-impact';
   readonly version: 1;
+  /** 증거 상대 경로의 기준이다. CLI를 실행한 디렉터리와 같다고 추측하지 않는다. */
+  readonly project: string;
   readonly status: 'observed' | 'unobserved';
   readonly scope: 'bridge';
   /** 전체 프로그램·런타임 도달성의 완전성을 주장하지 않는다. */
@@ -59,12 +63,14 @@ export interface BridgeImpactReport {
   readonly limitations: readonly JoinLimitation[];
   readonly relevantLimitations: readonly JoinLimitation[];
   readonly inputs: ReadonlyArray<Pick<BridgeFactsDocument, 'tool' | 'platform' | 'target' | 'generatedAt'>>;
+  readonly runtime?: RuntimeImpactEvidence;
 }
 
 /** 파일·심볼에서 관련 브리지 키를 역탐색하고 채널 배선 변경의 범위를 확장한다. */
 export function createBridgeImpact(
   documents: readonly BridgeFactsDocument[],
   requested: ImpactSelection,
+  runtimeInput?: ImpactRuntimeInput,
 ): BridgeImpactReport {
   const selection = parseImpactSelection({ format: 'isthmus-changes', version: 1, ...requested });
   const joined = joinBridgeDocuments(documents);
@@ -92,13 +98,23 @@ export function createBridgeImpact(
       methodKeys.add(methodKey(fact.target, fact.channel, fact.method));
     }
   }
+  const staticChannelKeys = new Set(channelKeys);
+  const runtime = runtimeInput === undefined ? undefined
+    : collectRuntimeImpact(joined, documents[0]?.project, selection, selectedFacts, runtimeInput);
+  const runtimeMethodKeys = new Set<string>();
+  for (const route of runtime?.routes ?? []) {
+    if (route.staticStatus !== 'candidates' || route.method === undefined) continue;
+    channelKeys.add(channelKey('flutter', route.channel));
+    runtimeMethodKeys.add(methodKey('flutter', route.channel, route.method));
+  }
   const methods: ImpactMethod[] = [
     ...joined.matchedMethods,
     ...joined.unhandledInvocations.map((item) => ({ ...item, handlers: [] })),
     ...joined.handlersWithoutInvocations.map((item) => ({ ...item, invocations: [] })),
   ].filter(({ target, channel, method }) => wiringKeys.has(channelKey(target, channel)) ||
-    methodKeys.has(methodKey(target, channel, method)))
-    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item) }))
+    methodKeys.has(methodKey(target, channel, method)) || runtimeMethodKeys.has(methodKey(target, channel, method)))
+    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item,
+      !methodKeys.has(methodKey(item.target, item.channel, item.method))) }))
     .sort(compareLogicalKeys);
   const channelMap = new Map<string, MatchedChannel>([
     ...joined.matchedChannels,
@@ -112,16 +128,18 @@ export function createBridgeImpact(
   }
   const channels = [...channelMap.values()]
     .filter(({ target, channel }) => channelKeys.has(channelKey(target, channel)))
-    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item) }))
+    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item,
+      !staticChannelKeys.has(channelKey(item.target, item.channel))) }))
     .sort(compareLogicalKeys);
   const issues = createCheckReport(joined).issues.filter(({ target, channel, method }) =>
     channelKeys.has(channelKey(target, channel)) &&
     (method === undefined || wiringKeys.has(channelKey(target, channel)) ||
-      methodKeys.has(methodKey(target, channel, method))));
+      methodKeys.has(methodKey(target, channel, method)) || runtimeMethodKeys.has(methodKey(target, channel, method))));
   const reviewFiles = [...new Set([
     ...selectedFacts,
     ...channels.flatMap(({ creations, registrations }) => [...creations, ...registrations]),
     ...methods.flatMap(({ invocations, handlers }) => [...invocations, ...handlers]),
+    ...(runtime?.reviewFiles ?? []).map((path) => ({ location: { path } })),
   ].map(({ location }) => location.path))].sort(compareStrings);
   const unmatchedCount = unmatchedSelectors.files.length + unmatchedSelectors.symbols.length;
   const relevantLimitations = joined.limitations.filter((limitation) =>
@@ -129,7 +147,8 @@ export function createBridgeImpact(
       (limitation.target === null || limitation.target === target) &&
       (limitation.channels === undefined || limitation.channels.includes(channel))));
   return {
-    format: 'isthmus-impact', version: 1,
+    // 조인이 호출·수신 문서의 존재와 동일 project를 이미 검증했다.
+    format: 'isthmus-impact', version: 1, project: documents[0]!.project,
     status: selectedFacts.length > 0 ? 'observed' : 'unobserved', scope: 'bridge', complete: false,
     selection, unmatchedSelectors,
     summary: {
@@ -141,6 +160,7 @@ export function createBridgeImpact(
       warnings: issues.filter(({ severity }) => severity === 'warning').length,
     },
     selectedFacts, channels, methods, reviewFiles, issues,
+    ...(runtime === undefined ? {} : { runtime }),
     limitations: joined.limitations, relevantLimitations,
     inputs: documents.map(({ tool, platform, target, generatedAt }) => ({
       tool, platform, target, generatedAt,
@@ -152,7 +172,8 @@ export function createBridgeImpact(
 export function hasImpactBlockers(report: BridgeImpactReport): boolean {
   return report.summary.errors > 0 || report.summary.unresolvedSelectedFacts > 0 ||
     report.summary.unmatchedSelectors > 0 || report.relevantLimitations.length > 0 ||
-    report.issues.some(({ code }) => code.endsWith('-unverified'));
+    report.issues.some(({ code }) => code.endsWith('-unverified')) ||
+    (report.runtime !== undefined && hasRuntimeImpactGaps(report.runtime));
 }
 
 /** 같은 문서를 사람이 읽는 JSON 또는 정보 손실 없는 컴팩트 JSON으로 인코딩한다. */
@@ -201,8 +222,11 @@ function methodKey(target: BridgeTarget, channel: string, method: string): strin
 }
 
 /** 생성·등록이 선택됐는지에 따라 검토 범위가 넓어진 이유를 설명한다. */
-function impactReason(wiringKeys: ReadonlySet<string>, item: MatchedChannel | MatchedMethod): ImpactReason {
-  return wiringKeys.has(channelKey(item.target, item.channel)) ? 'channel-wiring' : 'method';
+function impactReason(
+  wiringKeys: ReadonlySet<string>, item: MatchedChannel | MatchedMethod, runtimeOnly = false,
+): ImpactReason {
+  return wiringKeys.has(channelKey(item.target, item.channel)) ? 'channel-wiring'
+    : runtimeOnly ? 'runtime-observation' : 'method';
 }
 
 /** 입력 파일 순서와 locale에 의존하지 않는 논리 키 정렬이다. */

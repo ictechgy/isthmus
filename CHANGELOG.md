@@ -12,7 +12,15 @@
 - 배포 isthmus skill에 변경 사전 점검과 개발 소스/발행본 기능 구분을 추가했다.
 - `verify-runtime --expectations`: revision·시나리오·플랫폼·엔진 인스턴스별 통신
   관찰을 독립 기대 목록과 대조한다. 실패·미구현·타임아웃·실행 중단·기록 유실·
-  오래된 실행·미관찰 기대를 구분한다. 현재 검증은 합성 소비자 검증이며 수집기는 후속 구현이다.
+  오래된 실행·미관찰 기대를 구분한다.
+- `impact --runtime <json> --revision <revision>`: 동적 호출의 실제 관찰 주소로
+  정적 핸들러 후보와 검토 파일을 넓히고 원래 미해석 사실은 보존한다. 다른 OS/transport를
+  추측해 연결하지 않으며 런타임 실패·오래된 기록·유실과 후보 공백도 strict에서 실패한다.
+- 선택적 Flutter 패키지 `isthmus_runtime`: 명시 codec·동적 resolver로 outgoing
+  MethodChannel/BasicMessageChannel을 관찰한다. 앱 응답·예외·null Future를 보존하고
+  인자·반환값·원문 오류를 저장하지 않는다. 실제 macOS Swift/Pigeon 왕복과 실패 경로를 검증했다.
+- impact/runtime 보고서에 증거 위치의 기준 `project`를 명시하고 배포 skill의
+  snapshot 위치·로컬 파일 링크 구분과 중복 조회 지침을 보강했다.
 
 ## [0.5.0] - 2026-09-13
 

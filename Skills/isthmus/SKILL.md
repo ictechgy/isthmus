@@ -23,16 +23,25 @@ If inputs are missing, identify the required files and proceed with independent 
 
 - Preflight a source change: check `isthmus --help` for `impact` (added after the
   published 0.5.0; currently requires a build of the development source).
-  Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --compact`;
+  Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;
   for a precise producer symbol use `--symbol <qualifiedName-or-usr>` instead.
   For multiple files, pass `--changes <json>` with
   `{"format":"isthmus-changes","version":1,"files":["lib/camera.dart","ios/Camera.swift"]}`.
   Read `reviewFiles`, `methods` (callers and handlers), `issues`, `selectedFacts`,
   `unmatchedSelectors`, and `relevantLimitations` in one response. Channel wiring
   changes include every observed method on that channel. Compact output loses no evidence.
-  `--strict` fails on related errors, extraction gaps and unobserved selections.
+  Impact already includes both sides; do not repeat a channel query just to retrieve
+  the same endpoints. Evidence paths are relative to report `project`, not the CLI
+  working directory. Make local file links only after confirming the files exist;
+  for non-local snapshots, give the reported relative path and line as evidence.
+  `--strict` returns code 1 on related errors, extraction gaps and unobserved selections;
+  read its JSON as the preflight result instead of rerunning the same inputs without the flag.
   For deleted code use the pre-change snapshot. `scope: bridge` and `complete: false`
-  mean this does not yet cover transitive language-internal or runtime dependencies.
+  do not establish complete coverage of language-internal or runtime dependencies.
+  When current runtime evidence is available, add `--runtime <runtime.json> --revision <revision>`.
+  Inspect `runtime.routes`, failures/gaps and `runtime-observation` reasons. These add
+  native handler candidates for dynamically named calls, not proof of a particular
+  native symbol executing. Static unresolved facts remain unresolved for untested paths.
   If the installed CLI lacks impact, use `query` on bridge names found in the source
   and report that file-based preflight requires the newer implementation.
 - Audit the boundary: `isthmus check <dart.json> <swift.json> [--strict]`.
@@ -64,7 +73,8 @@ If inputs are missing, identify the required files and proceed with independent 
 ## Interpret and finish
 
 Code 0 means the command ran successfully, not that code is safe to delete.
-Code 1 from check/diff strict is a finding to report; query code 64 with
+Code 1 from check/diff/impact/verify-runtime strict is a finding or evidence gap to report;
+query code 64 with
 `notFound`/`ambiguous` is a usable answer, while usage errors require corrected arguments.
 Code 2 indicates unreadable, invalid, or deferred inputs: explain the cause category and next step.
 Empty results, `resolvedIssues`, and missing callers can reflect dynamic names or incomplete coverage.

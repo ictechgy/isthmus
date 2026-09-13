@@ -1,14 +1,51 @@
 # 런타임 통신 검증 계약
 
 개발 소스의 `verify-runtime`은 명시한 시나리오에서 실제 관찰한 통신 결과를 검증한다.
-아직 npm 0.5.0에는 없다. 이 문서의 fixture는 합성 소비자 검증이며 실제 Flutter 엔진에서
-수집한 기록이 아니다. 수집기·앱 실행·정적 영향 연결은 전체 목표의 후속 구현이다.
+아직 npm 0.5.0에는 없다. [Flutter 수집기](../packages/isthmus_runtime/README.md)는 앱의
+BinaryMessenger에 주입해 실제 outgoing 호출을 기록한다. 정적 후보 연결은
+[impact의 런타임 입력](IMPACT.md#런타임-관찰-연결)을 사용한다.
+
+아래 fixtures/runtime JSON은 합성 소비자 검증이다. 실제 native 검증은 별도 절차로 구분한다.
 
 ```bash
 npm run build
 node dist/cli/main.js verify-runtime \
   --expectations fixtures/runtime/expectations.json fixtures/runtime/success.json --strict
 ```
+
+## 실제 Flutter 앱 검증
+
+```bash
+node scripts/verify-flutter-runtime.mjs /path/to/flutter/bin/flutter
+```
+
+macOS·Xcode·CocoaPods·Flutter SDK가 필요하며 최초 준비에는 네트워크를 사용한다. 스크립트는 임시 앱을
+만들고 `url_launcher_macos 3.2.2`를 고정해 실제 Pigeon 생성 API를 호출한다. URL을 열지 않고
+`canLaunchUrl`만 실행한다. 자체 Swift MethodChannel/BasicMessageChannel도 함께 검사한다.
+공개 의존성은 pub.dev에서 해결한다. 앱·Pods 배포 대상은 macOS 12이며 시스템/사용자 앱 설정은 수정하지 않는다.
+
+성공 3개 기대, 네이티브 error·missing-handler·timeout의 구분, 앱 Future의 원래 지연 응답,
+pending 실행의 미완료와 payload 미기록을 확인한다. 소스·의존성 잠금·SDK revision으로
+검증 revision을 만들며, 임시 앱은 정리하고 기록 JSON과 검증 요약 디렉터리를 출력한다.
+이 검사는 실제 macOS native 통신이며 iOS/Android 앱 검증으로 확대 해석하지 않는다.
+
+검증 SDK는 Flutter 3.32.2/Dart 3.8.1이다. 최초 SDK/공개 패키지 준비 시간과 소비자 CLI
+시간은 분리한다. 같은 앱의 첫 빌드와 변경 없는 재빌드를 둘 다 측정해 `steps`에 남긴다.
+
+수집기 자체의 검사와 고정 payload 오버헤드 측정:
+
+```bash
+cd packages/isthmus_runtime
+flutter pub get
+flutter analyze --no-pub
+flutter test --no-pub
+flutter test tool/emit_runtime_fixture.dart --no-pub
+flutter test tool/benchmark_recorder.dart --no-pub
+```
+
+벤치마크는 fake messenger를 쓰는 디버그 Flutter 테스트다. 실제 디바이스 IPC 지연의 측정이
+아니다. 임시/진단 빌드에서 필요한 채널과 실제 codec을 명시하며, Basic/Pigeon reply의 성공·
+실패 의미는 명시 classifier가 정한다. 대응하는 codec이 없으면 이름만으로 추측하지 않는다.
 
 ## 독립적인 기대 목록
 

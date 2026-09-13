@@ -18,6 +18,7 @@ const expected = parseRuntimeExpectations(rawExpected);
 test('시나리오·플랫폼·revision·인스턴스·호출 성공이 맞아야 선언된 검증이 통과한다', () => {
   const report = verifyRuntimeEvidence(expected, [parseBridgeRuntime(rawTrace)]);
   assert.equal(report.status, 'passed');
+  assert.equal(report.project, '/app');
   assert.equal(report.complete, false);
   assert.equal(report.scope, 'declared-scenarios');
   assert.equal(report.checks[0]?.status, 'passed');

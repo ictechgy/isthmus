@@ -12,17 +12,26 @@
   미관찰/동적 선택 보존, 공백도 실패시키는 strict, lossless compact, 배포 skill 갱신.
 - 추가 구현 `verify-runtime --expectations`: 시나리오/플랫폼/인스턴스/revision별 통신
   관찰 대조. 실패/timeout/missing-handler/pending/중단/유실/stale을 구분한다.
-  현재는 합성 입력으로 소비자를 검증했고 실제 Flutter 수집기는 후속이다.
-- 최신 `npm run verify`: 제품 331개, Phase 0 15개, build/CLI/package 통과.
-  line/branch/functions 99.06/96.39/97.23, `/tmp/isthmus-runtime-verify.log`.
+  `1c677e2`가 소비자 구현 커밋이다. 이후 Flutter 수집기와 실제 native 앱 검증도 구현했다.
+- 현재 `packages/isthmus_runtime`은 analyze clean·14 테스트 통과. `impact --runtime --revision`
+  후보 연결과 report.project, AI skill의 snapshot 위치/중복 질의 보강이 추가됐다.
+- 최신 `npm run verify`: 제품 341개, Phase 0 15개, build/CLI/package 통과.
+  line/branch/functions 99.01/96.41/97.08, `/tmp/isthmus-preflight-final-verify.log`.
 - CLI 성능 5회 측정: 영향 40k facts 최대 434ms, 런타임 100k events+1k 기대 최대 167ms.
   시작·I/O·파싱·분석·직렬화 포함, producer/앱 빌드 제외.
   `node scripts/benchmark-preflight.mjs` (먼저 최신 build 필요).
 - cartograph에서 다른 세션이 `feature/change-impact-workflow`를 수정 중이다. 변경 보존.
-  `change-impact` v1 schema는 읽었지만 연동 전에 현재 상태를 재확인한다.
+  `change-impact` v1의 selected/changeScope/affected/via/depth는 읽었지만 연동 전에 재확인한다.
+- 실제 macOS Flutter 앱 검증 통과: 자체 Swift 채널 + 공개 url_launcher_macos 3.2.2 Pigeon.
+  성공 3개 기대, error/missing-handler/timeout 각 1개, pending 1개를 검증.
+  첫 앱 빌드 23.723초, 변경 없는 재빌드 4.984초. iOS/Android 검증은 아니다.
+  `/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-native-evidence-js8D7R/verification.json`.
+- iCloud SDK는 실제 파일 read에서 정지했다. 사용자 SDK를 수정하지 않고 공식 3.32.2를
+  `/tmp/isthmus-flutter-sdk.iW1YxU`에 격리 설치했다. pub 의존성도 준비됨.
+  `node scripts/verify-flutter-runtime.mjs /tmp/isthmus-flutter-sdk.iW1YxU/bin/flutter`로 재현.
 - 새 명령은 개발 소스에만 있다. npm 0.5.0 발행본에 있다고 안내하지 않는다.
-- 계속할 일: 실제 런타임 수집기/앱 검증 → producer 전이 영향 연결 → runtime 근거와 영향
-  연결 → CI 자동 갱신/성능·신선도 검증 → 공개 사례·설치본·GLM 리뷰.
+- 계속할 일: producer 전이 영향 연결 → Pigeon/Basic 정적 coverage·실제 앱 통합 및 명시적
+  negative outcome 기대 → CI 자동 갱신/신선도 검증 → 공개 사례·설치본·GLM 리뷰.
 
 이전 발행 기록은 아래에 남긴다. 아래의 "다음 단계"와 "깨끗한 main" 문장은 이전 릴리스
 시점의 기록이며 현재 작업 시작점은 위 active 목표다.
@@ -732,3 +741,26 @@ CHANGELOG `Unreleased`는 비어 있어.
 샌드박스에서 GLM 리뷰는 `packet-review --files <변경 파일들> --effort high --question-stdin`으로 해줚(files 모드만 동작).
 자매 저장소 쓰기 권한은 세션마다 다르니 직접 시도해 보고, 막히면 사용자에게 넘겨줘.
 워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는 tmp 사본 + isthmus-js 오버라이드로 돌려줘.
+
+
+## 2026-09-14 — Cartograph 변경 영향 워크플로 계약 알림
+
+자매 Cartograph 세션에서 `feature/change-impact-workflow`를 구현·검증 중이다. 기존 사용자 변경을
+유지하며 이 알림만 덧붙였다. **기존 `query` / `symbol-query-batch` v1 출력 계약은 그대로다.**
+
+새 계약은 Cartograph의 `README.md`, `docs/RUNTIME-CONTRACTS.md`, `Sources/CartographKit/ImpactDocument.swift`,
+`AnalysisSnapshotDocument.swift`가 현재 작업 원본이다. 아직 릴리스나 모든 최종 게이트 통과를 주장하지 않는다.
+
+- `impact`: 직접 선택(`selected`)과 타입/익스텐션 확장(`changeScope`)을 구분하고, 소비자 방향의
+  `via` 근거·가능한 프로토콜 dispatch·테스트·런타임 검토·섹션별 절단을 제공한다.
+- `snapshot` / `impact --before`: 현재·과거 그래프를 각각 분석한다. 간선을 합쳐 가짜 경로를 만들지 않는다.
+- `runtime-contracts` / `runtime-observations`: 호출자·대상·시나리오의 **별도 일반 런타임 계약**이다.
+  bridge-facts/external-retentions 형식을 대체하지 않는다. 실행 파일의 raw SHA256, 계획 지문,
+  실제 사용한 그래프·소스/인덱스 신선도를 대조하며 미관측을 삭제 근거로 쓰지 않는다.
+- `serve`: MCP 2026-07-28 및 legacy initialize 방식을 지원한다. query/impact/check의 응답은
+  `{session, result}`이고 `result` 안의 기존 query v1은 보존한다. 공유 출력 예산과 갱신 검증을 적용한다.
+- 생성 스킬에는 impact → 필요한 질의만 batch → 편집/재빌드 → check/runtime 시나리오 순서를 추가한다.
+  새 명령·새 스키마를 해당 자매 도구에 구현된 것으로 복사하지 말고 플랫폼별 지원을 확인할 것.
+
+현재 자매 저장소에서도 동시 작업 중인 변경을 확인했다. 상호 연동 시 최신 스키마와 테스트를 다시
+확인하고, 이 알림의 작업 중 상태를 배포 계약으로 간주하지 말 것.

@@ -38,6 +38,7 @@ export interface RuntimeCheckResult {
 export interface RuntimeVerificationReport {
   readonly format: 'isthmus-runtime-check';
   readonly version: 1;
+  readonly project: string;
   readonly revision: string;
   readonly scope: 'declared-scenarios';
   readonly complete: false;
@@ -130,7 +131,7 @@ export function verifyRuntimeEvidence(
   const status = summary.failedCalls > 0 ? 'failed'
     : summary.staleRuns > 0 || summary.incompleteRuns > 0 || summary.droppedEvents > 0 ||
       summary.pendingCalls > 0 || summary.passedChecks !== checks.length ? 'incomplete' : 'passed';
-  return { format: 'isthmus-runtime-check', version: 1, revision: expectations.revision,
+  return { format: 'isthmus-runtime-check', version: 1, project: expectations.project, revision: expectations.revision,
     scope: 'declared-scenarios', complete: false, status, summary, checks, failures,
     runs: sorted.map(({ run, revision, tool, droppedEvents, events }) => ({
       run, revision, tool, droppedEvents, stale: revision !== expectations.revision, observedEvents: events.length,

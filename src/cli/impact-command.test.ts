@@ -10,6 +10,13 @@ const inputs = new Map([
   ['dart.json', dart], ['swift.json', swift],
   ['changes.json', JSON.stringify({ format: 'isthmus-changes', version: 1,
     files: ['ios/Runner/CameraPlugin.swift'] })],
+  ['runtime.json', JSON.stringify({ format: 'bridge-runtime', version: 1,
+    project: JSON.parse(dart).project, revision: 'current', tool: { name: 'recorder', version: '1' },
+    run: { id: 'run', scenario: 'photo', platform: 'ios', status: 'completed',
+      startedAt: '2026-09-14T00:00:00Z', finishedAt: '2026-09-14T00:00:01Z' }, droppedEvents: 0,
+    events: [{ sequence: 1, instance: 'main', transport: 'method-channel', channel: 'dev.isthmus/camera',
+      method: 'takePhoto', outcome: 'success', caller: { path: 'lib/caller.dart', line: 1, column: 1 } }],
+  })],
 ]);
 const read = async (path: string) => {
   const text = inputs.get(path);
@@ -88,4 +95,31 @@ test('브리지 파일 실패와 조인 보류가 부분 영향 결과를 출력
     assert.equal(result.standardOutput, '');
     assert.equal(result.standardError.includes('private'), false);
   }
+});
+
+test('런타임 보조 입력은 명시된 분석 revision과 함께 영향 보고서에 연결된다', async () => {
+  const args = ['impact', '--file', 'ios/Runner/CameraPlugin.swift', '--runtime', 'runtime.json',
+    '--revision', 'current', 'dart.json', 'swift.json'];
+  const result = await runImpactCommand(args, read);
+  assert.equal(result.exitCode, 0);
+  const report = JSON.parse(result.standardOutput);
+  assert.equal(report.runtime.selectedEvents, 1);
+  assert.ok(report.reviewFiles.includes('lib/caller.dart'));
+  const stale = await runImpactCommand(args.map((arg) => arg === 'current' ? 'newer' : arg), read);
+  assert.equal(JSON.parse(stale.standardOutput).runtime.stale, true);
+});
+
+test('런타임·revision은 함께 지정해야 하며 잘못된 보조 입력은 코드 2다', async () => {
+  for (const flags of [['--runtime', 'runtime.json'], ['--revision', 'current'],
+    ['--runtime', 'runtime.json', '--revision', 'bad\nrevision']]) {
+    let reads = 0;
+    const result = await runImpactCommand(['impact', '--file', 'a.dart', ...flags, 'dart.json', 'swift.json'],
+      async () => { reads++; return ''; });
+    assert.equal(result.exitCode, 64);
+    assert.equal(reads, 0);
+  }
+  const result = await runImpactCommand(['impact', '--file', 'a.dart', '--runtime', 'dart.json',
+    '--revision', 'current', 'dart.json', 'swift.json'], read);
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
 });

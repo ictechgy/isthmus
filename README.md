@@ -107,7 +107,10 @@ This is not in the published 0.5.0 package yet. See [change preflight](docs/IMPA
 for the build command, contract, and current bridge-only scope.
 Development source also adds `verify-runtime --expectations` to check recorded calls
 by revision, scenario, platform, and engine instance. See the [runtime contract](docs/RUNTIME.md).
-The recorder and real Flutter execution integration are still being developed.
+The optional [Flutter recorder](packages/isthmus_runtime/README.md) has been exercised
+in a real macOS app with Swift handlers and the Pigeon-generated API of
+`url_launcher_macos 3.2.2`; transitive language-internal impact and CI snapshot automation
+are still being developed.
 
 isthmus never runs the sister tools itself. You hand it the JSON files they produced:
 
