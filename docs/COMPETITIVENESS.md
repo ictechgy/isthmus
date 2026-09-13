@@ -3,7 +3,8 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
-2026-09-14 현재 체크포인트. 이전 턴은 실제 검증 근거가 다음 수정을 결정한 progress였고,
+2026-09-14 현재 체크포인트. isthmus 구현 커밋은 `6503516`이다.
+이전 턴은 실제 검증 근거가 다음 수정을 결정한 progress였고,
 아래 구현·검증을 추가했다. 뒤의 과거 수치와 미지원 문장은 해당 실행 시점의 기록이다.
 
 - **전이 영향 정밀도:** Basic v2의 handlerScope/dependencies/실제 overrides dispatch 후보를
@@ -44,7 +45,9 @@
 - **자매 저장소:** 격리 Cartograph d8870e7·723d788, Dartograph 7d96f3b로 커밋했다.
   Swift coverage 90.43%와 CLI/fixture/self 분석 필수 게이트가 통과했다. Dart analyze·391tests·
   compile·CLI·pub dry-run은 통과했으나 기존 runtime_scanner의 analyzer 경계 게이트 실패를
-  parent에서도 재현했다. 현재 그 구조 경계를 보강 중이다. 원본 dirty 자매 worktree는 보존했다.
+  parent에서도 재현했다. `cb3f2b7`에서 AST 구현을 index로 옮기고 기존 import 경로를
+  re-export로 유지해 boundary gate도 통과했다. import 경로를 제외한 구현 body 동일성과
+  runtime/bridge 회귀·391tests·CLI·compile·pub dry-run을 확인했다. 원본 dirty 자매 worktree는 보존했다.
   자매 PR별 GLM 검토·공개 호환 버전·원격 CI는 아직 남았다.
 
 위 macOS 임시 근거의 상위 경로는
@@ -54,8 +57,10 @@ source 프로젝트는 하네스 종료 때 정리되므로 보고서의 source 
 `isthmus-dartograph-basic-aot-ekr6kosa/dartograph`에 있고 준비 12.027초·source hash 전후 일치를
 확인했다. 원본 source는 이후 구조 보강될 수 있으므로 이 AOT의 build-time hash와 구분한다.
 
-다음 순서: Dart analyzer 구조 게이트 정합성 → 최종 배포 산출물·diff·로컬 커밋 → 자매 PR
-리뷰·호환 버전 통합·실제 원격 CI/첫 사용자 구축 검증. 더 넓은 변경 표본의 누락/오탐·검토
+다음 순서: 자매 PR GLM 리뷰·호환 producer 버전 통합 → 실제 원격 CI/첫 사용자 구축 검증.
+현재 Basic Cartograph 격리 branch의 base에는 기존 원본 worktree의 미커밋 impact 구현이
+없어, 검증 하네스는 명시한 impact binary와 Basic binary를 나눠 사용했다. 외부인이 하나의
+공개 호환 버전으로 구축할 수 있는 상태로 아직 안내하지 않는다. 더 넓은 변경 표본의 누락/오탐·검토
 시간 비교와 prefix/instance·플랫폼별 미검증 범위는 계속 평가한다. 전체 네 목표는 active다.
 
 2026-09-14 실용성 재검증: 미커밋 Basic/Pigeon·summary/explain 변경을 포함한
