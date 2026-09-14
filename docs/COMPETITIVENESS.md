@@ -67,10 +67,16 @@
 
 ### 공개와 남은 범위
 
-원본 자매 작업 트리·기존 미커밋 HANDOFF/리서치·profile 생성물은 보존했다. npm/pub 발행,
-GitHub push/PR/원격 CI는 하지 않았다. 설치 루트의 `verification/pull-requests.md`에 3개
-개발 브랜치의 공개 검토 초안을 준비했다. 공개 호환 버전·최초 외부 사용자 구축·실제 변경
-대비 효용 비교는 남아 있다. 알려지지 않은 임의의 런타임 의존성을 자동으로 모두 발견하지
+2026-09-14 사용자 승인 후 세 개발 브랜치를 push하고 서로 연결한 draft PR을 만들었다:
+[isthmus #70](https://github.com/ictechgy/isthmus/pull/70),
+[kartograph #50](https://github.com/ictechgy/kartograph/pull/50),
+[dartograph #94](https://github.com/ictechgy/dartograph/pull/94).
+원격 commit을 검증한 소스와 대조했고 CI도 시작했다. 최신 실행 결과는 각 PR에서 확인한다.
+main 병합·태그·npm/pub 발행은 이번 승인 범위에 포함하지 않는다.
+
+원본 자매 작업 트리·기존 미커밋 HANDOFF/리서치·profile 생성물은 보존했다.
+공개 호환 버전 발행·최초 외부 사용자 구축·실제 변경 대비 효용 비교는 남아 있다.
+알려지지 않은 임의의 런타임 의존성을 자동으로 모두 발견하지
 않으며 iOS 실기기·다른 Android API/ABI·release/lifecycle 변형도 이번 검증 범위 밖이다.
 전체 네 목표를 테스트 개수만으로 완료 처리하지 않는다.
 
