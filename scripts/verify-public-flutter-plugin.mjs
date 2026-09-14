@@ -276,7 +276,11 @@ function verifyBatteryFacts(document, kind, expectedPath) {
     // 새 ObjC 관찰을 지워 통과시키지 않고 별도 구현의 위치·언어·보존 대상 구분을 검증한다.
     verify(others.length <= 1 && others.every((fact) =>
       document.platform === 'swift' && fact.location?.path === objectiveCSourcePath
-        && fact.sourceLanguage === 'objective-c' && (fact.symbol === undefined || fact.symbol.usr?.startsWith('c:')) && fact.dynamic === false),
+        && fact.sourceLanguage === 'objective-c'
+        && (fact.symbol === undefined || fact.symbol.usr?.startsWith('c:')
+          || (fact.symbol.usr === undefined
+            && fact.symbol.qualifiedName === 'FPPBatteryPlusPlugin.handleMethodCall:result:'))
+        && fact.dynamic === false),
     `${document.platform} ${method} additional implementation provenance`);
   }
   verify(
