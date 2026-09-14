@@ -654,6 +654,8 @@ void main() {
     const appCaller = selected.context.bindings.find(({ requested, symbol }) => requested === 'main' && symbol.location.path === 'lib/main.dart');
     assert.ok(generated && dartSymbols.some(({ id }) => id === generated.symbol.id),
     `Public Kotlin getBool must reach the generated Dart API. Evidence: ${artifacts}`);
+    assert.deepEqual(dartSymbols.find(({ id }) => id === generated.symbol.id)?.location, generated.symbol.location,
+      'The report must preserve the actual generated Dart declaration location.');
     assert.ok(appCaller && dartSymbols.some(({ id }) => id === appCaller.symbol.id),
       `Public Kotlin getBool must transitively reach the app caller. Evidence: ${artifacts}`);
     publicPreflight = { selectedSymbol: changed[0].usr, revision: selected.context.revision,

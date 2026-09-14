@@ -19,8 +19,8 @@
 - capture는 선택적 `kartograph`/`kartographSnapshot`과 `.kt`/`.java` 변경을 지원한다.
   snapshot 내용·실행 도구·JAR 입력을 신선도에 반영하고 미구성 플랫폼 변경은 공백으로
   남긴다. Android-only source 구축은 Swift를 요구하지 않는다.
-- 소비자 전체 verify 통과: 제품 421, Phase 0 15, workflow 19; coverage
-  line/branch/functions 98.41/92.61/95.42 (`/tmp/isthmus-android-final-root-verify.log`).
+- 소비자 전체 verify 통과: 제품 424, Phase 0 15, workflow 19; coverage
+  line/branch/functions 98.41/92.37/95.42 (`/tmp/isthmus-android-final-root-verify.log`).
   CLI exit 0/1/2/64와 npm package 계약도 통과했다. skill YAML·발견 경로와 문서 링크 42개를
   확인했다. Python skill validator는 PyYAML 부재로 실행하지 못해 Ruby Psych로 구조를 확인했다.
 - GLM consumer C1/C2(생략 중복 계수·부분 위치 병합)는 회귀로 재현해 수정했다.
@@ -44,6 +44,11 @@
   반복 APK build 1.894초다. 성공 3·기대 실패 3·pending과 같은 capture의 runtime 대조가 통과했다.
   CqHzfs의 실패 snapshot은 회귀 근거로 보존했다. Kotlin 문자열·모호한 함수 선택에 대한
   추가 경계 검토는 별도 최종 커밋으로 반영 중이며 고정 소스 설치본 검증은 다음 단계다.
+- 설치본 `--explain`에서 Dart 분석 root에 위치가 없으면 별도 query의 선언 위치도 출력에
+  빠지는 문제를 발견해 수정했다. 기존 심볼 종류를 유지하며 위치를 병합하고 모순된 위치·
+  bridge USR은 거부한다. Method/Basic 회귀 3개와 실제 Kb2VfW context에서 generated getBool의
+  원본 `messages_async.g.dart:244:3` 보존을 확인했다. 해당 좁은 GLM 리뷰 로그는
+  `/tmp/isthmus-dart-declaration-glm.log`다.
 - 검증 하네스는 직접 시작한 emulator process group의 종료를 확인하고 임시 파일을 정리한다.
   종료 확인 실패는 성공 처리하지 않으며 이미 기록된 부분 JSON을 정리 전에 보존한다.
   CqHzfs의 cleanup은 실제 owned AVD 확인·정상 종료까지 통과했다.

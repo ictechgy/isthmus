@@ -122,6 +122,8 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
         return key;
       }
       if (before !== undefined || after === undefined) return key;
+      nodes.set(key, { ...existing, symbol: { ...existing.symbol, location: after } });
+      return key;
     }
     nodes.set(key, { key, kind: 'symbol', platform, symbol });
     return key;
@@ -154,9 +156,12 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     const id = endpoint.symbol?.usr ?? binding?.id;
     if (id === undefined) return undefined;
     const key = symbolKey(endpoint.platform, id);
-    if (!nodes.has(key)) {
-      if (binding !== undefined) addSymbol(endpoint.platform, binding);
-      else if (endpoint.symbol !== undefined) addSymbol(endpoint.platform, { id, qualifiedName: endpoint.symbol.qualifiedName });
+    if (binding !== undefined) {
+      if (binding.id !== id) throw new PreflightGraphError('Conflicting symbol identities in Dart bridge bindings.');
+      // 영향 root는 위치를 생략할 수 있다. query가 관찰한 선언 위치도 병합·대조한다.
+      addSymbol(endpoint.platform, binding);
+    } else if (!nodes.has(key) && endpoint.symbol !== undefined) {
+      addSymbol(endpoint.platform, { id, qualifiedName: endpoint.symbol.qualifiedName });
     }
     return nodes.has(key) ? key : undefined;
   }

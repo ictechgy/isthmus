@@ -78,6 +78,41 @@ test('동일 주소의 Basic과 Method를 분리하고 실제 message 심볼로 
   assert.ok(report.boundaries.some(({ subject }) => subject.method === 'photo' && subject.key !== basic.subject.key));
 });
 
+test('Dart 영향 root에 위치가 없어도 실제 호출자 바인딩의 선언 위치를 보존한다', () => {
+  const input = withMessages();
+  const report = createPreflightReport({ ...input, analyses: input.analyses.map((analysis) => analysis.platform !== 'dart'
+    ? analysis : { ...analysis, roots: analysis.roots.map(({ location: _location, ...symbol }) => ({ ...symbol, kind: 'declaration' })) }) });
+  for (const expected of [caller, basicCaller]) {
+    const found = report.affected.find(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === expected.id)?.subject;
+    assert.ok(found?.kind === 'symbol');
+    assert.deepEqual(found.symbol.location, expected.location);
+    assert.equal(found.symbol.kind, 'declaration');
+  }
+  const explanation = createPreflightExplanation(report, basicScreen.id);
+  assert.equal(explanation.status, 'found');
+  if (explanation.status === 'found') {
+    assert.ok(explanation.result);
+    const bound = explanation.result.path.find(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === basicCaller.id)?.subject;
+    assert.ok(bound?.kind === 'symbol');
+    assert.deepEqual(bound.symbol.location, basicCaller.location);
+  }
+});
+
+test('동일 Dart ID의 바인딩과 분석 위치가 충돌하면 임의로 한쪽을 선택하지 않는다', () => {
+  const input = withMessages();
+  assert.throws(() => createPreflightReport({ ...input, bindings: input.bindings.map((binding) =>
+    binding.symbol.id === basicCaller.id ? { ...binding, symbol: { ...binding.symbol, location: at('lib/basic.dart', 99) } } : binding) }),
+  /Conflicting symbol identities/);
+});
+
+test('Dart 브리지 USR과 실제 query 바인딩의 ID가 다르면 조인을 거부한다', () => {
+  const input = withMessages();
+  const messages = input.messages!.map((document) => document.platform !== 'dart' ? document : {
+    ...document, facts: document.facts.map((fact) => ({ ...fact, symbol: { ...fact.symbol!, usr: 'dart:different' } })),
+  });
+  assert.throws(() => createPreflightReport(parsePreflightContext({ ...input, messages })), /Conflicting symbol identities/);
+});
+
 test('Pigeon prefix 경로는 후보로 연결하며 실제 suffix를 추측하지 않는다', () => {
   const report = createPreflightReport(withMessages(true));
   assert.ok(report.affected.some(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === basicScreen.id));
