@@ -1,7 +1,7 @@
 # isthmus
 
 **Cross-language bridge calls in cross-platform apps, joined into one graph.**
-[cartograph](https://github.com/ictechgy/cartograph) (Swift) · kartograph (Kotlin, planned) ·
+[cartograph](https://github.com/ictechgy/cartograph) (Swift) · [kartograph](https://github.com/ictechgy/kartograph) (Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph) (Dart) each draw their own map; isthmus
 joins them into one.
 
@@ -24,39 +24,23 @@ see these strings. As a result:
 
 isthmus joins the **bridge facts** each language tool exports (channel names, method names,
 registration sites, invocation sites) by string key, builds the edges that cross the boundary,
-and answers those three questions. It then hands the result **back to cartograph/kartograph as
+and answers those three questions. It then hands the result **back to cartograph as
 retention evidence** — "keep Swift `CameraHandler.takePhoto`, because `lib/camera.dart:42`
 calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.5.0.** Makes the CLI consistent and its diagnostics more legible: options may appear
-before or after the input files in every command (with a `--` escape for `-`-leading paths),
-`-h`/`--help` wins from any position alongside `help <command>`, deferred joins report how
-many observed facts could not be joined (check, graph, query, retentions, and diff),
-`notFound`/`ambiguous` queries state their cause on stderr, and query `qualifiedName` escapes
-`:` so splitting on the first `:` and `#` always recovers the names. Internally, shared CLI
-infrastructure moved out of check-command, the SARIF fingerprint hash is injected so the
-report layer stays free of Node built-ins, and the diff document shape is named
-(`BridgeDiffDocument`). Output documents, exit codes, and fields are unchanged — the only
-value that differs from 0.4.1 is the `qualifiedName` of channels or methods whose names
-contain `:`.
-The 0.4.0 additions — SARIF 2.1.0 rendering of check results for GitHub code scanning
-(`check --format sarif`, additive, with logic-key fingerprints that survive source line
-moves), observation volume in the check summary (`observedFacts`, `observedLimitations`),
-multi-caller retention evidence (`evidence.callers` with a per-retention cap and an explicit
-`callersOmitted` count, byte-identical for single callers), and usr-less `qualifiedName`
-identity for Objective-C handlers built without an index — and the core 0.3.0 contract and
-commands remain intact. isthmus keeps fail-closed behavior for external input, mixed targets,
-graph size, and the Dart/Swift Phase 0 extraction boundary. Facts that could not be joined
-are re-counted on the consumer side, and retention subjects whose evidence cannot be built
-are refused loudly, so neither disappears silently. Coverage gaps a receiver reports about
-itself come back as undecidable, not as mismatches, and gap mitigation never leaks across
-targets. Next: dogfooding it on a real Flutter app, and React Native support.
+Development source supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
+Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
+Actual macOS and Android fixture apps have exercised public plugin APIs. See
+[preflight](docs/PREFLIGHT.md), [runtime verification](docs/RUNTIME.md), and
+[building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The supported producers are cartograph 0.5.3+ and dartograph 0.1.1+. Both were verified on
-their real output, and on a Swift USR ↔ Dart invocation evidence round trip over the public
-battery plugin.
+The published npm version is **0.5.0**; these development features require compatible producer
+commits and are not included in that release. The published Dart/Swift MethodChannel workflow
+uses cartograph 0.5.3+ and dartograph 0.1.1+, verified with a public battery plugin.
+React Native and EventChannel extraction remain planned. Retention export currently targets
+cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 
 | Document | Contents |
 |---|---|
@@ -101,7 +85,42 @@ Do not use `npx isthmus` — that installs a different package with the same nam
 
 ## Usage
 
-isthmus never runs the sister tools itself. You hand it the JSON files they produced:
+Development source adds change preflight with `impact --file`, `--symbol`, or
+`--changes`, plus lossless `--compact` JSON and a gap-aware `--strict` gate.
+This is not in the published 0.5.0 package yet. See [change preflight](docs/IMPACT.md)
+for the build command, contract, and current bridge-only scope.
+Android development support uses `selection.kotlin` and a Kartograph snapshot. It connects
+Kotlin Method/Basic facts to Dart consumers and matches Android observations only to Kotlin
+candidates. See [Android capture](docs/PREFLIGHT.md#android-수집) and [toolchain builds](docs/TOOLCHAIN.md).
+Development source also adds `verify-runtime --expectations` to check recorded calls
+by revision, scenario, platform, and engine instance. See the [runtime contract](docs/RUNTIME.md).
+The optional [Flutter recorder](packages/isthmus_runtime/README.md) has been exercised
+in real macOS and Android apps, including the Pigeon-generated APIs of
+`url_launcher_macos 3.2.2` and `shared_preferences_android 2.4.1`. Transitive producer impact and snapshot capture are implemented
+in development source; broader application coverage and first-time setup remain under validation.
+
+Development source now exposes `preflight <context.json> --strict --compact` to compose
+producer impact paths across the bridge. A separate capture workflow caches declared
+input content and has passed a synthetic source test with real producers. See
+[cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
+real-application validation.
+To combine that context with recorded execution, pass runtime JSON files and
+`--expectations <checks.json>`. Preflight reports revision alignment, native candidates,
+and static boundaries missing observations or declared scenarios; existing static gaps remain visible.
+
+Use `preflight <context.json> --summary --strict --compact` for a bounded overview, then
+`--explain <exact-producer-symbol-id>` for a complete path to one symbol. Summary defaults
+to 20 items per collection (`--limit 1..100`); omitted items still affect review status.
+Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addresses and
+proven prefix candidates with development producers. Prefix matches preserve unresolved
+suffix and instance wiring. These additions are not in the published 0.5.0 package.
+To build compatible development tools from pinned local Git commits, use the
+[toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone
+Dart executable, a Cartograph executable with both impact and message support,
+and an isolated installation of the isthmus package.
+
+The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
+runs the preparation and producer commands declared in its configuration:
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json
@@ -393,7 +412,8 @@ analyzed". `resolvedIssues` likewise means a previous mismatch is no longer obse
 the limitations to see whether a dynamic transition or an extractor change caused it.
 `--strict` is recognized at any argument position and cannot be given more than once.
 
-`diff` currently accepts only Flutter Dart/Swift documents. Both platforms are required at
+Development `diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
+Both sender and receiver documents are required at
 each point in time, and the two snapshots must agree on `project` and on the per-platform,
 per-tool document counts. Build each revision from the same checkout path and keep the JSON.
 Do not compare a partial extraction against a full one; use the same analysis settings. Input

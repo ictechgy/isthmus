@@ -4,6 +4,66 @@
 
 ## [Unreleased]
 
+### Added
+
+- Android 개발 지원: Kotlin snapshot 기반 preflight·Method/Basic 브리지·플랫폼별 runtime
+  후보 대조와 Kotlin-only diff. Swift 없이 고정 소스에서 Android 도구를 구축할 수 있다.
+- 실제 Android 앱 검증 하네스: 자체 Kotlin 핸들러와 공개 Pigeon API, 기대 실패·pending,
+  같은 capture의 정적 연결과 반복 빌드/캐시를 검사하고 원본 근거를 보존한다.
+- `scripts/build-preflight-toolchain.mjs`: 선택한 저장소의 고정 commit만 별도 디렉터리에서
+  구축하고 실행 명령·SDK·hash·단계별 시간을 기록한다. 기존 출력 디렉터리를 보호하고
+  npm tarball의 격리 설치까지 수행한다.
+- `preflight --summary [--limit 1..100]`와 `--explain <selector>`: 전체 검토 상태와 항목 수를
+  보존하는 작은 요약, 정확한 key/producer ID/qualifiedName의 전체 원인 경로를 제공한다.
+  모호하거나 없는 조회는 근거 JSON과 코드 64를 반환한다. 배포 skill에 이 질의 흐름을 연결했다.
+- 선택적 preflight `messages` 입력과 수집 설정: BasicMessageChannel v2의 literal 주소·
+  증명된 Pigeon prefix를 MethodChannel과 분리해 정적 후보 및 runtime 근거에 연결한다.
+  prefix의 suffix/instance 불확실성을 보존한다. 양쪽 producer의 개발 버전이 필요하다.
+- 실제 macOS 앱에서 원본 공개 Pigeon 소스를 명시된 입력에 포함해 정적/native runtime을
+  같은 revision으로 검증한다. 소비자 대형 입력과 Basic handler 10,000개 성능 검사를 CI에 추가했다.
+- `preflight --expectations <checks.json> [runtime.json ...]`: 전이 분석과 실행 기록을 같은
+  revision에서 대조한다. 다른 주소·누락 시나리오·오래된 기대/실행·미완료를 공백으로 보존하고,
+  동적 호출에서 찾은 native 후보의 위치를 공유 목록으로 제공한다. 후보를 실제 실행 신원으로 바꾸지 않는다.
+- 실제 macOS Flutter 앱의 compiler index→producer→전이 분석→runtime 결합을 검증하고,
+  전이 소비자의 호출과 동적 호출을 각각의 시나리오·호출 위치로 기록한다.
+- `preflight <context.json>`: producer 전이 영향과 브리지 근거를 연결하고 가장 가까운
+  변경 심볼까지의 경로·검토 파일·공백을 출력한다. 실제 Dartograph/Cartograph의 합성
+  source→compiler index→전이 분석 연결을 검증했다. 앱 전체 탐지율 검증과는 구분한다.
+- 별도 `scripts/capture-preflight.mjs`: 명시된 소스·설정·producer 입력의 내용 해시,
+  수집 전후 일치 확인, 캐시 복원, Git 변경/rename/미추적 소스 선택, 원래 producer 근거 저장.
+  workflow 회귀 검사를 npm verify에 포함하고 실행 스크립트와 사용 문서를 패키지에 넣었다.
+- runtime 기대의 `allowedOutcomes`: 정상적인 실패 시나리오를 명시적으로 검증하며
+  기대 실패·비기대 실패 집계를 나눈다. 미완료·pending·stale·유실의 검증 조건은 유지한다.
+- `impact --file|--symbol|--changes`: 수정 대상에서 관련 브리지 호출·핸들러·배선과
+  검토 파일·진단을 찾는다. 미관찰·동적/미귀속 선택을 보존하며 `--strict`는 관련
+  오류뿐 아니라 분석 공백도 실패시킨다. `--compact`는 JSON 정보 손실 없이 공백만 줄인다.
+- 배포 isthmus skill에 변경 사전 점검과 개발 소스/발행본 기능 구분을 추가했다.
+- `verify-runtime --expectations`: revision·시나리오·플랫폼·엔진 인스턴스별 통신
+  관찰을 독립 기대 목록과 대조한다. 실패·미구현·타임아웃·실행 중단·기록 유실·
+  오래된 실행·미관찰 기대를 구분한다.
+- `impact --runtime <json> --revision <revision>`: 동적 호출의 실제 관찰 주소로
+  정적 핸들러 후보와 검토 파일을 넓히고 원래 미해석 사실은 보존한다. 다른 OS/transport를
+  추측해 연결하지 않으며 런타임 실패·오래된 기록·유실과 후보 공백도 strict에서 실패한다.
+- 선택적 Flutter 패키지 `isthmus_runtime`: 명시 codec·동적 resolver로 outgoing
+  MethodChannel/BasicMessageChannel을 관찰한다. 앱 응답·예외·null Future를 보존하고
+  인자·반환값·원문 오류를 저장하지 않는다. 실제 macOS Swift/Pigeon 왕복과 실패 경로를 검증했다.
+- impact/runtime 보고서에 증거 위치의 기준 `project`를 명시하고 배포 skill의
+  snapshot 위치·로컬 파일 링크 구분과 중복 조회 지침을 보강했다.
+
+### Fixed
+
+- Dart 영향 root에 선언 위치가 없어도 실제 query 바인딩의 위치·기존 심볼 종류를 보존한다.
+  바인딩·분석 위치 또는 브리지 USR이 충돌하면 조인을 거부한다.
+- 같은 이름의 Dart 호출자는 producer가 반환한 실제 ID를 재조회해 파일 위치로 구별한다.
+  같은 파일의 상충하는 후보는 임의로 연결하지 않는다.
+- 같은 위치에 다른 동적 채널 표현식이 관찰되면 prefix 후보와 미해석 근거에 모두 보존한다.
+- Basic handler의 범위·참조·실제 dispatch 후보 근거가 있으면 공통 등록 함수에서 서로
+  독립적인 handler로 영향이 퍼지는 것을 막는다. 등록 선언 자체와 공유 등록 의존 변경은
+  모든 관련 채널에 전파하며, 근거가 없거나 불완전하면 넓은 후보와 정밀도 공백을 보존한다.
+- Flutter recorder는 timeout 관찰 후 실제 Future가 끝나면 실행 완료를 허용한다.
+  timeout 결과와 늦은 응답·예외 전달은 유지하고, 아직 응답 대기 중인 호출과 finish 후
+  동결된 미완료 기록은 통과로 바뀌지 않는다.
+
 ## [0.5.0] - 2026-09-13
 
 ### Added

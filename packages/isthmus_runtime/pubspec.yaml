@@ -1,0 +1,20 @@
+name: isthmus_runtime
+description: Runtime Flutter platform bridge observation for isthmus.
+version: 0.1.0
+repository: https://github.com/ictechgy/isthmus
+issue_tracker: https://github.com/ictechgy/isthmus/issues
+environment:
+  sdk: ^3.7.0
+  flutter: '>=3.29.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: false

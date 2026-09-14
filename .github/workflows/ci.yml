@@ -29,3 +29,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+      - name: Check consumer performance budgets
+        run: node scripts/benchmark-preflight.mjs

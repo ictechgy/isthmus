@@ -1,7 +1,7 @@
 # isthmus
 
 크로스플랫폼 앱에서 **언어 경계를 넘는 호출**을 그래프로 잇는 도구.
-[cartograph](https://github.com/ictechgy/cartograph)(Swift) · kartograph(Kotlin, 예정) ·
+[cartograph](https://github.com/ictechgy/cartograph)(Swift) · [kartograph](https://github.com/ictechgy/kartograph)(Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph)(Dart)가 각자 그린 지도를 하나로 붙인다.
 
 [English](README.md)
@@ -22,36 +22,22 @@ React Native나 Flutter 앱의 네이티브 코드는 JS/Dart가 **문자열 이
 
 isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 메서드 이름 · 등록 지점 ·
 호출 지점)을 문자열 키로 조인해서, 경계를 넘는 간선을 만들고 위 세 가지를 답한다.
-그리고 그 결과를 cartograph/kartograph에 **보존 근거로 돌려준다** — "Swift
+그리고 그 결과를 cartograph에 **보존 근거로 돌려준다** — "Swift
 `CameraHandler.takePhoto`는 `lib/camera.dart:42`가 채널 `com.example/camera`로 부르므로
 보존".
 
 ## 상태
 
-**0.5.0.** CLI 사용성을 통일하고 진단 가독성을 높였다: 모든 명령에서 옵션이 입력
-파일 앞뒤 어디에 와도 동작하고(`-`로 시작하는 경로는 `--` 구분자 뒤에 쓴다),
-`-h`/`--help`는 임의 위치에서 이기며 `help <command>`가 명령별 사용법을 낸다.
-조인이 보류되면 어느 명령이든 관찰한 fact 수·문서 수를 함께 알리고
-(check·graph·query·retentions·diff), query의 `notFound`·`ambiguous`는 원인 한 줄을
-stderr에 출력한다. query `qualifiedName`은 `:`까지 이스케이프해 첫 `:`와 `#` 기준
-분해가 가역이다. 내부로는 공유 CLI 인프라를 check-command에서 분리하고 SARIF 지문
-해싱을 주입해 report 계층이 Node 내장 모듈에 의존하지 않으며, diff 문서 형태를
-`BridgeDiffDocument`로 명시했다. 출력 문서·종료 코드·필드는 불변이고 0.4.1과 값이
-달라지는 것은 이름에 `:`를 포함하는 채널·메서드의 `qualifiedName`뿐이다.
-0.4.0의 추가 사항 — GitHub code scanning용 check SARIF 2.1.0 렌더링(`check --format sarif`,
-additive, 소스 줄 이동에 강한 논리 키 지문), 브리지가 없는 프로젝트와 아무것도
-관찰하지 못한 실행을 구분하는 check summary 관찰량(`observedFacts`·`observedLimitations`),
-다중 호출자 보존 근거(`evidence.callers` — 근거당 상한·명시적 `callersOmitted` 계수,
-단일 호출자는 기존과 바이트 동일), 인덱스 없이 빌드된 Objective-C 핸들러의 usr 없는
-`qualifiedName` 신원 — 과 0.3.0의 핵심 계약·명령은 그대로 유지된다. 외부 입력·
-혼합 target·그래프 크기·Dart/Swift Phase 0 추출 경계는 fail-closed를 유지하고,
-조인하지 못한 사실은 소비자 쪽에서 다시 세며 근거를 만들지 못한 보존 대상은 조용히
-사라지는 대신 실패로 보고한다. 수신 측이 신고한 분석 공백은 불일치가 아니라 판정
-불가로 보고되고 공백 완화는 target을 넘지 않는다. 다음 단계는 실제 Flutter 앱
-도그푸딩과 React Native 지원이다.
+개발 소스는 Flutter Dart ↔ Swift/Kotlin 변경 사전 점검, MethodChannel·Pigeon/BasicMessageChannel
+사실, 명시한 런타임 시나리오 대조와 내용 기반 수집 캐시를 지원한다. 실제 macOS·Android
+검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
+[런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-정식 producer는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상이다. 두 도구의 실제 출력과
-공개 battery 플러그인의 Swift USR·Dart 호출 근거 왕복을 검증했다.
+npm 발행본은 **0.5.0**이며 위 개발 기능은 아직 포함하지 않는다. 호환되는 producer 개발
+commit이 필요하다. 발행된 Dart/Swift MethodChannel 절차는 cartograph 0.5.3 이상과
+dartograph 0.1.1 이상을 사용하며 공개 battery 플러그인으로 검증했다.
+React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 현재 cartograph(Swift)를
+대상으로 한다. 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
 | 문서 | 내용 |
 |---|---|
@@ -93,7 +79,38 @@ npx isthmus-cli --help
 
 ## 사용
 
-isthmus는 자매 도구를 직접 실행하지 않는다. 각 도구가 만든 JSON 파일을 전달하면 된다.
+개발 소스에는 `impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는
+`--compact`, 분석 공백도 실패시키는 `--strict`가 추가됐다. 아직 npm 0.5.0 발행본에는
+없다. 빌드·계약·현재 브리지 한정 범위는 [변경 사전 점검](docs/IMPACT.md)을 참조한다.
+Android 개발 지원은 `selection.kotlin`과 Kartograph snapshot을 사용한다. Kotlin Method/Basic
+사실을 Dart 소비자에 연결하고 Android 실행은 Kotlin 후보에만 대조한다.
+[Android 수집 설정](docs/PREFLIGHT.md#android-수집)과 [선택적 Kotlin 도구 구축](docs/TOOLCHAIN.md)을 참조한다.
+개발 소스의 `verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
+통신 기록을 대조한다([계약](docs/RUNTIME.md)). 선택적 [Flutter 수집기](packages/isthmus_runtime/README.md)는
+실제 macOS·Android 앱에서 핸들러와 `url_launcher_macos 3.2.2`·
+`shared_preferences_android 2.4.1`의 Pigeon 생성 API로 검증했다.
+언어 내부 전이 영향 연결과 스냅샷 수집은 개발 소스에 구현됐으며, 더 넓은 앱 적용 범위와
+처음 설치하는 사용자의 재현 절차는 검증 중이다.
+
+개발 소스의 `preflight <context.json> --strict --compact`는 producer의 전이 영향과
+브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
+실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
+[언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
+runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
+전이 분석을 대조하고, native 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
+
+`preflight <context.json> --summary --strict --compact`로 작은 개요를 읽고,
+`--explain <exact-producer-symbol-id>`로 한 심볼의 전체 원인 경로를 조회한다.
+summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 항목도 검토 상태에 반영한다.
+선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 개발 producer로 literal 주소와
+증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
+이 추가 기능은 npm 0.5.0 발행본에는 없다.
+호환 개발 도구를 로컬 Git의 고정 commit에서 새로 구축하는 방법은
+[도구 구축 절차](docs/TOOLCHAIN.md)에 있다. Dart AOT 실행 파일, impact와 Basic을 함께
+제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
+
+isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
+명시한 준비·producer 명령을 실행한다.
 
 ```bash
 isthmus check dart-bridges.json swift-bridges.json
@@ -364,7 +381,8 @@ JSON으로 출력한다. 연결에는 호출자와 핸들러 위치가 포함된
 이전 불일치가 더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를
 함께 확인해야 한다. `--strict`은 인자 위치와 무관하게 인식하며 두 번 이상 줄 수 없다.
 
-현재 diff는 Flutter의 Dart·Swift 문서만 받는다. 각 시점에 두 플랫폼이 모두 필요하며,
+개발 소스의 diff는 Flutter Dart와 Swift 또는 Kotlin 문서를 받는다. 한 비교에는 native 언어
+하나만 사용하며 각 시점에 호출/수신 문서가 모두 필요하다.
 양 시점의 `project`와 플랫폼·도구별 문서 개수가 같아야 한다. 한 checkout의 같은
 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만 추출한 결과와 전체 결과를
 비교하지 말고 같은 분석 설정을 사용한다. 입력 파일은 합계 256개, 텍스트 길이 제한은

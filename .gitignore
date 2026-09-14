@@ -23,6 +23,13 @@ experiments/**/build/
 experiments/**/.build/
 experiments/**/pubspec.lock
 
+# Flutter 런타임 라이브러리의 로컬 생성물
+packages/**/.dart_tool/
+packages/**/build/
+packages/**/pubspec.lock
+packages/**/.flutter-plugins
+packages/**/.flutter-plugins-dependencies
+
 # 비밀
 .env
 .env.*

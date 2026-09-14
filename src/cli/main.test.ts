@@ -24,6 +24,27 @@ const packagePath = fileURLToPath(
   new URL('../../package.json', import.meta.url),
 );
 
+test('실제 impact 프로세스가 파일 선택으로 호출 근거를 컴팩트하게 출력한다', async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [mainPath,
+    'impact', '--file', 'ios/Runner/CameraPlugin.swift', dartPath, swiftPath, '--compact']);
+  const report = JSON.parse(stdout);
+  assert.equal(report.status, 'observed');
+  assert.ok(report.methods.some((item: { method: string }) => item.method === 'takePhoto'));
+  assert.ok(report.reviewFiles.includes('lib/camera_bridge.dart'));
+  assert.equal(report.complete, false);
+  assert.equal(stdout.trim().split('\n').length, 1);
+  assert.equal(stderr, '');
+});
+
+test('실제 런타임 CLI가 합성 기록의 선언된 기대를 검증한다', async () => {
+  const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/runtime/${name}.json`, import.meta.url));
+  const { stdout, stderr } = await execFileAsync(process.execPath, [mainPath, 'verify-runtime',
+    '--expectations', fixture('expectations'), fixture('success'), '--strict']);
+  assert.equal(JSON.parse(stdout).status, 'passed');
+  assert.equal(JSON.parse(stdout).complete, false);
+  assert.equal(stderr, '');
+});
+
 test('실제 CLI 프로세스가 루트 도움말을 출력한다', async () => {
   const { stdout, stderr } = await execFileAsync(process.execPath, [
     mainPath,

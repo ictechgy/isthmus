@@ -29,7 +29,72 @@ verifyQuery();
 verifyMissingQuery();
 verifyGraph();
 verifyDiff();
+verifyImpact();
+verifyRuntime();
+verifyPreflight();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
+
+/** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
+function verifyPreflight() {
+  const fixture = fileURLToPath(new URL('../fixtures/preflight/context.json', import.meta.url));
+  const args = ['preflight', fixture, '--strict', '--compact'];
+  const result = run(args);
+  verify(result.status === 0, 'preflight observed exit code');
+  const report = JSON.parse(result.stdout);
+  verify(report.format === 'isthmus-preflight' && report.reviewFiles.includes('lib/screen.dart'), 'preflight transitive consumer');
+  verify(report.complete === false, 'preflight scope');
+  const summary = run(['preflight', fixture, '--summary', '--limit', '1', '--compact']);
+  const summaryDocument = JSON.parse(summary.stdout);
+  verify(summary.status === 0 && summaryDocument.format === 'isthmus-preflight-summary', 'preflight bounded summary');
+  verify(summaryDocument.affected.items.length <= 1 && summaryDocument.affected.omitted >= 0, 'preflight summary limit');
+  const explanation = run(['preflight', fixture, '--explain', 'dart:screen', '--compact']);
+  verify(explanation.status === 0 && JSON.parse(explanation.stdout).status === 'found', 'preflight explanation');
+  const missingExplanation = run(['preflight', fixture, '--explain', 'missing-subject', '--compact']);
+  verify(missingExplanation.status === 64 && JSON.parse(missingExplanation.stdout).status === 'notFound', 'preflight missing explanation');
+  verify(run(['preflight', fixture, '--summary', '--explain', 'dart:screen']).status === 64, 'preflight view exclusivity');
+  verify(run(['preflight', fixture, '--limit', '1']).status === 64, 'preflight limit scope');
+  verify(run([...args, '--revision', 'other']).status === 1, 'preflight stale context');
+  verify(run(['preflight', dartPath]).status === 2, 'preflight invalid context');
+  verify(run(['preflight']).status === 64, 'preflight usage');
+  verify(run(['help', 'preflight']).stdout.startsWith('Usage: isthmus preflight'), 'preflight help');
+  const runtime = fileURLToPath(new URL('../fixtures/preflight/runtime.json', import.meta.url));
+  const expectations = fileURLToPath(new URL('../fixtures/preflight/expectations.json', import.meta.url));
+  const verified = run([...args, runtime, '--expectations', expectations]);
+  verify(verified.status === 0, 'preflight runtime success');
+  verify(JSON.parse(verified.stdout).runtime.aligned === true && JSON.parse(verified.stdout).runtime.verification.status === 'passed',
+    'preflight runtime alignment');
+  verify(run([...args, '--expectations', expectations]).status === 1, 'preflight absent runtime observations');
+}
+
+/** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */
+function verifyImpact() {
+  const args = ['impact', '--file', 'ios/Runner/CameraPlugin.swift', dartPath, swiftPath];
+  const result = run([...args, '--compact']);
+  verify(result.status === 0, 'impact exit code');
+  const report = JSON.parse(result.stdout);
+  verify(report.format === 'isthmus-impact' && report.status === 'observed', 'impact document');
+  verify(report.methods.some(({ method }) => method === 'takePhoto'), 'impact caller evidence');
+  verify(report.reviewFiles.includes('lib/camera_bridge.dart'), 'impact review files');
+  verify(report.complete === false && report.limitations.length > 0, 'impact limitations');
+  verify(run([...args, '--strict']).status === 1, 'impact strict gaps');
+  verify(run(['impact', '--file', 'deleted.dart', dartPath, swiftPath, '--strict']).status === 1,
+    'impact unobserved selection');
+  verify(run(['help', 'impact']).stdout.startsWith('Usage: isthmus impact'), 'impact help');
+}
+
+/** 합성 런타임 기록으로 빌드된 소비자의 성공·실패·문서 범위를 검증한다. */
+function verifyRuntime() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/runtime/${name}.json`, import.meta.url));
+  const args = ['verify-runtime', '--expectations', fixture('expectations'), '--strict', '--compact'];
+  const success = run([...args, fixture('success')]);
+  verify(success.status === 0, 'runtime success exit code');
+  const report = JSON.parse(success.stdout);
+  verify(report.status === 'passed' && report.scope === 'declared-scenarios' && report.complete === false,
+    'runtime scoped result');
+  const failure = run([...args, fixture('success'), fixture('missing-handler')]);
+  verify(failure.status === 1 && JSON.parse(failure.stdout).summary.failedCalls === 1,
+    'runtime observed failure');
+}
 
 /** 인자 없는 호출이 사용 오류 64인지 검증한다. */
 function verifyUsageError() {

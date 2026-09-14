@@ -28,6 +28,15 @@
   "files": [
     "dist",
     "Skills",
+    "scripts/capture-preflight.mjs",
+    "scripts/run-child.mjs",
+    "scripts/build-preflight-toolchain.mjs",
+    "docs/TOOLCHAIN.md",
+    "docs/PREFLIGHT.md",
+    "docs/RUNTIME.md",
+    "docs/IMPACT.md",
+    "docs/BRIDGE-MESSAGES.md",
+    "docs/GRAPH-EXCHANGE.md",
     "LICENSE",
     "README.md",
     "README.ko.md"
@@ -43,7 +52,7 @@
     "verify:build": "node scripts/verify-build-contract.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

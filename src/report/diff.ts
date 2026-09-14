@@ -101,13 +101,14 @@ export function createBridgeDiff(
 function validateSnapshots(before: readonly BridgeFactsDocument[], after: readonly BridgeFactsDocument[]): void {
   const all = [...before, ...after];
   if (new Set(all.map((doc) => doc.project)).size !== 1 ||
+    new Set(all.filter((doc) => doc.platform === 'swift' || doc.platform === 'kotlin').map((doc) => doc.platform)).size !== 1 ||
     ![before, after].every((docs) => docs.some((doc) => doc.platform === 'dart') &&
-      docs.some((doc) => doc.platform === 'swift')) ||
+      docs.some((doc) => doc.platform === 'swift' || doc.platform === 'kotlin')) ||
     JSON.stringify(producerInventory(before)) !== JSON.stringify(producerInventory(after)) ||
-    all.some((doc) => (doc.platform !== 'dart' && doc.platform !== 'swift') ||
+    all.some((doc) => (doc.platform !== 'dart' && doc.platform !== 'swift' && doc.platform !== 'kotlin') ||
       (doc.target !== null && doc.target !== 'flutter'))) {
     throw new BridgeJoinValidationError(
-      'Diff requires the same project and matching Flutter dart/swift producer '
+      'Diff requires the same project and matching Flutter Dart/native producer '
       + 'inventories in both snapshots; rebuild both snapshots from one checkout.',
     );
   }

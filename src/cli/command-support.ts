@@ -39,9 +39,10 @@ export const MAX_TOTAL_INPUT_TEXT_LENGTH = 64 * 1024 * 1024;
 export async function readBridgeDocuments(
   inputPaths: readonly string[],
   readTextFile: ReadTextFile,
+  initialTextLength = 0,
 ): Promise<BridgeFactsDocument[]> {
   const documents: BridgeFactsDocument[] = [];
-  let totalTextLength = 0;
+  let totalTextLength = initialTextLength;
   for (const [index, path] of inputPaths.entries()) {
     const inputPosition = index + 1;
     let text: string;

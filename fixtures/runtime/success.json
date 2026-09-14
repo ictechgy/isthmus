@@ -1,0 +1,27 @@
+{
+  "format": "bridge-runtime",
+  "version": 1,
+  "project": "/isthmus-runtime-fixture",
+  "revision": "fixture-revision",
+  "tool": { "name": "synthetic-fixture", "version": "1" },
+  "run": {
+    "id": "success-run",
+    "scenario": "take-photo",
+    "platform": "ios",
+    "status": "completed",
+    "startedAt": "2026-09-14T00:00:00Z",
+    "finishedAt": "2026-09-14T00:00:01Z"
+  },
+  "droppedEvents": 0,
+  "events": [
+    {
+      "sequence": 1,
+      "instance": "main",
+      "transport": "method-channel",
+      "channel": "example/camera",
+      "method": "takePhoto",
+      "outcome": "success",
+      "caller": { "path": "lib/camera.dart", "line": 4, "column": 1 }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "format": "bridge-expectations",
+  "version": 1,
+  "project": "/isthmus-runtime-fixture",
+  "revision": "fixture-revision",
+  "checks": [
+    {
+      "id": "photo-main-ios",
+      "scenario": "take-photo",
+      "platform": "ios",
+      "instance": "main",
+      "transport": "method-channel",
+      "channel": "example/camera",
+      "method": "takePhoto"
+    }
+  ]
+}
