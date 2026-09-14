@@ -42,6 +42,8 @@ for (const requiredPath of [
   'dist/cli/preflight-command.js',
   'scripts/capture-preflight.mjs',
   'scripts/run-child.mjs',
+  'scripts/build-preflight-toolchain.mjs',
+  'docs/TOOLCHAIN.md',
   'docs/PREFLIGHT.md',
   'docs/BRIDGE-MESSAGES.md',
   'docs/IMPACT.md',

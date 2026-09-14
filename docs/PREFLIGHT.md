@@ -1,6 +1,7 @@
 # 언어 간 변경 사전 점검
 
 개발 소스 기능이며 npm 0.5.0 발행본에는 없다. `isthmus preflight`는 JSON만 읽는다.
+세 도구를 고정 source commit에서 새로 구축하는 방법은 [TOOLCHAIN.md](TOOLCHAIN.md)에 있다.
 언어 내부 해석과 compiler index 생성은 producer 및 별도 workflow가 맡는다.
 현재 지원 범위는 Flutter Dart↔Swift의 MethodChannel과 producer가 제공한 사용 관계다.
 선택적 [BasicMessageChannel v2 입력](BRIDGE-MESSAGES.md)을 함께 수집하면 literal 주소와

@@ -127,6 +127,10 @@ to 20 items per collection (`--limit 1..100`); omitted items still affect review
 Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addresses and
 proven prefix candidates with development producers. Prefix matches preserve unresolved
 suffix and instance wiring. These additions are not in the published 0.5.0 package.
+To build compatible development tools from pinned local Git commits, use the
+[toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone
+Dart executable, a Cartograph executable with both impact and message support,
+and an isolated installation of the isthmus package.
 
 The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
 runs the preparation and producer commands declared in its configuration:

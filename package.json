@@ -30,6 +30,8 @@
     "Skills",
     "scripts/capture-preflight.mjs",
     "scripts/run-child.mjs",
+    "scripts/build-preflight-toolchain.mjs",
+    "docs/TOOLCHAIN.md",
     "docs/PREFLIGHT.md",
     "docs/RUNTIME.md",
     "docs/IMPACT.md",
@@ -50,7 +52,7 @@
     "verify:build": "node scripts/verify-build-contract.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

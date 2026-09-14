@@ -6,6 +6,9 @@
 
 ### Added
 
+- `scripts/build-preflight-toolchain.mjs`: 세 저장소의 고정 commit만 별도 디렉터리에서
+  구축하고 실행 명령·SDK·hash·단계별 시간을 기록한다. 기존 출력 디렉터리를 보호하고
+  npm tarball의 격리 설치까지 수행한다.
 - `preflight --summary [--limit 1..100]`와 `--explain <selector>`: 전체 검토 상태와 항목 수를
   보존하는 작은 요약, 정확한 key/producer ID/qualifiedName의 전체 원인 경로를 제공한다.
   모호하거나 없는 조회는 근거 JSON과 코드 64를 반환한다. 배포 skill에 이 질의 흐름을 연결했다.

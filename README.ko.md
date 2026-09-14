@@ -115,6 +115,9 @@ summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 �
 선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 개발 producer로 literal 주소와
 증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
 이 추가 기능은 npm 0.5.0 발행본에는 없다.
+호환 개발 도구를 로컬 Git의 고정 commit에서 새로 구축하는 방법은
+[도구 구축 절차](docs/TOOLCHAIN.md)에 있다. Dart AOT 실행 파일, impact와 Basic을 함께
+제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
 
 isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
 명시한 준비·producer 명령을 실행한다.

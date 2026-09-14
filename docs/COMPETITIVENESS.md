@@ -3,6 +3,45 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
+## 고정 소스 구축·producer 통합 체크포인트
+
+이전 턴은 구현·실행 검증·커밋을 완료한 progress다. 현재 원본 자매 저장소의 작업을
+변경하지 않고 별도 통합 branch에서 진행한다. 아래 이전 기록의 미완료 항목과 구분한다.
+
+- Cartograph 원본 `de1bac9`의 작업 트리를 전후 hash 일치로 복사해 `6b507a6` 기준선을
+  만들고 Basic을 합쳤다. integration branch는 `feature/isthmus-preflight-integration`,
+  checkout은 `isthmus-cartograph-integration-8dpr_1c_/repo`(아래 임시 상위 경로)다.
+  원본의 impact/MCP/runtime와 Basic이 한 실행 파일에 있다. 최종 현재 commit `628f9b9`.
+- 새 source archive 구축에서 발견한 handler 범위 중복을 고쳤다. 실제 겹침은 여전히
+  incomplete이며, 전이 override와 모호한 dispatch/위치 없는 대상도 검증했다. 큰 setup의
+  범위·참조를 선언/owner별로 분류하고 파일 사이의 dependency 생성 예산을 공유한다.
+  1000 handler 구문/합성 인덱스 분리 검사 약 0.48초, 범위·예산 변이 검사는 실제 실패했다.
+  coverage 90.07%, CLI/fixtures와 self dead/module·type cycles/rules 통과.
+  `/tmp/isthmus-main-integration-final-*.log`, `/tmp/isthmus-main-self-*.log`.
+- Dartograph 최종 현재 commit `df5c414`: mutable 필드 진입 상태를 initializer로 단정하지
+  않고, 직선 대입과 독립 then/else·closure/loop/switch 상태를 구분한다. exporter version/
+  transport pair 검증과 Basic 전용 dynamic limitation을 추가했다. 400tests, coverage 91.51%,
+  analyzer boundary·CLI·false-positive corpus·AOT·pub dry-run 통과. c6 직렬 실행 로그 참고.
+- 실제 Flutter Basic API + mock messenger에서 같은 mutable 호출의 a/b 변화, 고정 필드 a,
+  직선 대입 b, else 경로 a를 실행하고 producer와 대조했다. mutable 주소는 확정하지 않으면서
+  나머지 세 경로의 정확한 주소를 보존한다. native IPC 검증은 아니다.
+  `isthmus-binding-evidence-XIggQ5/verification.json`.
+- `build-preflight-toolchain.mjs`는 세 저장소의 전체 commit ID만 새 디렉터리에 archive하여
+  Swift/Dart AOT/npm 설치본을 구축한다. 기존 destination 보호, 잘못된 commit과 JSON 원문
+  비노출 검사를 추가했다. 첫 전체 구축은 63.685초(SDK/전역 의존성 캐시 준비 상태).
+  최초 bdb24e2/0305fcf/8795857 조합에서 실제 source 회귀를 찾아 수정했으므로 그 빌드의
+  capability 성공을 최종 public 검증 성공으로 오인하지 않는다. 최종 refs 재구축은 다음 단계다.
+- GLM Dart 검토: SHA 02f6f1eae0a1, 125,892 bytes. 실제 field mutation·exporter pair·문구를
+  수정했다. redaction으로 변형된 테스트 문자열은 원본 검사 실패가 아니다.
+  GLM Swift 검토: SHA 1cdcebf1a096, 237,588 bytes. opaque gap·ambiguous dispatch를 반영했고
+  예산이 fact별이라는 지적은 map 바깥의 document budget으로 반증했다. 실제 생성 비용과
+  범위 중복은 별도 재현·수정했다. `/tmp/isthmus-{dart,swift}-producer-glm.log`.
+- 하위 작업자의 사용량 제한 후 main이 변경과 로그를 이어받아 검증했다. 원본 자매 worktree는
+  보존되어 있으며 commit/branch가 다른 세션의 작업을 덮어쓴 상태가 아니다.
+
+다음 작업: 최종 고정 refs로 새 구축·공개 source/실행 검증 → 원격 PR/CI와 공개 호환 버전
+정리 → 첫 외부 사용자 구축 및 더 넓은 변경 표본 평가. 전체 목표는 active다.
+
 2026-09-14 현재 체크포인트. isthmus 구현 커밋은 `6503516`이다.
 이전 턴은 실제 검증 근거가 다음 수정을 결정한 progress였고,
 아래 구현·검증을 추가했다. 뒤의 과거 수치와 미지원 문장은 해당 실행 시점의 기록이다.
