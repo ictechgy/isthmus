@@ -12,7 +12,7 @@ import type { MessageEndpoint } from '../join/messages.ts';
 import type { BridgeHandlerDependency } from '../exchange/messages.ts';
 import type { BridgeSymbol } from '../exchange/parse.ts';
 
-type Language = 'dart' | 'swift';
+type Language = 'dart' | 'swift' | 'kotlin';
 
 /** 언어 심볼과 경계의 키 공간을 분리한다. 원래 producer ID는 symbol.id에 보존한다. */
 export type PreflightSubject = {
@@ -105,12 +105,23 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     const key = symbolKey(platform, symbol.id);
     const existing = nodes.get(key);
     if (existing !== undefined && existing.kind === 'symbol') {
+      const before = existing.symbol.location;
+      const after = symbol.location;
       if (existing.symbol.qualifiedName !== symbol.qualifiedName ||
-        (existing.symbol.location !== undefined && symbol.location !== undefined &&
-          locationKey(platform, existing.symbol.location) !== locationKey(platform, symbol.location))) {
+        (before !== undefined && after !== undefined && (before.path !== after.path ||
+          (before.line !== undefined && after.line !== undefined && before.line !== after.line) ||
+          (before.column !== undefined && after.column !== undefined && before.column !== after.column)))) {
         throw new PreflightGraphError('Conflicting symbol identities in producer impact inputs.');
       }
-      if (existing.symbol.location !== undefined || symbol.location === undefined) return key;
+      if (before !== undefined && after !== undefined) {
+        nodes.set(key, { ...existing, symbol: { ...existing.symbol, location: {
+          path: before.path,
+          ...(before.line === undefined && after.line === undefined ? {} : { line: before.line ?? after.line }),
+          ...(before.column === undefined && after.column === undefined ? {} : { column: before.column ?? after.column }),
+        } } });
+        return key;
+      }
+      if (before !== undefined || after === undefined) return key;
     }
     nodes.set(key, { key, kind: 'symbol', platform, symbol });
     return key;
@@ -137,7 +148,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   }
 
   function endpointKey(endpoint: BridgeEndpoint): string | undefined {
-    if (endpoint.platform !== 'dart' && endpoint.platform !== 'swift') return undefined;
+    if (endpoint.platform !== 'dart' && endpoint.platform !== 'swift' && endpoint.platform !== 'kotlin') return undefined;
     if (endpoint.sourceLanguage === 'objective-c') return undefined;
     const binding = endpoint.platform === 'dart' ? bindings.get(locationKey('dart', endpoint.location)) : undefined;
     const id = endpoint.symbol?.usr ?? binding?.id;
@@ -189,7 +200,8 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
             }
             for (const { dispatchTargets, ...dependency } of dependencies) {
               for (const target of [dependency.symbol, ...(dispatchTargets ?? [])]) {
-                const dependencyKey = symbolKey('swift', target.usr!);
+                if (endpoint.platform !== 'swift' && endpoint.platform !== 'kotlin') continue;
+                const dependencyKey = symbolKey(endpoint.platform, target.usr!);
                 if (!nodes.has(dependencyKey)) continue;
                 route.receiverKeys.push(dependencyKey);
                 link(dependencyKey, key, { kind: 'bridge-message-dependency', evidence, dependency,
@@ -260,9 +272,10 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     if (depths.has(route.subject.key)) for (const key of route.callerKeys) {
       if (!dartRoots.has(key)) {
         const subject = nodes.get(key);
+        const location = subject?.kind === 'symbol' ? subject.symbol.location : undefined;
         limits.push({ code: 'missing-language-continuation', message: 'Dart consumer impact was not supplied for a reached bridge caller.',
-          ...(subject?.kind === 'symbol' && subject.symbol.location !== undefined
-            ? { evidence: { platform: 'dart' as const, location: subject.symbol.location } } : {}) });
+          ...(location?.line !== undefined && location.column !== undefined
+            ? { evidence: { platform: 'dart' as const, location: { path: location.path, line: location.line, column: location.column } } } : {}) });
       }
     }
   }
@@ -322,6 +335,6 @@ export function hasPreflightBlockers(report: PreflightReport): boolean {
 function symbolKey(platform: Language, id: string): string { return JSON.stringify([platform, id]); }
 
 /** 호출 위치와 선언 위치의 의미를 바꾸지 않고 정확한 fact binding만 찾는다. */
-function locationKey(platform: string, location: { path: string; line: number; column: number }): string {
+function locationKey(platform: string, location: { path: string; line?: number; column?: number }): string {
   return JSON.stringify([platform, location.path, location.line, location.column]);
 }

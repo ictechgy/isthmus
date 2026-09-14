@@ -40,6 +40,19 @@ test('Swift 심볼 변경은 런타임에만 나타난 Dart 호출 위치도 검
   assert.ok(report.reviewFiles.includes('lib/dynamic.dart'));
 });
 
+test('Android runtime-only 호출은 같은 이름의 Swift 구현과 섞이지 않고 Kotlin 후보를 찾는다', () => {
+  const kotlin = parseBridgeFactsDocument({ ...swift, platform: 'kotlin', tool: { name: 'kartograph', version: '1' },
+    facts: swift.facts.map((fact) => ({ ...fact, location: { ...fact.location, path: 'android/Camera.kt' },
+      symbol: { qualifiedName: 'Camera.handle', usr: 'method:Camera#handle' } })) });
+  const report = createBridgeImpact([dart, swift, kotlin], { files: ['lib/dynamic.dart'], symbols: [] },
+    runtime({ ...raw, run: { ...raw.run, platform: 'android' } }));
+  assert.equal(report.runtime?.routes[0]?.staticStatus, 'candidates');
+  assert.equal(report.methods[0]?.reason, 'runtime-observation');
+  assert.deepEqual(report.methods[0]?.handlers.map(({ platform }) => platform), ['kotlin']);
+  assert.ok(report.reviewFiles.includes('android/Camera.kt'));
+  assert.ok(!report.reviewFiles.includes('ios/Camera.swift'));
+});
+
 test('다른 revision은 정적 후보 연결에 사용하지 않으며 다른 프로젝트는 거부한다', () => {
   const report = createBridgeImpact([dart, swift], { files: ['lib/dynamic.dart'], symbols: [] },
     runtime({ ...raw, revision: 'old' }));

@@ -57,6 +57,25 @@ flutter test tool/benchmark_recorder.dart --no-pub
 아니다. 임시/진단 빌드에서 필요한 채널과 실제 codec을 명시하며, Basic/Pigeon reply의 성공·
 실패 의미는 명시 classifier가 정한다. 대응하는 codec이 없으면 이름만으로 추측하지 않는다.
 
+## 실제 Android 앱 검증
+
+개발 소스의 Android 하네스는 별도 debug 앱에서 Kotlin MethodChannel/BasicMessageChannel
+핸들러를 실행하고 수집기 JSON을 검증한다. Android SDK·JDK·Flutter와 실행 가능한 Android
+장치 또는 에뮬레이터 이미지가 필요하다.
+
+```bash
+node scripts/verify-flutter-android-runtime.mjs <flutter> <adb> <isthmus-js>
+# 같은 capture의 Kotlin 정적 영향과 연결
+node scripts/verify-flutter-android-runtime.mjs <flutter> <adb> <isthmus-js> \
+  --kartograph <kartograph-bin> --dartograph <dartograph-aot>
+```
+
+초기 API 36 arm64 실행에서는 자체 Method/Basic 성공 2개, 기대한 오류·핸들러 누락·timeout
+3개, pending 미완료와 Kotlin 본문 marker를 확인했다. 이는 실제 Android 통신이며 임의의
+런타임 의존성을 자동 발견하는 기능은 아니다. 단순 Basic fixture와 공개 Pigeon 생성 API의
+검증은 구분하고 최신 조합의 결과는 [진행 기록](COMPETITIVENESS.md)에 남긴다.
+정적 연결에는 실제 앱 project와 capture revision을 사용하며 실행 후 식별자를 고쳐 맞추지 않는다.
+
 ## 독립적인 기대 목록
 
 `bridge-expectations` v1:

@@ -21,6 +21,17 @@ test('도구 구축은 세 저장소의 고정 commit과 별도 출력 경로를
   ]) assert.throws(() => parseToolchainManifest(input));
 });
 
+test('Android 도구 구축은 Swift 저장소 없이 Kotlin producer를 선택할 수 있다', () => {
+  const original = manifest('/test');
+  const { cartograph, ...required } = original.repositories;
+  const android = parseToolchainManifest({ ...original, repositories: { ...required, kartograph: cartograph } });
+  assert.equal(android.repositories.cartograph, undefined);
+  assert.equal(android.repositories.kartograph.revision, 'a'.repeat(40));
+  assert.throws(() => parseToolchainManifest({ ...original, repositories: required }), /native|producer/i);
+  const both = parseToolchainManifest({ ...original, repositories: { ...original.repositories, kartograph: cartograph } });
+  assert.ok(both.repositories.cartograph && both.repositories.kartograph);
+});
+
 test('기존 destination을 덮어쓰거나 실패 정리로 지우지 않는다', async () => {
   const root = await mkdtemp(join(tmpdir(), 'isthmus-toolchain-existing-'));
   try {

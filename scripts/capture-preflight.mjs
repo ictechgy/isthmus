@@ -9,6 +9,7 @@ import { isProjectRelativePath, isSafeNonEmptyString, parseBridgeFactsDocument }
 import { parsePreflightContext } from '../dist/exchange/preflight-context.js';
 import { parseMessageBridgeDocument } from '../dist/exchange/messages.js';
 import { adaptCartographImpact, adaptDartographImpact } from '../dist/exchange/producer-impact.js';
+import { adaptKartographImpact } from '../dist/exchange/kartograph-impact.js';
 import { createPreflightReport, hasPreflightBlockers } from '../dist/report/preflight.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
 import { writeTextAtomically } from '../dist/cli/atomic-write.js';
@@ -22,11 +23,15 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
   const started = performance.now();
   const project = await realpath(config.project);
   validateConfig(config, project);
+  const natives = [['swift', 'cartograph'], ['kotlin', 'kartograph']].filter(([, name]) => config[name] !== undefined);
+  const producerNames = ['dartograph', ...natives.map(([, name]) => name)];
   const output = resolve(project, config.output);
   const cachePath = resolve(project, config.cache);
   const selection = {};
   for (const platform of Object.keys(config.selection ?? {})) {
-    if (platform !== 'dart' && platform !== 'swift') throw new CaptureError('Unsupported selection platform.');
+    if (platform !== 'dart' && !natives.some(([language]) => language === platform)) {
+      throw new CaptureError('Selection requires a configured producer for its platform.');
+    }
     selection[platform] = parseImpactSelection({ format: 'isthmus-changes', version: 1, ...config.selection[platform] });
   }
   const timings = [];
@@ -53,41 +58,48 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     const diff = await run(['git'], ['diff', '--name-status', '-z', '--find-renames', selectionBase, '--'], 'git-changes');
     const untracked = await run(['git'], ['ls-files', '--others', '--exclude-standard', '-z'], 'git-untracked');
     const paths = gitChangePaths(diff);
-    for (const path of nulFields(untracked)) if (/\.(dart|swift|m|mm)$/.test(path)) paths.add(path);
-    const files = { dart: [], swift: [] };
+    for (const path of nulFields(untracked)) if (/\.(dart|swift|m|mm|kt|java)$/.test(path)) paths.add(path);
+    const files = { dart: [], swift: [], kotlin: [] };
     let outsideModel = 0;
     for (const path of paths) {
       if (!isProjectRelativePath(path)) throw new CaptureError('Git returned an unsupported source path.');
       if (path.endsWith('.dart')) files.dart.push(path);
       else if (/\.(swift|m|mm)$/.test(path)) files.swift.push(path);
+      else if (/\.(kt|java)$/.test(path)) files.kotlin.push(path);
       else outsideModel++;
     }
-    for (const platform of ['dart', 'swift']) if (files[platform].length) {
+    for (const platform of ['dart', 'swift', 'kotlin']) if (files[platform].length) {
+      if (platform !== 'dart' && !natives.some(([language]) => language === platform)) {
+        limitations.push(`unconfigured-platform-changes: ${files[platform].length} ${platform} source change(s) require separate review`);
+        continue;
+      }
       selection[platform] = parseImpactSelection({ format: 'isthmus-changes', version: 1, files: files[platform], symbols: [] });
     }
     if (outsideModel) limitations.push(`unmodeled-changes: ${outsideModel} tracked configuration/resource change(s) require separate review`);
   }
   const tools = {};
-  for (const name of ['dartograph', 'cartograph']) {
+  for (const name of producerNames) {
     const value = (await run(config[name], ['--version'], `${name}-version`)).trim();
-    const version = name === 'dartograph' ? value.replace(/^dartograph /, '') : value;
+    const version = value.replace(new RegExp(`^${name} `), '');
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported producer version response.');
     tools[name] = { name, version };
   }
-  const messageCommands = config.messages === undefined ? undefined : Object.fromEntries(['dartograph', 'cartograph']
+  const messageCommands = config.messages === undefined ? undefined : Object.fromEntries(producerNames
     .map((name) => [name, config.messages === true ? config[name] : config.messages[name] ?? config[name]]));
-  if (messageCommands) for (const name of ['dartograph', 'cartograph']) {
+  if (messageCommands) for (const name of producerNames) {
     if (JSON.stringify(messageCommands[name]) === JSON.stringify(config[name])) continue;
     const value = (await run(messageCommands[name], ['--version'], `${name}-messages-version`)).trim();
-    const version = name === 'dartograph' ? value.replace(/^dartograph /, '') : value;
+    const version = value.replace(new RegExp(`^${name} `), '');
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported message producer version response.');
     tools[`${name}Messages`] = { name, version };
   }
   const keyConfig = { project, inputs: config.inputs, toolInputs: config.toolInputs, prepare: config.prepare,
-    dartograph: config.dartograph, cartograph: config.cartograph, selection, selectionBase, limitations,
+    dartograph: config.dartograph, cartograph: config.cartograph ?? null, kartograph: config.kartograph ?? null,
+    kartographSnapshot: config.kartographSnapshot ?? null, selection, selectionBase, limitations,
     indexStore: config.indexStore ?? null, messageCommands: messageCommands ?? null, tools,
     host: { node: process.version, platform: process.platform, arch: process.arch },
-    toolchainEnvironment: digest(Object.fromEntries(['PATH', 'SDKROOT', 'DEVELOPER_DIR', 'FLUTTER_ROOT', 'DART_SDK', 'SWIFT_EXEC']
+    toolchainEnvironment: digest(Object.fromEntries(['PATH', 'SDKROOT', 'DEVELOPER_DIR', 'FLUTTER_ROOT', 'DART_SDK', 'SWIFT_EXEC',
+      'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'GRADLE_USER_HOME']
       .map((name) => [name, process.env[name] ?? null]))) };
   async function fingerprint() {
     const entries = [];
@@ -113,6 +125,9 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
       } else throw new CaptureError('Fingerprint input is not a regular file or directory.');
     }
     for (const path of [...config.inputs].sort()) await visit(resolve(project, path), `source:${path}`);
+    if (config.kartographSnapshot !== undefined) {
+      await visit(resolve(project, config.kartographSnapshot), 'kartograph:snapshot');
+    }
     for (const path of [...config.toolInputs].sort()) await visit(resolve(project, path), `tool:${path}`);
     // 같은 버전 문자열의 개발 빌드도 adapter·수집 정책이 바뀌면 다시 수집한다.
     await visit(fileURLToPath(new URL('../dist', import.meta.url)), 'isthmus:dist');
@@ -144,18 +159,26 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
   const scratch = await mkdtemp(join(tmpdir(), 'isthmus-preflight-input-'));
   try {
     const nativeArgs = ['--project', project, ...(config.indexStore === undefined ? [] : ['--index-store', resolve(project, config.indexStore)])];
+    const kotlinArgs = ['--project', project, ...(config.kartographSnapshot === undefined ? []
+      : ['--graph-file', resolve(project, config.kartographSnapshot)])];
     const bridges = [
       parseBridgeFactsDocument(await json(config.dartograph, ['bridges', '--format', 'json', '--project', project, project], 'dart-bridges')),
-      parseBridgeFactsDocument(await json(config.cartograph, ['bridges', '--target', 'flutter', '--format', 'json', ...nativeArgs], 'swift-bridges')),
     ];
     const messages = messageCommands === undefined ? undefined : [
       parseMessageBridgeDocument(await json(messageCommands.dartograph, ['bridges', '--messages', '--format', 'json', '--project', project, project], 'dart-messages')),
-      parseMessageBridgeDocument(await json(messageCommands.cartograph, ['bridges', '--messages', '--target', 'flutter', '--format', 'json', ...nativeArgs], 'swift-messages')),
     ];
+    for (const [platform, name] of natives) {
+      const args = platform === 'swift' ? nativeArgs : kotlinArgs;
+      bridges.push(parseBridgeFactsDocument(await json(config[name],
+        ['bridges', '--target', 'flutter', '--format', 'json', ...args], `${platform}-bridges`)));
+      if (messages) messages.push(parseMessageBridgeDocument(await json(messageCommands[name],
+        ['bridges', '--messages', '--target', 'flutter', '--format', 'json', ...args], `${platform}-messages`)));
+    }
     const analyses = [];
     const artifacts = {};
     const metadata = (platform, requested, trigger) => ({ id: `${platform}-${analyses.length}`, project, requested,
-      tool: tools[platform === 'dart' ? 'dartograph' : 'cartograph'], ...(trigger === undefined ? {} : { trigger }) });
+      tool: tools[platform === 'dart' ? 'dartograph' : platform === 'swift' ? 'cartograph' : 'kartograph'],
+      ...(trigger === undefined ? {} : { trigger }) });
     async function dartImpact(requested, trigger) {
       if (analyses.length >= 256) throw new CaptureError('Preflight analysis count exceeds its budget.');
       let flags;
@@ -187,6 +210,15 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     if (selection.dart) {
       if (selection.dart.files.length > 0) await dartImpact({ files: selection.dart.files, symbols: [] });
       for (const symbol of selection.dart.symbols) await dartImpact({ files: [], symbols: [symbol] });
+    }
+    if (selection.kotlin) {
+      const requested = selection.kotlin;
+      const raw = await json(config.kartograph, ['impact', '--graph-file', resolve(project, config.kartographSnapshot),
+        '--limit', '10000', '--depth', '128', ...requested.files.flatMap((path) => ['--file', path]),
+        ...requested.symbols.flatMap((symbol) => ['--symbol', symbol])], 'kotlin-impact', [0, 64]);
+      const meta = metadata('kotlin', requested);
+      artifacts[meta.id] = raw;
+      analyses.push(adaptKartographImpact(raw, meta));
     }
     const dartFacts = [...bridges[0].facts, ...(messages?.[0].facts ?? [])];
     const names = [...new Set(dartFacts.flatMap((fact) => fact.symbol ? [fact.symbol.qualifiedName] : []))].sort();
@@ -273,11 +305,19 @@ async function publish(path, value) {
 /** 입력 범위와 실행할 명령은 사용자가 작성한 workflow 설정에서 명시한다. */
 function validateConfig(config, project) {
   const command = (value) => Array.isArray(value) && value.length > 0 && value.every(isSafeNonEmptyString);
-  if (!command(config.dartograph) || !command(config.cartograph) || !Array.isArray(config.prepare) ||
+  if (!command(config.dartograph) || (config.cartograph === undefined && config.kartograph === undefined) ||
+    (config.cartograph !== undefined && !command(config.cartograph)) ||
+    (config.kartograph !== undefined && !command(config.kartograph)) || !Array.isArray(config.prepare) ||
     config.prepare.length === 0 || !config.prepare.every(command)) throw new CaptureError('Configure producer commands and a native index preparation command.');
   if (config.messages !== undefined && config.messages !== true && (config.messages === null || typeof config.messages !== 'object' ||
     Array.isArray(config.messages) || Object.entries(config.messages).some(([name, value]) =>
-      (name !== 'dartograph' && name !== 'cartograph') || !command(value)))) throw new CaptureError('Invalid message producer configuration.');
+      !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
+    throw new CaptureError('Invalid message producer configuration.');
+  }
+  if (config.kartograph !== undefined && !isSafeNonEmptyString(config.kartographSnapshot)) {
+    throw new CaptureError('Configure a Kartograph snapshot produced by the preparation command.');
+  }
+  if (config.kartograph === undefined && config.kartographSnapshot !== undefined) throw new CaptureError('A Kartograph snapshot requires its producer.');
   if (!Array.isArray(config.inputs) || config.inputs.length === 0 || !config.inputs.every(isProjectRelativePath) ||
     !Array.isArray(config.toolInputs) || config.toolInputs.length === 0 || !config.toolInputs.every(isSafeNonEmptyString)) {
     throw new CaptureError('Declare source/config inputs and producer implementation files for fingerprinting.');
@@ -290,7 +330,8 @@ function validateConfig(config, project) {
   }
   for (const output of [config.output, `${config.output}.sources.json`, config.cache]) {
     const target = resolve(project, output);
-    for (const input of [...config.inputs, ...config.toolInputs]) {
+    for (const input of [...config.inputs, ...config.toolInputs,
+      ...(config.kartographSnapshot === undefined ? [] : [config.kartographSnapshot])]) {
       const part = relative(resolve(project, input), target);
       if (part === '' || (!part.startsWith('..') && !isAbsolute(part))) throw new CaptureError('Keep output and cache outside fingerprint input trees.');
     }

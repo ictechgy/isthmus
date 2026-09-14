@@ -43,11 +43,14 @@ export interface RuntimeImpactEvidence {
 export function collectRuntimeImpact(
   joined: BridgeJoinResult, project: string | undefined, selection: ImpactSelection,
   selected: readonly SelectedBridgeFact[], input: ImpactRuntimeInput,
+  nativePlatforms: ReadonlySet<string>,
 ): RuntimeImpactEvidence {
   const { document, revision } = input;
   if (document.project !== project) throw new RuntimeValidationError('Runtime and static inputs must describe the same project.');
   if (!isSafeNonEmptyString(revision)) throw new RuntimeValidationError('Expected a current analysis revision.');
   const stale = document.revision !== revision;
+  const native = document.run.platform === 'android' ? 'kotlin'
+    : document.run.platform === 'ios' || document.run.platform === 'macos' ? 'swift' : undefined;
   const files = new Set(selection.files);
   const locations = new Set(selected.map(({ location }) => locationKey(location)));
   const selectedChannels = new Set<string>();
@@ -58,7 +61,7 @@ export function collectRuntimeImpact(
     else selectedMethods.add(methodKey(fact.channel, fact.method));
   }
   const candidates = new Set([...joined.matchedMethods, ...joined.handlersWithoutInvocations]
-    .filter(({ target, handlers }) => target === 'flutter' && handlers.some(({ platform }) => platform === 'swift'))
+    .filter(({ target, handlers }) => target === 'flutter' && handlers.some(({ platform }) => platform === native))
     .map(({ channel, method }) => methodKey(channel, method)));
   const groups = new Map<string, {
     event: RuntimeEvent; observedCalls: number; failedCalls: number; pendingCalls: number;
@@ -88,7 +91,7 @@ export function collectRuntimeImpact(
   const routes = [...groups.entries()].sort(([a], [b]) => compareStrings(a, b))
     .map(([, group]): RuntimeImpactRoute => {
       const { event, observedCalls, failedCalls, pendingCalls } = group;
-      const supported = (document.run.platform === 'ios' || document.run.platform === 'macos') &&
+      const supported = native !== undefined && nativePlatforms.has(native) &&
         event.transport === 'method-channel';
       return {
         transport: event.transport, channel: event.channel,

@@ -1,7 +1,7 @@
 # isthmus
 
 **Cross-language bridge calls in cross-platform apps, joined into one graph.**
-[cartograph](https://github.com/ictechgy/cartograph) (Swift) · kartograph (Kotlin, planned) ·
+[cartograph](https://github.com/ictechgy/cartograph) (Swift) · [kartograph](https://github.com/ictechgy/kartograph) (Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph) (Dart) each draw their own map; isthmus
 joins them into one.
 
@@ -105,6 +105,9 @@ Development source adds change preflight with `impact --file`, `--symbol`, or
 `--changes`, plus lossless `--compact` JSON and a gap-aware `--strict` gate.
 This is not in the published 0.5.0 package yet. See [change preflight](docs/IMPACT.md)
 for the build command, contract, and current bridge-only scope.
+Android development support uses `selection.kotlin` and a Kartograph snapshot. It connects
+Kotlin Method/Basic facts to Dart consumers and matches Android observations only to Kotlin
+candidates. See [Android capture](docs/PREFLIGHT.md#android-수집) and [toolchain builds](docs/TOOLCHAIN.md).
 Development source also adds `verify-runtime --expectations` to check recorded calls
 by revision, scenario, platform, and engine instance. See the [runtime contract](docs/RUNTIME.md).
 The optional [Flutter recorder](packages/isthmus_runtime/README.md) has been exercised
@@ -425,7 +428,8 @@ analyzed". `resolvedIssues` likewise means a previous mismatch is no longer obse
 the limitations to see whether a dynamic transition or an extractor change caused it.
 `--strict` is recognized at any argument position and cannot be given more than once.
 
-`diff` currently accepts only Flutter Dart/Swift documents. Both platforms are required at
+Development `diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
+Both sender and receiver documents are required at
 each point in time, and the two snapshots must agree on `project` and on the per-platform,
 per-tool document counts. Build each revision from the same checkout path and keep the JSON.
 Do not compare a partial extraction against a full one; use the same analysis settings. Input

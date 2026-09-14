@@ -1,9 +1,9 @@
 ---
 name: isthmus
 description: >-
-  Inspect file or symbol changes across Flutter Dart-to-Swift bridges, trace callers,
+  Inspect file or symbol changes across Flutter Dart-to-Swift/Kotlin bridges, trace callers,
   compare snapshots, or produce cartograph retention evidence. Use before changing
-  MethodChannel or Pigeon/Basic handlers and their Dart callers; RN and Kotlin extraction are not supported.
+  MethodChannel or Pigeon/Basic handlers and their Dart callers; RN extraction is not supported.
 ---
 
 # isthmus
@@ -16,6 +16,12 @@ analysis evidence; it does not authorize source edits, deletion, publishing, or 
 Use `isthmus-cli` 0.1.4+ (`isthmus` binary), cartograph 0.5.3+ and dartograph 0.1.1+.
 Obtain both Dart and Swift bridge-facts JSON with identical project roots and analysis scope.
 Swift production requires a built compiler index; use `cartograph bridges --target flutter --format json`.
+Android preflight requires development Kotlin support: obtain Kotlin facts using
+`kartograph bridges --project <root> --target flutter --graph-file <snapshot.json>`.
+For Basic/Pigeon add `--messages`. A snapshot must come from the same prepared source/build;
+source-only names are not compiler symbol identities. Use `selection.kotlin` in the context.
+The capture workflow accepts `kartograph` and `kartographSnapshot`; Android-only capture does
+not require cartograph. Fingerprint the Kartograph launcher and its runtime library directory.
 Do not fabricate missing facts or rewrite project identifiers just to make a join pass.
 If inputs are missing, identify the required files and proceed with independent authorized work.
 
@@ -56,6 +62,9 @@ If inputs are missing, identify the required files and proceed with independent 
   family, with unresolved suffix/instance wiring even after a successful runtime call.
   Address matches remain native candidates. Raw message limitations appear separately
   as `messageLimitations` when message inputs are present.
+  Android observations match Kotlin candidates; iOS/macOS observations match Swift candidates.
+  In a mixed native context, one platform's success does not cover the other platform.
+  Follow each route's candidateKey; do not group native candidates by channel name alone.
   For a runtime-only dynamic route, follow `candidateKey` into `runtime.candidates` for
   native source evidence. In summary/explanation, `candidates.items[].handlers` is a
   bounded collection of source locations/symbols; report its `omitted` count. The full
@@ -114,6 +123,7 @@ If inputs are missing, identify the required files and proceed with independent 
   `isthmus retentions <dart.json> <swift.json> --for cartograph`.
   Save stdout to a new private temporary file, check successful output, then pass its path to
   `cartograph dead --external-retentions <path>`. Clean up only artifacts created for this run.
+  This command targets Swift; it does not emit Kotlin retention rules.
 
 ## Interpret and finish
 

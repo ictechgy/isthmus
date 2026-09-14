@@ -2,7 +2,7 @@ import { BridgeFactsValidationError, isBridgeTimestamp, isSafeNonEmptyString, MA
   validateLocation, validateSourceLanguage, validateSymbol } from './parse.ts';
 import type { BridgeLocation, BridgeSourceLanguage, BridgeSymbol } from './parse.ts';
 
-/** compiler index에서 관찰한 사용 관계를 귀속한 실제 Swift closure 범위다. */
+/** producer가 관찰한 사용 관계를 귀속한 실제 native handler 범위다. */
 export interface BridgeHandlerScope {
   readonly start: BridgeLocation;
   readonly end: BridgeLocation;
@@ -36,7 +36,7 @@ export interface BridgeMessageDocument {
   readonly format: 'bridge-facts';
   readonly version: 2;
   readonly transport: 'basic-message-channel';
-  readonly platform: 'dart' | 'swift';
+  readonly platform: 'dart' | 'swift' | 'kotlin';
   readonly target: 'flutter' | null;
   readonly project: string;
   readonly generatedAt: string;
@@ -49,8 +49,8 @@ export interface BridgeMessageDocument {
 export function validateMessageDocuments(documents: readonly BridgeMessageDocument[], project: string): void {
   if (documents.length === 0) return;
   if (documents.length > 256 || documents.some((document) => document.project !== project) ||
-    !documents.some(({ platform }) => platform === 'dart') || !documents.some(({ platform }) => platform === 'swift')) {
-    fail('Message inputs require Dart and Swift documents for the same project.');
+    !documents.some(({ platform }) => platform === 'dart') || !documents.some(({ platform }) => platform === 'swift' || platform === 'kotlin')) {
+    fail('Message inputs require Dart and native documents for the same project.');
   }
 }
 
@@ -60,7 +60,7 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
   if (value.format !== 'bridge-facts' || value.version !== 2 || value.transport !== 'basic-message-channel') {
     fail('Expected bridge-facts version 2 for basic-message-channel.');
   }
-  if (value.platform !== 'dart' && value.platform !== 'swift') fail('Unsupported message bridge platform.');
+  if (value.platform !== 'dart' && value.platform !== 'swift' && value.platform !== 'kotlin') fail('Unsupported message bridge platform.');
   if (!Array.isArray(value.facts) || value.facts.length > MAX_FACTS_PER_DOCUMENT) fail('Invalid message bridge fact count.');
   if (value.target !== (value.facts.length ? 'flutter' : null)) fail('Invalid message bridge target.');
   if (!isBridgeTimestamp(value.generatedAt)) fail('Invalid message bridge timestamp.');
@@ -90,7 +90,7 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
     let handlerScope: BridgeHandlerScope | undefined;
     let dependencies: readonly BridgeHandlerDependency[] | undefined;
     if (fact.handlerScope !== undefined || fact.dependencies !== undefined) {
-      if (expectedKind !== 'message-handle' || fact.sourceLanguage !== undefined) fail('Handler dependencies require a Swift message handler.');
+      if (expectedKind !== 'message-handle' || fact.sourceLanguage !== undefined) fail('Handler dependencies require a native message handler.');
       const scope = object(fact.handlerScope);
       const start = copyLocation(scope.start, index);
       const end = copyLocation(scope.end, index);

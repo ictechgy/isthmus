@@ -100,7 +100,9 @@ export function createBridgeImpact(
   }
   const staticChannelKeys = new Set(channelKeys);
   const runtime = runtimeInput === undefined ? undefined
-    : collectRuntimeImpact(joined, documents[0]?.project, selection, selectedFacts, runtimeInput);
+    : collectRuntimeImpact(joined, documents[0]?.project, selection, selectedFacts, runtimeInput,
+      new Set(documents.map(({ platform }) => platform)));
+  const runtimeNative = runtimeInput?.document.run.platform === 'android' ? 'kotlin' : 'swift';
   const runtimeMethodKeys = new Set<string>();
   for (const route of runtime?.routes ?? []) {
     if (route.staticStatus !== 'candidates' || route.method === undefined) continue;
@@ -113,8 +115,11 @@ export function createBridgeImpact(
     ...joined.handlersWithoutInvocations.map((item) => ({ ...item, invocations: [] })),
   ].filter(({ target, channel, method }) => wiringKeys.has(channelKey(target, channel)) ||
     methodKeys.has(methodKey(target, channel, method)) || runtimeMethodKeys.has(methodKey(target, channel, method)))
-    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item,
-      !methodKeys.has(methodKey(item.target, item.channel, item.method))) }))
+    .map((item) => {
+      const reason = impactReason(wiringKeys, item, !methodKeys.has(methodKey(item.target, item.channel, item.method)));
+      return { ...item, reason, handlers: reason === 'runtime-observation'
+        ? item.handlers.filter(({ platform }) => platform === runtimeNative) : item.handlers };
+    })
     .sort(compareLogicalKeys);
   const channelMap = new Map<string, MatchedChannel>([
     ...joined.matchedChannels,
@@ -128,8 +133,11 @@ export function createBridgeImpact(
   }
   const channels = [...channelMap.values()]
     .filter(({ target, channel }) => channelKeys.has(channelKey(target, channel)))
-    .map((item) => ({ ...item, reason: impactReason(wiringKeys, item,
-      !staticChannelKeys.has(channelKey(item.target, item.channel))) }))
+    .map((item) => {
+      const reason = impactReason(wiringKeys, item, !staticChannelKeys.has(channelKey(item.target, item.channel)));
+      return { ...item, reason, registrations: reason === 'runtime-observation'
+        ? item.registrations.filter(({ platform }) => platform === runtimeNative) : item.registrations };
+    })
     .sort(compareLogicalKeys);
   const issues = createCheckReport(joined).issues.filter(({ target, channel, method }) =>
     channelKeys.has(channelKey(target, channel)) &&

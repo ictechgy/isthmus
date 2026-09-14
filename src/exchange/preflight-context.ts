@@ -20,13 +20,13 @@ export interface ImpactSymbol {
   readonly id: string;
   readonly qualifiedName: string;
   readonly kind?: string;
-  readonly location?: BridgeLocation;
+  readonly location?: Readonly<{ path: string; line?: number; column?: number }>;
 }
 
 /** 한 언어 producer가 한 선택에 대해 관찰한 영향 범위다. */
 export interface LanguageImpact {
   readonly id: string;
-  readonly platform: 'dart' | 'swift';
+  readonly platform: 'dart' | 'swift' | 'kotlin';
   readonly tool: Readonly<{ name: string; version: string }>;
   readonly requested: ImpactSelection;
   readonly trigger?: string;
@@ -58,6 +58,7 @@ export interface PreflightContext {
   readonly selection: Readonly<{
     readonly dart?: ImpactSelection;
     readonly swift?: ImpactSelection;
+    readonly kotlin?: ImpactSelection;
   }>;
   readonly bridges: readonly BridgeFactsDocument[];
   readonly messages?: readonly BridgeMessageDocument[];
@@ -116,7 +117,7 @@ function parseMessages(input: unknown, project: string): readonly BridgeMessageD
 export function validateLanguageImpact(input: unknown): LanguageImpact {
   const value = object(input, 'Language impact must be a JSON object.');
   const id = safeString(value.id, 'Invalid language impact id.');
-  if (value.platform !== 'dart' && value.platform !== 'swift') {
+  if (value.platform !== 'dart' && value.platform !== 'swift' && value.platform !== 'kotlin') {
     fail('Unsupported language impact platform.');
   }
   const toolValue = object(value.tool, 'Invalid language impact tool.');
@@ -135,9 +136,9 @@ export function validateLanguageImpact(input: unknown): LanguageImpact {
     ? undefined
     : safeString(value.trigger, 'Invalid language impact trigger.');
   const roots = array(value.roots, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact roots.')
-    .map((item) => parseSymbol(item));
+    .map((item) => parseSymbol(item, value.platform === 'kotlin'));
   const affectedRaw = array(value.affected, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact affected symbols.');
-  const affected = affectedRaw.map((item) => parseAffected(item));
+  const affected = affectedRaw.map((item) => parseAffected(item, value.platform === 'kotlin'));
   const limitations = strings(value.limitations, 'Invalid language impact limitations.');
   if (typeof value.truncated !== 'boolean') fail('Invalid language impact truncation flag.');
   if (roots.length + affected.length > MAX_PREFLIGHT_GRAPH_ITEMS) {
@@ -159,10 +160,10 @@ export function validateLanguageImpact(input: unknown): LanguageImpact {
 function parseSelectionMap(input: unknown): PreflightContext['selection'] {
   const value = object(input, 'Preflight selection must be a JSON object.');
   for (const key of Object.keys(value)) {
-    if (key !== 'dart' && key !== 'swift') fail('Unsupported preflight selection platform.');
+    if (key !== 'dart' && key !== 'swift' && key !== 'kotlin') fail('Unsupported preflight selection platform.');
   }
-  const selection: { dart?: ImpactSelection; swift?: ImpactSelection } = {};
-  for (const platform of ['dart', 'swift'] as const) {
+  const selection: { dart?: ImpactSelection; swift?: ImpactSelection; kotlin?: ImpactSelection } = {};
+  for (const platform of ['dart', 'swift', 'kotlin'] as const) {
     if (value[platform] === undefined) continue;
     try {
       selection[platform] = parseImpactSelection({
@@ -181,8 +182,8 @@ function parseBridges(input: unknown, project: string): BridgeFactsDocument[] {
   const raw = array(input, 256, 'Invalid preflight bridges.');
   const bridges = raw.map((item) => {
     const candidate = object(item, 'Invalid preflight bridge document.');
-    if (candidate.platform !== 'dart' && candidate.platform !== 'swift') {
-      fail('Preflight context supports only Dart and Swift bridge documents.');
+    if (candidate.platform !== 'dart' && candidate.platform !== 'swift' && candidate.platform !== 'kotlin') {
+      fail('Preflight context supports only Dart, Swift and Kotlin bridge documents.');
     }
     try {
       const parsed = parseBridgeFactsDocument(candidate);
@@ -221,7 +222,7 @@ function parseAnalyses(input: unknown): LanguageImpact[] {
 function validateSelectionCoverage(
   selection: PreflightContext['selection'], analyses: readonly LanguageImpact[],
 ): void {
-  for (const platform of ['dart', 'swift'] as const) {
+  for (const platform of ['dart', 'swift', 'kotlin'] as const) {
     const initial = analyses.filter((analysis) => analysis.platform === platform && analysis.trigger === undefined);
     const declared = selection[platform];
     if (initial.length === 0) {
@@ -275,9 +276,9 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
   });
 }
 
-function parseAffected(input: unknown): LanguageImpact['affected'][number] {
+function parseAffected(input: unknown, partialLocation = false): LanguageImpact['affected'][number] {
   const value = object(input, 'Invalid affected symbol.');
-  const symbol = parseSymbol(value.symbol);
+  const symbol = parseSymbol(value.symbol, partialLocation);
   const via = safeString(value.via, 'Invalid affected symbol parent.');
   if (!Number.isSafeInteger(value.depth) || (value.depth as number) < 1 || (value.depth as number) > MAX_PREFLIGHT_DEPTH) {
     fail('Affected symbol depth must be between 1 and 128.');
@@ -307,15 +308,28 @@ function validateGraph(
   }
 }
 
-function parseSymbol(input: unknown): ImpactSymbol {
+function parseSymbol(input: unknown, partialLocation = false): ImpactSymbol {
   const value = object(input, 'Invalid impact symbol.');
   const result: ImpactSymbol = {
     id: safeString(value.id, 'Invalid impact symbol id.'),
     qualifiedName: safeString(value.qualifiedName, 'Invalid impact symbol qualified name.'),
     ...(value.kind === undefined ? {} : { kind: safeString(value.kind, 'Invalid impact symbol kind.') }),
-    ...(value.location === undefined ? {} : { location: parseLocation(value.location, 'Invalid impact symbol location.') }),
+    ...(value.location === undefined ? {} : { location: partialLocation ? parseKotlinLocation(value.location)
+      : parseLocation(value.location, 'Invalid impact symbol location.') }),
   };
   return result;
+}
+
+/** JVM line tables가 제공하지 않은 좌표를 1로 채워 넣지 않는다. */
+function parseKotlinLocation(input: unknown): NonNullable<ImpactSymbol['location']> {
+  const value = object(input, 'Invalid Kotlin symbol location.');
+  if (!isProjectRelativePath(value.path) ||
+    (value.line !== undefined && (!Number.isSafeInteger(value.line) || (value.line as number) < 1)) ||
+    (value.column !== undefined && (value.line === undefined || !Number.isSafeInteger(value.column) || (value.column as number) < 1))) {
+    fail('Invalid Kotlin symbol location.');
+  }
+  return { path: value.path, ...(value.line === undefined ? {} : { line: value.line as number }),
+    ...(value.column === undefined ? {} : { column: value.column as number }) };
 }
 
 function parseLocation(input: unknown, message: string): BridgeLocation {

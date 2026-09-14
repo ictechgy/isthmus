@@ -22,11 +22,11 @@
 ```
 
 - 기본 `bridges`는 기존 v1 MethodChannel 출력을 유지한다. v2는 Basic 전용이며
-  `message-send`(Dart send 호출)·`message-handle`(Swift setMessageHandler 등록)을 담는다.
+  `message-send`(Dart send 호출)·`message-handle`(Swift/Kotlin setMessageHandler 등록)을 담는다.
   channel을 만들기만 한 지점을 send로 만들지 않고 nil handler 제거도 등록으로 만들지 않는다.
 - method 필드는 없다. Basic의 채널 이름을 가상의 MethodChannel 메서드로 바꾸지 않는다.
 - project·위치·symbol·시각·문자열·사실 수·미귀속 규칙은 기존 계약의 근거 보존 원칙을 따른다.
-  sender는 dart, receiver는 swift를 먼저 지원한다. 사실이 없으면 target은 null이다.
+  sender는 dart, receiver는 swift 또는 kotlin이다. 사실이 없으면 target은 null이다.
 - 정적 이름은 decoded literal이다. 알 수 없으면 원래 표현식을 channel에 두고 dynamic=true.
   생성 코드를 Pigeon이라고 알아봤다는 이유로 인스턴스 suffix를 빈 문자열로 가정하지 않는다.
 - 선택적 `channelPrefix`는 dynamic일 때만 쓴다. AST가 확인한 비어 있지 않은 literal prefix이며
@@ -43,7 +43,7 @@
 ## handler별 의존 근거 (개발 계약)
 
 공통 등록 함수에 여러 handler가 있으면 함수 수준 영향만으로 서로 독립적인 채널까지
-전파될 수 있다. Swift `message-handle`은 선택적으로 다음 두 필드를 함께 제공한다.
+전파될 수 있다. native `message-handle`은 선택적으로 다음 두 필드를 함께 제공한다.
 
 ```json
 {
@@ -91,3 +91,12 @@ reference handler는 false 또는 근거 부재로 남긴다. 모든 런타임 �
 이 문서만으로 producer/consumer 지원이 완료됐거나 Pigeon의 모든 생성 형태가 해석됐다는
 뜻은 아니다. literal·alias·shadowing·동적 prefix·nil handler·동일 주소의 transport 차이와
 공개 Pigeon 생성 source를 테스트한 뒤 검증된 범위를 기록한다.
+
+## Kotlin producer의 개발 경계
+
+Kotlin의 v2도 같은 필드·역할·상한을 사용한다. JVM 그래프에서 유일하게 확인한 symbol만
+USR로 싣고, source 문자열에서 JVM 식별자를 합성하지 않는다. Kotlin 소스의 closure 범위와
+bytecode 위치만으로 실제 callback의 전체 의존성을 보증하지 않는다. 위 두 필드를 제공하지
+못하면 소비자는 넓은 영향 후보와 범위 공백을 유지한다. 정적 주소는 실제 Kotlin 문자열이며
+동적 prefix는 구문으로 확인한 범위만 제공한다. 다른 플랫폼의 동일 주소를 Kotlin 실행 신원으로
+사용하지 않는다. `--graph-file` 입력의 현재 소스/빌드 범위와 한계를 함께 확인한다.

@@ -3,6 +3,50 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
+## Android 확장 진행 — 구현을 계속할 것
+
+최신 사용자 지시: **"쭉 진행해줘. 더불어 android 쪽 브릿지도 해줘"**.
+타당성 조사를 다시 시작하지 않는다. 기존 네 가지 개선 목표에 Kotlin/Android를 추가해
+구현·실제 producer/실행 검증을 진행 중이며 아직 전체 완료가 아니다.
+
+- 소비자 개발 소스에 Kotlin preflight 선택/분석, Method·Basic 입력, runtime 플랫폼별
+  후보 분리, Kotlin-only diff를 추가했다. Swift와 Kotlin을 한 diff에 섞어 삭제가 가려지는
+  입력은 계속 거부한다. Kotlin `kartograph-impact`의 current 경로·원래 edge origin을
+  사용하며 base 경로와 누락된 중간 심볼은 현재 간선으로 만들지 않는다.
+- JVM 실제 출력의 nullable 좌표를 확인했다. Kotlin 분석 심볼은 `{path,line?,column?}`를
+  보존하며 열 번호를 합성하지 않는다. Dart binding과 bridge fact의 완전한 좌표 규칙은
+  유지한다. 일치하는 부분 위치는 보강하고 알려진 좌표가 충돌하면 거부한다.
+- capture는 선택적 `kartograph`/`kartographSnapshot`과 `.kt`/`.java` 변경을 지원한다.
+  snapshot 내용·실행 도구·JAR 입력을 신선도에 반영하고 미구성 플랫폼 변경은 공백으로
+  남긴다. Android-only source 구축은 Swift를 요구하지 않는다.
+- 현재 소비자 전체 verify 통과 421tests/Phase 0 15/workflow 13, coverage
+  line/branch/functions 98.41/92.61/95.42(`/tmp/isthmus-android-reviewed-verify.log`).
+  GLM의 생략 중복 계수·부분 위치 병합을 회귀로 재현해 수정한 뒤 전체 검사까지 통과했다.
+  원본 macOS runtime 요약의 새 소비자 재생도
+  기존 4checks/20gaps/strict1과 값이 동일했다(`/tmp/isthmus-android-apple-regression.json`).
+- GLM consumer packet 208,153 bytes SHA `edf0aa775fe3`, low. C1/C2는 재현·수정.
+  H1은 prefix index가 모든 조상 prefix를 반환하며 literal을 해당 prefix에 투영하는 구조,
+  H2는 완전한 근거의 무관한 handler를 제외하는 정밀도 정책, H3는 실제 dartRoots가
+  continuation도 포함함, H4는 Kotlin CLI의 상대 --file 계약으로 구분했다.
+  `/tmp/isthmus-android-consumer-glm.log`.
+- 초기 실제 Android API36 arm64 실행: 자체 Method/Basic 성공 2, 기대 실패 3, pending과
+  Kotlin 본문 marker. `isthmus-android-evidence-hnvwel/verification.json`(macOS 임시 루트).
+  이 초기 실행은 아직 static capture와 같은 project/revision으로 묶은 최종 검증이 아니다.
+  하네스를 실제 appRoot·capture revision·반복 빌드로 보강하고 공개 Kotlin Pigeon
+  shared_preferences_android 2.4.1을 추가하는 중이다.
+- 원본 kartograph main `751b701`은 HANDOFF만 수정된 상태라 보존했다. 개발 clone은
+  `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`,
+  branch `feat/isthmus-android-bridges`. 최초 `1477c39`/`e81281c`는 통합 검토에서 project=".",
+  Kotlin send 역할, v1 graph-file 미사용, 근거 없는 앞선 함수 귀속 문제가 발견돼 보강 중이다.
+  이 최초 버전을 완료된 Kotlin producer로 사용하지 않는다.
+- worker `/root/android_kotlin_producer`는 위 clone만, `/root/android_runtime_harness`는
+  `scripts/verify-flutter-android-runtime.mjs`만 소유한다. root는 소비자·capture·build·문서와
+  최종 검증을 소유한다. 원본 자매 저장소와 기존 미커밋 HANDOFF/리서치 문서를 보존한다.
+
+다음 실행: Kotlin producer 수정·필수 게이트 → 실제 Android 앱의 동일 capture/runtime 연결
+및 공개 Pigeon 실행 → 고정 source 구축·설치본·캐시 재사용 → 전체 검사/리뷰/재개 기록.
+공개 호환 버전·원격 CI·첫 외부 사용자·실제 변경 대비 효용 비교는 별도 잔여 목표다.
+
 ## 구현 재개 — 범위 누락·경로 별칭 수정과 최종 native 검증
 
 2026-09-14 사용자 정정에 따라 타당성 조사 반복을 멈추고 기존 네 가지 개선 목표의

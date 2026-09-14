@@ -3,10 +3,10 @@
 개발 소스 기능이며 npm 0.5.0 발행본에는 없다. `isthmus preflight`는 JSON만 읽는다.
 세 도구를 고정 source commit에서 새로 구축하는 방법은 [TOOLCHAIN.md](TOOLCHAIN.md)에 있다.
 언어 내부 해석과 compiler index 생성은 producer 및 별도 workflow가 맡는다.
-현재 지원 범위는 Flutter Dart↔Swift의 MethodChannel과 producer가 제공한 사용 관계다.
+개발 소스는 Flutter Dart↔Swift/Kotlin의 MethodChannel과 producer가 제공한 사용 관계를 연결한다.
 선택적 [BasicMessageChannel v2 입력](BRIDGE-MESSAGES.md)을 함께 수집하면 literal 주소와
-Pigeon의 증명된 prefix 후보도 연결한다. Android/Kotlin·모든 생성 형태·앱 전체 실행 정확도의
-지원으로 해석하지 않는다. Basic producer 확장도 현재 개발 버전이 필요하다.
+Pigeon의 증명된 prefix 후보도 연결한다. 플랫폼별 실제 실행·모든 생성 형태·앱 전체 정확도는
+별도 검증 범위다. Kotlin 및 Basic producer 확장은 현재 개발 버전이 필요하다.
 
 ```bash
 isthmus preflight context.json --strict --compact
@@ -28,15 +28,20 @@ isthmus preflight context.json success.json failure.json --expectations checks.j
 - `project`: 두 bridge-facts 문서와 동일한 정규화된 프로젝트 경로.
 - `revision`: 같은 수집의 신원을 나타내는 비어 있지 않은 문자열. 필드만으로 로컬 코드의
   신선도를 확인할 수 없다. 아래 수집기는 명시된 입력 내용의 SHA-256을 사용한다.
-- `selection`: `dart`·`swift`별 `{files, symbols}`. 파일은 project 상대 경로이며 이름·USR은
+- `selection`: `dart`·`swift`·`kotlin`별 `{files, symbols}`. 파일은 project 상대 경로이며 이름·USR은
   producer가 해석한다. `{}`는 `noChanges`이고 검증되지 않은 선택과 구분된다.
-- `bridges`: 같은 project의 Dart·Swift bridge-facts v1. 두 플랫폼이 모두 필요하며 mixed-targets는 거부한다.
-- `messages`: 선택적 Basic 전용 bridge-facts v2 목록. 주면 같은 project의 Dart·Swift 문서가
+- `bridges`: 같은 project의 Dart와 Swift 또는 Kotlin bridge-facts v1. 호출/수신 문서가 모두 필요하며 mixed-targets는 거부한다.
+- `messages`: 선택적 Basic 전용 bridge-facts v2 목록. 주면 같은 project의 Dart와 native 문서가
   모두 필요하다. v1과 별도 transport로 조인하며 method를 합성하지 않는다.
 - `analyses`: 언어별 `{id, platform, tool, requested, roots, affected, limitations, truncated}`.
-  심볼은 `{id, qualifiedName, kind?, location?}`이고 위치는 선언 위치다. affected 항목은
+  심볼은 `{id, qualifiedName, kind?, location?}`이고 위치는 producer가 관찰한 소스 위치다. affected 항목은
   `{symbol, via, depth, relationships}`이다. `via`가 가리키는 선행 심볼을 사용하므로 영향을
   받는 소비자라는 뜻이다. 원래 producer ID를 유지하며 누락된 위치를 만들지 않는다.
+  Kotlin/JVM 심볼 위치는 관찰된 `{path, line?, column?}`를 보존한다. bytecode에 없는
+  줄·열 번호를 1로 채우지 않는다. Dart binding과 bridge fact의 위치는 기존처럼 완전한
+  line/column을 요구하며, 부분 위치는 Kotlin 분석 심볼에만 허용한다.
+  JVM line table의 줄은 함수 선언보다 첫 실행 구문을 가리킬 수 있으므로 선언 시작으로
+  다시 해석하지 않는다.
 - `trigger`: 후속 Dart 분석에만 쓰는 선택적 필드. 브리지에서 도달한 호출자 ID이며, 해당
   분석의 유일한 symbol 요청과 root에 포함되어야 한다. 초기 선택으로 다시 세지 않는다.
 - `bindings`: Dart fact 위치와 실제 query로 얻은 심볼의 연결. `{platform:"dart", location,
@@ -116,8 +121,11 @@ runtime 문서는 최대 256개다. [런타임 계약](RUNTIME.md)의 독립 기
   현재 기대 시나리오에 들어 있지 않은 관련 경계다. 다른 주소의 통신만 성공하면 이 공백은 남는다.
 - Basic/Pigeon 기록은 v2 messages가 있을 때 Basic 주소에만 연결한다. 같은 이름의
   MethodChannel이 Basic을 덮지 않는다. `matching: prefix` 후보의 실행 관찰도 suffix/instance
-  배선의 정적 공백을 지우지 않는다. v2가 없거나 Android 기록이면 정적 연결은 unsupported다.
+  배선의 정적 공백을 지우지 않는다. v2가 없거나 해당 native 언어 문서가 없으면 정적 연결은 unsupported다.
   runtime 검증과 정적 후보 연결의 지원 범위는 다르며 다른 플랫폼을 추측해 연결하지 않는다.
+- Android 실행은 Kotlin 후보, iOS/macOS 실행은 Swift 후보에만 연결한다. 양쪽 native 문서가
+  함께 있는 경계는 한쪽 실행만으로 모두 관찰됐다고 표시하지 않는다. 같은 주소라도 candidateKey가
+  다를 수 있으므로 원래 키로 조회한다. 조건부 플랫폼 분기가 필요한 앱은 native별 capture를 사용한다.
 
 기대 실패는 `allowedOutcomes`로 명시한다. `runtime.verification.status`가 passed이고
 aligned가 true여도 정적 공백·미관찰/미포함 경계가 남으면 전체 strict는 1이다.
@@ -126,6 +134,41 @@ aligned가 true여도 정적 공백·미관찰/미포함 경계가 남으면 전
 경로가 모두 실행됐다는 뜻이 아니다. 원하는 기능은 독립 기대 목록에 해당 scenario로 지정해야
 한다. 알려진 관련 메서드는 각각 대조하며, 메서드가 알려지지 않은 channel-only 경계는 해당
 채널의 메서드 통신을 배선 관찰로만 인정한다. 그것으로 모든 메서드나 소스 경로의 실행을 보증하지 않는다.
+
+## Android 수집
+
+`cartograph` 대신 `kartograph`와 `kartographSnapshot`을 지정하면 Android만 수집할 수 있다.
+양쪽 native producer를 함께 지정할 수도 있다. Kotlin snapshot은 prepare 단계가 만들며
+내용을 캐시 지문에 자동 포함한다. `toolInputs`에는 Kartograph 실행 스크립트와 배포의 `lib/`
+디렉터리를 모두 넣는다. 실행 스크립트가 같아도 실제 JAR이 바뀔 수 있기 때문이다.
+
+```json
+{
+  "project": "/path/to/flutter-app",
+  "inputs": ["lib", "android/app/src", "android/app/build.gradle.kts", "pubspec.yaml", "pubspec.lock"],
+  "toolInputs": ["/path/to/kartograph/bin/kartograph", "/path/to/kartograph/lib", "/path/to/dartograph"],
+  "dartograph": ["/path/to/dartograph"],
+  "kartograph": ["/path/to/kartograph/bin/kartograph"],
+  "kartographSnapshot": "android/app/build/reports/kartograph/debug-snapshot.json",
+  "prepare": [["android/gradlew", "-p", "android", ":app:kartographSnapshotDebug"]],
+  "messages": true,
+  "selection": {"kotlin": {"files": ["android/app/src/main/kotlin/example/CameraPlugin.kt"], "symbols": []}},
+  "output": ".isthmus/context.json",
+  "cache": ".isthmus/cache.json"
+}
+```
+
+예제 Gradle task는 앱에 Kartograph plugin을 적용한 경우다. snapshot 출력 경로는 실제
+프로젝트의 build directory에 맞춘다(Flutter가 build directory를 옮길 수 있다). 별도 snapshot
+생성 명령을 prepare에 연결해도 된다. 생성 설정·SDK·variant 등 실제 분석에 영향을 주는
+입력도 선언한다. Git `since`는 `.kt`·`.java` 변경과 rename 양쪽 경로를 선택하며 해당
+producer를 구성하지 않은 플랫폼의 변경은 공백으로 남긴다.
+
+Kotlin adapter는 `kartograph-impact` v1의 current 경로와 bytecode/runtime-model 출처를 보존한다.
+base/current를 섞은 입력은 거부한다. 경로 중간 심볼·위치·출력 페이지가 빠졌으면 그 사실을
+알리고 현재 의존 경로를 지어내지 않는다. 전체 원본은 `.sources.json`에 남긴다.
+adapter는 경로의 node/edge 항목을 합해 1,000,000개까지 읽고 상한 초과는 입력 오류로
+거부한다. 수집 명령은 producer의 depth 128·출력 10,000개 한도를 사용한다.
 
 ## 자동 수집과 CI
 

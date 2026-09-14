@@ -1,7 +1,7 @@
 # isthmus
 
 크로스플랫폼 앱에서 **언어 경계를 넘는 호출**을 그래프로 잇는 도구.
-[cartograph](https://github.com/ictechgy/cartograph)(Swift) · kartograph(Kotlin, 예정) ·
+[cartograph](https://github.com/ictechgy/cartograph)(Swift) · [kartograph](https://github.com/ictechgy/kartograph)(Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph)(Dart)가 각자 그린 지도를 하나로 붙인다.
 
 [English](README.md)
@@ -96,6 +96,9 @@ npx isthmus-cli --help
 개발 소스에는 `impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는
 `--compact`, 분석 공백도 실패시키는 `--strict`가 추가됐다. 아직 npm 0.5.0 발행본에는
 없다. 빌드·계약·현재 브리지 한정 범위는 [변경 사전 점검](docs/IMPACT.md)을 참조한다.
+Android 개발 지원은 `selection.kotlin`과 Kartograph snapshot을 사용한다. Kotlin Method/Basic
+사실을 Dart 소비자에 연결하고 Android 실행은 Kotlin 후보에만 대조한다.
+[Android 수집 설정](docs/PREFLIGHT.md#android-수집)과 [선택적 Kotlin 도구 구축](docs/TOOLCHAIN.md)을 참조한다.
 개발 소스의 `verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
 통신 기록을 대조한다([계약](docs/RUNTIME.md)). 선택적 [Flutter 수집기](packages/isthmus_runtime/README.md)는
 실제 macOS 앱의 Swift 핸들러와 `url_launcher_macos 3.2.2`의 Pigeon 생성 API로 검증했다.
@@ -391,7 +394,8 @@ JSON으로 출력한다. 연결에는 호출자와 핸들러 위치가 포함된
 이전 불일치가 더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를
 함께 확인해야 한다. `--strict`은 인자 위치와 무관하게 인식하며 두 번 이상 줄 수 없다.
 
-현재 diff는 Flutter의 Dart·Swift 문서만 받는다. 각 시점에 두 플랫폼이 모두 필요하며,
+개발 소스의 diff는 Flutter Dart와 Swift 또는 Kotlin 문서를 받는다. 한 비교에는 native 언어
+하나만 사용하며 각 시점에 호출/수신 문서가 모두 필요하다.
 양 시점의 `project`와 플랫폼·도구별 문서 개수가 같아야 한다. 한 checkout의 같은
 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만 추출한 결과와 전체 결과를
 비교하지 말고 같은 분석 설정을 사용한다. 입력 파일은 합계 256개, 텍스트 길이 제한은

@@ -20,7 +20,7 @@ test('Basic v2는 method를 만들지 않고 literal과 증명된 prefix를 보�
 test('transport·platform·literal/prefix·path·미귀속 계약 위반을 거부한다', () => {
   for (const value of [
     { ...document, version: 1 }, { ...document, transport: 'method-channel' },
-    { ...document, platform: 'kotlin' }, { ...document, facts: [{ ...fact, method: 'invented' }] },
+    { ...document, platform: 'js' }, { ...document, facts: [{ ...fact, method: 'invented' }] },
     { ...document, facts: [{ ...fact, channelPrefix: 'not-dynamic' }] },
     { ...document, facts: [{ ...fact, channel: null }] },
     { ...document, facts: [{ ...fact, location: { ...fact.location, path: '../secret' } }] },

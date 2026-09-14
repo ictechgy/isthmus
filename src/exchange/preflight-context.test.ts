@@ -48,7 +48,7 @@ test('empty noChanges context is valid only without initial analyses', () => {
 });
 
 test('rejects unknown selection platforms, mixed targets, and foreign projects', () => {
-  assert.throws(() => parsePreflightContext(context({ selection: { kotlin: { files: ['x'], symbols: [] } } })),
+  assert.throws(() => parsePreflightContext(context({ selection: { js: { files: ['x'], symbols: [] } } })),
     PreflightValidationError);
   assert.throws(() => parsePreflightContext(context({ bridges: [
     bridge('dart', [fact('dart', 'lib/camera.dart', 3, 'method-invoke', 'Camera.call')]),

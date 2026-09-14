@@ -9,6 +9,8 @@ import type { PreflightLimitation, PreflightReport } from './preflight.ts';
 import { verifyRuntimeEvidence } from './runtime.ts';
 import type { RuntimeVerificationReport } from './runtime.ts';
 
+type NativeLanguage = 'swift' | 'kotlin';
+
 /** 실제 주소 관찰과 정적 후보를 구분하며 기록의 run·instance를 보존한다. */
 export interface PreflightRuntimeRoute extends RuntimeRoute {
   readonly runId: string;
@@ -59,6 +61,13 @@ export function attachPreflightRuntime(
   const files = new Set(report.reviewFiles);
   const addedFiles = new Set<string>();
   const byRoute = new Map<string, string[]>();
+  const nativePlatforms = new Set([...context.bridges, ...(context.messages ?? [])]
+    .flatMap(({ platform }) => platform === 'swift' || platform === 'kotlin' ? [platform] : []));
+  const messagePlatforms = new Set((context.messages ?? []).map(({ platform }) => platform));
+  const boundaryPlatforms = new Map(report.boundaries.map(({ subject, receivers }) => {
+    const platforms = new Set(receivers.flatMap(({ platform }) => platform === 'swift' || platform === 'kotlin' ? [platform] : []));
+    return [subject.key, platforms.size > 0 ? platforms : nativePlatforms];
+  }));
   const messageBoundaries = new MessageAddressIndex<string>();
   const methodChannels = new Set<string>();
   for (const { subject } of report.boundaries) {
@@ -75,18 +84,22 @@ export function attachPreflightRuntime(
   }
   const required = report.boundaries.filter(({ subject }) => subject.target === 'flutter' &&
     (subject.transport === 'basic-message-channel' || subject.method !== undefined || !methodChannels.has(subject.channel)));
-  const boundaryKeys = (channel: string, method: string | undefined, transport: string) => transport === 'basic-message-channel'
+  const boundaryKeys = (channel: string, method: string | undefined, transport: string, platform: NativeLanguage | undefined) => (transport === 'basic-message-channel'
     ? messageBoundaries.matching(channel)
-    : [...(byRoute.get(routeKey(channel, method)) ?? []), ...(byRoute.get(routeKey(channel, undefined)) ?? [])];
-  const declared = new Set(expectations.checks.filter((check) => apple(check.platform))
-    .flatMap((check) => boundaryKeys(check.channel, check.method, check.transport)));
+    : [...(byRoute.get(routeKey(channel, method)) ?? []), ...(byRoute.get(routeKey(channel, undefined)) ?? [])])
+    .filter((key) => platform !== undefined && boundaryPlatforms.get(key)?.has(platform));
+  const pair = (key: string, platform: string): string => JSON.stringify([key, platform]);
+  const declared = new Set(expectations.checks.flatMap((check) => {
+    const platform = nativeLanguage(check.platform);
+    return boundaryKeys(check.channel, check.method, check.transport, platform).map((key) => pair(key, platform!));
+  }));
   const observed = new Set<string>();
   const handlers = new Map<string, { channel: string; method: string; endpoints: Map<string, BridgeEndpoint> }>();
   for (const document of context.bridges) {
-    if (document.platform !== 'swift' || document.target !== 'flutter') continue;
+    if ((document.platform !== 'swift' && document.platform !== 'kotlin') || document.target !== 'flutter') continue;
     for (const fact of document.facts) {
       if (fact.kind !== 'method-handle' || fact.dynamic || fact.channel === null || fact.method === undefined) continue;
-      const key = routeKey(fact.channel, fact.method);
+      const key = candidateKey(document.platform, fact.channel, fact.method);
       let group = handlers.get(key);
       if (group === undefined) {
         group = { channel: fact.channel, method: fact.method, endpoints: new Map() };
@@ -94,7 +107,7 @@ export function attachPreflightRuntime(
       }
       group.endpoints.set(JSON.stringify([fact.location.path, fact.location.line, fact.location.column,
         fact.symbol?.usr ?? null, fact.symbol?.qualifiedName ?? null, fact.sourceLanguage ?? null]), {
-        platform: 'swift', location: fact.location,
+        platform: document.platform, location: fact.location,
         ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
         ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
       });
@@ -103,12 +116,12 @@ export function attachPreflightRuntime(
   const candidateGroups = new Map<string, PreflightRuntimeCandidates>();
   const nativeMessages = new MessageAddressIndex<{ endpoint: BridgeEndpoint; matching: 'literal' | 'prefix' }>();
   for (const document of context.messages ?? []) {
-    if (document.platform !== 'swift') continue;
+    if (document.platform !== 'swift' && document.platform !== 'kotlin') continue;
     for (const fact of document.facts) {
       const address = fact.dynamic ? fact.channelPrefix : fact.channel;
       if (!address) continue;
       nativeMessages.add(address, fact.dynamic ? 'prefix' : 'literal', { matching: fact.dynamic ? 'prefix' : 'literal',
-        endpoint: { platform: 'swift', location: fact.location, ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
+        endpoint: { platform: document.platform, location: fact.location, ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
           ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
           ...(fact.dynamic ? { channelExpression: fact.channel, channelPrefix: fact.channelPrefix } : {}) } });
     }
@@ -123,12 +136,14 @@ export function attachPreflightRuntime(
     // 기대 문서가 이전 revision이어도 현재 정적 분석과 같은 실행만 경계 근거에 연결한다.
     if (document.revision !== context.revision) continue;
     for (const event of document.events) {
-      const supported = apple(document.run.platform) && (event.transport === 'method-channel' || (context.messages?.length ?? 0) > 0);
-      const route = routeKey(event.channel, event.method, event.transport);
-      const keys = supported ? boundaryKeys(event.channel, event.method, event.transport) : [];
+      const platform = nativeLanguage(document.run.platform);
+      const supported = platform !== undefined && nativePlatforms.has(platform)
+        && (event.transport === 'method-channel' || messagePlatforms.has(platform));
+      const route = candidateKey(platform, event.channel, event.method, event.transport);
+      const keys = supported ? boundaryKeys(event.channel, event.method, event.transport, platform) : [];
       const fromFile = event.caller !== undefined && files.has(event.caller.path);
       if (keys.length === 0 && !fromFile) continue;
-      for (const key of keys) observed.add(key);
+      for (const key of keys) observed.add(pair(key, platform!));
       const candidates = supported && event.transport === 'method-channel' ? handlers.get(route) : undefined;
       if (candidates !== undefined && !candidateGroups.has(route)) {
         const endpoints = [...candidates.endpoints.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, value]) => value);
@@ -137,9 +152,10 @@ export function attachPreflightRuntime(
           handlers: endpoints.slice(0, 20), handlersOmitted: Math.max(0, endpoints.length - 20) });
       }
       if (supported && event.transport === 'basic-message-channel' && !candidateGroups.has(route)) {
-        const matches = nativeMessages.matching(event.channel);
-        messageCandidateWork += matches.length;
+        const addressMatches = nativeMessages.matching(event.channel);
+        messageCandidateWork += addressMatches.length;
         if (messageCandidateWork > 1_000_000) throw new RuntimeValidationError('Message runtime candidate budget exceeded.');
+        const matches = addressMatches.filter(({ endpoint }) => endpoint.platform === platform);
         if (matches.length > 0) {
           const unique = [...new Map(matches.map(({ endpoint }) => [JSON.stringify(endpoint), endpoint])).entries()]
             .sort(([a], [b]) => compareStrings(a, b)).map(([, endpoint]) => endpoint);
@@ -149,7 +165,7 @@ export function attachPreflightRuntime(
             handlers: unique.slice(0, 20), handlersOmitted: Math.max(0, unique.length - 20) });
         }
       }
-      const hasCandidates = candidateGroups.has(route);
+      const hasCandidates = supported && candidateGroups.has(route);
       const key = JSON.stringify([document.run.id, event.transport, event.channel, event.method ?? null, event.instance]);
       let group = groups.get(key);
       if (group === undefined) {
@@ -178,9 +194,11 @@ export function attachPreflightRuntime(
     callers: [...group.callers.entries()].sort(([a], [b]) => compareStrings(a, b)).slice(0, 20).map(([, caller]) => caller),
     callersOmitted: Math.max(0, group.callers.size - 20), selectionReasons: [...group.reasons].sort(compareStrings),
   }));
-  const unobservedBoundaries = required.filter(({ subject }) => !observed.has(subject.key))
+  const missingPlatform = (set: Set<string>, key: string): boolean =>
+    [...(boundaryPlatforms.get(key) ?? [])].some((platform) => !set.has(pair(key, platform)));
+  const unobservedBoundaries = required.filter(({ subject }) => missingPlatform(observed, subject.key))
     .map(({ subject }) => subject.key).sort(compareStrings);
-  const uncoveredBoundaries = required.filter(({ subject }) => !aligned || !declared.has(subject.key))
+  const uncoveredBoundaries = required.filter(({ subject }) => !aligned || missingPlatform(declared, subject.key))
     .map(({ subject }) => subject.key).sort(compareStrings);
   const gaps: PreflightLimitation[] = [];
   if (!aligned) gaps.push({ code: 'stale-runtime-expectations', message: 'Runtime expectations target a different capture revision.' });
@@ -202,4 +220,10 @@ export function attachPreflightRuntime(
 function routeKey(channel: string, method: string | undefined, transport = 'method-channel'): string {
   return JSON.stringify(transport === 'basic-message-channel' ? [transport, channel, null] : [channel, method ?? null]);
 }
-function apple(platform: RuntimePlatform): boolean { return platform === 'ios' || platform === 'macos'; }
+function nativeLanguage(platform: RuntimePlatform): NativeLanguage | undefined {
+  return platform === 'android' ? 'kotlin' : platform === 'ios' || platform === 'macos' ? 'swift' : undefined;
+}
+function candidateKey(platform: NativeLanguage | undefined, channel: string, method: string | undefined,
+  transport = 'method-channel'): string {
+  return platform === 'kotlin' ? JSON.stringify(['kotlin', transport, channel, method ?? null]) : routeKey(channel, method, transport);
+}
