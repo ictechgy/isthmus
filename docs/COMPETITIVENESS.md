@@ -3,6 +3,40 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
+## 구현 재개 — 범위 누락·경로 별칭 수정과 최종 native 검증
+
+2026-09-14 사용자 정정에 따라 타당성 조사 반복을 멈추고 기존 네 가지 개선 목표의
+구현·검증을 재개했다. 아래 작업은 새 리서치 계획이 아니라 실제 수정과 실행 결과다.
+
+- Cartograph `f2d77c1`: handler 범위 목록이 비거나 일부만 전달되면 `complete: false`를
+  보존한다. 관찰한 closure 참조를 공통 등록 의존으로 잘못 넓히지 않고 해당 handler에
+  남긴다. 같은 선언·범위의 경로 별칭 중복은 병합해 Dictionary 충돌을 없앴다.
+  누락/부분 목록의 잘못된 완전성·의존성, 경로 별칭의 실제 크래시를 먼저 재현했다.
+- 관련 45tests 통과, 1000 handler 분리 검사 0.492초. 전체 coverage 90.11%, CLI·실제
+  compiler fixture·self dead/module cycles/type cycles/rules 통과.
+  로그는 `/tmp/isthmus-scope-inventory-{red,green}.log`, `/tmp/isthmus-scope-alias-red.log`,
+  `/tmp/isthmus-scope-final-*.log`다. GLM 후속 지적의 누락 목록·별칭 충돌을 실제 재현해 반영했다.
+- isthmus `5241187` / Cartograph `f2d77c1` / Dartograph `df5c414`를 새 디렉터리에 구축·
+  격리 설치했다. 45.112초(SDK·전역 의존성 캐시 준비 상태). 재사용 위치는
+  `/Users/jinhongan/.local/share/isthmus/toolchains/f2d77c16f521/`이며 `toolchain.json`에
+  정확한 버전·실행 경로·hash가 있다. 소스 Git bundle도 별도로 보존했다.
+- 이 **최종 설치본**으로 실제 macOS Flutter native 검사 통과(전체 하네스 60.401초):
+  성공 check 4개/2개 scenario-platform 쌍, 기대한 error/missing-handler/timeout 3개,
+  pending 구분. 같은 revision의 정적 후보와 실행을 대조했다. 설치본 summary는
+  12,921 bytes, native 후보 위치·2쌍/4checks·정적 errors 2와 gaps 20을 유지하며 strict 1이다.
+  errors는 의도적으로 등록하지 않은 fixture 경계이며 분석 공백을 성공으로 숨기지 않았다.
+- 공개 Pigeon launch/canLaunch/setup의 독립 영향, path_provider/shared_preferences 경로,
+  합성 retention→dead 억제·explain과 limitation 스코프 검증도 최종 설치본으로 통과했다.
+- 공개 battery 검증에서 기존 스크립트가 허용된 ObjC 이름 신원(USR 없음)을 거부했다.
+  이전 Cartograph `628f9b9`에서도 실패를 재현해 이번 producer 회귀와 구분했다.
+  `verify-public-flutter-plugin.mjs`가 고정 source의 정확한 handler 이름을 인정하도록 고친 뒤
+  공개 source→retention→consumer 검증을 통과했다. sourceLanguage·원본 경로·동적 여부와
+  USR이 있을 때의 Clang 식별자 요구는 유지했다. 이 하네스 수정은 위 `5241187` 뒤의 변경이다.
+
+설치 디렉터리의 `verification/`에 실행 로그·원본 실패와 수정 후 성공·runtime JSON 및
+summary를 보존했다. iOS/Android 실제 실행, 전체 앱 탐지율, 원격 PR/CI와 공개 호환 버전은
+이 결과에 포함되지 않는다. 전체 네 가지 목표를 완료한 것으로 표시하지 않는다.
+
 ## 고정 소스 구축·producer 통합 체크포인트
 
 이전 턴은 구현·실행 검증·커밋을 완료한 progress다. 현재 원본 자매 저장소의 작업을
@@ -30,7 +64,8 @@
   Swift/Dart AOT/npm 설치본을 구축한다. 기존 destination 보호, 잘못된 commit과 JSON 원문
   비노출 검사를 추가했다. 첫 전체 구축은 63.685초(SDK/전역 의존성 캐시 준비 상태).
   최초 bdb24e2/0305fcf/8795857 조합에서 실제 source 회귀를 찾아 수정했으므로 그 빌드의
-  capability 성공을 최종 public 검증 성공으로 오인하지 않는다. 최종 refs 재구축은 다음 단계다.
+  capability 성공을 최종 public 검증 성공으로 오인하지 않는다. 이후 최종 refs 재구축 결과는
+  아래 재확인 절에 있다.
 - GLM Dart 검토: SHA 02f6f1eae0a1, 125,892 bytes. 실제 field mutation·exporter pair·문구를
   수정했다. redaction으로 변형된 테스트 문자열은 원본 검사 실패가 아니다.
   GLM Swift 검토: SHA 1cdcebf1a096, 237,588 bytes. opaque gap·ambiguous dispatch를 반영했고
@@ -39,7 +74,15 @@
 - 하위 작업자의 사용량 제한 후 main이 변경과 로그를 이어받아 검증했다. 원본 자매 worktree는
   보존되어 있으며 commit/branch가 다른 세션의 작업을 덮어쓴 상태가 아니다.
 
-다음 작업: 최종 고정 refs로 새 구축·공개 source/실행 검증 → 원격 PR/CI와 공개 호환 버전
+2026-09-14 실용성 조사에서 최종 구축 기록과 공개 source 검증 로그를 재확인했다.
+isthmus `5241187` / Cartograph `628f9b9` / Dartograph `df5c414`의 새 source/build 구축은
+48.033초(SDK·전역 의존성 캐시 준비 상태)였고, 같은 Cartograph 실행 파일의 impact/Basic을
+사용한 공개 Pigeon·foundation 두 패키지와 Flutter mock 바인딩 검증이 통과했다.
+`/tmp/isthmus-final-toolchain-build.log`, `/tmp/isthmus-final-clean-{pigeon,foundation,binding}.log`.
+이 결과는 최초 외부 사용자 설치나 최종 구축물의 실제 native 앱 재실행 근거가 아니다.
+경쟁 대안·실패 요인 10개·외부 사용자 평가 제안도 [FEASIBILITY.md](FEASIBILITY.md)에 갱신했다.
+
+다음 작업: 최종 도구 조합의 native 실행·남은 리뷰 검토 → 원격 PR/CI와 공개 호환 버전
 정리 → 첫 외부 사용자 구축 및 더 넓은 변경 표본 평가. 전체 목표는 active다.
 
 2026-09-14 현재 체크포인트. isthmus 구현 커밋은 `6503516`이다.
