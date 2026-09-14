@@ -19,32 +19,47 @@
 - capture는 선택적 `kartograph`/`kartographSnapshot`과 `.kt`/`.java` 변경을 지원한다.
   snapshot 내용·실행 도구·JAR 입력을 신선도에 반영하고 미구성 플랫폼 변경은 공백으로
   남긴다. Android-only source 구축은 Swift를 요구하지 않는다.
-- 현재 소비자 전체 verify 통과 421tests/Phase 0 15/workflow 13, coverage
-  line/branch/functions 98.41/92.61/95.42(`/tmp/isthmus-android-reviewed-verify.log`).
-  GLM의 생략 중복 계수·부분 위치 병합을 회귀로 재현해 수정한 뒤 전체 검사까지 통과했다.
-  원본 macOS runtime 요약의 새 소비자 재생도
-  기존 4checks/20gaps/strict1과 값이 동일했다(`/tmp/isthmus-android-apple-regression.json`).
-- GLM consumer packet 208,153 bytes SHA `edf0aa775fe3`, low. C1/C2는 재현·수정.
-  H1은 prefix index가 모든 조상 prefix를 반환하며 literal을 해당 prefix에 투영하는 구조,
-  H2는 완전한 근거의 무관한 handler를 제외하는 정밀도 정책, H3는 실제 dartRoots가
-  continuation도 포함함, H4는 Kotlin CLI의 상대 --file 계약으로 구분했다.
-  `/tmp/isthmus-android-consumer-glm.log`.
-- 초기 실제 Android API36 arm64 실행: 자체 Method/Basic 성공 2, 기대 실패 3, pending과
-  Kotlin 본문 marker. `isthmus-android-evidence-hnvwel/verification.json`(macOS 임시 루트).
-  이 초기 실행은 아직 static capture와 같은 project/revision으로 묶은 최종 검증이 아니다.
-  하네스를 실제 appRoot·capture revision·반복 빌드로 보강하고 공개 Kotlin Pigeon
-  shared_preferences_android 2.4.1을 추가하는 중이다.
-- 원본 kartograph main `751b701`은 HANDOFF만 수정된 상태라 보존했다. 개발 clone은
-  `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`,
-  branch `feat/isthmus-android-bridges`. 최초 `1477c39`/`e81281c`는 통합 검토에서 project=".",
-  Kotlin send 역할, v1 graph-file 미사용, 근거 없는 앞선 함수 귀속 문제가 발견돼 보강 중이다.
-  이 최초 버전을 완료된 Kotlin producer로 사용하지 않는다.
-- worker `/root/android_kotlin_producer`는 위 clone만, `/root/android_runtime_harness`는
-  `scripts/verify-flutter-android-runtime.mjs`만 소유한다. root는 소비자·capture·build·문서와
-  최종 검증을 소유한다. 원본 자매 저장소와 기존 미커밋 HANDOFF/리서치 문서를 보존한다.
+- 소비자 전체 verify 통과: 제품 421, Phase 0 15, workflow 19; coverage
+  line/branch/functions 98.41/92.61/95.42 (`/tmp/isthmus-android-final-root-verify.log`).
+  CLI exit 0/1/2/64와 npm package 계약도 통과했다. skill YAML·발견 경로와 문서 링크 42개를
+  확인했다. Python skill validator는 PyYAML 부재로 실행하지 못해 Ruby Psych로 구조를 확인했다.
+- GLM consumer C1/C2(생략 중복 계수·부분 위치 병합)는 회귀로 재현해 수정했다.
+  packet 208,153 bytes SHA `edf0aa775fe3`, `/tmp/isthmus-android-consumer-glm.log`.
+  기존 macOS 실행 요약은 새 소비자로 재생해 4 checks/20 gaps/strict 1이 동일했다.
+- 실제 Android API36 arm64에서 자체 Method/Basic과 공개 shared_preferences_android 2.4.1
+  Pigeon getBool 성공 3개, 기대 실패 3개와 pending을 검증했다. 동일 project/capture revision의
+  정적 후보 연결도 통과했다. `isthmus-android-evidence-pSv9ye/verification.json`(macOS 임시 루트):
+  65.419초, source capture 6.811초, cache 184ms, 반복 APK build 1.906초. 준비된 SDK/캐시 환경이며
+  최초 설치·원격 CI 시간은 아니다. 미해석 근거는 남아 있고 strict 전체 성공을 주장하지 않는다.
+- Dart의 같은 이름 후보는 실제 producer ID를 재조회한 뒤 파일 위치로 연결하도록 수정했다.
+  다른 파일의 `main`을 선택하지 않으며 같은 파일의 상충하는 후보는 연결하지 않는다.
+- Dartograph 개발 clone `/tmp/isthmus-dartograph-basic`의 `source_packages` opt-in을 실제 공개
+  생성 `messages_async.g.dart`에 적용해 getBool의 실제 Dart ID/위치를 확인했다. 두 번째 공개
+  native 심볼 선택은 별도 revision으로 수집하고 이미 실행한 runtime revision을 바꿔 맞추지 않는다.
+- 공개 native 심볼 전파도 통과했다. Kotlin `6ebca9a`와 Dart `23d4d35`의 실제 Android
+  `isthmus-android-evidence-Kb2VfW/verification.json`: SharedPreferencesPlugin.getBool의 정확한
+  JVM ID → generated Dart getBool → 앱 main. 선택 1, 영향 심볼 38, 경계 13, 검토 파일 6이다.
+  공통 setUp의 보수적 전파 때문에 다른 Pigeon 메서드도 후보이며 70개 공백을 유지한다.
+  하네스 전체 80.789초, 최초 capture 7.916초/cache 178ms, 공개 심볼 capture 13.517초,
+  반복 APK build 1.894초다. 성공 3·기대 실패 3·pending과 같은 capture의 runtime 대조가 통과했다.
+  CqHzfs의 실패 snapshot은 회귀 근거로 보존했다. Kotlin 문자열·모호한 함수 선택에 대한
+  추가 경계 검토는 별도 최종 커밋으로 반영 중이며 고정 소스 설치본 검증은 다음 단계다.
+- 검증 하네스는 직접 시작한 emulator process group의 종료를 확인하고 임시 파일을 정리한다.
+  종료 확인 실패는 성공 처리하지 않으며 이미 기록된 부분 JSON을 정리 전에 보존한다.
+  CqHzfs의 cleanup은 실제 owned AVD 확인·정상 종료까지 통과했다.
+- Kotlin clone은 `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`,
+  branch `feat/isthmus-android-bridges`, 통합 기준 `32809b5`다. 이전 project/역방향 send/graph-file/
+  함수 범위 문제가 수정됐고 필수 Gradle·Kover·CLI·agent·compiler fixture·analysis gates를 통과했다.
+  GLM C1~C3 및 실제 공개 함수 매핑을 후속 회귀로 검증 중이다.
+- worker `android_kotlin_producer`는 Kotlin clone, `android_runtime_harness`는 현재 Dart clone의
+  source_packages 후속 검증만 소유한다. root가 Android harness·capture·소비자·최종 통합을
+  소유하며 원본 자매 저장소와 기존 미커밋 HANDOFF/리서치 문서를 보존한다.
 
-다음 실행: Kotlin producer 수정·필수 게이트 → 실제 Android 앱의 동일 capture/runtime 연결
-및 공개 Pigeon 실행 → 고정 source 구축·설치본·캐시 재사용 → 전체 검사/리뷰/재개 기록.
+다음 실행: Kotlin/Dart 최종 회귀 → 고정 source 구축과 설치본 Android 검증 → 재개 기록. GLM follow-up packet 92,096 bytes SHA
+`063ec5f7f07d`(`/tmp/isthmus-android-followup-glm.log`): D1의 빈 Dart 선택은 실제 호출부가
+건너뛰므로 재현되지 않는다. D2는 AVD 불일치 진단·소유 config 보존으로 보강했다. D3은
+재조회 미해결 후보 수를 명시하고 해당 공백의 캐시 보존을 red→green 회귀로 확인했다.
+입력 선택의 한계 목록과 수집 결과의 한계를 분리해 결과 추가를 입력 변동으로 오인하지 않는다.
 공개 호환 버전·원격 CI·첫 외부 사용자·실제 변경 대비 효용 비교는 별도 잔여 목표다.
 
 ## 구현 재개 — 범위 누락·경로 별칭 수정과 최종 native 검증

@@ -6,7 +6,11 @@
 
 ### Added
 
-- `scripts/build-preflight-toolchain.mjs`: 세 저장소의 고정 commit만 별도 디렉터리에서
+- Android 개발 지원: Kotlin snapshot 기반 preflight·Method/Basic 브리지·플랫폼별 runtime
+  후보 대조와 Kotlin-only diff. Swift 없이 고정 소스에서 Android 도구를 구축할 수 있다.
+- 실제 Android 앱 검증 하네스: 자체 Kotlin 핸들러와 공개 Pigeon API, 기대 실패·pending,
+  같은 capture의 정적 연결과 반복 빌드/캐시를 검사하고 원본 근거를 보존한다.
+- `scripts/build-preflight-toolchain.mjs`: 선택한 저장소의 고정 commit만 별도 디렉터리에서
   구축하고 실행 명령·SDK·hash·단계별 시간을 기록한다. 기존 출력 디렉터리를 보호하고
   npm tarball의 격리 설치까지 수행한다.
 - `preflight --summary [--limit 1..100]`와 `--explain <selector>`: 전체 검토 상태와 항목 수를
@@ -48,6 +52,8 @@
 
 ### Fixed
 
+- 같은 이름의 Dart 호출자는 producer가 반환한 실제 ID를 재조회해 파일 위치로 구별한다.
+  같은 파일의 상충하는 후보는 임의로 연결하지 않는다.
 - 같은 위치에 다른 동적 채널 표현식이 관찰되면 prefix 후보와 미해석 근거에 모두 보존한다.
 - Basic handler의 범위·참조·실제 dispatch 후보 근거가 있으면 공통 등록 함수에서 서로
   독립적인 handler로 영향이 퍼지는 것을 막는다. 등록 선언 자체와 공유 등록 의존 변경은

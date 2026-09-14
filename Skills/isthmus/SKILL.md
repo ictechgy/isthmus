@@ -22,6 +22,9 @@ For Basic/Pigeon add `--messages`. A snapshot must come from the same prepared s
 source-only names are not compiler symbol identities. Use `selection.kotlin` in the context.
 The capture workflow accepts `kartograph` and `kartographSnapshot`; Android-only capture does
 not require cartograph. Fingerprint the Kartograph launcher and its runtime library directory.
+For an app-local Pigeon package, explicitly include its source in Dartograph's `source_packages`
+configuration and in capture inputs; see `docs/PREFLIGHT.md`. A runtime success alone does not
+establish a static path from the Kotlin implementation through the generated Dart API to the app caller.
 Do not fabricate missing facts or rewrite project identifiers just to make a join pass.
 If inputs are missing, identify the required files and proceed with independent authorized work.
 

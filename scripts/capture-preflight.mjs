@@ -95,7 +95,8 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
   }
   const keyConfig = { project, inputs: config.inputs, toolInputs: config.toolInputs, prepare: config.prepare,
     dartograph: config.dartograph, cartograph: config.cartograph ?? null, kartograph: config.kartograph ?? null,
-    kartographSnapshot: config.kartographSnapshot ?? null, selection, selectionBase, limitations,
+    // 입력 선택의 한계만 지문에 넣는다. 수집 결과로 추가되는 한계는 입력 변경이 아니다.
+    kartographSnapshot: config.kartographSnapshot ?? null, selection, selectionBase, limitations: [...limitations],
     indexStore: config.indexStore ?? null, messageCommands: messageCommands ?? null, tools,
     host: { node: process.version, platform: process.platform, arch: process.arch },
     toolchainEnvironment: digest(Object.fromEntries(['PATH', 'SDKROOT', 'DEVELOPER_DIR', 'FLUTTER_ROOT', 'DART_SDK', 'SWIFT_EXEC',
@@ -223,30 +224,67 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     const dartFacts = [...bridges[0].facts, ...(messages?.[0].facts ?? [])];
     const names = [...new Set(dartFacts.flatMap((fact) => fact.symbol ? [fact.symbol.qualifiedName] : []))].sort();
     const subjects = new Map();
-    for (let offset = 0; offset < names.length; offset += 1000) {
-      const requests = names.slice(offset, offset + 1000);
+    const conflictingBindings = new Set();
+    const candidateRequests = new Map();
+    let candidateWork = 0;
+    const subjectKey = (requested, path) => JSON.stringify([requested, path]);
+    async function querySubjects(requests, label) {
       const path = join(scratch, 'queries.json');
       await writeFile(path, JSON.stringify(requests), { mode: 0o600 });
       const document = await json(config.dartograph, ['query', '--batch', path, '--depth', '1', '--limit', '1', project], 'dart-bindings', [0, 64]);
       if (document.format !== 'symbol-query-batch' || document.version !== 1 || !Array.isArray(document.results) ||
-        document.results.length !== requests.length || document.results.some((row, index) => row.requested !== requests[index])) {
+        document.results.length !== requests.length || document.results.some((row, index) => row?.requested !== requests[index])) {
         throw new CaptureError('Dart caller query responses do not match the requests.');
       }
-      artifacts[`bindings-${offset}`] = document;
-      for (const result of document.results) {
-        if (result.status !== 'found') continue;
-        const subject = result.result?.subject;
-        const location = subject?.location;
-        const source = location?.path?.startsWith('project:') ? location.path.slice(8) : undefined;
-        if (!isSafeNonEmptyString(subject?.usr) || !isSafeNonEmptyString(subject?.qualifiedName) ||
-          !isProjectRelativePath(source) || !Number.isSafeInteger(location.line) || location.line < 1 ||
-          !Number.isSafeInteger(location.column) || location.column < 1) continue;
-        subjects.set(result.requested, { id: subject.usr, qualifiedName: subject.qualifiedName,
-          location: { path: source, line: location.line, column: location.column } });
+      artifacts[label] = document;
+      return document.results;
+    }
+    function rememberSubject(requested, result, exact = false) {
+      if (result.status !== 'found') return;
+      const subject = result.result?.subject;
+      const location = subject?.location;
+      const source = typeof location?.path === 'string' && location.path.startsWith('project:') ? location.path.slice(8) : undefined;
+      if (!isSafeNonEmptyString(subject?.usr) || !isSafeNonEmptyString(subject?.qualifiedName) ||
+        !isProjectRelativePath(source) || !Number.isSafeInteger(location.line) || location.line < 1 ||
+        !Number.isSafeInteger(location.column) || location.column < 1) return;
+      if (exact && subject.usr !== result.requested) throw new CaptureError('Dart caller candidate identity changed during resolution.');
+      const key = subjectKey(requested, source);
+      if (conflictingBindings.has(key)) return;
+      const symbol = { id: subject.usr, qualifiedName: subject.qualifiedName,
+        location: { path: source, line: location.line, column: location.column } };
+      if (subjects.has(key) && encodeSortedJson(subjects.get(key)) !== encodeSortedJson(symbol)) {
+        subjects.delete(key); conflictingBindings.add(key); return;
+      }
+      subjects.set(key, symbol);
+    }
+    for (let offset = 0; offset < names.length; offset += 1000) {
+      for (const result of await querySubjects(names.slice(offset, offset + 1000), `bindings-${offset}`)) {
+        rememberSubject(result.requested, result);
+        if (result.status !== 'ambiguous' || !Array.isArray(result.candidates)) continue;
+        for (const candidate of result.candidates) {
+          if (++candidateWork > 100_000) throw new CaptureError('Dart caller candidates exceed the capture budget.');
+          if (!isSafeNonEmptyString(candidate?.usr)) throw new CaptureError('Invalid Dart caller candidate identity.');
+          let requests = candidateRequests.get(candidate.usr);
+          if (requests === undefined) {
+            if (candidateRequests.size >= 50_000) throw new CaptureError('Dart caller candidates exceed the capture budget.');
+            requests = new Set(); candidateRequests.set(candidate.usr, requests);
+          }
+          requests.add(result.requested);
+        }
       }
     }
+    // 이름이 같은 main 등의 경로를 추측하지 않고 실제 ID를 재조회해 fact 파일과 대조한다.
+    const candidateIds = [...candidateRequests.keys()].sort();
+    let unresolvedCandidates = 0;
+    for (let offset = 0; offset < candidateIds.length; offset += 1000) {
+      for (const result of await querySubjects(candidateIds.slice(offset, offset + 1000), `bindings-candidates-${offset}`)) {
+        if (result.status !== 'found') unresolvedCandidates++;
+        for (const requested of candidateRequests.get(result.requested)) rememberSubject(requested, result, true);
+      }
+    }
+    if (unresolvedCandidates > 0) limitations.push(`unresolved-dart-candidates: ${unresolvedCandidates} producer candidate identity(s) could not be resolved on requery`);
     const bindings = dartFacts.flatMap((fact) => {
-      const symbol = subjects.get(fact.symbol?.qualifiedName);
+      const symbol = subjects.get(subjectKey(fact.symbol?.qualifiedName, fact.location.path));
       return symbol?.location.path === fact.location.path
         ? [{ platform: 'dart', location: fact.location, requested: fact.symbol.qualifiedName, symbol }] : [];
     });

@@ -62,6 +62,51 @@ test('수집 workflow는 실제 명령 인자로 전이 입력을 만들고 동�
   assert.ok(f.calls.every(([, operation]) => operation === '--version'));
 });
 
+test('같은 이름의 Dart 후보는 정확한 ID를 재조회해 관찰한 파일에서만 바인딩한다', async (t) => {
+  const f = await setup(t);
+  const execute = async (command, args, options) => {
+    if (args[0] !== 'query') return f.execute(command, args, options);
+    f.calls.push([command, ...args]);
+    const requests = JSON.parse(await readFile(args[args.indexOf('--batch') + 1], 'utf8'));
+    const results = requests.map((requested) => requested === 'Bridge.photo'
+      ? { requested, status: 'ambiguous', candidates: [
+        { usr: 'dart:photo', qualifiedName: 'Bridge.photo' }, { usr: 'test:photo', qualifiedName: 'Bridge.photo' },
+      ] }
+      : { requested, status: 'found', result: { subject: { usr: requested, qualifiedName: requested,
+        location: { path: requested === 'dart:photo' ? 'project:lib/bridge.dart' : 'project:test/bridge.dart', line: 2, column: 1 } } } });
+    return { status: requests[0] === 'Bridge.photo' ? 64 : 0,
+      stdout: JSON.stringify({ format: 'symbol-query-batch', version: 1, results }) };
+  };
+  const result = await capturePreflight(f.config, { execute });
+  assert.ok(result.context.bindings.length > 0);
+  assert.ok(result.context.bindings.every(({ symbol }) => symbol.id === 'dart:photo'));
+  assert.ok(result.report.reviewFiles.includes('lib/screen.dart'));
+  const sources = JSON.parse(await readFile(`${f.config.output}.sources.json`, 'utf8'));
+  assert.ok(sources.artifacts['bindings-candidates-0']);
+  await writeFile(join(f.root, 'producer.txt'), 'ambiguous producer revision');
+  const conflicting = await capturePreflight(f.config, { execute: async (command, args, options) => {
+    const response = await execute(command, args, options);
+    if (args[0] !== 'query') return response;
+    const document = JSON.parse(response.stdout);
+    for (const row of document.results) if (row.status === 'found') row.result.subject.location.path = 'project:lib/bridge.dart';
+    return { ...response, stdout: JSON.stringify(document) };
+  } });
+  assert.deepEqual(conflicting.context.bindings, [], 'Two identities in the same fact file remain unresolved.');
+  await writeFile(join(f.root, 'producer.txt'), 'candidate resolution revision');
+  const disappeared = await capturePreflight(f.config, { execute: async (command, args, options) => {
+    const response = await execute(command, args, options);
+    if (args[0] !== 'query') return response;
+    const document = JSON.parse(response.stdout);
+    for (const row of document.results) if (row.status === 'found') { row.status = 'notFound'; row.result = null; }
+    return { ...response, stdout: JSON.stringify(document) };
+  } });
+  assert.deepEqual(disappeared.context.bindings, []);
+  assert.ok(disappeared.context.limitations.some((value) => value.startsWith('unresolved-dart-candidates: 2 ')));
+  const cached = await capturePreflight(f.config, { execute: f.execute });
+  assert.equal(cached.cached, true);
+  assert.deepEqual(cached.context.limitations, disappeared.context.limitations);
+});
+
 test('Android만 설정해도 Kotlin snapshot과 bridge를 수집하고 snapshot 변경 시 캐시를 버린다', async (t) => {
   const f = await setup(t);
   await mkdir(join(f.root, 'android'));

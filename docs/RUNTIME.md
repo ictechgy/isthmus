@@ -70,11 +70,19 @@ node scripts/verify-flutter-android-runtime.mjs <flutter> <adb> <isthmus-js> \
   --kartograph <kartograph-bin> --dartograph <dartograph-aot>
 ```
 
-초기 API 36 arm64 실행에서는 자체 Method/Basic 성공 2개, 기대한 오류·핸들러 누락·timeout
-3개, pending 미완료와 Kotlin 본문 marker를 확인했다. 이는 실제 Android 통신이며 임의의
-런타임 의존성을 자동 발견하는 기능은 아니다. 단순 Basic fixture와 공개 Pigeon 생성 API의
-검증은 구분하고 최신 조합의 결과는 [진행 기록](COMPETITIVENESS.md)에 남긴다.
+API 36 arm64 실행에서는 자체 Method/Basic과 공개 `shared_preferences_android 2.4.1`의
+Pigeon `getBool` 성공 3개, 기대한 오류·핸들러 누락·timeout 3개, pending 미완료와 자체
+Kotlin 본문의 실행 marker를 확인했다. 공개 패키지의 원본 소스·LICENSE·실제 생성 codec을
+사용한다. 하네스가 만든 앱과 에뮬레이터만 정리하고 기록과 실행 인자는 근거 폴더에 남긴다.
+기본 공개 패키지 경로는 pub 캐시이며 `ISTHMUS_SHARED_PREFERENCES_ANDROID`로 지정할 수 있다.
+장치가 없으면 API 36 Google Play 이미지를 사용하며 `ISTHMUS_ANDROID_SYSTEM_IMAGE`로
+설치된 이미지 ID를 지정할 수 있다. 최신 조합의 결과는 [진행 기록](COMPETITIVENESS.md)에 남긴다.
+이는 명시한 통신 시나리오의 검증이며 임의의 런타임 의존성을 자동 발견하는 기능은 아니다.
 정적 연결에는 실제 앱 project와 capture revision을 사용하며 실행 후 식별자를 고쳐 맞추지 않는다.
+공개 Kotlin `SharedPreferencesPlugin.getBool`의 실제 snapshot ID만 변경 대상으로 선택하는
+별도 capture도 검사한다. 생성 Dart API와 앱 호출자까지 도달해야 통과하며, 이 선택의
+revision은 원래 실행 기록과 구분한다. Kotlin의 공통 Pigeon 등록 함수는 여러 채널을 영향
+후보로 넓힐 수 있으므로 메서드별 완전한 정밀도를 주장하지 않는다.
 
 ## 독립적인 기대 목록
 

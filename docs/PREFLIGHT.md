@@ -170,6 +170,19 @@ base/current를 섞은 입력은 거부한다. 경로 중간 심볼·위치·출
 adapter는 경로의 node/edge 항목을 합해 1,000,000개까지 읽고 상한 초과는 입력 오류로
 거부한다. 수집 명령은 producer의 depth 128·출력 10,000개 한도를 사용한다.
 
+앱 내부에 복사한 공개 Pigeon 패키지의 Dart 구현까지 연결하려면 이를 지원하는 개발
+Dartograph의 `dartograph.yaml`에서 분석할 로컬 패키지를 명시한다.
+
+```yaml
+source_packages:
+  - vendor/shared_preferences_android
+```
+
+이는 지정한 패키지의 `lib/`만 추가한다. 앱의 path dependency로 연결하고 `flutter pub get`을
+실행한 뒤, 설정 파일·패키지 소스·pubspec·package_config를 capture 입력에도 포함한다.
+pub 캐시 전체나 모든 의존 패키지를 분석했다고 간주하지 않는다. 같은 이름의 Dart 후보는
+producer의 실제 ID와 파일 위치로 대조하며 같은 파일 안에서도 모호하면 연결하지 않는다.
+
 ## 자동 수집과 CI
 
 `scripts/capture-preflight.mjs`는 별도 workflow 진입점이다. 사용자가 작성한 설정의 `prepare`
