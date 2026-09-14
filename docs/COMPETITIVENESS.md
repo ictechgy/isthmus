@@ -3,69 +3,76 @@
 2026-09-14 시작. 사용자 목표는 아래 네 가지이며, 일부 명령의 테스트 통과로 전체 목표를
 완료 처리하지 않는다. MIT·로컬 실행·근거와 분석 한계 보존은 유지한다.
 
-## Android 확장 진행 — 구현을 계속할 것
+## Android 확장 — 최종 로컬 구현·설치본 검증
 
-최신 사용자 지시: **"쭉 진행해줘. 더불어 android 쪽 브릿지도 해줘"**.
-타당성 조사를 다시 시작하지 않는다. 기존 네 가지 개선 목표에 Kotlin/Android를 추가해
-구현·실제 producer/실행 검증을 진행 중이며 아직 전체 완료가 아니다.
+최신 사용자 지시 **"쭉 진행해줘. 더불어 android 쪽 브릿지도 해줘"**에 따라 기존 네 가지
+목표에 Kotlin/Android를 구현했다. 아래는 실제 실행 근거이며 시장 경쟁력이나 앱 전체
+의존성 완전성을 입증한 결과로 확대하지 않는다. 뒤의 기록은 각 시점의 이력이다.
 
-- 소비자 개발 소스에 Kotlin preflight 선택/분석, Method·Basic 입력, runtime 플랫폼별
-  후보 분리, Kotlin-only diff를 추가했다. Swift와 Kotlin을 한 diff에 섞어 삭제가 가려지는
-  입력은 계속 거부한다. Kotlin `kartograph-impact`의 current 경로·원래 edge origin을
-  사용하며 base 경로와 누락된 중간 심볼은 현재 간선으로 만들지 않는다.
-- JVM 실제 출력의 nullable 좌표를 확인했다. Kotlin 분석 심볼은 `{path,line?,column?}`를
-  보존하며 열 번호를 합성하지 않는다. Dart binding과 bridge fact의 완전한 좌표 규칙은
-  유지한다. 일치하는 부분 위치는 보강하고 알려진 좌표가 충돌하면 거부한다.
-- capture는 선택적 `kartograph`/`kartographSnapshot`과 `.kt`/`.java` 변경을 지원한다.
-  snapshot 내용·실행 도구·JAR 입력을 신선도에 반영하고 미구성 플랫폼 변경은 공백으로
-  남긴다. Android-only source 구축은 Swift를 요구하지 않는다.
-- 소비자 전체 verify 통과: 제품 424, Phase 0 15, workflow 19; coverage
-  line/branch/functions 98.41/92.37/95.42 (`/tmp/isthmus-android-final-root-verify.log`).
-  CLI exit 0/1/2/64와 npm package 계약도 통과했다. skill YAML·발견 경로와 문서 링크 42개를
-  확인했다. Python skill validator는 PyYAML 부재로 실행하지 못해 Ruby Psych로 구조를 확인했다.
-- GLM consumer C1/C2(생략 중복 계수·부분 위치 병합)는 회귀로 재현해 수정했다.
-  packet 208,153 bytes SHA `edf0aa775fe3`, `/tmp/isthmus-android-consumer-glm.log`.
-  기존 macOS 실행 요약은 새 소비자로 재생해 4 checks/20 gaps/strict 1이 동일했다.
-- 실제 Android API36 arm64에서 자체 Method/Basic과 공개 shared_preferences_android 2.4.1
-  Pigeon getBool 성공 3개, 기대 실패 3개와 pending을 검증했다. 동일 project/capture revision의
-  정적 후보 연결도 통과했다. `isthmus-android-evidence-pSv9ye/verification.json`(macOS 임시 루트):
-  65.419초, source capture 6.811초, cache 184ms, 반복 APK build 1.906초. 준비된 SDK/캐시 환경이며
-  최초 설치·원격 CI 시간은 아니다. 미해석 근거는 남아 있고 strict 전체 성공을 주장하지 않는다.
-- Dart의 같은 이름 후보는 실제 producer ID를 재조회한 뒤 파일 위치로 연결하도록 수정했다.
-  다른 파일의 `main`을 선택하지 않으며 같은 파일의 상충하는 후보는 연결하지 않는다.
-- Dartograph 개발 clone `/tmp/isthmus-dartograph-basic`의 `source_packages` opt-in을 실제 공개
-  생성 `messages_async.g.dart`에 적용해 getBool의 실제 Dart ID/위치를 확인했다. 두 번째 공개
-  native 심볼 선택은 별도 revision으로 수집하고 이미 실행한 runtime revision을 바꿔 맞추지 않는다.
-- 공개 native 심볼 전파도 통과했다. Kotlin `6ebca9a`와 Dart `23d4d35`의 실제 Android
-  `isthmus-android-evidence-Kb2VfW/verification.json`: SharedPreferencesPlugin.getBool의 정확한
-  JVM ID → generated Dart getBool → 앱 main. 선택 1, 영향 심볼 38, 경계 13, 검토 파일 6이다.
-  공통 setUp의 보수적 전파 때문에 다른 Pigeon 메서드도 후보이며 70개 공백을 유지한다.
-  하네스 전체 80.789초, 최초 capture 7.916초/cache 178ms, 공개 심볼 capture 13.517초,
-  반복 APK build 1.894초다. 성공 3·기대 실패 3·pending과 같은 capture의 runtime 대조가 통과했다.
-  CqHzfs의 실패 snapshot은 회귀 근거로 보존했다. Kotlin 문자열·모호한 함수 선택에 대한
-  추가 경계 검토는 별도 최종 커밋으로 반영 중이며 고정 소스 설치본 검증은 다음 단계다.
-- 설치본 `--explain`에서 Dart 분석 root에 위치가 없으면 별도 query의 선언 위치도 출력에
-  빠지는 문제를 발견해 수정했다. 기존 심볼 종류를 유지하며 위치를 병합하고 모순된 위치·
-  bridge USR은 거부한다. Method/Basic 회귀 3개와 실제 Kb2VfW context에서 generated getBool의
-  원본 `messages_async.g.dart:244:3` 보존을 확인했다. 해당 좁은 GLM 리뷰 로그는
-  `/tmp/isthmus-dart-declaration-glm.log`다.
-- 검증 하네스는 직접 시작한 emulator process group의 종료를 확인하고 임시 파일을 정리한다.
-  종료 확인 실패는 성공 처리하지 않으며 이미 기록된 부분 JSON을 정리 전에 보존한다.
-  CqHzfs의 cleanup은 실제 owned AVD 확인·정상 종료까지 통과했다.
-- Kotlin clone은 `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`,
-  branch `feat/isthmus-android-bridges`, 통합 기준 `32809b5`다. 이전 project/역방향 send/graph-file/
-  함수 범위 문제가 수정됐고 필수 Gradle·Kover·CLI·agent·compiler fixture·analysis gates를 통과했다.
-  GLM C1~C3 및 실제 공개 함수 매핑을 후속 회귀로 검증 중이다.
-- worker `android_kotlin_producer`는 Kotlin clone, `android_runtime_harness`는 현재 Dart clone의
-  source_packages 후속 검증만 소유한다. root가 Android harness·capture·소비자·최종 통합을
-  소유하며 원본 자매 저장소와 기존 미커밋 HANDOFF/리서치 문서를 보존한다.
+### 검증한 코드와 재사용할 설치본
 
-다음 실행: Kotlin/Dart 최종 회귀 → 고정 source 구축과 설치본 Android 검증 → 재개 기록. GLM follow-up packet 92,096 bytes SHA
-`063ec5f7f07d`(`/tmp/isthmus-android-followup-glm.log`): D1의 빈 Dart 선택은 실제 호출부가
-건너뛰므로 재현되지 않는다. D2는 AVD 불일치 진단·소유 config 보존으로 보강했다. D3은
-재조회 미해결 후보 수를 명시하고 해당 공백의 캐시 보존을 red→green 회귀로 확인했다.
-입력 선택의 한계 목록과 수집 결과의 한계를 분리해 결과 추가를 입력 변동으로 오인하지 않는다.
-공개 호환 버전·원격 CI·첫 외부 사용자·실제 변경 대비 효용 비교는 별도 잔여 목표다.
+- isthmus 제품 commit `055bad2971cc8f326a4e7834dbf38dcca4fa1291`, branch `feat/change-preflight`.
+- Kartograph `d3f17940924c6275fabd18a3cc3a383e8b068b24`, branch `feat/isthmus-android-bridges`,
+  `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`.
+- Dartograph `af8403729473802d435237821112eea08e0ad69c`, branch `feat/isthmus-basic-messages`,
+  `/tmp/isthmus-dartograph-basic`. Production 코드는 `fac5161`, 이후 커밋은 테스트 보강이다.
+- 세 commit을 새 source archive에서 구축하고 npm tarball을 격리 설치했다. Swift 없이
+  Android 도구 구축이 31.552초에 통과했다. 이미 준비된 JDK/Dart/npm/Gradle 캐시 환경이다.
+- 설치 루트: `/Users/jinhongan/.local/share/isthmus/toolchains/android-055bad2/`.
+  `toolchain.json`에 실행 명령·원본 commit·SDK·패키지/JAR hash가 있고, 각 저장소의
+  `*-source.tar`와 `verification/`에 원본 소스 및 검증 로그를 보존했다.
+
+### 구현과 실제 Android 결과
+
+- Kotlin preflight 선택/분석, Method/Basic 사실, 플랫폼별 runtime 후보 분리와 Kotlin-only
+  diff. JVM 분석 심볼의 부분 좌표를 보존하며 bridge fact의 열은 UTF-8 바이트 기준이다.
+- capture가 Kotlin snapshot·JAR·명시한 소스/설정·생성물을 지문화한다. 같은 이름의 Dart
+  후보는 실제 ID와 파일 위치로 구별하고, 재조회가 미해결이면 별도 공백으로 남긴다.
+- `source_packages` opt-in이 앱 안의 path package를 실제 package_config 신원으로 분석해
+  Pigeon 생성 Dart API와 앱 호출자까지 연결한다. 숨김/cache·외부·symlink 경계를 제한한다.
+- 설치본 Android API36/Android16/arm64, Flutter3.32.2의 실제 APK에서 Method/Basic 및 원본
+  `shared_preferences_android 2.4.1` Pigeon getBool 성공 3건, 기대 오류·미구현·timeout 3건,
+  pending 미완료를 검증했다. Kotlin 자체 핸들러 본문 marker도 확인했다.
+- 같은 project/capture revision의 정적 후보/runtime 대조가 통과했다. 하네스 전체 84.071초,
+  source capture 7.014초, cache 189ms, 반복 APK build 1.915초. 준비된 SDK/캐시 환경이며
+  최초 설치·원격 CI 시간은 아니다. 오류 2·공백 34는 fixture의 누락/동적 경로와 한계로 유지된다.
+- 별도 native 심볼 capture: 정확한 SharedPreferencesPlugin.getBool JVM ID에서 생성 Dart
+  getBool과 앱 main까지 전파된다. 선택 1·영향 심볼 38·경계 13·검토 파일 6, 수집 14.986초.
+  공통 setUp의 보수적 전파 때문에 다른 Pigeon 메서드도 후보이며 공백 70개를 유지한다.
+  이 선택의 revision으로 기존 runtime 기록을 바꿔 맞추지 않는다.
+- `--explain`에서 빠지던 Dart 선언 위치를 query 바인딩으로 보강해 원본 생성 파일의
+  `messages_async.g.dart:244:3`을 보존했다. 기존 심볼 종류를 유지하고 상충하는 위치/USR은 거부한다.
+- 근거: 설치 루트의 `verification/android-evidence/verification.json`과 원본
+  `/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-android-evidence-8vjveB/`.
+  직접 만든 AVD의 신원·정상 종료도 확인했다. 부분 기록과 종료 진단을 정리 전에 보존한다.
+
+### 검사와 리뷰
+
+- isthmus `npm run verify`: 제품 424·Phase 0 15·workflow 19, 실패/skip 0,
+  line/branch/functions 98.41/92.37/95.42. CLI 0/1/2/64와 package 계약 통과.
+- Kotlin 최종 full Gradle/Kover/installDist 통과, JUnit 611 tests(그중 index280/CLI149),
+  실패/skip 0. CLI/agent 계약, 실제 compiler fixture retained44/reportable4,
+  자기 분석 6개 명령 총 4.005초가 통과했다. `/tmp/isthmus-android-kartograph-d3-final-*.log`.
+- Dart production 전체 405 tests·coverage91.47%, test-only 후속 source-package6,
+  analyze·CLI·analyzer boundary·false-positive·pub dry-run(경고0) 통과.
+- 소비자 대형 입력 중앙값: 40,000 facts 436ms, 100,000 runtime events 166ms,
+  20,000 소비자+100,000 events 422ms. 모든 p95가 5초 예산 이내다. source/앱 빌드는 제외한다.
+- 기존 실제 macOS 기록의 설치본 재생: runtime4 checks 통과, summary6 affected/5 boundaries/
+  20 gaps/strict1 유지. 이전 출력과의 차이는 Dart 선언 위치 1개를 보강한 것뿐이다.
+- GLM consumer·Kotlin producer·Dart source-package·하네스/capture·Dart 위치 보강 리뷰를
+  실제 회귀로 대조했다. 새 확정 결함을 수정했으며 최종 좁은 위치 리뷰는 지적 없이 끝났다
+  (packet42,363 bytes SHA `e718ef9061e9`). 전역 재리뷰를 반복하지 않았다.
+- Python skill validator는 PyYAML 부재로 실행하지 못해 Ruby Psych로 YAML·필수 필드·
+  설명 길이·발견 경로를 확인했다. 문서 링크와 배포 skill 경로도 확인했다.
+
+### 공개와 남은 범위
+
+원본 자매 작업 트리·기존 미커밋 HANDOFF/리서치·profile 생성물은 보존했다. npm/pub 발행,
+GitHub push/PR/원격 CI는 하지 않았다. 설치 루트의 `verification/pull-requests.md`에 3개
+개발 브랜치의 공개 검토 초안을 준비했다. 공개 호환 버전·최초 외부 사용자 구축·실제 변경
+대비 효용 비교는 남아 있다. 알려지지 않은 임의의 런타임 의존성을 자동으로 모두 발견하지
+않으며 iOS 실기기·다른 Android API/ABI·release/lifecycle 변형도 이번 검증 범위 밖이다.
+전체 네 목표를 테스트 개수만으로 완료 처리하지 않는다.
 
 ## 구현 재개 — 범위 누락·경로 별칭 수정과 최종 native 검증
 
