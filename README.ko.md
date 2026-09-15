@@ -28,14 +28,17 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 ## 상태
 
-개발 소스는 Flutter Dart ↔ Swift/Kotlin 변경 사전 점검, MethodChannel·Pigeon/BasicMessageChannel
-사실, 명시한 런타임 시나리오 대조와 내용 기반 수집 캐시를 지원한다. 실제 macOS·Android
+**0.6.0**은 Flutter Dart ↔ Swift/Kotlin 변경 사전 점검, MethodChannel·Pigeon/BasicMessageChannel
+사실, 명시한 런타임 시나리오 대조와 내용 기반 수집 캐시를 지원한다. `impact
+--file`/`--symbol`/`--changes`(정보 손실 없는 `--compact` JSON과 분석 공백도 실패시키는
+`--strict` 포함), producer 전이 영향 경로를 다루는 `preflight <context.json>`의
+`--summary`/`--explain`, `verify-runtime --expectations`가 추가됐다. 실제 macOS·Android
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-npm 발행본은 **0.5.0**이며 위 개발 기능은 아직 포함하지 않는다. 호환되는 producer 개발
-commit이 필요하다. 발행된 Dart/Swift MethodChannel 절차는 cartograph 0.5.3 이상과
-dartograph 0.1.1 이상을 사용하며 공개 battery 플러그인으로 검증했다.
+npm 발행본은 **0.6.0**이며 위 기능은 호환되는 producer 개발 commit이 필요하다. 발행된
+Dart/Swift MethodChannel 절차는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상을 사용하며
+공개 battery 플러그인으로 검증했다. Message channel 지원은 현재 개발 producer가 필요하다.
 React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 현재 cartograph(Swift)를
 대상으로 한다. 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
@@ -79,20 +82,20 @@ npx isthmus-cli --help
 
 ## 사용
 
-개발 소스에는 `impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는
-`--compact`, 분석 공백도 실패시키는 `--strict`가 추가됐다. 아직 npm 0.5.0 발행본에는
-없다. 빌드·계약·현재 브리지 한정 범위는 [변경 사전 점검](docs/IMPACT.md)을 참조한다.
+`impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는 `--compact`, 분석
+공백도 실패시키는 `--strict`를 제공한다. 빌드·계약·현재 브리지 한정 범위는
+[변경 사전 점검](docs/IMPACT.md)을 참조한다.
 Android 개발 지원은 `selection.kotlin`과 Kartograph snapshot을 사용한다. Kotlin Method/Basic
 사실을 Dart 소비자에 연결하고 Android 실행은 Kotlin 후보에만 대조한다.
 [Android 수집 설정](docs/PREFLIGHT.md#android-수집)과 [선택적 Kotlin 도구 구축](docs/TOOLCHAIN.md)을 참조한다.
-개발 소스의 `verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
+`verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
 통신 기록을 대조한다([계약](docs/RUNTIME.md)). 선택적 [Flutter 수집기](packages/isthmus_runtime/README.md)는
 실제 macOS·Android 앱에서 핸들러와 `url_launcher_macos 3.2.2`·
 `shared_preferences_android 2.4.1`의 Pigeon 생성 API로 검증했다.
-언어 내부 전이 영향 연결과 스냅샷 수집은 개발 소스에 구현됐으며, 더 넓은 앱 적용 범위와
+언어 내부 전이 영향 연결과 스냅샷 수집은 구현됐으며, 더 넓은 앱 적용 범위와
 처음 설치하는 사용자의 재현 절차는 검증 중이다.
 
-개발 소스의 `preflight <context.json> --strict --compact`는 producer의 전이 영향과
+0.6.0의 `preflight <context.json> --strict --compact`는 producer의 전이 영향과
 브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
 실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
@@ -104,7 +107,7 @@ runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision�
 summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 항목도 검토 상태에 반영한다.
 선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 개발 producer로 literal 주소와
 증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
-이 추가 기능은 npm 0.5.0 발행본에는 없다.
+이 추가 기능에는 개발 producer가 필요하다.
 호환 개발 도구를 로컬 Git의 고정 commit에서 새로 구축하는 방법은
 [도구 구축 절차](docs/TOOLCHAIN.md)에 있다. Dart AOT 실행 파일, impact와 Basic을 함께
 제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
