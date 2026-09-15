@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-16
+
 ### Added
 
 - Android 개발 지원: Kotlin snapshot 기반 preflight·Method/Basic 브리지·플랫폼별 runtime

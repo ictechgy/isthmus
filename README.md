@@ -30,15 +30,18 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-Development source supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
+**0.6.0** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
 Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
-Actual macOS and Android fixture apps have exercised public plugin APIs. See
-[preflight](docs/PREFLIGHT.md), [runtime verification](docs/RUNTIME.md), and
+It adds `impact --file`/`--symbol`/`--changes` (with lossless `--compact` JSON and a
+gap-aware `--strict` gate), `preflight <context.json>` with `--summary`/`--explain` over
+producer impact paths, and `verify-runtime --expectations`. Actual macOS and Android fixture
+apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
+[runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The published npm version is **0.5.0**; these development features require compatible producer
-commits and are not included in that release. The published Dart/Swift MethodChannel workflow
-uses cartograph 0.5.3+ and dartograph 0.1.1+, verified with a public battery plugin.
+The published npm version is **0.6.0**; these features require compatible producer commits.
+The published Dart/Swift MethodChannel workflow uses cartograph 0.5.3+ and dartograph
+0.1.1+; message-channel support currently needs development producers.
 React Native and EventChannel extraction remain planned. Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 
@@ -85,21 +88,22 @@ Do not use `npx isthmus` — that installs a different package with the same nam
 
 ## Usage
 
-Development source adds change preflight with `impact --file`, `--symbol`, or
-`--changes`, plus lossless `--compact` JSON and a gap-aware `--strict` gate.
-This is not in the published 0.5.0 package yet. See [change preflight](docs/IMPACT.md)
-for the build command, contract, and current bridge-only scope.
+Change preflight is available with `impact --file`, `--symbol`, or `--changes`, plus
+lossless `--compact` JSON and a gap-aware `--strict` gate. See
+[change preflight](docs/IMPACT.md) for the build command, contract, and current
+bridge-only scope.
 Android development support uses `selection.kotlin` and a Kartograph snapshot. It connects
 Kotlin Method/Basic facts to Dart consumers and matches Android observations only to Kotlin
 candidates. See [Android capture](docs/PREFLIGHT.md#android-수집) and [toolchain builds](docs/TOOLCHAIN.md).
-Development source also adds `verify-runtime --expectations` to check recorded calls
+`verify-runtime --expectations` checks recorded calls
 by revision, scenario, platform, and engine instance. See the [runtime contract](docs/RUNTIME.md).
 The optional [Flutter recorder](packages/isthmus_runtime/README.md) has been exercised
 in real macOS and Android apps, including the Pigeon-generated APIs of
-`url_launcher_macos 3.2.2` and `shared_preferences_android 2.4.1`. Transitive producer impact and snapshot capture are implemented
-in development source; broader application coverage and first-time setup remain under validation.
+`url_launcher_macos 3.2.2` and `shared_preferences_android 2.4.1`. Transitive producer impact
+and snapshot capture are implemented; broader application coverage and first-time setup remain
+under validation.
 
-Development source now exposes `preflight <context.json> --strict --compact` to compose
+0.6.0 exposes `preflight <context.json> --strict --compact` to compose
 producer impact paths across the bridge. A separate capture workflow caches declared
 input content and has passed a synthetic source test with real producers. See
 [cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
@@ -113,7 +117,7 @@ Use `preflight <context.json> --summary --strict --compact` for a bounded overvi
 to 20 items per collection (`--limit 1..100`); omitted items still affect review status.
 Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addresses and
 proven prefix candidates with development producers. Prefix matches preserve unresolved
-suffix and instance wiring. These additions are not in the published 0.5.0 package.
+suffix and instance wiring. These additions require development producers.
 To build compatible development tools from pinned local Git commits, use the
 [toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone
 Dart executable, a Cartograph executable with both impact and message support,
