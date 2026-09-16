@@ -261,8 +261,9 @@ Basic 수집은 설정에 `"messages": true`를 추가한다. 같은 producer에
 
 ## 실행 근거
 
-당시 개발 producer가 있던 환경에서 다음 검증을 실행했다. 현재는 공개 호환 버전으로도
-재현할 수 있다([COMPATIBILITY.md](COMPATIBILITY.md)).
+당시 개발 producer가 있던 환경에서 다음 검증을 실행했다. 필요한 producer 명령은
+공개 호환 버전에 포함됐지만, 이 스크립트를 공개 실행 파일 조합으로 다시 실행하지는
+않았다(인자 형태 확인 필요).
 
 ```bash
 node scripts/verify-preflight-producers.mjs /path/to/cartograph /path/to/dartograph/bin/dartograph.dart /path/to/flutter

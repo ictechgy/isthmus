@@ -16,7 +16,8 @@ analysis evidence; it does not authorize source edits, deletion, publishing, or 
 Use `isthmus-cli` 0.1.4+ (`isthmus` binary), cartograph 0.5.3+ and dartograph 0.1.1+
 for the basic check/query/diff/retentions workflow. `impact`, `preflight`,
 `verify-runtime`, and Basic/Pigeon (`--messages`) need isthmus-cli 0.6.0 with the
-compatible producers: cartograph 0.15.1, kartograph 0.10.0, dartograph 0.10.0.
+compatible producer for each side: cartograph 0.15.1 (Swift), dartograph 0.10.0,
+plus kartograph 0.10.0 when Android/Kotlin inputs are used.
 Obtain both Dart and Swift bridge-facts JSON with identical project roots and analysis scope.
 Swift production requires a built compiler index; use `cartograph bridges --target flutter --format json`.
 Android preflight uses public Kotlin support: obtain Kotlin facts using

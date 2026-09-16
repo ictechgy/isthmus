@@ -39,8 +39,8 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 npm 발행본은 **0.6.0**이다. 공개 호환 producer 세트는 cartograph **0.15.1**,
 kartograph **0.10.0**, dartograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거보내기는
-cartograph 0.5.3 이상·dartograph 0.1.1 이상에서도 동작하며 공개 battery 플러그인으로
-검증했다.
+cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
+왕복을 다시 확인했다.
 React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 현재 cartograph(Swift)를
 대상으로 한다. 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 

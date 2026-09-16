@@ -43,7 +43,8 @@ The published npm version is **0.6.0**. The compatible public producer set is
 cartograph **0.15.1**, kartograph **0.10.0**, and dartograph **0.10.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
-round trip also work with cartograph 0.5.3+ and dartograph 0.1.1+.
+round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
+public battery plugin — and the round trip was re-verified on the public versions above.
 React Native and EventChannel extraction remain planned. Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 

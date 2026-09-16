@@ -22,19 +22,19 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 | [isthmus #71](https://github.com/ictechgy/isthmus/pull/71) | 0.6.0 릴리스 | `840aaa0e85f23d6979e5bf2e9c78a4ee15963cd9` |
 | [cartograph #89](https://github.com/ictechgy/cartograph/pull/89) | bridge-facts v2 Basic/Pigeon | `b5c9b841fd1fc6a76179d6d1548c564a59f65c74` |
 | [kartograph #50](https://github.com/ictechgy/kartograph/pull/50) | Basic bridge facts | `31b409f5de7b09914db11b9af23cae75ff38af82` |
-| [kartograph #51](https://github.com/ictechgy/kartograph/pull/51) | why·신뢰도·markdown 리포트 | (squash `8b8721b`) |
-| [kartograph #52](https://github.com/ictechgy/kartograph/pull/52) | 0.10.0 릴리스 준비 | main `57b701c` |
+| [kartograph #51](https://github.com/ictechgy/kartograph/pull/51) | why·신뢰도·markdown 리포트 | `8b8721b0664a55ef046f7a2c1b4a0518f279ff34` (squash) |
+| [kartograph #52](https://github.com/ictechgy/kartograph/pull/52) | 0.10.0 릴리스 준비 | `57b701c1093ea979f7051e8336a44a945229d19f` |
 | [dartograph #94](https://github.com/ictechgy/dartograph/pull/94) | Basic 송신 | `5e5d1c6eea3ef39f0e179e4d9338526c9c36741f` |
 | [dartograph #96](https://github.com/ictechgy/dartograph/pull/96) | 0.10.0 증분 분석 등 | MERGED 2026-09-15 |
 
-- **공개 호환 버전 세트 — 2026-09-16 실측 완성.** TOOLCHAIN.md 요구 조건을 공개 버전이 충족한다.
+- **공개 호환 버전 세트 — 2026-09-16 확인.** TOOLCHAIN.md 요구 조건을 공개 버전이 충족한다.
 
-| 도구 | 공개 버전 | 필요 기능 실측 |
+| 도구 | 공개 버전 | 필요 기능 확인 근거 |
 | --- | --- | --- |
 | isthmus-cli | 0.6.0 (npm·GitHub) | preflight·impact·verify-runtime·--summary/--explain |
-| cartograph | **0.15.1** (GitHub Release Latest, 태그 0.15.0·0.15.1) | 설치본 `/opt/homebrew/bin/cartograph` 0.15.1의 `bridges --help`에 `--messages` 존재 확인 |
-| kartograph | **v0.10.0** (GitHub Release Latest) | main `57b701c`에 `bridges --messages` 코드 존재(AgentCommand.kt·BridgeFactScannerTest.kt) |
-| dartograph | **0.10.0** (pub.dev·GitHub 태그) | `bridges --messages --format json`은 v0.9.0부터 존재, 0.10.0에서 유지 |
+| cartograph | **0.15.1** (GitHub Release Latest, 태그 0.15.0·0.15.1) | 설치본 `/opt/homebrew/bin/cartograph` 0.15.1의 `bridges --help`에 `--messages` 존재·v2 출력 실측 |
+| kartograph | **v0.10.0** (GitHub Release Latest) | main `57b701c`에 `bridges --messages` 코드 존재(AgentCommand.kt·BridgeFactScannerTest.kt). **발행본 실행은 미실측** — Android 실행은 미검증 |
+| dartograph | **0.10.0** (pub.dev·GitHub 태그) | 활성화한 설치본으로 `bridges --messages` v2 출력 실측 |
 
 - dartograph [PR #98](https://github.com/ictechgy/dartograph/pull/98)(dependency audit·closed-app mode·
   MCP resources/prompts)은 **OPEN·mergeable·CI 전부 SUCCESS·리뷰 없음**. 머지 여부는 사용자 승인 사안.
@@ -61,7 +61,8 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 | dartograph | **0.10.0** (pub.dev 동일) | 2026-09-15 | `bridges --messages --format json` **있음** |
 
 **결론: 공개 버전만으로 호환 세트를 구성할 수 있다.** 네 도구 모두 TOOLCHAIN.md 요구 조건 충족.
-남은 것은 이 세트를 문서로 고정하는 것(버전 표·고정 예제·수집 설정·CI 예시)과 실사용 검증이다.
+문서로 고정하는 작업(docs/COMPATIBILITY.md 등)은 `docs/public-compat-set` 브랜치에 커밋해
+PR #72로 올렸고, 남은 것은 리뷰·머지와 실사용 검증이다.
 
 ### 호환 세트 확보를 위해 발행해야 할 것 — 전부 완료
 
@@ -70,7 +71,8 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 3. ~~kartograph~~ — **완료**: PR #52 머지 후 v0.10.0 Release 발행(2026-09-16).
 4. ~~dartograph~~ — **완료 + 초과**: 0.10.0 발행. README의 "opt-in development-source producer" 표기는
    지원 수준 disclaim이 아니라 source 입력 사실 기술로 판단됨 — 문구 변경 필요 여부는 재평가 사안.
-5. 공개 호환 버전 표 + 고정 예제·수집 설정·예상 출력·CI 예시 (첫 유용한 보고서까지 15분 목표). ← **남은 유일한 세트 작업**
+5. ~~공개 호환 버전 표 + 고정 예제·수집 설정·예상 출력·CI 예시~~ — **완료**: `docs/COMPATIBILITY.md` 신규
+   포함 10개 문서를 `6c81b6d`로 커밋해 `docs/public-compat-set` 브랜치 PR #72 발행. 리뷰·머지 대기.
 
 ### 경쟁 지형 재확인 (외부)
 
@@ -84,7 +86,7 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 
 ### 경쟁력 확보 우선순위 (조사 판단)
 
-1. ~~공개 호환 버전 세트 + 설치 경로~~ — **달성**(2026-09-16 실측). 남은 것은 이 세트를 문서로 고정하는 것뿐이다.
+1. ~~공개 호환 버전 세트 + 설치 경로 + 문서화~~ — **달성**(2026-09-16 확인, 문서는 PR #72).
 2. 실사용 정밀도 코퍼스 — 공개 앱/플러그인 3개 × 실제 변경 10개, 수동 정답 기준 오탐·누락 계수,
    지원 밖 채널을 분모에서 제외하지 않기. 공통 `setUp` 과잉 전파는 선택 사례에서만 수정된 상태다.
 3. 외부 유지관리자 3명 반복 사용 (2주 내 재실행 2명).
@@ -98,15 +100,14 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 
 아래는 다음 세션이 이어갈 작업이다. 정본 계약은 `docs/GRAPH-EXCHANGE.md`·`docs/BRIDGE-MESSAGES.md`.
 
-**isthmus — 호환 세트 문서화(남은 유일한 세트 작업)**
+**isthmus — PR #72 리뷰·머지 판단**
 
-- 공개 호환 버전 표(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0)와
-  설치 경로를 README 또는 docs에 고정한다.
-- 고정 예제: producer(cartograph/kartograph/dartograph `bridges --messages`) → isthmus `preflight`/
-  `impact` → `retentions --for cartograph` → `cartograph dead --external-retentions`까지
-  첫 유용한 보고서까지 15분을 목표로 수집 설정·예상 출력·CI 예시를 작성한다.
-- 공개 버전만으로 실제 end-to-end 조인을 한 번 재현해 문서 수치를 검증한다(이전까지는 개발
-  worktree 조합으로만 검증했다).
+- 호환 세트 문서화는 완료했다: `docs/COMPATIBILITY.md` 신규 + README·docs·SKILL.md의
+  낡은 버전 문구 갱신을 `6c81b6d`로 커밋, `docs/public-compat-set` → **PR #72** 발행.
+  GLM 리뷰의 검증된 지적을 후속 커밋으로 반영 중. 머지는 사용자 승인 사안.
+- 공개 버전 MethodChannel 왕복은 재검증했다(`verify-cartograph-roundtrip.mjs` 통과,
+  cartograph 0.15.1 + dartograph 0.10.0 + isthmus 0.6.0). 미실행: 공개 조합의 전체
+  preflight 재현, kartograph 발행본의 Android 실행, cache 없는 최초 CI.
 
 **dartograph — PR #98 리뷰·머지 판단**
 
@@ -194,8 +195,9 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 - 승인: 완료한 PR들의 공개·review·merge와 cartograph 0.15.x·kartograph v0.10.0·dartograph 0.10.0
   발행은 이미 끝난 사실이다. dartograph PR #98 머지와 새 발행은 별도 승인이 필요하다.
   비밀값·인증 파일을 읽지 말고 현재 AGENTS의 권한 규칙과 실제 사용 가능한 도구를 따른다.
-- 미확인: 공개 버전 네 개를 조합한 실제 end-to-end(producer → isthmus preflight/impact →
-  retention 왕복)는 아직 공개 조합으로 재실행하지 않았다. 문서화 작업 때 함께 검증한다.
+- 부분 확인: 공개 조합의 MethodChannel 왕복(설치본 cartograph 0.15.1·dartograph 0.10.0·
+  npm isthmus 0.6.0, FalsePositiveCorpus)과 양쪽 `bridges --messages` v2 출력은 통과했다.
+  미실행: 공개 조합의 전체 preflight·runtime 재현, kartograph Android 실행, cache 없는 CI.
 
 ## Verification
 
@@ -204,7 +206,7 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 
 | 검사 | 확인 결과 |
 | --- | --- |
-| isthmus `npm run verify` | 제품424 + Phase0 15 + workflow19, line/branch/functions 98.41/92.37/95.42 |
+| isthmus `npm run verify` | 제품 424 + Phase0 15 + workflow 19, line/branch/functions 98.41/92.37/95.42 |
 | isthmus 0.6.0 발행 | `npm run verify` 통과, registry latest 0.6.0, tarball SHA-512 메타데이터 일치, 추적 파일 14개 v0.6.0 태그와 동일, 발행본 CLI `--version`·`help preflight` |
 | Kartograph full Gradle/Kover/installDist, CLI/agent, compiler fixture, 자기 분석 | 615 tests, 실패/skip 0, 각 게이트 PASS |
 | Dartograph `tool/check-coverage.sh`, native CLI, analyze/corpus/boundary, pub dry-run | 일반406 + 격리 설치1, 91.50%, dry-run 경고0 |
@@ -239,12 +241,10 @@ Dart 격리 설치는 100개 이상의 wrapper 호출을 포함한다. CI의 3�
 ## Next Steps
 
 0순위(2026-09-16): 공개 호환 버전 세트는 **완성**됐고(isthmus 0.6.0 · cartograph 0.15.1 ·
-kartograph v0.10.0 · dartograph 0.10.0), **문서화도 미커밋 상태로 완료**했다.
+kartograph v0.10.0 · dartograph 0.10.0), 문서화는 `docs/public-compat-set`의 `6c81b6d`로
+커밋해 **PR #72** 발행(머지 대기). GLM 리뷰의 검증된 지적을 후속 커밋으로 반영했다.
 
-1. ~~호환 버전 표·고정 예제·CI 예시~~ — `docs/COMPATIBILITY.md` 신규 작성, README·README.ko·
-   TOOLCHAIN·PREFLIGHT·IMPACT·RUNTIME·BRIDGE-MESSAGES·Skills/isthmus/SKILL.md의 낡은
-   "개발 producer/0.5.0 미포함" 문구를 공개 버전 기준으로 갱신. **아직 미커밋** — 커밋/PR 여부는
-   사용자 지시를 따른다.
+1. ~~호환 버전 표·고정 예제·CI 예시~~ — 완료. PR #72 리뷰·머지는 사용자 승인을 따른다.
 2. 공개 버전 end-to-end 부분 검증 완료: cartograph 0.15.1 + dartograph 0.10.0 + npm isthmus 0.6.0으로
    `verify-cartograph-roundtrip.mjs` 통과(보존 억제·explain 근거). 양쪽 `bridges --messages`의 v2 문서
    출력도 확인. 미검증 잔여: kartograph의 Android 실행, 공개 조합의 전체 preflight 재현, cache 없는 CI.
@@ -255,8 +255,9 @@ kartograph v0.10.0 · dartograph 0.10.0), **문서화도 미커밋 상태로 완
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
-공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0,
-전부 발행·설치본 실측 완료). 남은 isthmus 작업은 호환 세트 문서화(버전 표·고정 예제·수집 설정·CI 예시)와
-공개 버전만으로 end-to-end 조인 재현 검증이야. dartograph PR #98은 OPEN·CI green 상태로 머지 승인 대기.
+공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0 —
+전부 발행됐고 cartograph·dartograph는 설치본 실측, kartograph는 릴리스+main 코드 확인·Android 실행 미검증).
+호환 세트 문서화는 `docs/public-compat-set` 브랜치 `6c81b6d`로 커밋해 **PR #72** 발행 상태야 — 리뷰 지적
+반영 커밋을 이어가고 머지는 승인 후 진행해. dartograph PR #98은 OPEN·CI green 상태로 머지 승인 대기.
 기존 미커밋 변경(이 레포의 문서 4종·미추적 2종, 자매 레포의 진행 중 변경)을 보존하고
 완료한 PR·발행·타당성 조사를 반복하지 마.
