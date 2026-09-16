@@ -209,3 +209,99 @@ test('tools/call의 명령 실패는 문서 없이 isError로 표시한다', asy
   assert.equal(response.result.isError, true);
   assert.equal(response.result.content.length >= 1, true);
 });
+
+const preflightContextPath = fileURLToPath(
+  new URL('../../fixtures/preflight/context.json', import.meta.url),
+);
+
+test('tools/call의 나머지 도구도 실제 명령 경로로 실행된다', async () => {
+  const cases: [number, string, Record<string, unknown>, (r: any) => void][] = [
+    [20, 'graph', { documents: [dartPath, swiftPath], format: 'mermaid' },
+      (result) => assert.match(result.content[0].text, /graph|bridge/)],
+    [21, 'diff', { before: [dartPath, swiftPath], after: [dartPath, swiftPath] },
+      (result) => assert.equal(JSON.parse(result.content[0].text).format, 'isthmus-diff')],
+    [22, 'impact', { documents: [dartPath, swiftPath], file: 'lib/screen.dart' },
+      (result) => assert.equal(JSON.parse(result.content[0].text).format, 'isthmus-impact')],
+    [23, 'preflight', { context: preflightContextPath },
+      (result) => assert.equal(JSON.parse(result.content[0].text).format, 'isthmus-preflight')],
+    [24, 'retentions', { documents: [dartPath, swiftPath], producer: 'cartograph' },
+      (result) => assert.equal(JSON.parse(result.content[0].text).format, 'external-retentions')],
+  ];
+  for (const [id, name, args, verify] of cases) {
+    const response = JSON.parse(
+      (await session.handleLine(request(id, 'tools/call', { name, arguments: args })))!,
+    );
+    assert.equal(response.error, undefined, `${name} failed: ${JSON.stringify(response)}`);
+    assert.equal(response.result.isError, false, `${name} marked as error`);
+    verify(response.result);
+  }
+});
+
+test('광고된 스키마 밖의 인자는 -32602로 거부한다', async () => {
+  const invalidCases: [number, string, Record<string, unknown>][] = [
+    // 미지 키 — additionalProperties: false
+    [30, 'check', { documents: [dartPath, swiftPath], out: 'x.json' }],
+    // enum 밖 값 — 조용히 기본값으로 떨어지지 않아야 한다
+    [31, 'graph', { documents: [dartPath, swiftPath], format: 'png' }],
+    // 정수 범위 밖
+    [32, 'preflight', { context: 'context.json', limit: 0 }],
+    [33, 'preflight', { context: 'context.json', limit: 101 }],
+    [34, 'preflight', { context: 'context.json', limit: 1.5 }],
+    // 타입 위반
+    [35, 'check', { documents: [dartPath, swiftPath], strict: 'yes' }],
+    [36, 'query', { name: 'x', documents: [dartPath] }],
+    // 필수 인자 누락
+    [37, 'query', { documents: [dartPath, swiftPath] }],
+    [38, 'retentions', { documents: [dartPath, swiftPath] }],
+  ];
+  for (const [id, name, args] of invalidCases) {
+    const response = JSON.parse(
+      (await session.handleLine(request(id, 'tools/call', { name, arguments: args })))!,
+    );
+    assert.equal(response.error?.code, -32602, `${name} ${JSON.stringify(args)}`);
+    assert.equal(response.id, id);
+  }
+});
+
+test('명령 실행의 내부 예외는 -32603으로 돌려주고 세션을 유지한다', async () => {
+  // 명령은 자체 오류를 CommandResult로 변환하므로, 이 경계는 보고서 계층이나
+  // 의존성 배선의 예상 밖 예외를 잡는다 — 던지는 getter로 그 경로를 검증한다.
+  const failing = createMcpSession({
+    get readTextFile(): never {
+      throw new Error('dependency wiring exploded');
+    },
+    producerVersion: '0.0.0-test',
+  } as never);
+  const failed = JSON.parse(
+    (await failing.handleLine(
+      request(40, 'tools/call', {
+        name: 'check',
+        arguments: { documents: [dartPath, swiftPath] },
+      }),
+    ))!,
+  );
+  assert.equal(failed.error.code, -32603);
+  assert.equal(failed.id, 40);
+
+  const alive = JSON.parse((await failing.handleLine(request(41, 'ping')))!);
+  assert.equal(alive.id, 41);
+  assert.deepEqual(alive.result, {});
+});
+
+test('거절 응답은 검출 가능한 스칼라 id를 에코한다', async () => {
+  const echoed = JSON.parse(
+    (await session.handleLine(
+      JSON.stringify({ jsonrpc: '2.0', id: 77, params: {} }),
+    ))!,
+  );
+  assert.equal(echoed.error.code, -32600);
+  assert.equal(echoed.id, 77);
+
+  const nonScalar = JSON.parse(
+    (await session.handleLine(
+      JSON.stringify({ jsonrpc: '2.0', id: { bad: true }, method: 'ping' }),
+    ))!,
+  );
+  assert.equal(nonScalar.error.code, -32600);
+  assert.equal(nonScalar.id, null);
+});

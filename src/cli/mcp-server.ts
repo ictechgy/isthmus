@@ -24,6 +24,7 @@ const PARSE_ERROR = -32700;
 const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
+const INTERNAL_ERROR = -32603;
 
 /** 한 도구가 tools/list에 노출하는 스키마다. */
 interface McpToolDefinition {
@@ -238,14 +239,42 @@ async function handleMessage(
     );
   }
   if (!isRequestMessage(message)) {
-    return JSON.stringify(errorResponse(undefined, INVALID_REQUEST, 'Invalid request'));
+    // JSON-RPC 2.0은 검출 가능한 id를 그대로 에코하라고 요구한다 — 형식이
+    // 스칼라인 요청의 id는 거절 응답에도 보존한다.
+    return JSON.stringify(
+      errorResponse(scalarId(message), INVALID_REQUEST, 'Invalid request'),
+    );
   }
   if (message.id === undefined) {
     // 알림은 응답하지 않는다. initialized 등 어떤 알림이든 조용히 무시한다.
     return undefined;
   }
-  const response = await dispatchRequest(dependencies, message.method, message.id, message.params);
+  if (!isScalarId(message.id)) {
+    return JSON.stringify(
+      errorResponse(null, INVALID_REQUEST, 'Request id must be a string, number, or null'),
+    );
+  }
+  let response: JsonRpcResponse;
+  try {
+    response = await dispatchRequest(dependencies, message.method, message.id, message.params);
+  } catch {
+    // 명령 실행이나 파일 읽기의 내부 예외로 서버가 죽으면 안 된다 — 세션을 유지하며
+    // -32603으로 돌려준다. 원인 본문은 입력 경로·내용을 담을 수 있어 노출하지 않는다.
+    response = errorResponse(message.id, INTERNAL_ERROR, 'Internal error');
+  }
   return JSON.stringify(response);
+}
+
+type JsonRpcId = string | number | null;
+
+function isScalarId(value: unknown): value is JsonRpcId {
+  return value === null || typeof value === 'string' || typeof value === 'number';
+}
+
+function scalarId(message: unknown): JsonRpcId {
+  if (typeof message !== 'object' || message === null) return null;
+  const id = (message as Record<string, unknown>).id;
+  return isScalarId(id) ? id : null;
 }
 
 interface RequestMessage {
@@ -335,6 +364,10 @@ async function toolsCallResult(
   if (tool === undefined) {
     return errorResponse(id, INVALID_PARAMS, `Unknown tool: ${params.name}`);
   }
+  const invalid = validateToolArguments(tool, params.arguments ?? {});
+  if (invalid !== undefined) {
+    return errorResponse(id, INVALID_PARAMS, invalid);
+  }
   const argv = buildToolArgv(params.name, params.arguments ?? {});
   if (argv === undefined) {
     return errorResponse(id, INVALID_PARAMS, 'Invalid tool arguments');
@@ -352,8 +385,66 @@ function isToolsCallParams(
 }
 
 /**
- * 도구 인자를 CLI argv로 변환한다. 유효성 검사는 각 명령에 맡기고,
- * 여기서는 형태가 맞지 않는 인자만 undefined로 거른다.
+ * tools/list에 광고한 inputSchema 그대로 인자를 검증한다. 스키마와 검증이
+ * 같은 정의에서 파생되므로 둘이 어긋날 수 없다 — 알 수 없는 키·타입 위반·
+ * enum 밖 값·범위 밖 정수는 명령 실행 전에 -32602로 거부한다.
+ */
+function validateToolArguments(
+  tool: McpToolDefinition,
+  args: Record<string, unknown>,
+): string | undefined {
+  const { properties, required = [] } = tool.inputSchema;
+  for (const key of Object.keys(args)) {
+    if (!(key in properties)) return `Unknown argument: ${key}`;
+  }
+  for (const key of required) {
+    if (args[key] === undefined) return `Missing required argument: ${key}`;
+  }
+  for (const [key, value] of Object.entries(args)) {
+    const property = properties[key] as {
+      type?: string; enum?: readonly unknown[]; items?: { type?: string };
+      minimum?: number; maximum?: number; minLength?: number;
+    };
+    switch (property.type) {
+      case 'boolean':
+        if (typeof value !== 'boolean') return `Argument ${key} must be a boolean`;
+        break;
+      case 'string':
+        if (typeof value !== 'string') return `Argument ${key} must be a string`;
+        if (property.minLength !== undefined && value.length < property.minLength) {
+          return `Argument ${key} is too short`;
+        }
+        break;
+      case 'integer':
+        if (typeof value !== 'number' || !Number.isInteger(value)) {
+          return `Argument ${key} must be an integer`;
+        }
+        if (property.minimum !== undefined && value < property.minimum) {
+          return `Argument ${key} is below the minimum`;
+        }
+        if (property.maximum !== undefined && value > property.maximum) {
+          return `Argument ${key} exceeds the maximum`;
+        }
+        break;
+      case 'array':
+        if (!Array.isArray(value) || (property.items?.type === 'string'
+            && !value.every((item) => typeof item === 'string'))) {
+          return `Argument ${key} must be an array of strings`;
+        }
+        break;
+      default:
+        break;
+    }
+    if (property.enum !== undefined && !property.enum.includes(value)) {
+      return `Argument ${key} is not an allowed value`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 도구 인자를 CLI argv로 변환한다. 스키마 검증을 통과한 인자만 들어오지만,
+ * selector 조합처럼 스키마로 표현 못 하는 제약은 여기서도 거른다.
  */
 function buildToolArgv(
   toolName: string,
@@ -541,7 +632,10 @@ function commandResultContent(result: CommandResult): Record<string, unknown> {
   }
   return {
     content,
-    isError: result.standardOutput.length === 0 && result.exitCode !== 0,
+    // 종료 코드 2는 항상 내부 오류다 — 부분 stdout이 있어도 도구 오류로 표시한다.
+    // 1/64는 문서가 있으면 정답(조사 결과·notFound)이고, 문서 없는 실패만 오류다.
+    isError: result.exitCode === 2
+      || (result.exitCode !== 0 && result.standardOutput.length === 0),
   };
 }
 
