@@ -13,10 +13,14 @@ analysis evidence; it does not authorize source edits, deletion, publishing, or 
 
 ## Inputs
 
-Use `isthmus-cli` 0.1.4+ (`isthmus` binary), cartograph 0.5.3+ and dartograph 0.1.1+.
+Use `isthmus-cli` 0.1.4+ (`isthmus` binary), cartograph 0.5.3+ and dartograph 0.1.1+
+for the basic check/query/diff/retentions workflow. `impact`, `preflight`,
+`verify-runtime`, and Basic/Pigeon (`--messages`) need isthmus-cli 0.6.0 with the
+compatible producer for each side: cartograph 0.15.1 (Swift), dartograph 0.10.0,
+plus kartograph 0.10.0 when Android/Kotlin inputs are used.
 Obtain both Dart and Swift bridge-facts JSON with identical project roots and analysis scope.
 Swift production requires a built compiler index; use `cartograph bridges --target flutter --format json`.
-Android preflight requires development Kotlin support: obtain Kotlin facts using
+Android preflight uses public Kotlin support: obtain Kotlin facts using
 `kartograph bridges --project <root> --target flutter --graph-file <snapshot.json>`.
 For Basic/Pigeon add `--messages`. A snapshot must come from the same prepared source/build;
 source-only names are not compiler symbol identities. Use `selection.kotlin` in the context.
@@ -31,7 +35,7 @@ If inputs are missing, identify the required files and proceed with independent 
 ## Choose the requested operation
 
 - Trace transitive cross-language impact when a current producer context is available
-  (development source, after 0.5.0):
+  (isthmus-cli 0.6.0+):
   `isthmus preflight <context.json> --summary --strict --compact`.
   Add `--revision <expected-capture-revision>` when the workflow supplied that revision.
   Read the whole-report `summary` and `requiresReview`, then bounded collections
@@ -75,8 +79,7 @@ If inputs are missing, identify the required files and proceed with independent 
   `passedChecks` counts expectations, not distinct scenarios. In summary/explanation,
   `runtime.verification.declaredScenarioPlatforms` counts unique declared scenario/platform
   pairs; it is not a count of passing scenarios. Multiple checks can share one scenario.
-- Preflight a source change: check `isthmus --help` for `impact` (added after the
-  published 0.5.0; currently requires a build of the development source).
+- Preflight a source change: `impact` is available since isthmus-cli 0.6.0.
   Run `isthmus impact --file <project-relative-path> <dart.json> <swift.json> --strict --compact`;
   for a precise producer symbol use `--symbol <qualifiedName-or-usr>` instead.
   For multiple files, pass `--changes <json>` with
@@ -112,7 +115,7 @@ If inputs are missing, identify the required files and proceed with independent 
   Inspect added/removed logical methods, introduced/resolved issues, both sets of limitations,
   and producer versions/timestamps. Revisions come from the caller's before/after choice.
   Same-key endpoint changes and rename inference are outside this comparison.
-- Verify recorded runtime calls (development source, after 0.5.0):
+- Verify recorded runtime calls (isthmus-cli 0.6.0+):
   `isthmus verify-runtime --expectations <checks.json> <runtime.json> [more...] --strict --compact`.
   Expectations must be specified independently of the observed log. Check `status`,
   `summary`, unsuccessful `checks`, `failures`, and stale/incomplete `runs`.

@@ -1,7 +1,7 @@
 # 고정 소스에서 사전 점검 도구 구축
 
-개발 소스의 절차이며 현재 공개된 isthmus 0.5.0에는 새 preflight 기능이 없다.
 이 절차는 로컬 Git 저장소의 **지정한 commit만** 새 디렉터리에 풀어 선택한 도구를 구축한다.
+공개 버전만으로 충분하면 [COMPATIBILITY.md](COMPATIBILITY.md)의 설치 경로가 더 빠르다.
 원본의 미커밋 수정, dist, .build, .dart_tool을 복사하지 않는다. SDK와 전역 의존성 캐시는
 공유할 수 있으므로 빈 머신 전체 설치 시간과 구분한다. 소스 다운로드·발행은 수행하지 않는다.
 
@@ -17,10 +17,10 @@
 - 앱의 Swift 인덱스와 실제 Flutter 검증에는 해당 앱의 Flutter/Xcode 환경이 추가로 필요하다.
   도구 자체를 구축하는 과정은 Flutter SDK를 필수로 요구하지 않는다.
 
-아직 이 기능을 모두 포함한 공개 호환 버전은 확정·발행하지 않았다. 저장소 checkout의
-`docs/COMPETITIVENESS.md`에서 검증 중인 개발 commit과 남은 작업을 확인할 수 있다.
-기능 이름만 보고 기존 발행 버전을 사용하지 않는다. 소스 commit이 로컬 Git에 있어야 하며
-빌드 과정의 npm/pub/SwiftPM/Gradle 의존성 해석은 네트워크를 사용할 수 있다.
+공개 호환 버전 세트(isthmus 0.6.0 · cartograph 0.15.1 · kartograph 0.10.0 · dartograph
+0.10.0)는 이미 발행됐다 — [COMPATIBILITY.md](COMPATIBILITY.md)를 본다. 이 절차는
+발행본이 아니라 검증된 개발 commit을 그대로 재현할 때 쓴다. 소스 commit이 로컬 Git에
+있어야 하며 빌드 과정의 npm/pub/SwiftPM/Gradle 의존성 해석은 네트워크를 사용할 수 있다.
 
 ## 실행
 

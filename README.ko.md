@@ -36,9 +36,11 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-npm 발행본은 **0.6.0**이며 위 기능은 호환되는 producer 개발 commit이 필요하다. 발행된
-Dart/Swift MethodChannel 절차는 cartograph 0.5.3 이상과 dartograph 0.1.1 이상을 사용하며
-공개 battery 플러그인으로 검증했다. Message channel 지원은 현재 개발 producer가 필요하다.
+npm 발행본은 **0.6.0**이다. 공개 호환 producer 세트는 cartograph **0.15.1**,
+kartograph **0.10.0**, dartograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
+[호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거보내기는
+cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
+왕복을 다시 확인했다.
 React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 현재 cartograph(Swift)를
 대상으로 한다. 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
@@ -47,6 +49,7 @@ React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 
 | [`docs/PRD.md`](docs/PRD.md) | 무엇을 · 누구를 위해 · 어디까지 |
 | [`docs/PLAN.md`](docs/PLAN.md) | 단계별 계획. **cartograph와 dartograph에 선행 작업이 있다** |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
 | [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
 
@@ -105,12 +108,12 @@ runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision�
 `preflight <context.json> --summary --strict --compact`로 작은 개요를 읽고,
 `--explain <exact-producer-symbol-id>`로 한 심볼의 전체 원인 경로를 조회한다.
 summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 항목도 검토 상태에 반영한다.
-선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 개발 producer로 literal 주소와
+선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 literal 주소와
 증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
-이 추가 기능에는 개발 producer가 필요하다.
-호환 개발 도구를 로컬 Git의 고정 commit에서 새로 구축하는 방법은
-[도구 구축 절차](docs/TOOLCHAIN.md)에 있다. Dart AOT 실행 파일, impact와 Basic을 함께
-제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
+이 추가 기능은 위에 나열한 공개 producer 버전의 `bridges --messages`로 사용할 수 있다.
+검증된 개발 조합을 재현하거나 도구를 직접 감사하려면 로컬 Git의 고정 commit에서
+구축하는 [도구 구축 절차](docs/TOOLCHAIN.md)를 쓴다. Dart AOT 실행 파일, impact와
+Basic을 함께 제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
 
 isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
 명시한 준비·producer 명령을 실행한다.
@@ -384,7 +387,7 @@ JSON으로 출력한다. 연결에는 호출자와 핸들러 위치가 포함된
 이전 불일치가 더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를
 함께 확인해야 한다. `--strict`은 인자 위치와 무관하게 인식하며 두 번 이상 줄 수 없다.
 
-개발 소스의 diff는 Flutter Dart와 Swift 또는 Kotlin 문서를 받는다. 한 비교에는 native 언어
+`diff`는 Flutter Dart와 Swift 또는 Kotlin 문서를 받는다. 한 비교에는 native 언어
 하나만 사용하며 각 시점에 호출/수신 문서가 모두 필요하다.
 양 시점의 `project`와 플랫폼·도구별 문서 개수가 같아야 한다. 한 checkout의 같은
 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만 추출한 결과와 전체 결과를

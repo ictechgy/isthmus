@@ -1,6 +1,6 @@
 # 변경 전 브리지 영향 점검
 
-`impact`는 현재 개발 소스에 추가된 명령이다. npm 0.5.0 발행본에는 없으며, checkout에서
+`impact`는 npm 0.6.0 발행본에 포함된 명령이다. checkout에서 개발할 때는
 `npm ci && npm run build` 후 `node dist/cli/main.js impact ...`로 실행한다.
 
 ```bash
