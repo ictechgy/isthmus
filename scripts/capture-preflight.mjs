@@ -202,7 +202,7 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
       for (const requested of selections) {
         const raw = await json(config.cartograph, ['impact', ...nativeArgs, '--format', 'json', '--limit', '10000',
           ...requested.files.flatMap((path) => ['--file', resolve(project, path)]),
-          ...(requested.symbols.length ? ['--', ...requested.symbols] : [])], 'swift-impact');
+          ...(requested.symbols.length ? ['--', ...requested.symbols] : [])], 'swift-impact', [0, 64]);
         const meta = metadata('swift', requested);
         artifacts[meta.id] = raw;
         analyses.push(adaptCartographImpact(raw, meta));
