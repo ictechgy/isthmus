@@ -287,3 +287,125 @@ test('같은 boundary의 불완전한 추가 관찰은 완전한 관찰에 가�
   assert.deepEqual(report.boundaries.map(({ subject }) => subject.channel), ['canLaunch', 'launch']);
   assert.ok(report.limitations.some(({ code }) => code === 'unresolved-message-handler-scope'));
 });
+
+/**
+ * method-handle 분기 근거를 싣는 v1 context다. 공유 handle()의 case 절별
+ * 의존만 경계로 전파하는지, 도달한 등록 선언이 배선을 열지 않는지를 검증한다.
+ */
+function scopedMethodContext(selected: 'helper' | 'dispatch' | 'register'): PreflightContext {
+  const register = symbol('s:register', 'ios/Plugin.swift', 5);
+  const dispatch = symbol('s:handle', 'ios/Plugin.swift', 10);
+  const callee = symbol('s:callee', 'ios/Plugin.swift', 30);
+  const otherCallee = symbol('s:otherCallee', 'ios/Plugin.swift', 60);
+  const chosen = selected === 'helper' ? helper : selected === 'dispatch' ? dispatch : register;
+  const scopedFact = (method: string, line: number, target: string, name: string) => ({
+    kind: 'method-handle', channel: 'battery', method, dynamic: false,
+    location: at('ios/Plugin.swift', line), symbol: { qualifiedName: 'Plugin.handle', usr: dispatch.id },
+    handlerScope: { start: at('ios/Plugin.swift', line), end: at('ios/Plugin.swift', line + 3), complete: true },
+    dependencies: [{ kind: 'call', scope: 'handler', location: at('ios/Plugin.swift', line + 1),
+      symbol: { qualifiedName: name, usr: target } }],
+  });
+  return parsePreflightContext({ ...context,
+    selection: { swift: { files: ['ios/Plugin.swift'], symbols: [] } },
+    bridges: [
+      parseBridgeFactsDocument({ format: 'bridge-facts', version: 1, project: '/app',
+        platform: 'dart', target: 'flutter', generatedAt: '2026-09-14T00:00:00Z', tool: { name: 'dartograph', version: '1' },
+        limitations: [], facts: [
+          { kind: 'channel-create', channel: 'battery', dynamic: false, location: at('lib/bridge.dart', 10), symbol: { qualifiedName: 'Bridge.level' } },
+          { kind: 'method-invoke', channel: 'battery', method: 'getState', dynamic: false, location: at('lib/bridge.dart', 20), symbol: { qualifiedName: 'Bridge.state' } },
+          { kind: 'method-invoke', channel: 'battery', method: 'other', dynamic: false, location: at('lib/bridge.dart', 30), symbol: { qualifiedName: 'Bridge.other' } },
+        ] }),
+      parseBridgeFactsDocument({ format: 'bridge-facts', version: 1, project: '/app',
+        platform: 'swift', target: 'flutter', generatedAt: '2026-09-14T00:00:00Z', tool: { name: 'cartograph', version: '1' },
+        limitations: [], facts: [
+          { kind: 'channel-register', channel: 'battery', dynamic: false, location: at('ios/Plugin.swift', 8), symbol: { qualifiedName: 'Plugin.register', usr: register.id } },
+          scopedFact('getState', 12, callee.id, 'Plugin.getStateImpl'),
+          scopedFact('other', 20, otherCallee.id, 'Plugin.otherImpl'),
+        ] }),
+    ],
+    bindings: [
+      { platform: 'dart', location: at('lib/bridge.dart', 10), requested: 'Bridge.level', symbol: symbol('dart:Bridge.level', 'lib/bridge.dart', 10) },
+      { platform: 'dart', location: at('lib/bridge.dart', 20), requested: 'Bridge.state', symbol: symbol('dart:Bridge.state', 'lib/bridge.dart', 20) },
+      { platform: 'dart', location: at('lib/bridge.dart', 30), requested: 'Bridge.other', symbol: symbol('dart:Bridge.other', 'lib/bridge.dart', 30) },
+    ],
+    analyses: [{ id: 'swift', platform: 'swift', tool: { name: 'cartograph', version: 'dev' },
+      requested: { files: ['ios/Plugin.swift'], symbols: [] }, roots: [chosen],
+      // 공유 handle()과 register()는 도달하지만 직접 선택된 root는 아니다.
+      affected: selected === 'helper' ? [
+        { symbol: callee, via: helper.id, depth: 1, relationships: ['call'] },
+        { symbol: dispatch, via: callee.id, depth: 2, relationships: ['call'] },
+        { symbol: register, via: callee.id, depth: 2, relationships: ['reference'] },
+      ] : [], limitations: [], truncated: false },
+      // capture-preflight가 도달한 Dart 호출자를 이어 붙이는 것과 같은 트리거 분석이다.
+      { id: 'dart-state', platform: 'dart', tool: { name: 'dartograph', version: 'dev' },
+        requested: { files: [], symbols: ['dart:Bridge.state'] }, trigger: 'dart:Bridge.state',
+        roots: [symbol('dart:Bridge.state', 'lib/bridge.dart', 20)], affected: [], limitations: [], truncated: false },
+      { id: 'dart-level', platform: 'dart', tool: { name: 'dartograph', version: 'dev' },
+        requested: { files: [], symbols: ['dart:Bridge.level'] }, trigger: 'dart:Bridge.level',
+        roots: [symbol('dart:Bridge.level', 'lib/bridge.dart', 10)], affected: [], limitations: [], truncated: false }],
+  });
+}
+
+test('분기 근거가 완전한 method 경로는 도달한 분기 의존만 열고 도달한 배선은 닫는다', () => {
+  const report = createPreflightReport(scopedMethodContext('helper'));
+  const methods = report.boundaries.filter(({ subject }) => subject.method !== undefined).map(({ subject }) => subject.method);
+  // getState의 절은 도달한 callee를 호출하고, other의 절은 도달하지 않은 심볼을 호출한다.
+  assert.deepEqual(methods, ['getState']);
+  const boundary = report.affected.find(({ subject }) => subject.kind === 'bridge');
+  assert.equal(boundary?.relations[0]?.kind, 'bridge-message-dependency');
+  // 다른 메서드의 호출로 도달한 공유 dispatch와 등록 선언은 배선을 열지 않는다.
+  assert.equal(report.boundaries.some(({ subject }) => subject.method === 'other'), false);
+  assert.equal(report.summary.evidenceGaps, 0);
+});
+
+test('등록 선언을 직접 선택하면 스코프 경로의 모든 method 배선을 연다', () => {
+  const report = createPreflightReport(scopedMethodContext('register'));
+  const methods = report.boundaries.filter(({ subject }) => subject.method !== undefined).map(({ subject }) => subject.method);
+  assert.deepEqual(methods, ['getState', 'other']);
+  // dispatch() 자체가 선택돼도 모든 분기가 검토 대상이다.
+  const dispatchReport = createPreflightReport(scopedMethodContext('dispatch'));
+  assert.deepEqual(dispatchReport.boundaries.filter(({ subject }) => subject.method !== undefined)
+    .map(({ subject }) => subject.method), ['getState', 'other']);
+});
+
+test('분기 근거가 불완전한 method handler는 넓은 후보와 정밀도 공백을 보존한다', () => {
+  const input = scopedMethodContext('helper');
+  const bridges = input.bridges.map((document) => document.platform !== 'swift' ? document : {
+    ...document, facts: document.facts.map((fact) => fact.method !== 'other' ? fact
+      : { ...fact, handlerScope: { ...fact.handlerScope!, complete: false } }),
+  });
+  const report = createPreflightReport({ ...input, bridges });
+  const methods = report.boundaries.filter(({ subject }) => subject.method !== undefined).map(({ subject }) => subject.method);
+  assert.deepEqual(methods, ['getState', 'other']);
+  assert.ok(report.limitations.some(({ code }) => code === 'unresolved-method-handler-scope'));
+});
+
+/**
+ * EventChannel transport 문서를 싣는 context다. 스트림 수신 심볼이 도달되면
+ * event-channel 경계가 열리고 method 경계와 키 공간이 분리되는지 검증한다.
+ */
+test('EventChannel 경계는 transport와 스트림 근거로 MethodChannel과 분리된다', () => {
+  const streamSetup = symbol('s:streamSetup', 'ios/Setup.swift', 40);
+  const input = parsePreflightContext({ ...context,
+    selection: { swift: { files: ['ios/Setup.swift'], symbols: [] } },
+    messages: ['dart', 'swift'].map((platform) => ({ format: 'bridge-facts', version: 2, transport: 'event-channel',
+      platform, target: 'flutter', project: '/app', generatedAt: '2026-09-14T00:00:00Z', tool: { name: platform, version: 'dev' }, limitations: [],
+      facts: [platform === 'dart'
+        ? { kind: 'stream-listen', channel: 'charging', dynamic: false, location: at('lib/stream.dart', 5), symbol: { qualifiedName: 'Stream.states' } }
+        : { kind: 'stream-handle', channel: 'charging', dynamic: false, location: at('ios/Setup.swift', 40),
+          symbol: { qualifiedName: 'Setup.register', usr: streamSetup.id } }] })),
+    bindings: [{ platform: 'dart', location: at('lib/stream.dart', 5), requested: 'Stream.states', symbol: symbol('dart:Stream.states', 'lib/stream.dart', 5) }],
+    analyses: [{ id: 'swift', platform: 'swift', tool: { name: 'cartograph', version: 'dev' },
+      requested: { files: ['ios/Setup.swift'], symbols: [] }, roots: [helper],
+      affected: [{ symbol: streamSetup, via: helper.id, depth: 1, relationships: ['reference'] }], limitations: [], truncated: false }],
+  });
+  const report = createPreflightReport(input);
+  const stream = report.boundaries.find(({ subject }) => subject.transport === 'event-channel');
+  assert.ok(stream);
+  assert.equal(stream.subject.channel, 'charging');
+  assert.equal(stream.subject.method, undefined);
+  // 같은 파일의 스코프 없는 method 경계와 transport가 섞이지 않는다.
+  assert.equal(report.boundaries.some(({ subject }) => subject.transport === 'event-channel' && subject.method !== undefined), false);
+  // 스트림 핸들러는 분기 근거 없이 넓은 후보로 보존하고 정밀도 공백을 알린다.
+  assert.ok(report.limitations.some(({ code }) => code === 'unresolved-stream-handler-scope'));
+});

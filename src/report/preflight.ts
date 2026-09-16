@@ -9,7 +9,7 @@ import { encodeSortedJson } from './sorted-json.ts';
 import type { PreflightRuntimeReport } from './preflight-runtime.ts';
 import { joinMessageBridges } from '../join/messages.ts';
 import type { MessageEndpoint } from '../join/messages.ts';
-import type { BridgeHandlerDependency } from '../exchange/messages.ts';
+import type { BridgeHandlerDependency, BridgeMessageTransport } from '../exchange/messages.ts';
 import type { BridgeSymbol } from '../exchange/parse.ts';
 
 type Language = 'dart' | 'swift' | 'kotlin';
@@ -20,7 +20,7 @@ export type PreflightSubject = {
 } | {
   readonly key: string; readonly kind: 'bridge'; readonly target: BridgeTarget;
   readonly channel: string; readonly method?: string;
-  readonly transport?: 'basic-message-channel';
+  readonly transport?: BridgeMessageTransport;
   readonly matching?: 'literal' | 'prefix';
 };
 
@@ -28,12 +28,12 @@ export type PreflightSubject = {
 export type PreflightRelation = {
   readonly kind: 'language'; readonly analysis: string; readonly relationships: readonly string[];
 } | {
-  readonly kind: 'bridge-message-dependency'; readonly evidence: BridgeEndpoint;
+  readonly kind: 'bridge-message-dependency' | 'bridge-stream-dependency'; readonly evidence: BridgeEndpoint;
   readonly dependency: Omit<BridgeHandlerDependency, 'dispatchTargets'>;
   readonly dispatchTarget?: BridgeSymbol;
 } | {
   readonly kind: 'bridge-handler' | 'bridge-registration' | 'bridge-invocation' | 'bridge-creation'
-    | 'bridge-message-send' | 'bridge-message-handler';
+    | 'bridge-message-send' | 'bridge-message-handler' | 'bridge-stream-listen' | 'bridge-stream-handler';
   readonly evidence: BridgeEndpoint;
 };
 
@@ -180,52 +180,73 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
 
   function boundary(target: BridgeTarget, channel: string, method: string | undefined,
     callers: readonly BridgeEndpoint[], handlers: readonly MessageEndpoint[], wire: readonly BridgeEndpoint[],
-    matching?: 'literal' | 'prefix'): void {
-    const key = matching === undefined ? JSON.stringify(['bridge', target, channel, method ?? null])
-      : JSON.stringify(['bridge', target, 'basic-message-channel', matching, channel]);
+    transport?: { kind: BridgeMessageTransport; matching: 'literal' | 'prefix' }): void {
+    const key = transport === undefined ? JSON.stringify(['bridge', target, channel, method ?? null])
+      : JSON.stringify(['bridge', target, transport.kind, transport.matching, channel]);
     const subject = { key, kind: 'bridge' as const, target, channel, ...(method === undefined ? {} : { method }),
-      ...(matching === undefined ? {} : { transport: 'basic-message-channel' as const, matching }) };
+      ...(transport === undefined ? {} : { transport: transport.kind, matching: transport.matching }) };
     nodes.set(key, subject);
     const route = { subject, callers, receivers: [...handlers, ...wire], callerKeys: [] as string[], receiverKeys: [] as string[],
       missing: [] as BridgeEndpoint[], imprecise: [] as BridgeEndpoint[] };
-    for (const [endpoints, kind] of [[handlers, 'bridge-handler'], [wire, 'bridge-registration']] as const) {
-      for (const endpoint of endpoints) {
-        const receiver = endpointKey(endpoint);
-        if (receiver === undefined) { route.missing.push(endpoint); continue; }
-        let linkEvidence: BridgeEndpoint = endpoint;
-        if (matching !== undefined) {
-          const { handlerScope, dependencies, ...evidence } = endpoint as MessageEndpoint;
-          linkEvidence = evidence;
-          if (handlerScope?.complete === true && dependencies !== undefined) {
-            // 공통 등록 선언은 직접 선택했을 때 전체 배선을 검토한다. 다른 handler의 호출로
-            // 선언에 도달한 경우에는 발생 위치로 구분한 사용 관계만 해당 boundary로 전파한다.
-            if (roots.has(receiver)) {
-              route.receiverKeys.push(receiver);
-              link(receiver, key, { kind: 'bridge-message-handler', evidence });
-            }
-            for (const { dispatchTargets, ...dependency } of dependencies) {
-              for (const target of [dependency.symbol, ...(dispatchTargets ?? [])]) {
-                if (endpoint.platform !== 'swift' && endpoint.platform !== 'kotlin') continue;
-                const dependencyKey = symbolKey(endpoint.platform, target.usr!);
-                if (!nodes.has(dependencyKey)) continue;
-                route.receiverKeys.push(dependencyKey);
-                link(dependencyKey, key, { kind: 'bridge-message-dependency', evidence, dependency,
-                  ...(target === dependency.symbol ? {} : { dispatchTarget: target }) });
-              }
-            }
-            continue;
-          }
-          route.imprecise.push(evidence);
+    const handlerKind = transport === undefined ? 'bridge-handler'
+      : transport.kind === 'event-channel' ? 'bridge-stream-handler' : 'bridge-message-handler';
+    const dependencyKind = transport?.kind === 'event-channel' ? 'bridge-stream-dependency' : 'bridge-message-dependency';
+    const receiverOf = new Map<BridgeEndpoint, string>();
+    for (const endpoint of [...handlers, ...wire]) {
+      const receiver = endpointKey(endpoint);
+      if (receiver === undefined) route.missing.push(endpoint); else receiverOf.set(endpoint, receiver);
+    }
+    // 언어 심볼로 귀속 가능한 수신 사실이 전부 완전한 분기 근거를 가질 때만
+    // 등록 배선을 직접 선택 게이트로 좁힌다. Objective-C처럼 귀속 불가능한
+    // 끝점은 근거를 가질 수 없으므로 판정에서 제외하고 공백 증거로 남는다.
+    const scopedHandlers = handlers.filter((endpoint) => receiverOf.has(endpoint) && endpoint.sourceLanguage === undefined);
+    const routeScoped = scopedHandlers.length > 0 && scopedHandlers.every(
+      (endpoint) => endpoint.handlerScope?.complete === true && endpoint.dependencies !== undefined);
+    // 근거 필드를 아예 싣지 않는 예전 생산자는 분기 한계를 신고하지 않는다 —
+    // 분기 근거를 지원하는 생산자가 일부만 채웠을 때만 정밀도 공백을 알린다.
+    const anyScopeEvidence = handlers.some((endpoint) => endpoint.handlerScope !== undefined);
+    for (const endpoint of handlers) {
+      const receiver = receiverOf.get(endpoint);
+      if (receiver === undefined) continue;
+      const { handlerScope, dependencies, ...evidence } = endpoint as MessageEndpoint;
+      if (handlerScope?.complete === true && dependencies !== undefined) {
+        // 공통 등록·디스패치 선언은 직접 선택했을 때 전체 배선을 검토한다. 다른 분기의
+        // 호출로 선언에 도달한 경우에는 발생 위치로 구분한 사용 관계만 해당 boundary로 전파한다.
+        if (roots.has(receiver)) {
+          route.receiverKeys.push(receiver);
+          link(receiver, key, { kind: handlerKind, evidence });
         }
-        route.receiverKeys.push(receiver);
-        link(receiver, key, { kind: matching === undefined ? kind : 'bridge-message-handler', evidence: linkEvidence });
+        for (const { dispatchTargets, ...dependency } of dependencies) {
+          for (const target of [dependency.symbol, ...(dispatchTargets ?? [])]) {
+            if (endpoint.platform !== 'swift' && endpoint.platform !== 'kotlin') continue;
+            const dependencyKey = symbolKey(endpoint.platform, target.usr!);
+            if (!nodes.has(dependencyKey)) continue;
+            route.receiverKeys.push(dependencyKey);
+            link(dependencyKey, key, { kind: dependencyKind, evidence, dependency,
+              ...(target === dependency.symbol ? {} : { dispatchTarget: target }) });
+          }
+        }
+        continue;
       }
+      if (transport !== undefined || anyScopeEvidence) route.imprecise.push(evidence);
+      route.receiverKeys.push(receiver);
+      link(receiver, key, { kind: handlerKind, evidence });
+    }
+    for (const endpoint of wire) {
+      const receiver = receiverOf.get(endpoint);
+      if (receiver === undefined) continue;
+      // 분기 근거가 완전한 경로의 등록 배선은 직접 선택했을 때만 경계를 연다.
+      if (routeScoped && !roots.has(receiver)) continue;
+      route.receiverKeys.push(receiver);
+      link(receiver, key, { kind: 'bridge-registration', evidence: endpoint });
     }
     for (const endpoint of callers) {
       const caller = endpointKey(endpoint);
       if (caller === undefined) { route.missing.push(endpoint); continue; }
       route.callerKeys.push(caller);
-      link(key, caller, { kind: matching !== undefined ? 'bridge-message-send' : method === undefined ? 'bridge-creation' : 'bridge-invocation', evidence: endpoint });
+      link(key, caller, { kind: transport === undefined
+        ? (method === undefined ? 'bridge-creation' : 'bridge-invocation')
+        : transport.kind === 'event-channel' ? 'bridge-stream-listen' : 'bridge-message-send', evidence: endpoint });
     }
     routes.push(route);
   }
@@ -237,7 +258,8 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     ...joined.handlersWithoutInvocations.map((value) => ({ ...value, invocations: [] })),
   ]) boundary(item.target, item.channel, item.method, item.invocations, item.handlers,
     registrations.get(JSON.stringify([item.target, item.channel])) ?? []);
-  for (const route of messages.routes) boundary('flutter', route.channel, undefined, route.senders, route.handlers, [], route.matching);
+  for (const route of messages.routes) boundary('flutter', route.channel, undefined, route.senders, route.handlers, [],
+    { kind: route.transport, matching: route.matching });
 
   const depths = new Map([...roots].map((key) => [key, 0]));
   const visits = new Map<string, PreflightAffected>();
@@ -264,13 +286,21 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   const relevant = routes.filter((route) => depths.has(route.subject.key) || route.callerKeys.some((key) => depths.has(key)) ||
     route.receiverKeys.some((key) => depths.has(key)) || route.missing.some(({ location }) => reachedFiles.has(location.path)));
   for (const route of relevant) {
-    if (route.subject.transport === 'basic-message-channel') {
-      for (const evidence of route.imprecise) limits.push({ code: 'unresolved-message-handler-scope',
+    if (route.subject.transport === 'basic-message-channel' || route.subject.transport === 'event-channel') {
+      const stream = route.subject.transport === 'event-channel';
+      for (const evidence of route.imprecise) limits.push({ code: stream ? 'unresolved-stream-handler-scope' : 'unresolved-message-handler-scope',
         message: 'Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.', evidence });
-      if (route.subject.matching === 'prefix') limits.push({ code: 'dynamic-message-address',
-        message: 'Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.' });
-      if (route.callers.length === 0 || route.receivers.length === 0) limits.push({ code: 'unmatched-message-boundary',
-        message: 'A related message boundary has no observed counterpart in the Basic extraction scope.' });
+      if (route.subject.matching === 'prefix') limits.push({ code: stream ? 'dynamic-stream-address' : 'dynamic-message-address',
+        message: stream
+          ? 'Event channel prefixes describe possible routes; suffix and instance wiring are not resolved.'
+          : 'Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.' });
+      if (route.callers.length === 0 || route.receivers.length === 0) limits.push({ code: stream ? 'unmatched-stream-boundary' : 'unmatched-message-boundary',
+        message: stream
+          ? 'A related stream boundary has no observed counterpart in the EventChannel extraction scope.'
+          : 'A related message boundary has no observed counterpart in the Basic extraction scope.' });
+    } else if (route.subject.method !== undefined) {
+      for (const evidence of route.imprecise) limits.push({ code: 'unresolved-method-handler-scope',
+        message: 'Method handler branches could not be fully attributed in the observed index; enclosing declaration impact remains conservative.', evidence });
     }
     for (const evidence of route.missing) limits.push({ code: 'unresolved-bridge-binding',
       message: 'A bridge endpoint has no verified language symbol binding.', evidence });
@@ -303,7 +333,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   if (relevant.some(({ subject }) => subject.transport === undefined)) {
     for (const limit of joined.limitations) limits.push({ code: 'bridge-limitation', message: limit.message });
   }
-  if (relevant.some(({ subject }) => subject.transport === 'basic-message-channel')) {
+  if (relevant.some(({ subject }) => subject.transport === 'basic-message-channel' || subject.transport === 'event-channel')) {
     for (const limit of messages.limitations) limits.push({ code: 'message-producer-limitation', message: limit.message });
   }
   const uniqueLimits = [...new Map(limits.map((item) => [encodeSortedJson(item, true), item])).entries()]

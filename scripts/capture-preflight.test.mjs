@@ -161,6 +161,32 @@ test('Android만 설정해도 Kotlin snapshot과 bridge를 수집하고 snapshot
   assert.equal(messages.cached, false);
   assert.deepEqual(messages.context.messages.map(({ platform }) => platform), ['dart', 'kotlin']);
   assert.ok(messages.report.boundaries.some(({ subject }) => subject.transport === 'basic-message-channel'));
+  const events = await capturePreflight({ ...config, events: true }, { execute: async (command, args, options) => {
+    if (args[0] === 'query' && command === 'dartograph') {
+      const requests = JSON.parse(await readFile(args[args.indexOf('--batch') + 1], 'utf8'));
+      return { status: 0, stdout: JSON.stringify({ format: 'symbol-query-batch', version: 1,
+        results: requests.map((requested) => ({ requested, status: 'found', limitations: [],
+          result: { subject: { usr: `dart:${requested}`, qualifiedName: `dart:${requested}`,
+            location: { path: 'project:lib/bridge.dart', line: 2, column: 1 } } } })) }) };
+    }
+    if (args[0] === 'impact' && command === 'dartograph' && args.includes('--symbol')) {
+      const trigger = args[args.indexOf('--symbol') + 1];
+      return { status: 0, stdout: JSON.stringify({ version: 1,
+        changed: { symbols: [trigger], libraries: [], sources: [], unattributedSources: [] },
+        impacted: [], limitations: [], missingSymbols: [], truncated: 0 }) };
+    }
+    if (args[0] !== 'bridges' || !args.includes('--events')) return execute(command, args, options);
+    const native = command === 'kartograph';
+    return { status: 0, stdout: JSON.stringify({ format: 'bridge-facts', version: 2,
+      transport: 'event-channel', platform: native ? 'kotlin' : 'dart', target: 'flutter', project: f.root,
+      generatedAt: '2026-09-14T00:00:00Z', tool: { name: command, version: '1.0.0' }, limitations: [],
+      facts: [{ kind: native ? 'stream-handle' : 'stream-listen', channel: 'charging', dynamic: false,
+        location: { path: native ? 'android/Handler.kt' : 'lib/stream.dart', line: 4, column: 1 },
+        symbol: native ? { qualifiedName: 'Handler.handle', usr: 'jvm:handler' } : { qualifiedName: 'Stream.states' } }] }) };
+  } });
+  assert.equal(events.cached, false);
+  assert.deepEqual(events.context.messages.map(({ platform }) => platform), ['dart', 'kotlin']);
+  assert.ok(events.report.boundaries.some(({ subject }) => subject.transport === 'event-channel' && subject.channel === 'charging'));
   await assert.rejects(capturePreflight({ ...config, kartographSnapshot: undefined }, { execute }), /snapshot/i);
 });
 

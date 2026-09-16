@@ -10,9 +10,9 @@
     "dartograph": "dartograph 0.11.0"
   },
   "totals": {
-    "tp": 50,
+    "tp": 54,
     "fn": 0,
-    "fp": 3
+    "fp": 0
   },
   "cases": [
     {
@@ -26,6 +26,9 @@
           "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
         ],
         "prefixes": [],
+        "streams": [
+          "dev.fluttercommunity.plus/charging"
+        ],
         "channels": [
           "dev.fluttercommunity.plus/battery"
         ]
@@ -37,19 +40,21 @@
           "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
         ],
         "prefixes": [],
-        "channels": []
+        "channels": [
+          "dev.fluttercommunity.plus/charging"
+        ]
       },
-      "truePositives": 3,
+      "truePositives": 4,
       "falseNegatives": 0,
       "falsePositives": 0,
       "summary": {
         "selectedSymbols": 10,
-        "affectedSymbols": 7,
-        "bridgeBoundaries": 4,
+        "affectedSymbols": 8,
+        "bridgeBoundaries": 5,
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 11
+        "evidenceGaps": 13
       },
       "limitations": [
         "cartograph-runtime-review: 2 item(s) require review in the producer report",
@@ -59,10 +64,12 @@
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
+        "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
         "unscanned-event-channels: 1 EventChannel constructor",
         "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
@@ -71,7 +78,7 @@
       ],
       "reviewFiles": 4,
       "cached": false,
-      "milliseconds": 10611
+      "milliseconds": 7526
     },
     {
       "id": "bp-file-dart-channel",
@@ -84,6 +91,9 @@
           "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
         ],
         "prefixes": [],
+        "streams": [
+          "dev.fluttercommunity.plus/charging"
+        ],
         "channels": [
           "dev.fluttercommunity.plus/battery"
         ]
@@ -95,9 +105,11 @@
           "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
         ],
         "prefixes": [],
-        "channels": []
+        "channels": [
+          "dev.fluttercommunity.plus/charging"
+        ]
       },
-      "truePositives": 3,
+      "truePositives": 4,
       "falseNegatives": 0,
       "falsePositives": 0,
       "summary": {
@@ -107,17 +119,19 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 8
+        "evidenceGaps": 10
       },
       "limitations": [
         "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
+        "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
         "unscanned-event-channels: 1 EventChannel constructor",
         "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
@@ -126,7 +140,7 @@
       ],
       "reviewFiles": 4,
       "cached": false,
-      "milliseconds": 1837
+      "milliseconds": 1167
     },
     {
       "id": "bp-symbol-dart-batterylevel",
@@ -137,6 +151,7 @@
           "dev.fluttercommunity.plus/battery/getBatteryLevel"
         ],
         "prefixes": [],
+        "streams": [],
         "channels": [
           "dev.fluttercommunity.plus/battery"
         ]
@@ -175,7 +190,7 @@
       ],
       "reviewFiles": 3,
       "cached": false,
-      "milliseconds": 1786
+      "milliseconds": 1125
     },
     {
       "id": "bp-file-event-handler",
@@ -183,29 +198,32 @@
       "status": "observed",
       "predicted": {
         "methods": [
-          "dev.fluttercommunity.plus/battery/getBatteryLevel",
-          "dev.fluttercommunity.plus/battery/getBatteryState",
-          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+          "dev.fluttercommunity.plus/battery/getBatteryState"
         ],
         "prefixes": [],
+        "streams": [
+          "dev.fluttercommunity.plus/charging"
+        ],
         "channels": [
           "dev.fluttercommunity.plus/battery"
         ]
       },
       "expected": {
-        "methods": [],
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryState"
+        ],
         "prefixes": [],
         "channels": [
           "dev.fluttercommunity.plus/charging"
         ]
       },
-      "truePositives": 0,
+      "truePositives": 2,
       "falseNegatives": 0,
-      "falsePositives": 3,
+      "falsePositives": 0,
       "summary": {
         "selectedSymbols": 11,
-        "affectedSymbols": 12,
-        "bridgeBoundaries": 4,
+        "affectedSymbols": 11,
+        "bridgeBoundaries": 3,
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
@@ -219,10 +237,10 @@
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
-        "A bridge endpoint has no verified language symbol binding.",
-        "A bridge endpoint has no verified language symbol binding.",
+        "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
         "unscanned-event-channels: 1 EventChannel constructor",
         "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
@@ -232,7 +250,7 @@
       "expectGap": true,
       "reviewFiles": 5,
       "cached": false,
-      "milliseconds": 2208
+      "milliseconds": 1205
     },
     {
       "id": "bp-diff-622-623",
@@ -245,6 +263,7 @@
           "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
         ],
         "prefixes": [],
+        "streams": [],
         "channels": [
           "dev.fluttercommunity.plus/battery"
         ]
@@ -294,7 +313,7 @@
       "expectKotlinGap": true,
       "reviewFiles": 3,
       "cached": false,
-      "milliseconds": 9296
+      "milliseconds": 6883
     },
     {
       "id": "sp-file-plugin",
@@ -315,6 +334,7 @@
           "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
           "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
         ],
+        "streams": [],
         "channels": []
       },
       "expected": {
@@ -344,7 +364,7 @@
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 28
+        "evidenceGaps": 29
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -375,16 +395,18 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 5,
       "cached": false,
-      "milliseconds": 11444
+      "milliseconds": 7024
     },
     {
       "id": "sp-file-generated",
@@ -405,145 +427,7 @@
           "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
           "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
         ],
-        "channels": []
-      },
-      "expected": {
-        "methods": [],
-        "prefixes": [
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
-        ],
-        "channels": []
-      },
-      "truePositives": 11,
-      "falseNegatives": 0,
-      "falsePositives": 0,
-      "summary": {
-        "selectedSymbols": 50,
-        "affectedSymbols": 55,
-        "bridgeBoundaries": 11,
-        "reviewFiles": 6,
-        "errors": 0,
-        "warnings": 0,
-        "evidenceGaps": 28
-      },
-      "limitations": [
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "Registry lookups with dynamic or non-string keys: 1.",
-        "cartograph-runtime-review: 3 item(s) require review in the producer report",
-        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
-        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
-        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
-        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
-      ],
-      "reviewFiles": 6,
-      "cached": false,
-      "milliseconds": 3553
-    },
-    {
-      "id": "sp-symbol-legacy-remove",
-      "project": "shared_prefs",
-      "status": "observed",
-      "predicted": {
-        "methods": [],
-        "prefixes": [
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
-        ],
-        "channels": []
-      },
-      "expected": {
-        "methods": [],
-        "prefixes": [
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
-        ],
-        "channels": []
-      },
-      "truePositives": 1,
-      "falseNegatives": 0,
-      "falsePositives": 0,
-      "summary": {
-        "selectedSymbols": 1,
-        "affectedSymbols": 5,
-        "bridgeBoundaries": 1,
-        "reviewFiles": 4,
-        "errors": 0,
-        "warnings": 0,
-        "evidenceGaps": 7
-      },
-      "limitations": [
-        "a declared plugin entry point was not found in the graph",
-        "generated declarations are conservative retention roots",
-        "Registry lookups with dynamic or non-string keys: 1.",
-        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
-        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
-        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
-        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
-      ],
-      "reviewFiles": 4,
-      "cached": false,
-      "milliseconds": 1967
-    },
-    {
-      "id": "sp-diff-253-254",
-      "project": "shared_prefs-base",
-      "status": "observed",
-      "predicted": {
-        "methods": [],
-        "prefixes": [
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
-          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
-          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
-        ],
+        "streams": [],
         "channels": []
       },
       "expected": {
@@ -601,20 +485,167 @@
         "Registry lookups with dynamic or non-string keys: 1.",
         "cartograph-runtime-review: 3 item(s) require review in the producer report",
         "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
-        "unmodeled-changes: 1 tracked configuration/resource change(s) require separate review",
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 6,
       "cached": false,
-      "milliseconds": 11886
+      "milliseconds": 1196
+    },
+    {
+      "id": "sp-symbol-legacy-remove",
+      "project": "shared_prefs",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
+        ],
+        "streams": [],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
+        ],
+        "channels": []
+      },
+      "truePositives": 1,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 1,
+        "affectedSymbols": 5,
+        "bridgeBoundaries": 1,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 8
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 994
+    },
+    {
+      "id": "sp-diff-253-254",
+      "project": "shared_prefs-base",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "streams": [],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "truePositives": 11,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 50,
+        "affectedSymbols": 55,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 6,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 30
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "cartograph-runtime-review: 3 item(s) require review in the producer report",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "unmodeled-changes: 1 tracked configuration/resource change(s) require separate review",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 6,
+      "cached": false,
+      "milliseconds": 7204
     },
     {
       "id": "ul-file-plugin",
@@ -626,6 +657,7 @@
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
         ],
+        "streams": [],
         "channels": []
       },
       "expected": {
@@ -646,7 +678,7 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 9
+        "evidenceGaps": 10
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -659,13 +691,15 @@
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "milliseconds": 9573
+      "milliseconds": 6792
     },
     {
       "id": "ul-symbol-setup",
@@ -677,6 +711,7 @@
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
         ],
+        "streams": [],
         "channels": []
       },
       "expected": {
@@ -697,7 +732,7 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 8
+        "evidenceGaps": 9
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -709,13 +744,15 @@
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "milliseconds": 1882
+      "milliseconds": 979
     },
     {
       "id": "ul-diff-321-322",
@@ -727,6 +764,7 @@
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
           "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
         ],
+        "streams": [],
         "channels": []
       },
       "expected": {
@@ -747,7 +785,7 @@
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 8
+        "evidenceGaps": 9
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -759,13 +797,15 @@
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 5,
       "cached": false,
-      "milliseconds": 9623
+      "milliseconds": 6897
     }
   ]
 }

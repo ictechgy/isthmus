@@ -5,13 +5,15 @@
 
 ## 범위와 한계
 
-- **실측**: MethodChannel(v1)·Pigeon/BasicMessageChannel(v2)의 정적 브리지 경계,
+- **실측**: MethodChannel(v1)·Pigeon/BasicMessageChannel(v2)·EventChannel
+  (v2 `stream-listen`/`stream-handle`)의 정적 브리지 경계,
   파일·심볼·git diff(`since`) 선택, Swift+Objective-C 네이티브 관찰, Dart↔native 조인.
+  EventChannel은 `bridges --events` opt-in 문서로 수집해 별도 transport로 조인한다.
 - **하네스**: Flutter SDK가 없어 Swift는 `harness/swift/FlutterMacOS.swift` 스텁을
   의존성으로 둔 SwiftPM 타깃을 **실제 컴파일**해 컴파일러 인덱스를 만들고,
   Dart는 `harness/flutter_stub`(최소 services/foundation 표면)와 pub.dev 의존성을
   수동 `package_config.json`으로 해석한다. 런타임 실행은 없다.
-- **범위 밖**: Kotlin/Android(producer 미설치·미실행), EventChannel 스트림,
+- **범위 밖**: Kotlin/Android(producer 미설치·미실행),
   Flutter 엔진 실행, iOS 기기 빌드, 앱 수준 전체 정밀도.
 - Objective-C 소스는 Swift 인덱스 밖이다 — cartograph가 직접 패턴으로 읽은 사실만
   포함되며 `objective-c-handlers`/`objective-c-sources` 한계가 붙는다.
@@ -35,10 +37,10 @@
 
 | 케이스 | 선택 | 정답 근거 |
 |---|---|---|
-| bp-file-swift-plugin | macOS 플러그인 파일 | 등록+3핸들러 한 파일 → 3 method |
-| bp-file-dart-channel | `method_channel_battery_plus.dart` | 채널 생성+3 invokeMethod → 3 method |
+| bp-file-swift-plugin | macOS 플러그인 파일 | 등록+3핸들러 한 파일 → 3 method + charging stream |
+| bp-file-dart-channel | `method_channel_battery_plus.dart` | 채널 생성+3 invokeMethod+1 수신 → 3 method + charging stream |
 | bp-symbol-dart-batterylevel | `MethodChannelBattery.batteryLevel` | `getBatteryLevel`만 호출 → 1 method |
-| bp-file-event-handler | `BatteryPlusChargingHandler.swift` | EventChannel만 — method 경계 없음 |
+| bp-file-event-handler | `BatteryPlusChargingHandler.swift` | `getBatteryState`(case 절이 ChargingHandler 호출) + charging stream |
 | bp-diff-622-623 | 실제 6.2.2→6.2.3 diff | iOS ObjC 등록 파일 1줄+Kotlin → 3 method |
 | sp-file-plugin | `SharedPreferencesPlugin.swift` | 두 Api 구현 → 11 prefix |
 | sp-file-generated | `messages.g.swift` | Pigeon 배선 파일 → 11 prefix |

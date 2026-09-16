@@ -148,6 +148,7 @@ async function applyDiff(project, apply) {
 function predictedKeys(report) {
   const methods = new Set();
   const prefixes = new Set();
+  const streams = new Set();
   const channels = new Set();
   for (const boundary of report.boundaries ?? []) {
     const subject = boundary.subject;
@@ -156,12 +157,14 @@ function predictedKeys(report) {
       // 벗긴 접두부로 정규화한다. 매칭은 이 정규화 문자열의 정확 비교만 인정한다.
       const raw = (subject.channel ?? '').replace(/^"|"$/g, '').replace(/\\?\([^)]*\)$/u, '');
       prefixes.add(raw);
+    } else if (subject.transport === 'event-channel') {
+      streams.add(subject.channel);
     } else {
       channels.add(subject.channel);
       if (subject.method !== undefined) methods.add(`${subject.channel}/${subject.method}`);
     }
   }
-  return { methods, prefixes, channels };
+  return { methods, prefixes, streams, channels };
 }
 
 const rows = [];
@@ -181,6 +184,7 @@ for (const corpusCase of manifest.cases) {
     dartograph: [dartographReal],
     cartograph: [cartographReal],
     messages: true,
+    events: true,
     output: contextOut,
     cache: cacheOut,
   };
@@ -206,10 +210,12 @@ for (const corpusCase of manifest.cases) {
     ? projectMeta.channelPrefixes ?? [] : corpusCase.expectedPrefixes ?? []);
   const expectedChannels = new Set(corpusCase.expectedChannels ?? []);
   const tp = [...expectedMethods].filter((m) => predicted.methods.has(m)).length
-    + [...expectedPrefixes].filter((p) => predicted.prefixes.has(p)).length;
-  const fn = expectedMethods.size + expectedPrefixes.size - tp;
+    + [...expectedPrefixes].filter((p) => predicted.prefixes.has(p)).length
+    + [...expectedChannels].filter((c) => predicted.streams.has(c)).length;
+  const fn = expectedMethods.size + expectedPrefixes.size + expectedChannels.size - tp;
   const fp = [...predicted.methods].filter((m) => !expectedMethods.has(m)).length
-    + [...predicted.prefixes].filter((q) => !expectedPrefixes.has(q)).length;
+    + [...predicted.prefixes].filter((q) => !expectedPrefixes.has(q)).length
+    + [...predicted.streams].filter((c) => !expectedChannels.has(c)).length;
   const limitationText = [...(report.limitations ?? []), ...(report.bridgeLimitations ?? []),
     ...(report.messageLimitations ?? [])]
     .map((l) => (typeof l === 'string' ? l : l.message ?? l.code));
@@ -224,7 +230,8 @@ for (const corpusCase of manifest.cases) {
     id: corpusCase.id,
     project: corpusCase.project,
     status: report.status,
-    predicted: { methods: [...predicted.methods].sort(), prefixes: [...predicted.prefixes].sort(), channels: [...predicted.channels].sort() },
+    predicted: { methods: [...predicted.methods].sort(), prefixes: [...predicted.prefixes].sort(),
+      streams: [...predicted.streams].sort(), channels: [...predicted.channels].sort() },
     expected: { methods: [...expectedMethods].sort(), prefixes: [...expectedPrefixes].sort(), channels: [...expectedChannels].sort() },
     truePositives: tp, falseNegatives: fn, falsePositives: fp,
     summary: report.summary,

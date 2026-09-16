@@ -240,7 +240,8 @@
         "dev.fluttercommunity.plus/battery/isInBatterySaveMode",
         "dev.fluttercommunity.plus/battery/getBatteryState"
       ],
-      "groundTruth": "파일이 채널 등록과 3개 핸들러를 모두 담는다. 소스 확인: register + handle switch 3 cases."
+      "expectedChannels": ["dev.fluttercommunity.plus/charging"],
+      "groundTruth": "파일이 채널 등록과 3개 핸들러를 모두 담고 register()가 charging EventChannel의 setStreamHandler(chargingHandler)도 배선한다. 소스 확인: register + handle switch 3 cases + eventChannel.setStreamHandler."
     },
     {
       "id": "bp-file-dart-channel",
@@ -251,7 +252,8 @@
         "dev.fluttercommunity.plus/battery/isInBatterySaveMode",
         "dev.fluttercommunity.plus/battery/getBatteryState"
       ],
-      "groundTruth": "MethodChannel 생성과 3개 invokeMethod가 한 파일에 있다. EventChannel 생성도 같은 파일이다."
+      "expectedChannels": ["dev.fluttercommunity.plus/charging"],
+      "groundTruth": "MethodChannel 생성과 3개 invokeMethod가 한 파일에 있고 EventChannel(charging).receiveBroadcastStream() 수신 호출도 같은 파일이다."
     },
     {
       "id": "bp-symbol-dart-batterylevel",
@@ -264,10 +266,10 @@
       "id": "bp-file-event-handler",
       "project": "battery",
       "selection": { "swift": { "files": ["macos/battery_plus/Sources/battery_plus/BatteryPlusChargingHandler.swift"], "symbols": [] } },
-      "expectedMethods": [],
+      "expectedMethods": ["dev.fluttercommunity.plus/battery/getBatteryState"],
       "expectedChannels": ["dev.fluttercommunity.plus/charging"],
       "expectGap": true,
-      "groundTruth": "EventChannel 스트림 핸들러 파일. isthmus는 Event 채널을 미지원하므로 method 경계가 없어야 하며 채널 생성 경계 또는 공백 한계로 드러나야 한다."
+      "groundTruth": "EventChannel 스트림 핸들러 파일. charging 채널은 event 경계로 드러나야 하고, 배터리 MethodChannel은 getBatteryState만 유지된다 — 그 case 절이 변경된 ChargingHandler.getBatteryStatus를 실제로 호출한다. 나머지 두 메서드는 공유 handle() switch 입상도의 오탐이라 사라져야 한다. v1 문서의 unscanned-event-channels 한계는 v1 관찰 범위 설명으로 계속 남는다."
     },
     {
       "id": "bp-diff-622-623",
