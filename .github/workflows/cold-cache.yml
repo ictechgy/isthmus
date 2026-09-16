@@ -1,0 +1,69 @@
+name: cold-cache
+
+# 발행 산출물의 cold 재현 감시다. 캐시된 checkout·의존성이 없는 새 러너에서
+# 공개 설치 경로가 문서대로 동작하는지 확인한다 — 발행본이 아래에서 바뀌거나
+# 설치 경로가 깨지면 예약 실행이 잡아낸다.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cold-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 발행 npm 패키지만으로 고정 fixture의 조인·보존·사전 점검을 재현한다.
+  published-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - run: npm install --global isthmus-cli
+      - run: isthmus --version
+      - run: node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
+
+  # 발행 producer 설치본이 fixtures/bridge-app을 스캔해 Dart↔Swift↔Kotlin
+  # 3방향 조인까지 재현한다. producer는 최신 발행본을 따라가며 버전을 기록한다.
+  producers:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: brew install ictechgy/tap/cartograph
+      - run: dart pub global activate dartograph
+      - name: Install kartograph release
+        run: |
+          curl -fsSL --retry 3 \
+            https://github.com/ictechgy/kartograph/releases/download/v0.10.0/kartograph-0.10.0.tar \
+            -o "$RUNNER_TEMP/kartograph.tar"
+          mkdir -p "$RUNNER_TEMP/kartograph"
+          tar -xf "$RUNNER_TEMP/kartograph.tar" -C "$RUNNER_TEMP/kartograph"
+      - run: npm install --global isthmus-cli
+      - name: Record installed versions
+        run: |
+          cartograph --version
+          "$HOME/.pub-cache/bin/dartograph" --version
+          find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' -exec {} --version \;
+      - name: Cold-cache producer verification
+        run: |
+          kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
+          node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
+            "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" "$kartograph_bin"

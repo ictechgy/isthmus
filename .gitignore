@@ -21,11 +21,14 @@ npm-debug.log*
 .claude/settings.local.json
 .serena/
 
-# Phase 0 실험 안의 Dart/Swift 산출물
+# Phase 0 실험·fixture 안의 Dart/Swift 산출물
 experiments/**/.dart_tool/
 experiments/**/build/
 experiments/**/.build/
 experiments/**/pubspec.lock
+fixtures/**/.build/
+fixtures/**/.dart_tool/
+fixtures/**/pubspec.lock
 
 # Flutter 런타임 라이브러리의 로컬 생성물
 packages/**/.dart_tool/
