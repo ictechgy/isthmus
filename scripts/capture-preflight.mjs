@@ -374,7 +374,15 @@ function validateConfig(config, project) {
       !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
     throw new CaptureError('Invalid event producer configuration.');
   }
-  if (config.kartograph !== undefined && !isSafeNonEmptyString(config.kartographSnapshot)) {
+  // Kotlin 소스 스캔은 스냅샷 없이 채널·핸들러 사실을 낸다. 스냅샷은 Kotlin
+  // 변경 분석(impact)에만 필요하므로 selection.kotlin이 있을 때만 요구한다.
+  const kotlinSelection = config.selection !== undefined && typeof config.selection === 'object'
+    && config.selection !== null && !Array.isArray(config.selection)
+    && config.selection.kotlin !== undefined;
+  if (kotlinSelection && config.kartograph === undefined) {
+    throw new CaptureError('A Kotlin selection requires its Kartograph producer.');
+  }
+  if (kotlinSelection && !isSafeNonEmptyString(config.kartographSnapshot)) {
     throw new CaptureError('Configure a Kartograph snapshot produced by the preparation command.');
   }
   if (config.kartograph === undefined && config.kartographSnapshot !== undefined) throw new CaptureError('A Kartograph snapshot requires its producer.');

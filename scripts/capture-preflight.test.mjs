@@ -190,6 +190,27 @@ test('Android만 설정해도 Kotlin snapshot과 bridge를 수집하고 snapshot
   await assert.rejects(capturePreflight({ ...config, kartographSnapshot: undefined }, { execute }), /snapshot/i);
 });
 
+test('스냅샷 없는 kartograph는 소스 스캔 bridge만 수집하고 Kotlin 선택은 스냅샷을 요구한다', async (t) => {
+  const f = await setup(t);
+  const config = { ...f.config, kartograph: ['kartograph'] };
+  const kotlin = JSON.parse(JSON.stringify(fixture.bridges[1]).replaceAll('swift', 'kotlin')
+    .replaceAll('.kotlin', '.kt').replaceAll('ios/', 'android/').replaceAll('s:', 'jvm:'));
+  const execute = (command, args, options) => {
+    if (command !== 'kartograph') return f.execute(command, args, options);
+    f.calls.push([command, ...args]);
+    if (args[0] === '--version') return { status: 0, stdout: 'kartograph 1.0.0\n' };
+    assert.equal(args[0], 'bridges');
+    assert.ok(!args.includes('--graph-file'));
+    return { status: 0, stdout: JSON.stringify({ ...kotlin, project: f.root }) };
+  };
+  const scanned = await capturePreflight(config, { execute });
+  assert.equal(scanned.cached, false);
+  assert.ok(scanned.context.bridges.some(({ platform }) => platform === 'kotlin'));
+  assert.ok(!scanned.context.analyses.some(({ platform }) => platform === 'kotlin'));
+  await assert.rejects(capturePreflight({ ...config,
+    selection: { kotlin: { files: ['android/Helper.kt'], symbols: [] } } }, { execute }), /snapshot/i);
+});
+
 test('코드·producer 변경과 소스 삭제는 이전 근거를 재사용하지 않는다', async (t) => {
   const f = await setup(t);
   let previous = await capturePreflight(f.config, { execute: f.execute });
