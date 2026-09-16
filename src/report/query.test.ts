@@ -444,7 +444,7 @@ test('RN 모듈 질의가 import 위치와 export 위치를 양방향으로 답�
   assert.equal(document.status, 'found');
   assert.deepEqual(document.result?.subject, {
     name: 'CameraModule',
-    qualifiedName: 'react-native:CameraModule',
+    qualifiedName: 'react-native:module:CameraModule',
     kind: 'module',
   });
   assert.deepEqual(document.result?.usedBy, [
@@ -473,7 +473,7 @@ test('RN 컴포넌트 질의가 require 위치와 export 위치를 양방향으�
   assert.equal(document.result?.subject.kind, 'component');
   assert.equal(
     document.result?.subject.qualifiedName,
-    'react-native:CameraView',
+    'react-native:component:CameraView',
   );
 });
 
@@ -536,11 +536,19 @@ test('같은 이름의 모듈과 컴포넌트는 종류를 추측하지 않고 �
     'Shared',
   );
 
-  // 두 종류 모두 같은 qualifiedName을 가지므로 재요청 키는 하나뿐이다.
+  // kind 세그먼트가 둘을 구분하므로 후보를 다시 질의하면 모호성이 풀린다.
   assert.equal(document.status, 'ambiguous');
   assert.deepEqual(document.candidates, [
-    { qualifiedName: 'react-native:Shared' },
+    { qualifiedName: 'react-native:component:Shared' },
+    { qualifiedName: 'react-native:module:Shared' },
   ]);
+
+  const resolved = createBridgeQuery(
+    joinBridgeDocuments([sharedJs, sharedSwift]),
+    'react-native:module:Shared',
+  );
+  assert.equal(resolved.status, 'found');
+  assert.equal(resolved.result?.subject.kind, 'module');
 });
 
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */

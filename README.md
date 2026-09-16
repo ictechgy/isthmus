@@ -285,7 +285,9 @@ When the same method exists on several channels, `query` returns candidates inst
 one; feed a returned `qualifiedName` back into the same subject position to disambiguate. A
 `qualifiedName` is `target:` followed by percent-escaped components — `%`, `#`, and `:` are
 escaped — so splitting on the first `:` and on `#` and decoding the parts always recovers the
-channel and method names. A `notFound` or `ambiguous` query exits 64 and prints a one-line
+channel and method names. Module and component subjects carry a `module:`/`component:` kind
+segment before the name so a channel, a module, and a component that share a name stay
+resolvable. A `notFound` or `ambiguous` query exits 64 and prints a one-line
 cause on stderr, so a script can tell a bad invocation from a missing name without parsing
 stdout.
 `graph` emits matched edges only and preserves the input `limitations` as a JSON field or as
@@ -429,9 +431,11 @@ analyzed". `resolvedIssues` likewise means a previous mismatch is no longer obse
 the limitations to see whether a dynamic transition or an extractor change caused it.
 `--strict` is recognized at any argument position and cannot be given more than once.
 
-`diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
+`diff` accepts caller documents (Flutter Dart or React Native JS) plus either Swift or Kotlin
+receiver documents. Keep one native language per comparison.
 Both sender and receiver documents are required at
-each point in time, and the two snapshots must agree on `project` and on the per-platform,
+each point in time, and the two snapshots must agree on `project`, on the observed set of
+bridge targets, and on the per-platform,
 per-tool document counts. Build each revision from the same checkout path and keep the JSON.
 Do not compare a partial extraction against a full one; use the same analysis settings. Input
 files are capped at 256 total, and the text size limits match the rest of the CLI. Mixed

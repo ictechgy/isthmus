@@ -198,7 +198,11 @@ function makeQueryResult(
   return {
     subject: {
       name,
-      qualifiedName: `${target}:${encodeSubjectComponent(name)}`,
+      // 모듈·컴포넌트는 kind 세그먼트를 넣어야 같은 이름의 채널·서로 다른 종류와
+      // qualifiedName이 충돌하지 않아 모호성을 재질의로 풀 수 있다.
+      qualifiedName: kind === 'channel'
+        ? `${target}:${encodeSubjectComponent(name)}`
+        : `${target}:${kind}:${encodeSubjectComponent(name)}`,
       kind,
     },
     usedBy,
