@@ -68,6 +68,9 @@ binding 100,000개, 각 producer depth 128, 관계 문자열 32개, 조합된 �
   경계에만 전파한다. `bridge-message-dependency`는 원래 참조 위치·대상과 선택된 dispatch
   후보를 보존한다. 등록 함수 직접 변경과 closure 밖 공유 의존 변경은 전체 관련 배선을
   포함한다. 근거가 없으면 넓은 후보와 `unresolved-message-handler-scope` 공백을 유지한다.
+- 전송별 의존 관계 종류는 구분된다. 일반 MethodChannel 경로는 `bridge-method-dependency`,
+  BasicMessageChannel은 `bridge-message-dependency`, EventChannel은
+  `bridge-stream-dependency`다 — 소비자가 전송을 관계 종류로도 구분할 수 있다.
 - `reviewFiles`, `issues`, `limitations`, `bridgeLimitations`와 선택적 `messageLimitations`를 함께 읽는다. 바인딩 부재,
   후속 Dart 분석 부재, 미관찰 선택, producer truncation은 검토가 필요한 공백이다.
 - compact는 공백만 제거한다. `--strict`는 관련 error·공백·미관찰 선택 또는 revision 불일치에

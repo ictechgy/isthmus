@@ -8,23 +8,26 @@ import { fileURLToPath } from 'node:url';
 import { capturePreflight } from '../../scripts/capture-preflight.mjs';
 import { runChild } from '../../scripts/run-child.mjs';
 
-// 실사용 코퍼스 실행기: 고정 pub.dev 아카이브를 sha256 검증·스테이징한 뒤
+// 실사용 코퍼스 실행기: 고정 pub.dev/GitHub 아카이브를 sha256 검증·스테이징한 뒤
 // capture-preflight로 예측을 만들고 manifest의 수동 정답과 비교한다.
 // Flutter SDK가 없으므로 Swift는 FlutterMacOS 스텁 하네스로 실컴파일하고,
-// Dart는 수동 package_config로 해석한다. Kotlin은 producer가 없어 미측정이다.
+// Dart는 수동 package_config로 해석한다. kartograph 인자가 있으면 Kotlin은
+// 스냅샷 없는 소스 스캔으로 채널·핸들러 사실을 조인한다(런타임 실행 아님).
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, 'manifest.json'), 'utf8'));
-const [cartographBin, dartographBin, ...rest] = process.argv.slice(2);
+const [cartographBin, dartographBin, kartographBin, ...rest] = process.argv.slice(2);
 if (cartographBin === undefined || dartographBin === undefined || rest.length > 0 || process.platform !== 'darwin') {
-  process.stderr.write('Usage (macOS): node experiments/real-corpus/run.mjs <cartograph-bin> <dartograph-bin>\n');
+  process.stderr.write('Usage (macOS): node experiments/real-corpus/run.mjs <cartograph-bin> <dartograph-bin> [kartograph-bin]\n');
   process.exit(64);
 }
 
 const cartographReal = await realpath(cartographBin);
 const dartographReal = await realpath(dartographBin);
+const kartographReal = kartographBin === undefined ? undefined : await realpath(kartographBin);
 const toolVersion = (bin) => runChild(bin, ['--version'], { timeout: 30_000 }).stdout.trim();
-const toolInfo = { cartograph: toolVersion(cartographReal), dartograph: toolVersion(dartographReal) };
+const toolInfo = { cartograph: toolVersion(cartographReal), dartograph: toolVersion(dartographReal),
+  ...(kartographReal === undefined ? {} : { kartograph: toolVersion(kartographReal) }) };
 const work = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-real-corpus-')));
 const sourceDir = join(work, 'src');
 const resultsDir = join(here, 'results');
@@ -67,20 +70,33 @@ async function stageProject(name, definition) {
   for (const rule of definition.staging) {
     const archiveId = rule.archive;
     const archive = archives[archiveId];
-    for (const relative of rule.paths) {
+    for (const entry of rule.paths) {
+      // 문자열은 from=to로 두고, {from,to}는 아카이브 경로를 프로젝트 경로에
+      // 다시 매핑한다 — GitHub tarball처럼 최상위 디렉터리를 가진 배포물은
+      // 앱 소스를 저장소 루트 하위로 옮겨야 pubspec/스캔 루트가 맞는다.
+      const relative = typeof entry === 'string' ? entry : entry.from;
+      const dest = typeof entry === 'string' ? entry : entry.to;
       const from = join(archive.path, relative);
-      const to = join(project, relative);
+      const to = join(project, dest);
       await mkdir(dirname(to), { recursive: true });
       await cp(from, to, { recursive: true });
-      staged.push({ from: `${archiveId}:${relative}`, to: relative });
+      staged.push({ from: `${archiveId}:${relative}`, to: dest });
     }
   }
-  // 네이티브 하네스: FlutterMacOS 스텁 + 프로젝트 루트 Package.swift.
+  // 네이티브 하네스: FlutterMacOS 스텁 + 프로젝트가 선언한 추가 스텁 모듈
+  // (실제 앱의 SPM·플러그인 의존을 모듈 단위로 흉내낸다) + 루트 Package.swift.
   const stubDir = join(project, '.isthmus-corpus', 'FlutterMacOS');
   await mkdir(stubDir, { recursive: true });
   await cp(swiftStub, join(stubDir, 'FlutterMacOS.swift'));
-  const targets = [{ name: 'FlutterMacOS', path: '.isthmus-corpus/FlutterMacOS' },
-    ...definition.swiftTargets.map((target) => ({ ...target, dependencies: ['FlutterMacOS'] }))];
+  const stubNames = ['FlutterMacOS'];
+  for (const stub of definition.stubTargets ?? []) {
+    const dir = join(project, '.isthmus-corpus', stub.name);
+    await mkdir(dir, { recursive: true });
+    await cp(join(here, 'harness', 'swift', stub.file), join(dir, stub.file));
+    stubNames.push(stub.name);
+  }
+  const targets = stubNames.map((name) => ({ name, path: `.isthmus-corpus/${name}` }))
+    .concat(definition.swiftTargets.map((target) => ({ ...target, dependencies: stubNames })));
   const targetText = targets.map((target) => {
     const deps = target.dependencies === undefined ? '' :
       `,\n            dependencies: [${target.dependencies.map((d) => `"${d}"`).join(', ')}]`;
@@ -137,10 +153,12 @@ async function applyDiff(project, apply) {
   git(project, ['-c', 'user.email=corpus@localhost', '-c', 'user.name=corpus',
     'commit', '--quiet', '--no-verify', '-m', 'base'], 'git commit');
   const archive = archives[apply.archive];
-  for (const relative of apply.paths) {
-    await rm(join(project, relative), { recursive: true, force: true });
-    await mkdir(dirname(join(project, relative)), { recursive: true });
-    await cp(join(archive.path, relative), join(project, relative), { recursive: true });
+  for (const entry of apply.paths) {
+    const relative = typeof entry === 'string' ? entry : entry.from;
+    const dest = typeof entry === 'string' ? entry : entry.to;
+    await rm(join(project, dest), { recursive: true, force: true });
+    await mkdir(dirname(join(project, dest)), { recursive: true });
+    await cp(join(archive.path, relative), join(project, dest), { recursive: true });
   }
 }
 
@@ -148,6 +166,7 @@ async function applyDiff(project, apply) {
 function predictedKeys(report) {
   const methods = new Set();
   const prefixes = new Set();
+  const streams = new Set();
   const channels = new Set();
   for (const boundary of report.boundaries ?? []) {
     const subject = boundary.subject;
@@ -156,15 +175,18 @@ function predictedKeys(report) {
       // 벗긴 접두부로 정규화한다. 매칭은 이 정규화 문자열의 정확 비교만 인정한다.
       const raw = (subject.channel ?? '').replace(/^"|"$/g, '').replace(/\\?\([^)]*\)$/u, '');
       prefixes.add(raw);
+    } else if (subject.transport === 'event-channel') {
+      streams.add(subject.channel);
     } else {
       channels.add(subject.channel);
       if (subject.method !== undefined) methods.add(`${subject.channel}/${subject.method}`);
     }
   }
-  return { methods, prefixes, channels };
+  return { methods, prefixes, streams, channels };
 }
 
 const rows = [];
+let kotlinUsed = false;
 for (const corpusCase of manifest.cases) {
   const started = performance.now();
   const project = projects[corpusCase.project];
@@ -176,11 +198,19 @@ for (const corpusCase of manifest.cases) {
     inputs: ['lib', 'pubspec.yaml', '.dart_tool/package_config.json', 'Package.swift',
       '.isthmus-corpus', '.corpus',
       ...project.staged.map(({ to }) => to.split('/')[0])].filter((v, i, a) => a.indexOf(v) === i),
-    toolInputs: [cartographReal, dartographReal],
+    toolInputs: [cartographReal, dartographReal,
+      ...(kartographReal === undefined ? [] : [kartographReal])],
     prepare: [['swift', 'build', '--package-path', project.project]],
     dartograph: [dartographReal],
     cartograph: [cartographReal],
+    // kotlin: true인 케이스만 Kotlin 브리지 문서를 조인에 포함한다 — 스냅샷 없는
+    // 소스 스캔으로 채널·핸들러 사실을 얻고, 나머지 케이스는 기존처럼 미구성
+    // 플랫폼 한계를 관측한다.
+    ...(corpusCase.kotlin === true && kartographReal !== undefined
+      ? { kartograph: [kartographReal] }
+      : {}),
     messages: true,
+    events: true,
     output: contextOut,
     cache: cacheOut,
   };
@@ -206,10 +236,12 @@ for (const corpusCase of manifest.cases) {
     ? projectMeta.channelPrefixes ?? [] : corpusCase.expectedPrefixes ?? []);
   const expectedChannels = new Set(corpusCase.expectedChannels ?? []);
   const tp = [...expectedMethods].filter((m) => predicted.methods.has(m)).length
-    + [...expectedPrefixes].filter((p) => predicted.prefixes.has(p)).length;
-  const fn = expectedMethods.size + expectedPrefixes.size - tp;
+    + [...expectedPrefixes].filter((p) => predicted.prefixes.has(p)).length
+    + [...expectedChannels].filter((c) => predicted.streams.has(c)).length;
+  const fn = expectedMethods.size + expectedPrefixes.size + expectedChannels.size - tp;
   const fp = [...predicted.methods].filter((m) => !expectedMethods.has(m)).length
-    + [...predicted.prefixes].filter((q) => !expectedPrefixes.has(q)).length;
+    + [...predicted.prefixes].filter((q) => !expectedPrefixes.has(q)).length
+    + [...predicted.streams].filter((c) => !expectedChannels.has(c)).length;
   const limitationText = [...(report.limitations ?? []), ...(report.bridgeLimitations ?? []),
     ...(report.messageLimitations ?? [])]
     .map((l) => (typeof l === 'string' ? l : l.message ?? l.code));
@@ -220,11 +252,13 @@ for (const corpusCase of manifest.cases) {
     ...(corpusCase.expectGap === true
       ? { expectGap: limitationText.some((l) => l.includes('unscanned-event-channels')) } : {}),
   };
+  if (corpusCase.kotlin === true && kartographReal !== undefined) kotlinUsed = true;
   rows.push({
     id: corpusCase.id,
     project: corpusCase.project,
     status: report.status,
-    predicted: { methods: [...predicted.methods].sort(), prefixes: [...predicted.prefixes].sort(), channels: [...predicted.channels].sort() },
+    predicted: { methods: [...predicted.methods].sort(), prefixes: [...predicted.prefixes].sort(),
+      streams: [...predicted.streams].sort(), channels: [...predicted.channels].sort() },
     expected: { methods: [...expectedMethods].sort(), prefixes: [...expectedPrefixes].sort(), channels: [...expectedChannels].sort() },
     truePositives: tp, falseNegatives: fn, falsePositives: fp,
     summary: report.summary,
@@ -241,11 +275,13 @@ const totals = rows.filter((r) => r.error === undefined).reduce(
   { tp: 0, fn: 0, fp: 0 });
 const document = {
   format: 'isthmus-real-corpus-results', version: 1,
-  runtimeExecution: false, flutterSdk: false, kotlinCoverage: false,
-  note: 'Stub-compiled Swift index + manual package_config. EventChannel·Kotlin·런타임 실행은 범위 밖.',
+  runtimeExecution: false, flutterSdk: false, kotlinCoverage: kotlinUsed,
+  note: 'Stub-compiled Swift index + manual package_config. Kotlin은 스냅샷 없는 소스 스캔으로 측정하고 런타임 실행은 범위 밖.',
   tools: toolInfo,
   totals, cases: rows,
 };
 await writeFile(join(resultsDir, 'results.json'), JSON.stringify(document, null, 2));
-process.stdout.write(`${JSON.stringify({ work, totals, cases: rows.map(({ id, status, truePositives, falseNegatives, falsePositives, error }) =>
-  ({ id, status, tp: truePositives, fn: falseNegatives, fp: falsePositives, error })) }, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify({ work, totals, cases: rows.map(({ id, status, truePositives, falseNegatives, falsePositives, error, expectGap }) =>
+  ({ id, status, tp: truePositives, fn: falseNegatives, fp: falsePositives, error,
+    // 기대한 커버리지 공백이 사라지면 결과 행에도 남긴다 — 조용한 회귀를 알아차리기 위해서다.
+    ...(expectGap === false ? { expectGap } : {}) })) }, null, 2)}\n`);

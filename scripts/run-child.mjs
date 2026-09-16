@@ -9,6 +9,7 @@ export function runChild(command, arguments_, options = {}) {
     cwd: options.cwd,
     encoding: 'utf8',
     env: options.env,
+    input: options.input,
     timeout: options.timeout ?? defaultTimeout,
     maxBuffer: options.maxBuffer ?? defaultMaxBuffer,
     stdio: options.stdio,

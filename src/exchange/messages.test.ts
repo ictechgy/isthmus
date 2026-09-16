@@ -71,3 +71,40 @@ test('handler 의존 근거의 역할·범위·신원·크기 위반을 거부�
   const large = { ...nativeFact, dependencies: Array(100).fill({ ...dep, dispatchTargets: Array(10_000).fill(dep.symbol) }) };
   assert.throws(() => parseMessageBridgeDocument({ ...document, platform: 'swift', facts: [large] }));
 });
+
+const eventDocument = { ...document, transport: 'event-channel' };
+const listen = { ...fact, kind: 'stream-listen' };
+const streamHandle = { ...nativeFact, kind: 'stream-handle' };
+
+test('EventChannel v2는 stream 사실을 transport 구분과 함께 보존한다', () => {
+  const dart = parseMessageBridgeDocument({ ...eventDocument, facts: [listen] });
+  assert.equal(dart.transport, 'event-channel');
+  assert.equal(dart.facts[0]?.kind, 'stream-listen');
+  const swift = parseMessageBridgeDocument({ ...eventDocument, platform: 'swift', facts: [streamHandle] });
+  assert.equal(swift.facts[0]?.kind, 'stream-handle');
+  assert.deepEqual(swift.facts[0]?.handlerScope, nativeFact.handlerScope);
+  assert.deepEqual(swift.facts[0]?.dependencies, nativeFact.dependencies);
+});
+
+test('EventChannel 문서의 transport·사실 종류·미귀속 한계 규칙을 강제한다', () => {
+  for (const value of [
+    // transport마다 허용된 사실 종류가 다르다.
+    { ...eventDocument, facts: [{ ...listen, kind: 'message-send' }] },
+    { ...eventDocument, platform: 'swift', facts: [{ ...streamHandle, kind: 'message-handle' }] },
+    { ...document, facts: [{ ...fact, kind: 'stream-listen' }] },
+    // method 필드는 여전히 합성할 수 없다.
+    { ...eventDocument, facts: [{ ...listen, method: 'invented' }] },
+    // 미귀속 스트림 핸들러는 전용 limitation이 없으면 거부한다.
+    { ...eventDocument, platform: 'swift', facts: [{ ...streamHandle, channel: null }] },
+    { ...eventDocument, platform: 'swift', facts: [{ ...streamHandle, channel: null }],
+      limitations: ['unattributed-message-handles: 1'] },
+    // Dart 사실은 분기 근거를 가질 수 없다.
+    { ...eventDocument, facts: [{ ...listen, handlerScope: streamHandle.handlerScope, dependencies: streamHandle.dependencies }] },
+    // ObjC 사실은 분기 근거를 가질 수 없다.
+    { ...eventDocument, platform: 'swift', facts: [{ ...streamHandle, sourceLanguage: 'objective-c',
+      location: { path: 'ios/Setup.m', line: 9, column: 1 }, symbol: { qualifiedName: 'Setup.register' } }] },
+  ]) assert.throws(() => parseMessageBridgeDocument(value));
+  const native = parseMessageBridgeDocument({ ...eventDocument, platform: 'swift',
+    facts: [{ ...streamHandle, channel: null }], limitations: ['unattributed-stream-handles: 1'] });
+  assert.equal(native.facts[0]?.channel, null);
+});

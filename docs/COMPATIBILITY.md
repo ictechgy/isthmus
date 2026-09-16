@@ -29,9 +29,34 @@ React Native 추출은 어느 버전에도 없다(계획 단계).
 - kartograph 0.10.0은 `bridges --messages --graph-file` 코드가 main에 있음을 확인했으나
   이번 세션에서 Android 프로젝트로 실행하지는 않았다.
 
-아직 확인하지 않은 것: 전체 앱 정확도, cache 없는 첫 구축, iOS 실기기, 다른 Android
-API/ABI, release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로의 완전성을
-보장하지 않는다.
+아직 확인하지 않은 것: 전체 앱 정확도, iOS 실기기, 다른 Android API/ABI,
+release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로의 완전성을 보장하지
+않는다. cache 없는 첫 설치는 아래 cold-cache 절차와 워크플로로 감시한다.
+
+## cold-cache 재현
+
+발행 산출물만 새로 설치해 조인·보존·사전 점검이 재현되는지 확인하는 경로다.
+`.github/workflows/cold-cache.yml`이 주 1회 같은 단계를 새 러너에서 실행한다 —
+발행본이 아래에서 바뀌거나 설치 경로가 깨지면 예약 실행이 잡아낸다.
+
+```bash
+# 발행 패키지만으로 고정 fixture 검증 (Ubuntu 포함 어느 OS나)
+npm install --global isthmus-cli
+node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
+
+# producer까지 포함한 3방향 조인 검증 (macOS)
+brew install ictechgy/tap/cartograph
+dart pub global activate dartograph
+curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.10.0/kartograph-0.10.0.tar | tar -x
+node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
+  "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" <kartograph-경로>/bin/kartograph
+```
+
+두 번째 명령은 `fixtures/bridge-app`을 세 producer가 각각 스캔한다 —
+Swift는 `swift build`로 실제 컴파일러 인덱스를 만들고, Kotlin은 스냅샷 없는
+소스 스캔이다(`missing-handler-usrs` 한계가 붙는다). 스텁 컴파일과 소스 스캔은
+실제 Flutter SDK·Android 기기 실행이 아니다. 첫 원격 실행의 성공 여부는
+워크플로 기록으로 별도 확인한다.
 
 ## 고정 예제: Dart↔Swift 왕복 (목표 15분)
 

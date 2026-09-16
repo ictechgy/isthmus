@@ -44,6 +44,26 @@ export interface BridgeSymbol {
   readonly usr?: string;
 }
 
+/** producer가 관찰한 사용 관계를 귀속한 실제 native handler 분기 범위다. */
+export interface BridgeHandlerScope {
+  readonly start: BridgeLocation;
+  readonly end: BridgeLocation;
+  readonly complete: boolean;
+}
+
+/** 실제 참조 위치와 대상, index의 overrides로 확인한 dispatch 후보를 보존한다. */
+export interface BridgeHandlerDependency {
+  readonly kind: 'call' | 'reference';
+  readonly scope: 'handler' | 'registration';
+  readonly location: BridgeLocation;
+  readonly symbol: BridgeSymbol & { readonly usr: string };
+  readonly dispatchTargets?: readonly (BridgeSymbol & { readonly usr: string })[];
+}
+
+/** handler 분기 근거의 원시 상한이다. */
+export const MAX_SCOPE_DEPENDENCIES_PER_FACT = 10_000;
+export const MAX_SCOPE_DEPENDENCIES_PER_DOCUMENT = 1_000_000;
+
 /** 생산 도구 하나가 관찰한 언어 경계 사실이다. */
 export interface BridgeFact {
   readonly kind: BridgeFactKind;
@@ -53,6 +73,8 @@ export interface BridgeFact {
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
+  readonly handlerScope?: BridgeHandlerScope;
+  readonly dependencies?: readonly BridgeHandlerDependency[];
 }
 
 /** bridge-facts 버전 1 문서다. */
@@ -140,6 +162,7 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
     },
     ...symbol,
     ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
+    ...(fact.handlerScope === undefined ? {} : normalizeScopeEvidence(fact.handlerScope, fact.dependencies ?? [])),
   };
 }
 
@@ -158,8 +181,15 @@ function validateDocumentMetadata(
   if (document.facts.length > MAX_FACTS_PER_DOCUMENT) {
     fail(`Facts exceed the ${MAX_FACTS_PER_DOCUMENT} item limit.`);
   }
+  let scopeDependencies = 0;
+  const consumeScopeDependencies = (count: number): void => {
+    scopeDependencies += count;
+    if (scopeDependencies > MAX_SCOPE_DEPENDENCIES_PER_DOCUMENT) {
+      fail('Scope dependency budget exceeded.');
+    }
+  };
   document.facts.forEach((fact, index) =>
-    validateFact(fact, index, document.platform),
+    validateFact(fact, index, document.platform, consumeScopeDependencies),
   );
   if ((document.target === null) !== (document.facts.length === 0)) {
     fail('Target must be set exactly when facts are present.');
@@ -206,7 +236,8 @@ function validateLimitationScopes(value: unknown, limitationCount: number): void
 }
 
 /** 사실 하나의 조인 키와 증거 필드를 검증한다. */
-function validateFact(value: unknown, index: number, platform: unknown): void {
+function validateFact(value: unknown, index: number, platform: unknown,
+  consumeScopeDependencies: (count: number) => void): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
   if (!supportedBridgeFactKinds.has(value.kind)) {
@@ -232,6 +263,96 @@ function validateFact(value: unknown, index: number, platform: unknown): void {
   validateLocation(value.location, index);
   validateSymbol(value.symbol, index);
   validateSourceLanguage(value.sourceLanguage, platform, value.location as BridgeLocation, value.symbol as BridgeSymbol | undefined, index);
+  if (value.handlerScope !== undefined || value.dependencies !== undefined) {
+    if (value.kind !== 'method-handle' || value.sourceLanguage !== undefined) {
+      fail(`Scope evidence requires a native method handler at index ${index}.`);
+    }
+    validateScopeEvidence(value, value.location as BridgeLocation,
+      value.symbol as BridgeSymbol | undefined, index, consumeScopeDependencies);
+  }
+}
+
+/**
+ * v1 `method-handle`과 v2 handler 사실이 공유하는 분기 근거 필드를 검증한다.
+ *
+ * `handlerScope`는 감싸는 핸들러 선언 안에서 이 사실로 귀속한 분기 범위고,
+ * `dependencies`의 `scope`가 그 안(`handler`)인지 공유 부분(`registration`)인지
+ * 구분한다. 두 필드는 함께만 올 수 있다.
+ */
+export function validateScopeEvidence(
+  fact: Record<string, unknown>,
+  location: BridgeLocation,
+  symbol: BridgeSymbol | undefined,
+  index: number,
+  consumeScopeDependencies: (count: number) => void,
+): void {
+  if (!isJsonObject(fact.handlerScope)) fail(`Invalid handler scope at index ${index}.`);
+  validateLocation(fact.handlerScope.start, index);
+  validateLocation(fact.handlerScope.end, index);
+  const start = fact.handlerScope.start as BridgeLocation;
+  const end = fact.handlerScope.end as BridgeLocation;
+  if (typeof fact.handlerScope.complete !== 'boolean' || start.path !== location.path ||
+    end.path !== location.path || comparePositions(start, end) > 0 ||
+    (fact.handlerScope.complete === true && symbol?.usr === undefined)) {
+    fail(`Invalid handler scope at index ${index}.`);
+  }
+  if (!Array.isArray(fact.dependencies) || fact.dependencies.length > MAX_SCOPE_DEPENDENCIES_PER_FACT) {
+    fail(`Invalid handler dependencies at index ${index}.`);
+  }
+  consumeScopeDependencies(fact.dependencies.length);
+  for (const input of fact.dependencies) {
+    if (!isJsonObject(input) ||
+      (input.kind !== 'call' && input.kind !== 'reference') ||
+      (input.scope !== 'handler' && input.scope !== 'registration')) {
+      fail(`Invalid handler dependency at index ${index}.`);
+    }
+    validateLocation(input.location, index);
+    const at = input.location as BridgeLocation;
+    const inside = comparePositions(start, at) <= 0 && comparePositions(at, end) <= 0;
+    if (at.path !== location.path || inside !== (input.scope === 'handler')) {
+      fail(`Handler dependency is outside its declared scope at index ${index}.`);
+    }
+    validateIndexedSymbol(input.symbol, index);
+    if (input.dispatchTargets !== undefined) {
+      if (!Array.isArray(input.dispatchTargets) || input.dispatchTargets.length > MAX_SCOPE_DEPENDENCIES_PER_FACT) {
+        fail(`Invalid handler dispatch targets at index ${index}.`);
+      }
+      consumeScopeDependencies(input.dispatchTargets.length);
+      for (const target of input.dispatchTargets) validateIndexedSymbol(target, index);
+    }
+  }
+}
+
+/** 분기 근거 의존의 대상은 인덱스로 확인된 심볼이라 USR이 필수다. */
+function validateIndexedSymbol(value: unknown, index: number): void {
+  if (!isJsonObject(value) || !isSafeNonEmptyString(value.qualifiedName) || !isSafeNonEmptyString(value.usr)) {
+    fail(`Invalid handler dependency symbol at index ${index}.`);
+  }
+}
+
+/** 검증된 분기 근거를 계약 필드만 남긴 사본으로 만든다. */
+export function normalizeScopeEvidence(
+  handlerScope: BridgeHandlerScope,
+  dependencies: readonly BridgeHandlerDependency[],
+): { handlerScope: BridgeHandlerScope; dependencies: BridgeHandlerDependency[] } {
+  const copy = (at: BridgeLocation): BridgeLocation => ({ path: at.path, line: at.line, column: at.column });
+  return {
+    handlerScope: { start: copy(handlerScope.start), end: copy(handlerScope.end), complete: handlerScope.complete },
+    dependencies: dependencies.map((dependency) => ({
+      kind: dependency.kind, scope: dependency.scope, location: copy(dependency.location),
+      symbol: { qualifiedName: dependency.symbol.qualifiedName, usr: dependency.symbol.usr },
+      ...(dependency.dispatchTargets === undefined ? {} : {
+        dispatchTargets: dependency.dispatchTargets.map((target) => ({
+          qualifiedName: target.qualifiedName, usr: target.usr,
+        })),
+      }),
+    })),
+  };
+}
+
+/** 같은 파일 안의 두 위치를 줄·열 순으로 비교한다. */
+function comparePositions(left: BridgeLocation, right: BridgeLocation): number {
+  return left.line - right.line || left.column - right.column;
 }
 
 /** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */

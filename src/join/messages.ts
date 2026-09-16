@@ -1,5 +1,5 @@
 import { compareStrings } from '../compare.ts';
-import type { BridgeHandlerDependency, BridgeHandlerScope, BridgeMessageDocument } from '../exchange/messages.ts';
+import type { BridgeHandlerDependency, BridgeHandlerScope, BridgeMessageDocument, BridgeMessageTransport } from '../exchange/messages.ts';
 import { validateMessageDocuments } from '../exchange/messages.ts';
 import type { BridgeEndpoint, JoinLimitation } from './join.ts';
 import { BridgeJoinValidationError } from './join.ts';
@@ -12,26 +12,32 @@ export interface MessageEndpoint extends BridgeEndpoint {
   readonly dependencies?: readonly BridgeHandlerDependency[];
 }
 
-/** literal 주소와 prefix 후보를 다른 키로 연결한다. */
+/** literal 주소와 prefix 후보를 다른 키로 연결한다. transport는 같은 주소라도 섞지 않는다. */
 export interface MessageBridgeRoute {
+  readonly transport: BridgeMessageTransport;
   readonly channel: string;
   readonly matching: 'literal' | 'prefix';
   readonly senders: readonly MessageEndpoint[];
   readonly handlers: readonly MessageEndpoint[];
 }
 
-/** Basic 범위에서 관찰한 경계와 끝내 연결하지 못한 사실이다. */
+/** v2 transport 범위에서 관찰한 경계와 끝내 연결하지 못한 사실이다. */
 export interface MessageBridgeJoin {
   readonly routes: readonly MessageBridgeRoute[];
   readonly unresolved: readonly MessageEndpoint[];
   readonly limitations: readonly JoinLimitation[];
 }
 
-/** 서로 같은 project의 양쪽 Basic 문서만 조인하며 MethodChannel 키 공간을 사용하지 않는다. */
+/** 발신 측 사실 종류다. Dart 문서만 이 종류를 담는다. */
+function isSenderKind(kind: string): boolean {
+  return kind === 'message-send' || kind === 'stream-listen';
+}
+
+/** 서로 같은 project의 양쪽 v2 문서만 조인하며 transport와 MethodChannel 키 공간을 분리한다. */
 export function joinMessageBridges(documents: readonly BridgeMessageDocument[], project: string): MessageBridgeJoin {
   if (documents.length === 0) return { routes: [], unresolved: [], limitations: [] };
   validateMessageDocuments(documents, project);
-  const groups = new Map<string, { channel: string; matching: 'literal' | 'prefix';
+  const groups = new Map<string, { transport: BridgeMessageTransport; channel: string; matching: 'literal' | 'prefix';
     senders: Map<string, MessageEndpoint>; handlers: Map<string, MessageEndpoint> }>();
   const unresolved = new Map<string, MessageEndpoint>();
   const limitations: JoinLimitation[] = [];
@@ -50,13 +56,13 @@ export function joinMessageBridges(documents: readonly BridgeMessageDocument[], 
       const channel = fact.dynamic ? fact.channelPrefix : fact.channel;
       if (!channel) { unresolved.set(identity, endpoint); continue; }
       const matching = fact.dynamic ? 'prefix' : 'literal';
-      const key = JSON.stringify([matching, channel]);
+      const key = JSON.stringify([document.transport, matching, channel]);
       let group = groups.get(key);
       if (group === undefined) {
-        group = { channel, matching, senders: new Map(), handlers: new Map() };
+        group = { transport: document.transport, channel, matching, senders: new Map(), handlers: new Map() };
         groups.set(key, group);
       }
-      (fact.kind === 'message-send' ? group.senders : group.handlers).set(identity, endpoint);
+      (isSenderKind(fact.kind) ? group.senders : group.handlers).set(identity, endpoint);
     }
   }
   const endpoints = (values: Map<string, MessageEndpoint>) => [...values.entries()]
@@ -77,7 +83,8 @@ export function joinMessageBridges(documents: readonly BridgeMessageDocument[], 
   };
   for (const group of groups.values()) {
     for (const prefix of prefixIndex.matching(group.channel)) {
-      if (prefix.group === group) continue;
+      // transport가 다른 주소는 같은 이름이라도 서로 다른 경계다.
+      if (prefix.group === group || prefix.group.transport !== group.transport) continue;
       if (group.matching === 'literal') {
         merge(prefix.group.senders, group.senders); merge(prefix.group.handlers, group.handlers);
       } else {
@@ -87,7 +94,8 @@ export function joinMessageBridges(documents: readonly BridgeMessageDocument[], 
   }
   return {
     routes: [...groups.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, group]) => ({
-      channel: group.channel, matching: group.matching, senders: endpoints(group.senders), handlers: endpoints(group.handlers),
+      transport: group.transport, channel: group.channel, matching: group.matching,
+      senders: endpoints(group.senders), handlers: endpoints(group.handlers),
     })), unresolved: endpoints(unresolved), limitations,
   };
 }

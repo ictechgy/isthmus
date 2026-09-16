@@ -32,6 +32,7 @@ verifyDiff();
 verifyImpact();
 verifyRuntime();
 verifyPreflight();
+verifyServe();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -267,6 +268,35 @@ function verifyDiff() {
   verify(run(['diff']).status === 64, 'diff usage');
   verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,
     'diff input failure');
+}
+
+/** 발행 CLI의 MCP stdio 세션이 초기화·도구 호출·알림 무시를 지키는지 검증한다. */
+function verifyServe() {
+  const messages = [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'query',
+        arguments: { name: 'takePhoto', documents: [dartPath, swiftPath] },
+      },
+    },
+  ];
+  const result = runChild(process.execPath, [binaryPath, 'serve'], {
+    input: `${messages.map((m) => JSON.stringify(m)).join('\n')}\n`,
+  });
+  verify(result.status === 0, 'serve exit code');
+  const lines = result.stdout.trim().split('\n').map((line) => JSON.parse(line));
+  verify(lines.length === 2, 'serve notification produces no response');
+  verify(lines[0].result.serverInfo.name === 'isthmus', 'serve initialize');
+  verify(lines[0].result.protocolVersion === '2025-06-18', 'serve protocol negotiation');
+  const query = JSON.parse(lines[1].result.content[0].text);
+  verify(query.status === 'found', 'serve tools/call query');
+  verify(run(['serve', '--verbose']).status === 64, 'serve usage');
+  verify(run(['help', 'serve']).stdout.startsWith('Usage: isthmus serve'), 'serve help');
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */

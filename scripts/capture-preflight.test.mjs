@@ -161,7 +161,54 @@ test('Android만 설정해도 Kotlin snapshot과 bridge를 수집하고 snapshot
   assert.equal(messages.cached, false);
   assert.deepEqual(messages.context.messages.map(({ platform }) => platform), ['dart', 'kotlin']);
   assert.ok(messages.report.boundaries.some(({ subject }) => subject.transport === 'basic-message-channel'));
+  const events = await capturePreflight({ ...config, events: true }, { execute: async (command, args, options) => {
+    if (args[0] === 'query' && command === 'dartograph') {
+      const requests = JSON.parse(await readFile(args[args.indexOf('--batch') + 1], 'utf8'));
+      return { status: 0, stdout: JSON.stringify({ format: 'symbol-query-batch', version: 1,
+        results: requests.map((requested) => ({ requested, status: 'found', limitations: [],
+          result: { subject: { usr: `dart:${requested}`, qualifiedName: `dart:${requested}`,
+            location: { path: 'project:lib/bridge.dart', line: 2, column: 1 } } } })) }) };
+    }
+    if (args[0] === 'impact' && command === 'dartograph' && args.includes('--symbol')) {
+      const trigger = args[args.indexOf('--symbol') + 1];
+      return { status: 0, stdout: JSON.stringify({ version: 1,
+        changed: { symbols: [trigger], libraries: [], sources: [], unattributedSources: [] },
+        impacted: [], limitations: [], missingSymbols: [], truncated: 0 }) };
+    }
+    if (args[0] !== 'bridges' || !args.includes('--events')) return execute(command, args, options);
+    const native = command === 'kartograph';
+    return { status: 0, stdout: JSON.stringify({ format: 'bridge-facts', version: 2,
+      transport: 'event-channel', platform: native ? 'kotlin' : 'dart', target: 'flutter', project: f.root,
+      generatedAt: '2026-09-14T00:00:00Z', tool: { name: command, version: '1.0.0' }, limitations: [],
+      facts: [{ kind: native ? 'stream-handle' : 'stream-listen', channel: 'charging', dynamic: false,
+        location: { path: native ? 'android/Handler.kt' : 'lib/stream.dart', line: 4, column: 1 },
+        symbol: native ? { qualifiedName: 'Handler.handle', usr: 'jvm:handler' } : { qualifiedName: 'Stream.states' } }] }) };
+  } });
+  assert.equal(events.cached, false);
+  assert.deepEqual(events.context.messages.map(({ platform }) => platform), ['dart', 'kotlin']);
+  assert.ok(events.report.boundaries.some(({ subject }) => subject.transport === 'event-channel' && subject.channel === 'charging'));
   await assert.rejects(capturePreflight({ ...config, kartographSnapshot: undefined }, { execute }), /snapshot/i);
+});
+
+test('스냅샷 없는 kartograph는 소스 스캔 bridge만 수집하고 Kotlin 선택은 스냅샷을 요구한다', async (t) => {
+  const f = await setup(t);
+  const config = { ...f.config, kartograph: ['kartograph'] };
+  const kotlin = JSON.parse(JSON.stringify(fixture.bridges[1]).replaceAll('swift', 'kotlin')
+    .replaceAll('.kotlin', '.kt').replaceAll('ios/', 'android/').replaceAll('s:', 'jvm:'));
+  const execute = (command, args, options) => {
+    if (command !== 'kartograph') return f.execute(command, args, options);
+    f.calls.push([command, ...args]);
+    if (args[0] === '--version') return { status: 0, stdout: 'kartograph 1.0.0\n' };
+    assert.equal(args[0], 'bridges');
+    assert.ok(!args.includes('--graph-file'));
+    return { status: 0, stdout: JSON.stringify({ ...kotlin, project: f.root }) };
+  };
+  const scanned = await capturePreflight(config, { execute });
+  assert.equal(scanned.cached, false);
+  assert.ok(scanned.context.bridges.some(({ platform }) => platform === 'kotlin'));
+  assert.ok(!scanned.context.analyses.some(({ platform }) => platform === 'kotlin'));
+  await assert.rejects(capturePreflight({ ...config,
+    selection: { kotlin: { files: ['android/Helper.kt'], symbols: [] } } }, { execute }), /snapshot/i);
 });
 
 test('코드·producer 변경과 소스 삭제는 이전 근거를 재사용하지 않는다', async (t) => {

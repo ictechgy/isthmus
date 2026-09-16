@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-16 KST by Devin (공개 호환 버전 세트 완성 확인 · 레포 상태 재실측)_
+_Last updated: 2026-09-17 KST by Devin (GLM 리뷰 반영 완료 · PR #74 발행 — 머지 대기)_
 
 ## Goal
 
@@ -241,23 +241,97 @@ Dart 격리 설치는 100개 이상의 wrapper 호출을 포함한다. CI의 3�
 ## Next Steps
 
 0순위(2026-09-16): 공개 호환 버전 세트는 **완성**됐고(isthmus 0.6.0 · cartograph 0.15.1 ·
-kartograph v0.10.0 · dartograph 0.10.0), 문서화는 `docs/public-compat-set`의 `6c81b6d`로
-커밋해 **PR #72** 발행(머지 대기). GLM 리뷰의 검증된 지적을 후속 커밋으로 반영했다.
+kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료**(squash `08d30a2`).
+실사용 코퍼스도 **PR #73으로 머지 완료**(squash `c88dac6`). main은 `c88dac6`이다.
 
-1. ~~호환 버전 표·고정 예제·CI 예시~~ — 완료. PR #72 리뷰·머지는 사용자 승인을 따른다.
+1. ~~호환 버전 표·고정 예제·CI 예시~~ — 완료, PR #72 머지됨.
 2. 공개 버전 end-to-end 부분 검증 완료: cartograph 0.15.1 + dartograph 0.10.0 + npm isthmus 0.6.0으로
    `verify-cartograph-roundtrip.mjs` 통과(보존 억제·explain 근거). 양쪽 `bridges --messages`의 v2 문서
    출력도 확인. 미검증 잔여: kartograph의 Android 실행, 공개 조합의 전체 preflight 재현, cache 없는 CI.
-3. dartograph PR #98은 리뷰 후 사용자 승인 시 머지. 자매 로컬의 미커밋 변경은 각 세션 소유이므로 보존한다.
-4. 이후 경쟁력 우선순위 2번부터: 실사용 정밀도 코퍼스(공개 앱 3개 × 실제 변경 10개, 오탐·누락 계수),
-   외부 유지관리자 반복 사용, 적용 범위 정직성 명시, AI 질의 인터페이스.
+3. dartograph PR #98은 머지됨(`c026cd9`) → **0.11.0 발행 완료**(PR #99, 태그 `v0.11.0`,
+   pub.dev·GitHub Release·fresh-cache 설치·CLI 계약 검증 완료).
+   자매 로컬의 미커밋 변경은 각 세션 소유이므로 보존한다.
+4. 실사용 정밀도 코퍼스 — **PR #73 머지 완료**(squash `c88dac6`, main 동기화됨):
+   `experiments/real-corpus/`에 manifest(고정 pub.dev 아카이브+sha256)·run.mjs·스텁 하네스를
+   만들고 공개 플러그인 3종(battery_plus·shared_preferences_foundation·url_launcher_macos) ×
+   12 케이스(파일/심볼 선택 + 실제 버전 간 diff 3건)를 실행했다.
+   결과 **TP 50 / FN 0 / FP 3** — FP는 `bp-file-event-handler`에서 EventChannel 스트림 핸들러
+   파일 선택 시 `register` 참조를 따라 등록 경계가 battery 채널 전체로 보수 확대된 3건.
+   코퍼스 과정에서 발견한 결함 하나를 고쳤다: `scripts/capture-preflight.mjs`가
+   cartograph impact의 64(미인덱스 입력, 부분 문서 유효)를 거부하던 것을 kartograph와
+   동일하게 `[0,64]` 허용으로 수정 + 회귀 테스트. `npm run verify` 통과.
+   GLM 리뷰 2라운드 지적을 검증·반영했다(`0d9d8f7`): Dart 스텁의 채널 생성자 시그니처를
+   실제 SDK 순서로 교정, 아카이브 재시도·tar traversal 검사, 지문 입력에 하네스/벤더 포함,
+   동적 접두부 정확 비교, results.json 절대 경로 정제, 기대 한계 갭 단언 추가.
+   반영 후 Dart parse-errors 한계는 해소됐고 스텁은 `dart analyze` clean.
+   범위 밖 명시: Kotlin(producer 없음)·런타임 실행·실제 Flutter 앱 빌드.
+5. **EventChannel 커버리지(경쟁 우선순위 1) 구현 완료 — `feature/event-channel` 브랜치**:
+   - 계약: `docs/BRIDGE-EVENTS.md`(event-channel transport, v2 계열) + GRAPH-EXCHANGE의
+     method-handle `handlerScope`/`dependencies` 필드·scoped 전파 의미 추가.
+   - isthmus: `stream-listen`/`stream-handle` 파싱·조인, preflight event 경계 +
+     method-handle case 스코프 전파(wire root-gating), capture `--events` 수집·지문 반영.
+   - cartograph(competitive 워크트리): `setStreamHandler`→`streamHandle` 사실,
+     method-handle switch-case/if-분기 스코프 근거, `bridges --events` v2 문서.
+   - dartograph(`feature/bridge-events`): `receiveBroadcastStream`→`stream-listen`,
+     `--events` v2 문서, mutable 필드 재대입 없음 시 초기값 해석(메시지 경로와 동일 의미).
+   - 실사용 코퍼스 재실행 결과 **TP 54 / FN 0 / FP 0** (기존 TP 50/FP 3):
+     `bp-file-event-handler`의 공유 `handle()` switch 입상도 FP 2건 소거,
+     `getBatteryState`는 case 절 실의존으로 TP 유지, charging 스트림 경계 3케이스 TP 추가.
+6. **kartograph EventChannel·Android 실측 + FFI/JNI 한계 완료**:
+   - kartograph(`feat/adoption-competitiveness`): `ChannelBridgeScanner` spec 일반화,
+     `bridges --events` v2 문서, v1·v2 수신자 regex `!!`/`?.` 지원. 실제
+     `battery_plus@6.2.3`(SHA-256 검증) Android Kotlin으로 실측 — stream-handle·
+     MethodChannel 경계 확인.
+   - FFI/JNI: 3 producer 전부 `unscanned-ffi-interop` 파일 수준 limitation 방출
+     (dartograph `dart:ffi`/jni 계열 import, kartograph JNI/native 표식,
+     cartograph Dart C API 표식). 계약은 정보성으로 명시 — 심각도 완화 목록에 넣지 않음.
+7. **MCP/에이전트 인터페이스 완료 — `feature/mcp-serve` 브랜치**:
+   - `isthmus serve`: 무의존성 NDJSON JSON-RPC 2.0 stdio 서버.
+     도구 7종(check·query·graph·diff·impact·preflight·retentions)이 도구 인자→argv
+     변환으로 기존 명령 경로를 재사용. 프로토콜 협상·알림 무시·배치 거부.
+   - `isError`는 문서 미생성 실패만 — notFound/strict 발견은 문서 실린 정상 응답.
+   - `docs/MCP.md` 계약, verify-cli-contract에 실제 프로세스 세션 검증 추가.
+8. **실제 앱 수준 코퍼스 확장 완료 — LocalSend v1.17.0**(GitHub tarball, Apache-2.0):
+   - run.mjs: 선택적 kartograph 인자, 스테이징 `{from,to}` 경로 재배치,
+     `stubTargets` SPM 스텁, `kotlin: true` 케이스의 Kotlin 브리지 조인,
+     도구/하네스 지문에 kartograph 포함, 결과에 `kotlinCoverage` 명시.
+   - capture-preflight: kartograph 스냅샷 요구를 `selection.kotlin`(impact)으로
+     좁힘 — 스냅샷 없는 Kotlin 소스 스캔 허용 + 회귀 테스트.
+   - 스텁: FlutterMacOS에 AppDelegate 생명주기·`invokeMethod`·AppKit 표면 추가,
+     upstream 소스로 검증한 Defaults 등 스텁 모듈 4종.
+   - 결과 **TP 83 / FN 0 / FP 0**(15/15): Dart↔Kotlin 6/6 조인,
+     `main-delegate-channel`의 실제 불일치(removeExistingDestinationAccess 호출↔
+     removeDestinationFolderAccess 핸들러)를 error+warning으로 그대로 보고.
+9. **cold-cache CI 재현 예시 완료**: `scripts/verify-cold-cache.mjs`(발행 isthmus만으로
+   고정 fixture check·retentions·preflight 검증, producer 경로 주면 bridge-app
+   3방향 조인까지), `fixtures/bridge`(camera 채널 문서 쌍+불일치 쌍),
+   `fixtures/bridge-app`(단일 루트 Dart·Swift 스텁 SwiftPM·Kotlin 소스),
+   `.github/workflows/cold-cache.yml`(주 1회 새 러너 발행 설치→검증 감시).
+   로컬에서 두 모드 실제 실행으로 검증. 첫 원격 실행 결과는 미확인 — 워크플로 기록 확인 필요.
+10. 경쟁력 우선순위 전부 소화됨. 다음은 자유 선택: FFI/JNI 심볼 조인(계약 개정 필요),
+    MCP `serve` 추가 도구, 실측 코퍼스 확장.
+
+## PR 상태 (2026-09-17)
+
+- **isthmus PR #74** — `feature/mcp-serve` → main, **OPEN·머지 대기**. 위 Next Steps의
+  5~9항(EventChannel·MCP serve·LocalSend 코퍼스·cold-cache) 전부 + GLM 리뷰 반영
+  3커밋(19ca9b1·cc8c9f7·91bcff0)을 포함한다. `npm run verify` 통과 확인.
+- **dartograph PR #103** — `feature/bridge-events` → main, **OPEN**. GLM 반영
+  `b6075aa`(mutable 재대입 전 형태 감지) 포함, 531 테스트 통과.
+- **kartograph PR #60** — `feat/event-channel-ffi` → main, **OPEN**. GLM 반영
+  `b0f62fb`(JNI 문자열 마스킹·연쇄 `!!` 귀속) 포함, `:index:test` 통과.
+- **cartograph는 별도 PR 없음** — EventChannel·FFI·셸 인용 3커밋이 이미 PR #92로
+  main 머지(`9c3bd52`)됐고, main 구현이 더 개선됐다(미귀속 수신자도 dynamic 사실
+  방출 등). 삭제된 `cartograph-competitive` 워크트리의 커밋 객체는 본 repo에 남아
+  있으나 복구 불필요 — origin/main이 상위 집합이다.
+- GLM 기각 지적과 근거는 각 PR 본문에 기록했다. 머지는 사용자 승인 사안.
 
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
-공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0 —
-전부 발행됐고 cartograph·dartograph는 설치본 실측, kartograph는 릴리스+main 코드 확인·Android 실행 미검증).
-호환 세트 문서화는 `docs/public-compat-set` 브랜치 `6c81b6d`로 커밋해 **PR #72** 발행 상태야 — 리뷰 지적
-반영 커밋을 이어가고 머지는 승인 후 진행해. dartograph PR #98은 OPEN·CI green 상태로 머지 승인 대기.
-기존 미커밋 변경(이 레포의 문서 4종·미추적 2종, 자매 레포의 진행 중 변경)을 보존하고
-완료한 PR·발행·타당성 조사를 반복하지 마.
+공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.11.0).
+**현재 PR 3건이 OPEN 상태**야: isthmus #74(feature/mcp-serve — MCP serve·EventChannel·LocalSend 코퍼스·
+cold-cache·GLM 반영 3커밋), dartograph #103(feature/bridge-events — EventChannel+FFI+mutable 재대입),
+kartograph #60(feat/event-channel-ffi — EventChannel+`!!`/`?.`+JNI 한계). cartograph는 PR #92로 이미 머지돼
+별도 PR 없음. 다음: 3개 PR의 CI·리뷰 확인 후 머지(사용자 승인 필요), 머지되면 `cold-cache.yml` 첫
+원격 실행 결과 확인. 완료한 PR·발행·타당성 조사를 반복하지 마.

@@ -1,6 +1,8 @@
 import type {
   BridgeFact,
   BridgeFactsDocument,
+  BridgeHandlerDependency,
+  BridgeHandlerScope,
   BridgeLocation,
   BridgePlatform,
   BridgeSymbol,
@@ -16,6 +18,9 @@ export interface BridgeEndpoint {
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
+  /** method-handle 분기 근거다. v2 handler 사실과 같은 형태를 공유한다. */
+  readonly handlerScope?: BridgeHandlerScope;
+  readonly dependencies?: readonly BridgeHandlerDependency[];
 }
 
 /** 논리 채널 하나에 모인 양쪽 생성·등록 증거다. */
@@ -621,6 +626,7 @@ function toEndpoint(
     platform, location: fact.location,
     ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
     ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
+    ...(fact.handlerScope === undefined ? {} : { handlerScope: fact.handlerScope, dependencies: fact.dependencies! }),
   };
 }
 

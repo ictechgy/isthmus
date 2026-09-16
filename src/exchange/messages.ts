@@ -1,26 +1,16 @@
 import { BridgeFactsValidationError, isBridgeTimestamp, isSafeNonEmptyString, MAX_FACTS_PER_DOCUMENT,
-  validateLocation, validateSourceLanguage, validateSymbol } from './parse.ts';
-import type { BridgeLocation, BridgeSourceLanguage, BridgeSymbol } from './parse.ts';
+  MAX_SCOPE_DEPENDENCIES_PER_DOCUMENT, normalizeScopeEvidence, validateLocation, validateScopeEvidence,
+  validateSourceLanguage, validateSymbol } from './parse.ts';
+import type { BridgeHandlerDependency, BridgeHandlerScope, BridgeLocation, BridgeSourceLanguage, BridgeSymbol } from './parse.ts';
 
-/** producer가 관찰한 사용 관계를 귀속한 실제 native handler 범위다. */
-export interface BridgeHandlerScope {
-  readonly start: BridgeLocation;
-  readonly end: BridgeLocation;
-  readonly complete: boolean;
-}
+export type { BridgeHandlerDependency, BridgeHandlerScope } from './parse.ts';
 
-/** 실제 참조 위치와 대상, index의 overrides로 확인한 dispatch 후보를 보존한다. */
-export interface BridgeHandlerDependency {
-  readonly kind: 'call' | 'reference';
-  readonly scope: 'handler' | 'registration';
-  readonly location: BridgeLocation;
-  readonly symbol: BridgeSymbol & { readonly usr: string };
-  readonly dispatchTargets?: readonly (BridgeSymbol & { readonly usr: string })[];
-}
+/** v2 문서가 다루는 transport다. Basic은 호출/응답, Event는 네이티브→Dart 스트림이다. */
+export type BridgeMessageTransport = 'basic-message-channel' | 'event-channel';
 
-/** Basic 채널의 send·handler 사실이며 MethodChannel 메서드를 합성하지 않는다. */
+/** Basic·Event 채널의 발신·수신 사실이며 MethodChannel 메서드를 합성하지 않는다. */
 export interface BridgeMessageFact {
-  readonly kind: 'message-send' | 'message-handle';
+  readonly kind: 'message-send' | 'message-handle' | 'stream-listen' | 'stream-handle';
   readonly channel: string | null;
   readonly dynamic: boolean;
   readonly channelPrefix?: string;
@@ -31,11 +21,11 @@ export interface BridgeMessageFact {
   readonly dependencies?: readonly BridgeHandlerDependency[];
 }
 
-/** v1 전용 소비자가 조용히 무시하지 못하도록 별도 버전으로 전달하는 Basic 문서다. */
+/** v1 전용 소비자가 조용히 무시하지 못하도록 별도 버전으로 전달하는 v2 문서다. */
 export interface BridgeMessageDocument {
   readonly format: 'bridge-facts';
   readonly version: 2;
-  readonly transport: 'basic-message-channel';
+  readonly transport: BridgeMessageTransport;
   readonly platform: 'dart' | 'swift' | 'kotlin';
   readonly target: 'flutter' | null;
   readonly project: string;
@@ -44,6 +34,16 @@ export interface BridgeMessageDocument {
   readonly facts: readonly BridgeMessageFact[];
   readonly limitations: readonly string[];
 }
+
+/** transport·플랫폼별 허용 사실 종류와 미귀속 한계 접두사다. */
+const transportRules = {
+  'basic-message-channel': {
+    dart: 'message-send', native: 'message-handle', unattributed: 'unattributed-message-handles:',
+  },
+  'event-channel': {
+    dart: 'stream-listen', native: 'stream-handle', unattributed: 'unattributed-stream-handles:',
+  },
+} as const;
 
 /** 입력 묶음의 역할·프로젝트 범위를 값 조인 없이 검증한다. */
 export function validateMessageDocuments(documents: readonly BridgeMessageDocument[], project: string): void {
@@ -54,12 +54,14 @@ export function validateMessageDocuments(documents: readonly BridgeMessageDocume
   }
 }
 
-/** Basic 전용 v2를 검증하고 알려진 필드만 복사한다. v1 입력 파서는 그대로 유지한다. */
+/** transport별 v2를 검증하고 알려진 필드만 복사한다. v1 입력 파서는 그대로 유지한다. */
 export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocument {
   const value = object(input);
-  if (value.format !== 'bridge-facts' || value.version !== 2 || value.transport !== 'basic-message-channel') {
-    fail('Expected bridge-facts version 2 for basic-message-channel.');
+  if (value.format !== 'bridge-facts' || value.version !== 2 ||
+    (value.transport !== 'basic-message-channel' && value.transport !== 'event-channel')) {
+    fail('Expected bridge-facts version 2 for a message transport.');
   }
+  const rules = transportRules[value.transport];
   if (value.platform !== 'dart' && value.platform !== 'swift' && value.platform !== 'kotlin') fail('Unsupported message bridge platform.');
   if (!Array.isArray(value.facts) || value.facts.length > MAX_FACTS_PER_DOCUMENT) fail('Invalid message bridge fact count.');
   if (value.target !== (value.facts.length ? 'flutter' : null)) fail('Invalid message bridge target.');
@@ -71,13 +73,13 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
   let dependencyCount = 0;
   const consumeDependencies = (count: number): void => {
     dependencyCount += count;
-    if (dependencyCount > 1_000_000) fail('Message dependency budget exceeded.');
+    if (dependencyCount > MAX_SCOPE_DEPENDENCIES_PER_DOCUMENT) fail('Message dependency budget exceeded.');
   };
   const facts = value.facts.map((item, index): BridgeMessageFact => {
     const fact = object(item);
-    const expectedKind = value.platform === 'dart' ? 'message-send' : 'message-handle';
+    const expectedKind = value.platform === 'dart' ? rules.dart : rules.native;
     if (fact.kind !== expectedKind || fact.method !== undefined) fail('Invalid message bridge fact kind or method.');
-    if (fact.channel === null ? fact.kind !== 'message-handle' : !isSafeNonEmptyString(fact.channel)) fail('Invalid message bridge channel.');
+    if (fact.channel === null ? fact.kind !== rules.native : !isSafeNonEmptyString(fact.channel)) fail('Invalid message bridge channel.');
     if (typeof fact.dynamic !== 'boolean') fail('Invalid message bridge dynamic flag.');
     if (fact.channelPrefix !== undefined && (!fact.dynamic || fact.channel === null || !isSafeNonEmptyString(fact.channelPrefix))) {
       fail('Message prefix requires a dynamic channel and a non-empty proven prefix.');
@@ -87,64 +89,27 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
     const location = fact.location as BridgeLocation;
     const symbol = fact.symbol as BridgeSymbol | undefined;
     validateSourceLanguage(fact.sourceLanguage, value.platform, location, symbol, index);
-    let handlerScope: BridgeHandlerScope | undefined;
-    let dependencies: readonly BridgeHandlerDependency[] | undefined;
+    let scoped: { handlerScope: BridgeHandlerScope; dependencies: readonly BridgeHandlerDependency[] } | undefined;
     if (fact.handlerScope !== undefined || fact.dependencies !== undefined) {
-      if (expectedKind !== 'message-handle' || fact.sourceLanguage !== undefined) fail('Handler dependencies require a native message handler.');
-      const scope = object(fact.handlerScope);
-      const start = copyLocation(scope.start, index);
-      const end = copyLocation(scope.end, index);
-      if (typeof scope.complete !== 'boolean' || start.path !== location.path || end.path !== location.path ||
-        position(start, end) > 0 || (scope.complete && symbol?.usr === undefined)) fail('Invalid message handler scope.');
-      handlerScope = { start, end, complete: scope.complete };
-      const raw = dependencyArray(fact.dependencies);
-      consumeDependencies(raw.length);
-      dependencies = raw.map((input): BridgeHandlerDependency => {
-        const row = object(input);
-        if ((row.kind !== 'call' && row.kind !== 'reference') || (row.scope !== 'handler' && row.scope !== 'registration')) {
-          fail('Invalid message dependency kind or scope.');
-        }
-        const at = copyLocation(row.location, index);
-        const inside = position(start, at) <= 0 && position(at, end) <= 0;
-        if (at.path !== location.path || inside !== (row.scope === 'handler')) fail('Message dependency is outside its declared scope.');
-        const dispatch = row.dispatchTargets === undefined ? undefined : dependencyArray(row.dispatchTargets);
-        consumeDependencies(dispatch?.length ?? 0);
-        return { kind: row.kind, scope: row.scope, location: at, symbol: indexedSymbol(row.symbol, index),
-          ...(dispatch === undefined ? {} : { dispatchTargets: dispatch.map((target) => indexedSymbol(target, index)) }) };
-      });
+      if (expectedKind !== rules.native || fact.sourceLanguage !== undefined) fail('Handler dependencies require a native message handler.');
+      validateScopeEvidence(fact, location, symbol, index, consumeDependencies);
+      scoped = normalizeScopeEvidence(fact.handlerScope as BridgeHandlerScope,
+        fact.dependencies as readonly BridgeHandlerDependency[]);
     }
     return { kind: expectedKind, channel: fact.channel as string | null, dynamic: fact.dynamic,
       location: { path: location.path, line: location.line, column: location.column },
       ...(fact.channelPrefix === undefined ? {} : { channelPrefix: fact.channelPrefix as string }),
       ...(symbol === undefined ? {} : { symbol: { qualifiedName: symbol.qualifiedName, ...(symbol.usr === undefined ? {} : { usr: symbol.usr }) } }),
       ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage as BridgeSourceLanguage }),
-      ...(handlerScope === undefined ? {} : { handlerScope, dependencies: dependencies! }),
+      ...(scoped === undefined ? {} : scoped),
     };
   });
-  if (facts.some((fact) => fact.channel === null) && !limitations.some((item) => item.startsWith('unattributed-message-handles:'))) {
+  if (facts.some((fact) => fact.channel === null) && !limitations.some((item) => item.startsWith(rules.unattributed))) {
     fail('Unattributed message handles require a limitation.');
   }
-  return { format: 'bridge-facts', version: 2, transport: 'basic-message-channel', platform: value.platform,
+  return { format: 'bridge-facts', version: 2, transport: value.transport, platform: value.platform,
     target: facts.length ? 'flutter' : null, project, generatedAt: value.generatedAt,
     tool: { name: safe(tool.name), version: safe(tool.version) }, facts, limitations: [...limitations] };
-}
-
-function copyLocation(input: unknown, index: number): BridgeLocation {
-  validateLocation(input, index);
-  const at = input as BridgeLocation;
-  return { path: at.path, line: at.line, column: at.column };
-}
-function indexedSymbol(input: unknown, index: number): BridgeSymbol & { readonly usr: string } {
-  validateSymbol(input, index);
-  const symbol = object(input);
-  return { qualifiedName: safe(symbol.qualifiedName), usr: safe(symbol.usr) };
-}
-function dependencyArray(input: unknown): unknown[] {
-  if (!Array.isArray(input) || input.length > 10_000) fail('Invalid message dependency count.');
-  return input;
-}
-function position(a: BridgeLocation, b: BridgeLocation): number {
-  return a.line - b.line || a.column - b.column;
 }
 
 function object(value: unknown): Record<string, unknown> {

@@ -5,7 +5,8 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 [런타임 통신 검증](RUNTIME.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
 변경하지 않는다. 런타임에서 지원하는 transport를 정적 producer 지원으로 해석하지 않는다.
 
-개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)는 별도 transport 문서다.
+개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)와
+[EventChannel v2](BRIDGE-EVENTS.md)는 별도 transport 문서다.
 v1 전용 명령은 이를 거부하며, 선택적 preflight context.messages에서만 소비한다.
 
 cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
@@ -97,6 +98,27 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
+### `method-handle`의 선택적 분기 근거 (v1 확장)
+
+`method-handle` 사실은 선택적 `handlerScope`와 `dependencies`를 함께 실을 수 있다.
+필드 형태·상한·완전성 의미는 [BRIDGE-MESSAGES](BRIDGE-MESSAGES.md)의 "handler별 의존
+근거" 절과 같으며, 차이는 범위가 가리키는 것뿐이다. `handlerScope`는 감싸는 핸들러
+선언 안에서 이 메서드로 귀속한 분기(예: `switch`의 `case "m"` 절, `if call.method == "m"`
+의 참 분기)의 소스 범위다. `scope: "handler"` 의존은 그 분기 안의 관찰된 사용 관계이고,
+`scope: "registration"` 의존은 감싸는 핸들러 선언 안에서 어떤 메서드 분기 범위에도
+속하지 않는 공유 부분이다. Objective-C 사실(`sourceLanguage: "objective-c"`)은 분기
+근거를 싣지 않는다.
+
+소비자는 **한 `(channel, method)` 경로의 언어 심볼로 귀속 가능한 수신 사실이 전부
+완전한 분기 근거를 가질 때만** 범위별 전파를 적용한다. 그때는 도달한
+dependency/dispatch 후보에서만 해당 경계로 전파하고, 수신 선언과 등록
+(`channel-register`) 위치는 직접 변경 대상으로 선택된 경우에만 경계를 연다.
+귀속 불가능한 Objective-C 사실은 분기 근거를 가질 수 없으므로 이 판정에서 제외하고
+기존처럼 공백 증거로 남는다. 근거가 없거나 불완전한 수신 사실이 하나라도 있으면
+기존 넓은 후보를 보존하고 정밀도 공백을 알린다 — 등록 선언이 도달되면 그 안의
+모든 경계를 보고하는 기존 동작이다. 옛 v1 소비자는 이 두 필드를 모르는 추가 필드로
+제거하므로, 이 확장을 내는 생산자와 읽는 소비자의 배포 순서는 자유다.
+
 `location.path`는 프로젝트 루트 기준 상대 경로다. 절대 경로, `..` 상위 이동, 제어 문자를 넣지 않는다.
 `location.line`과 `location.column`은 1부터 시작하며, `column`은 해당 줄의 UTF-8 바이트
 오프셋에 1을 더한 값이다. 생산자는 언어 런타임의 UTF-16 또는 Unicode scalar 열을 그대로
@@ -118,6 +140,14 @@ UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으
 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 정확히
 `unattributed-method-handles:`로 시작하는 limitation으로 알려야 하며, 없으면 소비자는
 문서를 거부한다.
+
+FFI·JNI 등 채널 계약 밖의 네이티브 interop은 fact로 만들지 않는다 — 심볼 이름 조인은
+런타임 결정 구조라 정적 채널 키로 귀속할 수 없다. 대신 생산자는 소스에서 interop
+근거(dart:ffi 계열 import, `@_cdecl`·Dart C API·dlsym, `external fun`·`System.loadLibrary`·
+`native` 메서드·JNI export 이름)를 관측하면 `unscanned-ffi-interop:`로 시작하는
+limitation에 파일 수를 실어 알린다. 이 라벨은 정보성이다 — 파일 수준 표식만으로는
+어느 채널의 호출·핸들러가 interop으로 가려졌는지 귀속할 수 없으므로 소비자의 공백
+심각도를 바꾸지 않고 그대로 전달한다. 어느 문서에나 실을 수 있다.
 
 ### 종류별 의미
 

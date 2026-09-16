@@ -93,11 +93,20 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported message producer version response.');
     tools[`${name}Messages`] = { name, version };
   }
+  const eventCommands = config.events === undefined ? undefined : Object.fromEntries(producerNames
+    .map((name) => [name, config.events === true ? config[name] : config.events[name] ?? config[name]]));
+  if (eventCommands) for (const name of producerNames) {
+    if (JSON.stringify(eventCommands[name]) === JSON.stringify(config[name])) continue;
+    const value = (await run(eventCommands[name], ['--version'], `${name}-events-version`)).trim();
+    const version = value.replace(new RegExp(`^${name} `), '');
+    if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new CaptureError('Unsupported event producer version response.');
+    tools[`${name}Events`] = { name, version };
+  }
   const keyConfig = { project, inputs: config.inputs, toolInputs: config.toolInputs, prepare: config.prepare,
     dartograph: config.dartograph, cartograph: config.cartograph ?? null, kartograph: config.kartograph ?? null,
     // 입력 선택의 한계만 지문에 넣는다. 수집 결과로 추가되는 한계는 입력 변경이 아니다.
     kartographSnapshot: config.kartographSnapshot ?? null, selection, selectionBase, limitations: [...limitations],
-    indexStore: config.indexStore ?? null, messageCommands: messageCommands ?? null, tools,
+    indexStore: config.indexStore ?? null, messageCommands: messageCommands ?? null, eventCommands: eventCommands ?? null, tools,
     host: { node: process.version, platform: process.platform, arch: process.arch },
     toolchainEnvironment: digest(Object.fromEntries(['PATH', 'SDKROOT', 'DEVELOPER_DIR', 'FLUTTER_ROOT', 'DART_SDK', 'SWIFT_EXEC',
       'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'GRADLE_USER_HOME']
@@ -165,15 +174,22 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     const bridges = [
       parseBridgeFactsDocument(await json(config.dartograph, ['bridges', '--format', 'json', '--project', project, project], 'dart-bridges')),
     ];
-    const messages = messageCommands === undefined ? undefined : [
-      parseMessageBridgeDocument(await json(messageCommands.dartograph, ['bridges', '--messages', '--format', 'json', '--project', project, project], 'dart-messages')),
+    const messages = messageCommands === undefined && eventCommands === undefined ? undefined : [
+      ...(messageCommands === undefined ? [] : [
+        parseMessageBridgeDocument(await json(messageCommands.dartograph, ['bridges', '--messages', '--format', 'json', '--project', project, project], 'dart-messages')),
+      ]),
+      ...(eventCommands === undefined ? [] : [
+        parseMessageBridgeDocument(await json(eventCommands.dartograph, ['bridges', '--events', '--format', 'json', '--project', project, project], 'dart-events')),
+      ]),
     ];
     for (const [platform, name] of natives) {
       const args = platform === 'swift' ? nativeArgs : kotlinArgs;
       bridges.push(parseBridgeFactsDocument(await json(config[name],
         ['bridges', '--target', 'flutter', '--format', 'json', ...args], `${platform}-bridges`)));
-      if (messages) messages.push(parseMessageBridgeDocument(await json(messageCommands[name],
+      if (messageCommands) messages.push(parseMessageBridgeDocument(await json(messageCommands[name],
         ['bridges', '--messages', '--target', 'flutter', '--format', 'json', ...args], `${platform}-messages`)));
+      if (eventCommands) messages.push(parseMessageBridgeDocument(await json(eventCommands[name],
+        ['bridges', '--events', '--target', 'flutter', '--format', 'json', ...args], `${platform}-events`)));
     }
     const analyses = [];
     const artifacts = {};
@@ -221,7 +237,8 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
       artifacts[meta.id] = raw;
       analyses.push(adaptKartographImpact(raw, meta));
     }
-    const dartFacts = [...bridges[0].facts, ...(messages?.[0].facts ?? [])];
+    const dartFacts = [...bridges[0].facts,
+      ...(messages ?? []).filter((document) => document.platform === 'dart').flatMap((document) => document.facts)];
     const names = [...new Set(dartFacts.flatMap((fact) => fact.symbol ? [fact.symbol.qualifiedName] : []))].sort();
     const subjects = new Map();
     const conflictingBindings = new Set();
@@ -352,7 +369,20 @@ function validateConfig(config, project) {
       !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
     throw new CaptureError('Invalid message producer configuration.');
   }
-  if (config.kartograph !== undefined && !isSafeNonEmptyString(config.kartographSnapshot)) {
+  if (config.events !== undefined && config.events !== true && (config.events === null || typeof config.events !== 'object' ||
+    Array.isArray(config.events) || Object.entries(config.events).some(([name, value]) =>
+      !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
+    throw new CaptureError('Invalid event producer configuration.');
+  }
+  // Kotlin 소스 스캔은 스냅샷 없이 채널·핸들러 사실을 낸다. 스냅샷은 Kotlin
+  // 변경 분석(impact)에만 필요하므로 selection.kotlin이 있을 때만 요구한다.
+  const kotlinSelection = config.selection !== undefined && typeof config.selection === 'object'
+    && config.selection !== null && !Array.isArray(config.selection)
+    && config.selection.kotlin !== undefined;
+  if (kotlinSelection && config.kartograph === undefined) {
+    throw new CaptureError('A Kotlin selection requires its Kartograph producer.');
+  }
+  if (kotlinSelection && !isSafeNonEmptyString(config.kartographSnapshot)) {
     throw new CaptureError('Configure a Kartograph snapshot produced by the preparation command.');
   }
   if (config.kartograph === undefined && config.kartographSnapshot !== undefined) throw new CaptureError('A Kartograph snapshot requires its producer.');
