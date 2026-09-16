@@ -898,3 +898,102 @@ async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> 
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   return parseBridgeFactsDocument(JSON.parse(text));
 }
+
+/** mechanism이 실린 RN 경계 문서를 만드는 테스트 조립기다. */
+function rnBoundaryDocument(
+  platform: 'js' | 'swift' | 'kotlin',
+  facts: ReadonlyArray<{
+    kind: 'module-import' | 'component-require' | 'module-export' | 'component-export';
+    channel: string;
+    mechanism?: 'core' | 'expo';
+  }>,
+): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    platform,
+    target: 'react-native',
+    tool: { name: 'fixture', version: '0.1.0' },
+    facts: facts.map((fact, index) => ({
+      kind: fact.kind,
+      channel: fact.channel,
+      ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+      dynamic: false,
+      location: { path: 'src/boundary.ts', line: index + 1, column: 1 },
+    })),
+    limitations: [],
+  });
+}
+
+test('같은 이름이 mechanism만 다르면 미수출 error가 아니라 불일치 warning이다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'module-import'), [
+    'module-import-mechanism-mismatch',
+  ]);
+  // 도달하지 못한 expo export도 미호출 warning으로 남는다.
+  assert.deepEqual(codesOf(report, 'module-export'), [
+    'module-export-without-import',
+  ]);
+});
+
+test('Expo component-require는 폴백이 없어 core export 관찰 시 확정 error다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 1);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-without-export',
+  ]);
+});
+
+test('core component-require가 expo export만 보면 상호운용 미해결 warning이다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-mechanism-mismatch',
+  ]);
+});
+
+test('Expo module-import는 폴백으로 core export에 도달해 이슈가 없다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'module-export', channel: 'CameraModule' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.matchedModules, 1);
+  assert.equal(report.issues.length, 0);
+});

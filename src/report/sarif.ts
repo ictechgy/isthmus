@@ -69,12 +69,16 @@ const ruleDescriptions: Record<CheckIssueCode, string> = {
     'A caller-side native module import has no matching export on any receiver-side document.',
   'module-import-without-export-unverified':
     'A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it.',
+  'module-import-mechanism-mismatch':
+    'A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism.',
   'module-export-without-import':
     'A receiver-side native module export has no matching caller-side import.',
   'component-require-without-export':
     'A caller-side native component require has no matching export on any receiver-side document.',
   'component-require-without-export-unverified':
     'A caller-side native component require has no matching export, and a receiver-side analysis gap may be hiding it.',
+  'component-require-mechanism-mismatch':
+    'A caller-side native component require matches an export name, but the observed exports resolve through a different bridge mechanism.',
   'component-export-without-require':
     'A receiver-side native component export has no matching caller-side require.',
 };

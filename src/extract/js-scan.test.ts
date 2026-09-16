@@ -296,3 +296,81 @@ test('증감 연산 뒤의 나눗셈이 정규식으로 삼켜져 호출을 잃�
     { kind: 'module-import', channel: 'A', method: undefined, dynamic: false },
   ]);
 });
+
+test('Expo 전용 API는 mechanism을 expo로 표시한다', () => {
+  const facts = scanJsSource(`
+    import { requireNativeModule, requireNativeViewManager } from 'expo-modules-core';
+    requireNativeModule('DeviceInfo');
+    requireNativeViewManager('SheetView');
+  `).facts.map((fact) => ({
+    kind: fact.kind,
+    channel: fact.channel,
+    mechanism: fact.mechanism,
+  }));
+
+  assert.deepEqual(facts, [
+    { kind: 'module-import', channel: 'DeviceInfo', mechanism: 'expo' },
+    { kind: 'component-require', channel: 'SheetView', mechanism: 'expo' },
+  ]);
+});
+
+test('import 없이 호출된 Expo API 이름도 expo로 읽는다', () => {
+  const facts = scanJsSource(`
+    requireOptionalNativeModule('Maybe');
+    requireNativeViewManager('Bare');
+  `).facts.map((fact) => ({
+    kind: fact.kind,
+    mechanism: fact.mechanism,
+  }));
+
+  assert.deepEqual(facts, [
+    { kind: 'module-import', mechanism: 'expo' },
+    { kind: 'component-require', mechanism: 'expo' },
+  ]);
+});
+
+test('Expo가 아닌 specifier의 동명 래퍼는 mechanism을 생략한다', () => {
+  const facts = scanJsSource(`
+    import { requireNativeModule } from './native-module-helper';
+    requireNativeModule('Wrapped');
+  `).facts.map((fact) => ({
+    kind: fact.kind,
+    mechanism: fact.mechanism,
+  }));
+
+  assert.deepEqual(facts, [{ kind: 'module-import', mechanism: undefined }]);
+});
+
+test('코어 RN API는 mechanism을 실지 않는다', () => {
+  const facts = scanJsSource(`
+    const M = NativeModules.Core;
+    TurboModuleRegistry.get('Turbo');
+    requireNativeComponent('List');
+    codegenNativeComponent('Chart');
+  `).facts.filter((fact) => fact.kind !== 'method-invoke').map((fact) => ({
+    kind: fact.kind,
+    mechanism: fact.mechanism,
+  }));
+
+  assert.deepEqual(facts, [
+    { kind: 'module-import', mechanism: undefined },
+    { kind: 'module-import', mechanism: undefined },
+    { kind: 'component-require', mechanism: undefined },
+    { kind: 'component-require', mechanism: undefined },
+  ]);
+});
+
+test('동적 이름의 Expo 호출도 mechanism 증거는 보존한다', () => {
+  const facts = scanJsSource(`
+    import { requireNativeModule } from 'expo';
+    requireNativeModule(name);
+  `).facts.map((fact) => ({
+    kind: fact.kind,
+    mechanism: fact.mechanism,
+    dynamic: fact.dynamic,
+  }));
+
+  assert.deepEqual(facts, [
+    { kind: 'module-import', mechanism: 'expo', dynamic: true },
+  ]);
+});

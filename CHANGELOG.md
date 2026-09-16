@@ -24,8 +24,19 @@
   재수출을 해석해 멤버 호출을 `method-invoke`로 귀속한다. 비리터럴 이름은
   `dynamic: true`에 원문 표현을 실어 보존하고, 스캔 집합을 벗어난 바인딩은
   `unattributed-js-*` limitations로 보고한다. 출력은 `bridge-facts` v1 문서라
-  기존 check·query·graph·diff 파이프라인에 그대로 들어간다. Expo Modules
-  호출명은 읽지만 Expo 전용 의미(`mechanism`)는 아직 계약에 없다.
+  기존 check·query·graph·diff 파이프라인에 그대로 들어간다.
+- bridge-facts v1 확장 `mechanism`: 이름 경계 사실 네 종류(`module-import`·
+  `module-export`·`component-require`·`component-export`)가 `react-native`
+  target 안에서 `"core" | "expo"` 해석 경로를 선택적으로 싣는다(생략=core).
+  Expo `requireNativeModule` 계열은 TurboModuleRegistry 폴백이 있어
+  `expo` import가 core·expo export 모두와 잇고, `requireNativeViewManager`는
+  폴백이 없어 mechanism 일치만 잇는다. 같은 이름이 mechanism만 다르면
+  미수출 error 대신 `module-import-mechanism-mismatch`·
+  `component-require-mechanism-mismatch` warning으로 보고하고(Expo
+  component-require×core export는 폴백 부재로 error 유지), 불일치 export는
+  `incompatibleReceivers` 증거로 보존한다. extract-js는 Expo 전용 API 호출을
+  `mechanism: "expo"`로 표시하고, Expo가 아닌 specifier의 동명 래퍼는
+  생략한다. Expo DSL 수신 측 스캔은 cartograph·kartograph 후속이다.
 
 ## [0.6.0] - 2026-09-16
 

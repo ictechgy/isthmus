@@ -77,6 +77,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
         | "module-export" | "module-import" | "component-export" | "component-require",
   "channel": "com.example/camera",     // 귀속할 수 없으면 null. dynamic 이면 원문 표현식
   "method": "takePhoto",               // method-* 에만
+  "mechanism": "expo",                 // module-*/component-* 에만. 생략은 "core"
   "dynamic": false,
   "location": { "path": "lib/camera.dart", "line": 42, "column": 5 },
   "symbol": {                          // 이 사실을 담고 있는 선언 (있으면)
@@ -135,6 +136,22 @@ UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으
 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
 제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
 
+### 이름 경계 사실의 선택적 `mechanism` 필드 (v1 확장)
+
+`target: "react-native"` 문서 안에는 코어 RN 경로와 Expo Modules 경로가
+공존한다 — Expo는 별도 target이 아니다. `requireNativeModule`의 해석 순서가
+`expo.modules` → `NativeModulesProxy` → **`TurboModuleRegistry` 폴백**이라
+코어 RN 모듈도 만족시키는데, 별도 target으로 나누면 이 폴백이 거짓 미수출
+오류를 만든다. 대신 이름 경계 사실 네 종류(`module-import`·`module-export`·
+`component-require`·`component-export`)에 선택적 `mechanism: "core" | "expo"`
+를 둔다. 생략은 `core`다 — 이 필드가 없던 문서는 모두 코어 RN만 기술했다.
+
+- 생산자는 관찰한 API가 어느 경로로 해석되는지 알 때만 실는다. 어떤 경로인지
+  알 수 없는 사실에는 필드를 생략해(=`core`) 추측을 싣지 않는다.
+- 허용 값은 `"core"`·`"expo"`뿐이고 다른 target 문서의 사실에는 실을 수 없다.
+- 옛 소비자는 모르는 추가 필드로 버린다 — 기존 `(target, 이름)` 조인은 유지되고
+  mechanism 불일치 구분만 사라진다.
+
 `channel: null`은 `method-handle`에서만 허용하며, "채널이 없다"가 아니라 생산자가
 핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고,
 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 정확히
@@ -157,10 +174,10 @@ limitation에 파일 수를 실어 알린다. 이 라벨은 정보성이다 — 
 | `channel-register` | Swift / Kotlin | 받는 쪽이 채널에 핸들러를 달았다 (`setMethodCallHandler`). 위치도 생성자가 아니라 이 호출을 가리킨다 |
 | `method-invoke` | Dart / JS | `invokeMethod('m')` 호출 |
 | `method-handle` | Swift / Kotlin | 핸들러 안에서 `case "m":` 또는 동등한 분기 |
-| `module-export` | Swift / Kotlin | RN `RCT_EXPORT_MODULE(Name)`, `@ReactModule(name=)` |
-| `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')` |
-| `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저 |
-| `component-require` | JS | `requireNativeComponent('Name')` |
+| `module-export` | Swift / Kotlin | RN `RCT_EXPORT_MODULE(Name)`, `@ReactModule(name=)`; Expo `Module` DSL `Name("N")` |
+| `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
+| `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
+| `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
 
@@ -174,7 +191,11 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 그리고 확정된 모듈 식의 멤버 호출(`method-invoke`)까지 읽는다.
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
-동적 사실로 내린다. 스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
+동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·
+`requireOptionalNativeModule`·`requireNativeViewManager`)은 Expo 패키지
+import로 확인되거나 import 없이 호출되면 `mechanism: "expo"`를 싣는다 —
+코어 RN에는 같은 이름의 진입점이 없다. Expo가 아닌 specifier에서 가져온
+동명 래퍼는 해석 경로를 알 수 없어 mechanism을 생략한다. 스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
 인스턴스 상태)은 `limitations`로만 보고한다 — 정적 이름을 추측해 연결하지
 않는다. 함수·메서드·`{…}` 본문을 가진 화살표의 매개변수는 그 본문 안에서
 파일 바인딩을 가리는 것으로 처리하지만, 식 본문 화살표(`M => M.x()`)·
@@ -187,11 +208,24 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - 생성 없는 `channel-register`는 호출 측 사용을 찾지 못한 경고로 보존한다
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
-- `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같다.
-  export를 찾지 못한 import는 error, import를 찾지 못한 export는 warning이다
-- `component-require` ↔ `component-export`: 같은 규칙을 `(target, channel=컴포넌트
-  이름)`에 적용한다. export를 찾지 못한 require는 error, require를 찾지 못한
-  export는 warning이다
+- `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같고
+  mechanism이 도달 가능해야 한다. `mechanism: "expo"`인 import는
+  TurboModuleRegistry 폴백이 있어 core·expo export 모두와 잇고,
+  core(생략 포함) import는 core export만 만족시킨다. export를 찾지 못한
+  import는 error, import를 찾지 못한 export는 warning이다. 같은 이름의
+  export가 mechanism만 다르게 관찰된 호출은 error가 아니라
+  `module-import-mechanism-mismatch` warning이다 — 코어 호출이 Expo export에
+  실제로 도달하는지의 상호운용은 아직 미해결이다
+- `component-require` ↔ `component-export`: `(target, channel=컴포넌트 이름)`이
+  같고 mechanism이 같아야 한다 — `requireNativeViewManager`에는 모듈과 같은
+  폴백이 없다. export를 찾지 못한 require는 error, require를 찾지 못한
+  export는 warning이다. 코어 require×expo export처럼 상호운용이 미해결인
+  불일치만 `component-require-mechanism-mismatch` warning이다; expo
+  require에 코어 export만 관찰된 경우는 확정된 미수출로 error를 유지한다
+- 한 이름 아래 mechanism이 섞이면 그룹 전체가 아니라 호출·수신 증거 쌍 단위로
+  판정한다. 만족한 호출자와 도달한 수신자만 매치로 고정하고 나머지는 각각
+  미수출·미호출 증거로 남기므로, 한 이름이 매치·미수출·미호출 결과에 동시에
+  나타날 수 있다
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다.
   세는 주체는 소비자다. isthmus는 조인에서 제외한 dynamic 사실을 직접 세어 자신을 출처(`tool: "isthmus"`)로 밝힌 limitation으로 내보내며, 같은 위치의 중복 사실은 한 번만 센다. 생산자의 `dynamic-*` limitation은 원인을 설명하는 추가 정보이지 소비자가 신뢰의 근거로 삼는 값이 아니다. `channel: null` 핸들러도 같다. 생산자의 `unattributed-method-handles:` 신고가 없으면 문서를 거부하지만, 신고한 개수는 검증하지 않고 소비자가 실제 사실 수를 다시 센다
 - 수신 측이 스스로 신고한 분석 공백은 심각도에 반영한다. 소비자는 `objective-c-sources:`·`shadowed-flutter-method-channel:`(등록과 핸들러를 모두 가림), `opaque-handler-bodies:`(핸들러를 가림)를 수신 측 플랫폼 문서에서 발견하면 "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 판정 불가(`-unverified` 경고)로 보고한다. 소비자가 직접 센 `unjoined-dynamic-methods`·`unjoined-unattributed-handlers`는 핸들러를, `unjoined-dynamic-channels`는 등록을, `unjoined-dynamic-exports`는 모듈·컴포넌트 export를 가리는 공백으로 본다 — 이 경우 "export 없는 import·require"도 error가 아니라 판정 불가(`-unverified` 경고)다. 알려진 접두사만 인정한다. `unjoined-` 접두사는 isthmus가 직접 세고 `origin: "consumer"`를 붙인 한계에만 유효하다. 이 출처는 입력 문서에서 복사하지 않는다. 생산자가 tool 이름을 isthmus로 적거나 같은 접두사를 차용해도 자체 계수의 근거가 되지 않는다. 모르는 한계를 공백으로 넓게 해석하면 진짜 불일치가 경고로 묻힌다. 호출 측 플랫폼의 한계는 네이티브 코드를 가리지 않으므로 심각도를 바꾸지 않는다.

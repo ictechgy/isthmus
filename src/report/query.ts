@@ -170,21 +170,49 @@ function channelResults(
   return [...matched, ...unregistered, ...registrations];
 }
 
-/** 요청 문자열과 정확히 같은 논리 모듈·컴포넌트 이름 결과를 만든다. */
+/**
+ * 요청 문자열과 정확히 같은 논리 모듈·컴포넌트 이름 결과를 만든다.
+ *
+ * mechanism이 섞인 이름은 매치·미수출·미호출 컬렉션에 동시에 나타날 수
+ * 있으므로 (target, 이름)별로 합친다 — 같은 qualifiedName의 결과가 여럿이면
+ * 재질의로도 풀리지 않는 영구 모호 상태가 된다.
+ */
 function nameResults(
   matched: readonly MatchedBoundaryName[],
   unexported: readonly UnexportedBoundaryName[],
   unrequired: readonly UnrequiredBoundaryName[],
   kind: 'module' | 'component',
 ): BridgeQueryResult[] {
-  return [
-    ...matched.map(({ target, channel, callers, receivers }) =>
-      makeQueryResult(target, channel, kind, callers, receivers)),
-    ...unexported.map(({ target, channel, callers }) =>
-      makeQueryResult(target, channel, kind, callers, [])),
-    ...unrequired.map(({ target, channel, receivers }) =>
-      makeQueryResult(target, channel, kind, [], receivers)),
-  ];
+  const merged = new Map<string, {
+    target: BridgeTarget;
+    name: string;
+    usedBy: BridgeEndpoint[];
+    dependsOn: BridgeEndpoint[];
+  }>();
+  const merge = (
+    target: BridgeTarget,
+    name: string,
+    usedBy: readonly BridgeEndpoint[],
+    dependsOn: readonly BridgeEndpoint[],
+  ): void => {
+    const key = `${target}\u0000${name}`;
+    const entry = merged.get(key) ??
+      { target, name, usedBy: [], dependsOn: [] };
+    entry.usedBy.push(...usedBy);
+    entry.dependsOn.push(...dependsOn);
+    merged.set(key, entry);
+  };
+  for (const { target, channel, callers, receivers } of matched) {
+    merge(target, channel, callers, receivers);
+  }
+  for (const { target, channel, callers } of unexported) {
+    merge(target, channel, callers, []);
+  }
+  for (const { target, channel, receivers } of unrequired) {
+    merge(target, channel, [], receivers);
+  }
+  return [...merged.values()].map(({ target, name, usedBy, dependsOn }) =>
+    makeQueryResult(target, name, kind, usedBy, dependsOn));
 }
 
 /** 조인 키와 양쪽 증거를 query result 골격으로 바꾼다. */

@@ -171,6 +171,7 @@ function toFact(path: string, fact: {
   kind: BridgeFact['kind'];
   channel: string;
   method?: string;
+  mechanism?: BridgeFact['mechanism'];
   dynamic: boolean;
   token: { line: number; column: number };
 }): BridgeFact {
@@ -178,6 +179,7 @@ function toFact(path: string, fact: {
     kind: fact.kind,
     channel: fact.channel,
     ...(fact.method === undefined ? {} : { method: fact.method }),
+    ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
     dynamic: fact.dynamic,
     location: locationOf(path, fact.token),
   };

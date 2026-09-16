@@ -9,7 +9,7 @@
  * 인자는 `dynamic: true`에 원문 표현식을 실어 한계 계수에 맡긴다.
  */
 
-import type { BridgeFact } from '../exchange/parse.ts';
+import type { BridgeFact, BridgeMechanism } from '../exchange/parse.ts';
 import { isSafeNonEmptyString } from '../exchange/parse.ts';
 import type { JsToken } from './lexer.ts';
 import { tokenizeJsSource } from './lexer.ts';
@@ -29,6 +29,19 @@ const componentRequireCalls = new Set([
   'codegenNativeComponent',
   'requireNativeViewManager',
 ]);
+
+/**
+ * Expo SDK(`expo`·`expo-modules-core`)에만 있는 호출 측 API 이름이다.
+ * 코어 RN에는 같은 이름의 진입점이 없어 이름 자체가 Expo 증거다.
+ */
+const expoApiCalls = new Set([
+  'requireNativeModule',
+  'requireOptionalNativeModule',
+  'requireNativeViewManager',
+]);
+
+/** Expo API를 실어 나르는 패키지 specifier다. */
+const expoSpecifierPattern = /^expo(?:-modules-core)?(?:\/|$)/u;
 
 /** 스캔이 모은 한 파일의 결과다. */
 export interface JsFileScan {
@@ -63,6 +76,7 @@ export interface ScannedFact {
   readonly kind: BridgeFact['kind'];
   readonly channel: string;
   readonly method?: string;
+  readonly mechanism?: BridgeMechanism;
   readonly dynamic: boolean;
   readonly token: JsToken;
 }
@@ -922,9 +936,11 @@ function collectBoundaryCall(
   const bound: BoundName = dynamic
     ? { dynamicExpression: arg.expression }
     : { name: arg.value! };
+  const mechanism = mechanismOf(context, tokens[start]!.text);
   context.facts.push({
     kind,
     channel: boundChannel(bound),
+    ...(mechanism === undefined ? {} : { mechanism }),
     dynamic,
     token: tokens[start]!,
   });
@@ -932,6 +948,30 @@ function collectBoundaryCall(
   const close = findMatching(tokens, open, '(', ')');
   if (close === undefined) return arg.endIndex;
   return collectChainedCall(context, bound, close) ?? close;
+}
+
+/**
+ * 단독 호출의 해석 경로(mechanism)를 정한다.
+ *
+ * `requireNativeModule`·`requireOptionalNativeModule`·`requireNativeViewManager`는
+ * Expo SDK에만 있는 공개 API다 — Expo 패키지 import로 확인되거나 import 없이
+ * 호출되면 `expo`로 표시한다. import가 없는 호출도 이 이름들은 Expo 외에
+ * 진입점이 없으므로 Expo로 본다(CJS `require('expo-modules-core')` 구조 분해도
+ * 여기에 해당한다). Expo가 아닌 specifier에서 가져온 동명 래퍼는 어느 경로로
+ * 해석되는지 알 수 없어 mechanism을 생략해 추측하지 않는다.
+ */
+function mechanismOf(
+  context: ScanContext,
+  callee: string,
+): 'expo' | undefined {
+  if (!expoApiCalls.has(callee)) return undefined;
+  const specifiers = context.imports
+    .filter((entry) => entry.localName === callee)
+    .map((entry) => entry.specifier);
+  if (specifiers.length === 0) return 'expo';
+  return specifiers.some((specifier) => expoSpecifierPattern.test(specifier))
+    ? 'expo'
+    : undefined;
 }
 
 /**
