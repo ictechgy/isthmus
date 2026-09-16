@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-16 KST by Devin (공개 호환 버전 세트 완성 확인 · 레포 상태 재실측)_
+_Last updated: 2026-09-17 KST by Devin (GLM 리뷰 반영 완료 · PR #74 발행 — 머지 대기)_
 
 ## Goal
 
@@ -311,13 +311,27 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
 10. 경쟁력 우선순위 전부 소화됨. 다음은 자유 선택: FFI/JNI 심볼 조인(계약 개정 필요),
     MCP `serve` 추가 도구, 실측 코퍼스 확장.
 
+## PR 상태 (2026-09-17)
+
+- **isthmus PR #74** — `feature/mcp-serve` → main, **OPEN·머지 대기**. 위 Next Steps의
+  5~9항(EventChannel·MCP serve·LocalSend 코퍼스·cold-cache) 전부 + GLM 리뷰 반영
+  3커밋(19ca9b1·cc8c9f7·91bcff0)을 포함한다. `npm run verify` 통과 확인.
+- **dartograph PR #103** — `feature/bridge-events` → main, **OPEN**. GLM 반영
+  `b6075aa`(mutable 재대입 전 형태 감지) 포함, 531 테스트 통과.
+- **kartograph PR #60** — `feat/event-channel-ffi` → main, **OPEN**. GLM 반영
+  `b0f62fb`(JNI 문자열 마스킹·연쇄 `!!` 귀속) 포함, `:index:test` 통과.
+- **cartograph는 별도 PR 없음** — EventChannel·FFI·셸 인용 3커밋이 이미 PR #92로
+  main 머지(`9c3bd52`)됐고, main 구현이 더 개선됐다(미귀속 수신자도 dynamic 사실
+  방출 등). 삭제된 `cartograph-competitive` 워크트리의 커밋 객체는 본 repo에 남아
+  있으나 복구 불필요 — origin/main이 상위 집합이다.
+- GLM 기각 지적과 근거는 각 PR 본문에 기록했다. 머지는 사용자 승인 사안.
+
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
-공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.11.0 —
-전부 발행됐고 cartograph·dartograph는 설치본 실측, kartograph는 릴리스+main 코드 확인·Android 실행 미검증).
-호환 세트 문서화(PR #72)·실사용 코퍼스(PR #73)·dartograph 0.11.0 발행(PR #99)까지 **전부 머지 완료**야.
-main은 `c88dac6`이고 작업 브랜치는 정리됐어.
-주의: 세션 중 `git reset --hard`로 이 레포의 **미커밋 문서 변경(docs/FEASIBILITY·PRD·RESEARCH)이 소실**됐다 —
-복구 불가를 확인했으니 필요하면 내용을 새로 작성해. 미추적 파일(HANDOFF.cartograph-notes.md·default.profraw)은
-남아 있다. 완료한 PR·발행·타당성 조사를 반복하지 마.
+공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.11.0).
+**현재 PR 3건이 OPEN 상태**야: isthmus #74(feature/mcp-serve — MCP serve·EventChannel·LocalSend 코퍼스·
+cold-cache·GLM 반영 3커밋), dartograph #103(feature/bridge-events — EventChannel+FFI+mutable 재대입),
+kartograph #60(feat/event-channel-ffi — EventChannel+`!!`/`?.`+JNI 한계). cartograph는 PR #92로 이미 머지돼
+별도 PR 없음. 다음: 3개 PR의 CI·리뷰 확인 후 머지(사용자 승인 필요), 머지되면 `cold-cache.yml` 첫
+원격 실행 결과 확인. 완료한 PR·발행·타당성 조사를 반복하지 마.
