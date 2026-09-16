@@ -291,7 +291,18 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
      변환으로 기존 명령 경로를 재사용. 프로토콜 협상·알림 무시·배치 거부.
    - `isError`는 문서 미생성 실패만 — notFound/strict 발견은 문서 실린 정상 응답.
    - `docs/MCP.md` 계약, verify-cli-contract에 실제 프로세스 세션 검증 추가.
-8. 남은 경쟁력 우선순위: 실제 앱 수준 코퍼스 확장, cold-cache CI 재현 예시.
+8. **실제 앱 수준 코퍼스 확장 완료 — LocalSend v1.17.0**(GitHub tarball, Apache-2.0):
+   - run.mjs: 선택적 kartograph 인자, 스테이징 `{from,to}` 경로 재배치,
+     `stubTargets` SPM 스텁, `kotlin: true` 케이스의 Kotlin 브리지 조인,
+     도구/하네스 지문에 kartograph 포함, 결과에 `kotlinCoverage` 명시.
+   - capture-preflight: kartograph 스냅샷 요구를 `selection.kotlin`(impact)으로
+     좁힘 — 스냅샷 없는 Kotlin 소스 스캔 허용 + 회귀 테스트.
+   - 스텁: FlutterMacOS에 AppDelegate 생명주기·`invokeMethod`·AppKit 표면 추가,
+     upstream 소스로 검증한 Defaults 등 스텁 모듈 4종.
+   - 결과 **TP 83 / FN 0 / FP 0**(15/15): Dart↔Kotlin 6/6 조인,
+     `main-delegate-channel`의 실제 불일치(removeExistingDestinationAccess 호출↔
+     removeDestinationFolderAccess 핸들러)를 error+warning으로 그대로 보고.
+9. 남은 경쟁력 우선순위: cold-cache CI 재현 예시.
 
 ## Resume Prompt
 
