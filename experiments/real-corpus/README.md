@@ -67,7 +67,7 @@ macOS 전용(스텁은 macOS SwiftPM만 둔다). 아카이브는 pub.dev에서 �
 
 - **TP 50 / FN 0 / FP 3** (12/12 케이스 실행).
 - FN 0 — 정답 경계를 빠뜨리지 않았다. 단 Objective-C·동적 채널은
-  `objective-c-handlers`·`unresolved-message-handler-scope` 등 한계로 표시됐다.
+  `objective-c-handlers`·`dynamic-message-channel-names` 등 한계로 표시됐다.
 - FP 3은 `bp-file-event-handler` 한 케이스에서 발생: EventChannel 스트림 핸들러
   파일을 선택했는데 `register(with:)`가 그 파일의 심볼을 참조해 등록 경계가
   `dev.fluttercommunity.plus/battery` 채널 전체로 확대됐다. 메서드 단위로는

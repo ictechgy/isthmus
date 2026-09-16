@@ -1,6 +1,13 @@
 /// Flutter SDK 없이 공개 플러그인 소스를 분석하기 위한 최소 foundation 스텁이다.
 library;
 
+import 'dart:typed_data'
+    show ByteData, Uint8List, Int32List, Int64List, Float64List;
+
+/// dart:typed_data 타입을 재수출한다.
+export 'dart:typed_data'
+    show ByteData, Uint8List, Int32List, Int64List, Float64List;
+
 /// Pigeon 생성 코드가 사용하는 읽기 버퍼 스텁이다.
 class ReadBuffer {
   /// 버퍼를 만든다.
@@ -99,7 +106,3 @@ const TargetPlatform defaultTargetPlatform = TargetPlatform.macOS;
 
 /// 디버그 여부 스텁 값이다.
 const bool kDebugMode = false;
-
-/// dart:typed_data 타입을 재수출한다.
-export 'dart:typed_data'
-    show ByteData, Uint8List, Int32List, Int64List, Float64List;

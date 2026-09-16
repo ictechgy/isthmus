@@ -23,6 +23,8 @@ if (cartographBin === undefined || dartographBin === undefined || rest.length > 
 
 const cartographReal = await realpath(cartographBin);
 const dartographReal = await realpath(dartographBin);
+const toolVersion = (bin) => runChild(bin, ['--version'], { timeout: 30_000 }).stdout.trim();
+const toolInfo = { cartograph: toolVersion(cartographReal), dartograph: toolVersion(dartographReal) };
 const work = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-real-corpus-')));
 const sourceDir = join(work, 'src');
 const resultsDir = join(here, 'results');
@@ -39,11 +41,18 @@ async function fetchArchive(id) {
   assert.ok(meta, `unknown archive ${id}`);
   const target = join(sourceDir, `${meta.package}-${meta.version}`);
   const tarball = join(work, `${meta.package}-${meta.version}.tar.gz`);
-  const got = runChild('curl', ['-fsSL', meta.archiveUrl, '-o', tarball], { timeout: 120_000 });
+  const got = runChild('curl', ['-fsSL', '--retry', '3', meta.archiveUrl, '-o', tarball], { timeout: 120_000 });
   assert.equal(got.status, 0, `archive download failed: ${id}`);
   const bytes = await readFile(tarball);
   const hash = createHash('sha256').update(bytes).digest('hex');
   assert.equal(hash, meta.sha256, `archive sha256 mismatch: ${id}`);
+  // 해시 검증 후에도 tar 멤버가 아카이브 밖을 쓰지 않는지 명시적으로 확인한다.
+  const list = runChild('tar', ['-tzf', tarball], { timeout: 60_000 });
+  assert.equal(list.status, 0, `archive listing failed: ${id}`);
+  for (const member of list.stdout.split('\n')) {
+    assert.ok(!member.startsWith('/') && !member.split('/').includes('..'),
+      `unsafe archive member in ${id}: ${member}`);
+  }
   await mkdir(target, { recursive: true });
   const untar = runChild('tar', ['-xzf', tarball, '-C', target], { timeout: 120_000 });
   assert.equal(untar.status, 0, `archive extract failed: ${id}`);
@@ -51,12 +60,12 @@ async function fetchArchive(id) {
 }
 
 /** manifest의 staging 규칙대로 프로젝트 디렉터리를 만든다. */
-async function stageProject(name, definition, archiveOverride) {
+async function stageProject(name, definition) {
   const project = join(work, `project-${name}`);
   await mkdir(project, { recursive: true });
   const staged = [];
   for (const rule of definition.staging) {
-    const archiveId = archiveOverride?.archive ?? rule.archive;
+    const archiveId = rule.archive;
     const archive = archives[archiveId];
     for (const relative of rule.paths) {
       const from = join(archive.path, relative);
@@ -143,7 +152,8 @@ function predictedKeys(report) {
   for (const boundary of report.boundaries ?? []) {
     const subject = boundary.subject;
     if (subject.transport === 'basic-message-channel') {
-      // 동적 채널명은 "...\(<suffix>)" 형태의 리터럴로 남는다 — 접두부로 정규화한다.
+      // 동적 채널명은 "..."\(channelSuffix)" 형태의 리터럴로 남는다 — 따옴표와 보간 꼬리를
+      // 벗긴 접두부로 정규화한다. 매칭은 이 정규화 문자열의 정확 비교만 인정한다.
       const raw = (subject.channel ?? '').replace(/^"|"$/g, '').replace(/\\?\([^)]*\)$/u, '');
       prefixes.add(raw);
     } else {
@@ -162,7 +172,9 @@ for (const corpusCase of manifest.cases) {
   const cacheOut = join(resultsDir, `${corpusCase.id}.cache.json`);
   const config = {
     project: project.project,
+    // 하네스 스텁과 vendor 사본도 지문에 넣어 스텁 수정 시 캐시가 무효화되게 한다.
     inputs: ['lib', 'pubspec.yaml', '.dart_tool/package_config.json', 'Package.swift',
+      '.isthmus-corpus', '.corpus',
       ...project.staged.map(({ to }) => to.split('/')[0])].filter((v, i, a) => a.indexOf(v) === i),
     toolInputs: [cartographReal, dartographReal],
     prepare: [['swift', 'build', '--package-path', project.project]],
@@ -194,10 +206,20 @@ for (const corpusCase of manifest.cases) {
     ? projectMeta.channelPrefixes ?? [] : corpusCase.expectedPrefixes ?? []);
   const expectedChannels = new Set(corpusCase.expectedChannels ?? []);
   const tp = [...expectedMethods].filter((m) => predicted.methods.has(m)).length
-    + [...expectedPrefixes].filter((p) => [...predicted.prefixes].some((q) => q === p || p.startsWith(q) || q.startsWith(p))).length;
+    + [...expectedPrefixes].filter((p) => predicted.prefixes.has(p)).length;
   const fn = expectedMethods.size + expectedPrefixes.size - tp;
   const fp = [...predicted.methods].filter((m) => !expectedMethods.has(m)).length
-    + [...predicted.prefixes].filter((q) => ![...expectedPrefixes].some((p) => q === p || p.startsWith(q) || q.startsWith(p))).length;
+    + [...predicted.prefixes].filter((q) => !expectedPrefixes.has(q)).length;
+  const limitationText = [...(report.limitations ?? []), ...(report.bridgeLimitations ?? []),
+    ...(report.messageLimitations ?? [])]
+    .map((l) => (typeof l === 'string' ? l : l.message ?? l.code));
+  // 매니페스트의 공백 기대는 실제 한계 코드로 확인한다 — 문서에만 있는 기대를 금지한다.
+  const gapChecks = {
+    ...(corpusCase.expectKotlinGap === true
+      ? { expectKotlinGap: limitationText.some((l) => l.includes('unconfigured-platform-changes')) } : {}),
+    ...(corpusCase.expectGap === true
+      ? { expectGap: limitationText.some((l) => l.includes('unscanned-event-channels')) } : {}),
+  };
   rows.push({
     id: corpusCase.id,
     project: corpusCase.project,
@@ -206,8 +228,8 @@ for (const corpusCase of manifest.cases) {
     expected: { methods: [...expectedMethods].sort(), prefixes: [...expectedPrefixes].sort(), channels: [...expectedChannels].sort() },
     truePositives: tp, falseNegatives: fn, falsePositives: fp,
     summary: report.summary,
-    limitations: [...(report.limitations ?? []), ...(report.bridgeLimitations ?? []), ...(report.messageLimitations ?? [])]
-      .map((l) => (typeof l === 'string' ? l : l.code ?? l.message)),
+    limitations: limitationText,
+    ...gapChecks,
     reviewFiles: report.reviewFiles?.length ?? 0,
     cached: outcome.cached,
     milliseconds: Math.round(performance.now() - started),
@@ -221,7 +243,7 @@ const document = {
   format: 'isthmus-real-corpus-results', version: 1,
   runtimeExecution: false, flutterSdk: false, kotlinCoverage: false,
   note: 'Stub-compiled Swift index + manual package_config. EventChannel·Kotlin·런타임 실행은 범위 밖.',
-  tools: { cartograph: cartographReal, dartograph: dartographReal },
+  tools: toolInfo,
   totals, cases: rows,
 };
 await writeFile(join(resultsDir, 'results.json'), JSON.stringify(document, null, 2));

@@ -2,11 +2,23 @@
 /// 실제 플러그인 코드가 참조하는 타입·메서드 표면만 제공하며 동작은 구현하지 않는다.
 library;
 
+import 'dart:typed_data' show ByteData;
+import 'foundation.dart' show ReadBuffer, WriteBuffer;
+
+/// dart:typed_data의 ByteData를 재수출해 스텁 내부 타입을 맞춘다.
+export 'dart:typed_data' show ByteData;
+
+/// foundation의 버퍼 타입을 services 사용자에게도 노출한다.
+export 'foundation.dart' show ReadBuffer, WriteBuffer;
+
 /// 플랫폼 측과의 바이너리 메시지 전송을 나타내는 추상 서비스다.
 abstract class BinaryMessenger {}
 
 /// 바이너리 메시지 코덱의 최소 계약이다.
 abstract class MessageCodec<T> {
+  /// 코덱을 만든다.
+  const MessageCodec();
+
   /// 인코딩 없이 값을 그대로 돌려주는 스텁이다.
   ByteData? encode(T message) => null;
 
@@ -16,6 +28,9 @@ abstract class MessageCodec<T> {
 
 /// 메서드 호출 코덱의 최소 계약이다.
 abstract class MethodCodec {
+  /// 코덱을 만든다.
+  const MethodCodec();
+
   /// 호출을 인코딩한다.
   ByteData encodeMethodCall(MethodCall call);
 
@@ -49,6 +64,9 @@ class StandardMessageCodec extends MessageCodec<Object?> {
 
   /// 서브클래스가 재정의하는 값 역직렬화 훅이다.
   Object? readValueOfType(int type, ReadBuffer buffer) => null;
+
+  /// 버퍼에서 다음 값을 읽는다.
+  Object? readValue(ReadBuffer buffer) => null;
 }
 
 /// 표준 메서드 코덱 스텁이다.
@@ -99,20 +117,20 @@ class MethodCall {
 /// 플랫폼 채널의 결과 콜백이다.
 typedef MethodCallHandler = Future<Object?> Function(MethodCall call);
 
-/// 이름 기반 메서드 채널 스텁이다.
+/// 이름 기반 메서드 채널 스텁이다. 실제 SDK의 인자 순서(name, codec, binaryMessenger)를 따른다.
 class MethodChannel {
-  /// 채널 이름과 선택적 messenger/codec을 담는다.
+  /// 채널 이름과 선택적 codec/messenger를 담는다.
   const MethodChannel(this.name,
-      [this.binaryMessenger, this.codec = const StandardMethodCodec()]);
+      [this.codec = const StandardMethodCodec(), this.binaryMessenger]);
 
   /// 채널 이름이다.
   final String name;
 
-  /// 선택적 messenger다.
-  final BinaryMessenger? binaryMessenger;
-
   /// 사용되는 코덱이다.
   final MethodCodec codec;
+
+  /// 선택적 messenger다.
+  final BinaryMessenger? binaryMessenger;
 
   /// 네이티브 메서드를 호출한다.
   Future<T?> invokeMethod<T>(String method, [Object? arguments]) async => null;
@@ -134,39 +152,40 @@ class MethodChannel {
   Future<bool> checkMethodCallHandler(MethodCallHandler? handler) async => false;
 }
 
-/// 네이티브 스트림을 노출하는 채널 스텁이다.
+/// 네이티브 스트림을 노출하는 채널 스텁이다. 실제 SDK의 인자 순서를 따른다.
 class EventChannel {
-  /// 채널 이름과 선택적 messenger/codec을 담는다.
+  /// 채널 이름과 선택적 codec/messenger를 담는다.
   const EventChannel(this.name,
-      [this.binaryMessenger, this.codec = const StandardMethodCodec()]);
+      [this.codec = const StandardMethodCodec(), this.binaryMessenger]);
 
   /// 채널 이름이다.
   final String name;
 
-  /// 선택적 messenger다.
-  final BinaryMessenger? binaryMessenger;
-
   /// 사용되는 코덱이다.
   final MethodCodec codec;
+
+  /// 선택적 messenger다.
+  final BinaryMessenger? binaryMessenger;
 
   /// 네이티브 이벤트 스트림을 연다.
   Stream<Object?> receiveBroadcastStream([Object? arguments]) =>
       const Stream.empty();
 }
 
-/// Pigeon이 생성하는 이름 기반 메시지 채널 스텁이다.
+/// Pigeon이 생성하는 이름 기반 메시지 채널 스텁이다. 실제 SDK는 codec이 두 번째 위치
+/// 인자이고 messenger는 named 선택 인자다.
 class BasicMessageChannel<T> {
-  /// 채널 이름·messenger·codec을 담는다.
-  const BasicMessageChannel(this.name, this.binaryMessenger, this.codec);
+  /// 채널 이름·codec·선택적 messenger를 담는다.
+  const BasicMessageChannel(this.name, this.codec, {this.binaryMessenger});
 
   /// 채널 이름이다.
   final String name;
 
-  /// 사용되는 messenger다.
-  final BinaryMessenger binaryMessenger;
-
   /// 사용되는 코덱이다.
   final MessageCodec<T> codec;
+
+  /// 선택적 messenger다.
+  final BinaryMessenger? binaryMessenger;
 
   /// 메시지를 보내고 응답을 돌려준다.
   Future<T?> send(T message) async => null;
@@ -221,9 +240,3 @@ class FlutterError extends Error {
   /// 오류 메시지다.
   final String message;
 }
-
-/// dart:typed_data의 ByteData를 재수출해 스텁 내부 타입을 맞춘다.
-export 'dart:typed_data' show ByteData;
-
-/// foundation의 버퍼 타입을 services 사용자에게도 노출한다.
-export 'foundation.dart' show ReadBuffer, WriteBuffer;
