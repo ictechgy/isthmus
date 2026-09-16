@@ -106,6 +106,14 @@
       "sha256": "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02",
       "license": "BSD-3-Clause",
       "upstream": "https://github.com/flutter/packages"
+    },
+    "localsend@1.17.0": {
+      "package": "localsend",
+      "version": "1.17.0",
+      "archiveUrl": "https://codeload.github.com/localsend/localsend/tar.gz/refs/tags/v1.17.0",
+      "sha256": "921c5843947580ae1b64d0d3a6edeefb9e07e8a917d0830af6a47d42e40de264",
+      "license": "Apache-2.0",
+      "upstream": "https://github.com/localsend/localsend"
     }
   },
   "projects": {
@@ -228,6 +236,45 @@
         "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
         "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
       ]
+    },
+    "localsend": {
+      "note": "실제 앱 수준 프로젝트. 앱 자체가 두 채널을 선언한다 — Android SAF 브리지(org.localsend.localsend_app/localsend, 인라인 when 핸들러)와 macOS 델리게이트 채널(main-delegate-channel, 이름 있는 handleFlutterCall switch). 실제 불일치(Dart의 removeExistingDestinationAccess 호출 ↔ Swift의 removeDestinationFolderAccess 핸들러)를 포함한다.",
+      "staging": [
+        {
+          "archive": "localsend@1.17.0",
+          "paths": [
+            { "from": "localsend-1.17.0/app/lib", "to": "lib" },
+            { "from": "localsend-1.17.0/app/pubspec.yaml", "to": "pubspec.yaml" },
+            { "from": "localsend-1.17.0/app/android/app/src/main/kotlin", "to": "android" },
+            { "from": "localsend-1.17.0/app/macos/Runner", "to": "macos" }
+          ]
+        }
+      ],
+      "dartDeps": [],
+      "stubTargets": [
+        { "name": "Defaults", "file": "Defaults.swift" },
+        { "name": "DockProgress", "file": "DockProgress.swift" },
+        { "name": "LaunchAtLogin", "file": "LaunchAtLogin.swift" },
+        { "name": "window_manager", "file": "window_manager.swift" }
+      ],
+      "swiftTargets": [
+        {
+          "name": "localsend_app",
+          "path": "macos",
+          "exclude": [
+            "Assets.xcassets",
+            "Base.lproj",
+            "Configs",
+            "DebugProfile.entitlements",
+            "Info.plist",
+            "Release.entitlements"
+          ]
+        }
+      ],
+      "channels": [
+        "org.localsend.localsend_app/localsend",
+        "main-delegate-channel"
+      ]
     }
   },
   "cases": [
@@ -331,6 +378,65 @@
       "applyArchive": { "archive": "url_launcher_macos@3.2.2", "paths": ["lib", "macos", "pubspec.yaml", "LICENSE"] },
       "expectedPrefixes": "ALL",
       "groundTruth": "실제 diff: Pigeon 재생성(v10→v22)으로 messages.g.swift+messages.g.dart 변경 — UrlLauncherBoolResult wire format 변경. 양쪽 배선 파일."
+    },
+    {
+      "id": "ls-swift-appdelegate",
+      "project": "localsend",
+      "kotlin": true,
+      "selection": { "swift": { "files": ["macos/AppDelegate.swift"], "symbols": [] } },
+      "expectedMethods": [
+        "main-delegate-channel/getLaunchAtLogin",
+        "main-delegate-channel/getLaunchAtLoginMinimized",
+        "main-delegate-channel/isLaunchedAsLoginItem",
+        "main-delegate-channel/methodChannelInitialized",
+        "main-delegate-channel/persistDestinationFolderAccess",
+        "main-delegate-channel/removeDestinationFolderAccess",
+        "main-delegate-channel/removeExistingDestinationAccess",
+        "main-delegate-channel/setDockIcon",
+        "main-delegate-channel/setLaunchAtLogin",
+        "main-delegate-channel/setLaunchAtLoginMinimized",
+        "main-delegate-channel/setupStatusBar",
+        "main-delegate-channel/updateDockProgress"
+      ],
+      "expectedChannels": [],
+      "groundTruth": "AppDelegate.swift는 main-delegate-channel의 등록·디스패치(handleFlutterCall switch)를 모두 담은 파일 — 파일 수준 선택이면 채널의 12개 wire 메서드 전부가 영향이다. 실제 불일치(Dart 호출 removeExistingDestinationAccess ↔ Swift 핸들러 removeDestinationFolderAccess)도 경계로 보고돼야 한다."
+    },
+    {
+      "id": "ls-dart-macos-channel",
+      "project": "localsend",
+      "kotlin": true,
+      "selection": { "dart": { "files": ["lib/util/native/macos_channel.dart"], "symbols": [] } },
+      "expectedMethods": [
+        "main-delegate-channel/getLaunchAtLogin",
+        "main-delegate-channel/getLaunchAtLoginMinimized",
+        "main-delegate-channel/isLaunchedAsLoginItem",
+        "main-delegate-channel/methodChannelInitialized",
+        "main-delegate-channel/persistDestinationFolderAccess",
+        "main-delegate-channel/removeExistingDestinationAccess",
+        "main-delegate-channel/setDockIcon",
+        "main-delegate-channel/setLaunchAtLogin",
+        "main-delegate-channel/setLaunchAtLoginMinimized",
+        "main-delegate-channel/setupStatusBar",
+        "main-delegate-channel/updateDockProgress"
+      ],
+      "expectedChannels": [],
+      "groundTruth": "macos_channel.dart는 채널 선언과 11개 invokeMethod 호출을 담은 Dart 호출자 파일 — 그 파일이 바뀌면 호출 경계 11개가 영향이다. removeDestinationFolderAccess는 Dart가 호출하지 않는 네이티브 전용 핸들러라 제외된다."
+    },
+    {
+      "id": "ls-dart-android-channel",
+      "project": "localsend",
+      "kotlin": true,
+      "selection": { "dart": { "files": ["lib/util/native/channel/android_channel.dart"], "symbols": [] } },
+      "expectedMethods": [
+        "org.localsend.localsend_app/localsend/createDirectory",
+        "org.localsend.localsend_app/localsend/openContentUri",
+        "org.localsend.localsend_app/localsend/openGallery",
+        "org.localsend.localsend_app/localsend/pickDirectory",
+        "org.localsend.localsend_app/localsend/pickDirectoryPath",
+        "org.localsend.localsend_app/localsend/pickFiles"
+      ],
+      "expectedChannels": [],
+      "groundTruth": "android_channel.dart의 6개 invokeMethod 호출이 전부 — Kotlin 인라인 when 핸들러의 6개 메서드와 1:1로 대응한다."
     }
   ]
 }
