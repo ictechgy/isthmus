@@ -302,7 +302,14 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
    - 결과 **TP 83 / FN 0 / FP 0**(15/15): Dart↔Kotlin 6/6 조인,
      `main-delegate-channel`의 실제 불일치(removeExistingDestinationAccess 호출↔
      removeDestinationFolderAccess 핸들러)를 error+warning으로 그대로 보고.
-9. 남은 경쟁력 우선순위: cold-cache CI 재현 예시.
+9. **cold-cache CI 재현 예시 완료**: `scripts/verify-cold-cache.mjs`(발행 isthmus만으로
+   고정 fixture check·retentions·preflight 검증, producer 경로 주면 bridge-app
+   3방향 조인까지), `fixtures/bridge`(camera 채널 문서 쌍+불일치 쌍),
+   `fixtures/bridge-app`(단일 루트 Dart·Swift 스텁 SwiftPM·Kotlin 소스),
+   `.github/workflows/cold-cache.yml`(주 1회 새 러너 발행 설치→검증 감시).
+   로컬에서 두 모드 실제 실행으로 검증. 첫 원격 실행 결과는 미확인 — 워크플로 기록 확인 필요.
+10. 경쟁력 우선순위 전부 소화됨. 다음은 자유 선택: FFI/JNI 심볼 조인(계약 개정 필요),
+    MCP `serve` 추가 도구, 실측 코퍼스 확장.
 
 ## Resume Prompt
 
