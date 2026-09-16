@@ -1,0 +1,7 @@
+name: flutter
+description: Minimal Flutter SDK surface stub for corpus analysis without a Flutter installation.
+version: 0.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.4.0

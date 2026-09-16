@@ -1,0 +1,334 @@
+{
+  "format": "isthmus-real-corpus",
+  "version": 1,
+  "description": "공개 Flutter 플러그인의 고정 pub.dev 아카이브와 수동 정답으로 impact/preflight 예측을 재는다. 모든 소스는 바이트 동일하게 스테이징하며 해시를 기록한다.",
+  "archives": {
+    "battery_plus@6.2.2": {
+      "package": "battery_plus",
+      "version": "6.2.2",
+      "archiveUrl": "https://pub.dev/api/archives/battery_plus-6.2.2.tar.gz",
+      "sha256": "fb794c34cee2e4ea31005fb17ff15e1d904951ec7f15eedead741021870ee834",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/fluttercommunity/plus_plugins"
+    },
+    "battery_plus@6.2.3": {
+      "package": "battery_plus",
+      "version": "6.2.3",
+      "archiveUrl": "https://pub.dev/api/archives/battery_plus-6.2.3.tar.gz",
+      "sha256": "03d5a6bb36db9d2b977c548f6b0262d5a84c4d5a4cfee2edac4a91d57011b365",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/fluttercommunity/plus_plugins"
+    },
+    "battery_plus_platform_interface@2.0.1": {
+      "package": "battery_plus_platform_interface",
+      "version": "2.0.1",
+      "archiveUrl": "https://pub.dev/api/archives/battery_plus_platform_interface-2.0.1.tar.gz",
+      "sha256": "e8342c0f32de4b1dfd0223114b6785e48e579bfc398da9471c9179b907fa4910",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/fluttercommunity/plus_plugins"
+    },
+    "shared_preferences_foundation@2.5.3": {
+      "package": "shared_preferences_foundation",
+      "version": "2.5.3",
+      "archiveUrl": "https://pub.dev/api/archives/shared_preferences_foundation-2.5.3.tar.gz",
+      "sha256": "07e050c7cd39bad516f8d64c455f04508d09df104be326d8c02551590a0d513d",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "shared_preferences_foundation@2.5.4": {
+      "package": "shared_preferences_foundation",
+      "version": "2.5.4",
+      "archiveUrl": "https://pub.dev/api/archives/shared_preferences_foundation-2.5.4.tar.gz",
+      "sha256": "6a52cfcdaeac77cad8c97b539ff688ccfc458c007b4db12be584fbe5c0e49e03",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "shared_preferences_foundation@2.5.7": {
+      "package": "shared_preferences_foundation",
+      "version": "2.5.7",
+      "archiveUrl": "https://pub.dev/api/archives/shared_preferences_foundation-2.5.7.tar.gz",
+      "sha256": "2ec3934efa51e46117f23031cc141b8fc878e8525b94ec1ea4f7f586cf1b47ea",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "shared_preferences_platform_interface@2.4.1": {
+      "package": "shared_preferences_platform_interface",
+      "version": "2.4.1",
+      "archiveUrl": "https://pub.dev/api/archives/shared_preferences_platform_interface-2.4.1.tar.gz",
+      "sha256": "57cbf196c486bc2cf1f02b85784932c6094376284b3ad5779d1b1c6c6a816b80",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "url_launcher_macos@3.2.1": {
+      "package": "url_launcher_macos",
+      "version": "3.2.1",
+      "archiveUrl": "https://pub.dev/api/archives/url_launcher_macos-3.2.1.tar.gz",
+      "sha256": "769549c999acdb42b8bcfa7c43d72bf79a382ca7441ab18a808e101149daf672",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "url_launcher_macos@3.2.2": {
+      "package": "url_launcher_macos",
+      "version": "3.2.2",
+      "archiveUrl": "https://pub.dev/api/archives/url_launcher_macos-3.2.2.tar.gz",
+      "sha256": "17ba2000b847f334f16626a574c702b196723af2a289e7a93ffcb79acff855c2",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "url_launcher_macos@3.2.6": {
+      "package": "url_launcher_macos",
+      "version": "3.2.6",
+      "archiveUrl": "https://pub.dev/api/archives/url_launcher_macos-3.2.6.tar.gz",
+      "sha256": "5e835a3b869c2d70325349c81c5a45c28e20791265b67b2669da6b08c5cd5201",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "url_launcher_platform_interface@2.3.2": {
+      "package": "url_launcher_platform_interface",
+      "version": "2.3.2",
+      "archiveUrl": "https://pub.dev/api/archives/url_launcher_platform_interface-2.3.2.tar.gz",
+      "sha256": "552f8a1e663569be95a8190206a38187b531910283c3e982193e4f2733f01029",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    },
+    "meta@1.19.0": {
+      "package": "meta",
+      "version": "1.19.0",
+      "archiveUrl": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
+      "sha256": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/dart-lang/sdk"
+    },
+    "plugin_platform_interface@2.1.8": {
+      "package": "plugin_platform_interface",
+      "version": "2.1.8",
+      "archiveUrl": "https://pub.dev/api/archives/plugin_platform_interface-2.1.8.tar.gz",
+      "sha256": "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02",
+      "license": "BSD-3-Clause",
+      "upstream": "https://github.com/flutter/packages"
+    }
+  },
+  "projects": {
+    "battery": {
+      "note": "MethodChannel(v1) 플러그인. Dart 브리지 코드는 platform interface에, 네이티브 코드는 battery_plus에 있다. android/는 고의로 포함해 미구성 Kotlin 한계를 드러낸다.",
+      "staging": [
+        { "archive": "battery_plus_platform_interface@2.0.1", "paths": ["lib", "pubspec.yaml", "LICENSE"] },
+        { "archive": "battery_plus@6.2.3", "paths": ["macos", "ios", "android"] }
+      ],
+      "dartDeps": ["meta@1.19.0", "plugin_platform_interface@2.1.8"],
+      "swiftTargets": [
+        {
+          "name": "battery_plus",
+          "path": "macos/battery_plus/Sources/battery_plus",
+          "exclude": ["PrivacyInfo.xcprivacy"]
+        }
+      ],
+      "channels": ["dev.fluttercommunity.plus/battery", "dev.fluttercommunity.plus/charging"]
+    },
+    "battery-base": {
+      "note": "bp-diff 케이스의 기저 버전. battery와 동일하되 battery_plus만 6.2.2다.",
+      "staging": [
+        { "archive": "battery_plus_platform_interface@2.0.1", "paths": ["lib", "pubspec.yaml", "LICENSE"] },
+        { "archive": "battery_plus@6.2.2", "paths": ["macos", "ios", "android"] }
+      ],
+      "dartDeps": ["meta@1.19.0", "plugin_platform_interface@2.1.8"],
+      "swiftTargets": [
+        {
+          "name": "battery_plus",
+          "path": "macos/battery_plus/Sources/battery_plus",
+          "exclude": ["PrivacyInfo.xcprivacy"]
+        }
+      ],
+      "channels": ["dev.fluttercommunity.plus/battery", "dev.fluttercommunity.plus/charging"]
+    },
+    "shared_prefs": {
+      "note": "Pigeon/BasicMessageChannel(v2) 플러그인. 채널명이 \\(channelSuffix) 보간으로 동적이다.",
+      "staging": [
+        { "archive": "shared_preferences_foundation@2.5.4", "paths": ["lib", "darwin", "pubspec.yaml", "LICENSE"] }
+      ],
+      "dartDeps": ["shared_preferences_platform_interface@2.4.1"],
+      "swiftTargets": [
+        {
+          "name": "shared_preferences_foundation",
+          "path": "darwin/shared_preferences_foundation/Sources/shared_preferences_foundation"
+        }
+      ],
+      "channelPrefixes": [
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys"
+      ]
+    },
+    "shared_prefs-base": {
+      "note": "sp-diff 케이스의 기저 버전 2.5.3.",
+      "staging": [
+        { "archive": "shared_preferences_foundation@2.5.3", "paths": ["lib", "darwin", "pubspec.yaml", "LICENSE"] }
+      ],
+      "dartDeps": ["shared_preferences_platform_interface@2.4.1"],
+      "swiftTargets": [
+        {
+          "name": "shared_preferences_foundation",
+          "path": "darwin/shared_preferences_foundation/Sources/shared_preferences_foundation"
+        }
+      ],
+      "channelPrefixes": [
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+        "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+        "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys"
+      ]
+    },
+    "url_launcher": {
+      "note": "Pigeon/BasicMessageChannel(v2) 플러그인. 2개 채널.",
+      "staging": [
+        { "archive": "url_launcher_macos@3.2.2", "paths": ["lib", "macos", "pubspec.yaml", "LICENSE"] }
+      ],
+      "dartDeps": ["url_launcher_platform_interface@2.3.2"],
+      "swiftTargets": [
+        {
+          "name": "url_launcher_macos",
+          "path": "macos/url_launcher_macos/Sources/url_launcher_macos",
+          "exclude": ["PrivacyInfo.xcprivacy"]
+        }
+      ],
+      "channelPrefixes": [
+        "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+        "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+      ]
+    },
+    "url_launcher-base": {
+      "note": "ul-diff 케이스의 기저 버전 3.2.1.",
+      "staging": [
+        { "archive": "url_launcher_macos@3.2.1", "paths": ["lib", "macos", "pubspec.yaml", "LICENSE"] }
+      ],
+      "dartDeps": ["url_launcher_platform_interface@2.3.2"],
+      "swiftTargets": [
+        {
+          "name": "url_launcher_macos",
+          "path": "macos/url_launcher_macos/Sources/url_launcher_macos",
+          "exclude": ["PrivacyInfo.xcprivacy"]
+        }
+      ],
+      "channelPrefixes": [
+        "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+        "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "bp-file-swift-plugin",
+      "project": "battery",
+      "selection": { "swift": { "files": ["macos/battery_plus/Sources/battery_plus/BatteryPlusMacosPlugin.swift"], "symbols": [] } },
+      "expectedMethods": [
+        "dev.fluttercommunity.plus/battery/getBatteryLevel",
+        "dev.fluttercommunity.plus/battery/isInBatterySaveMode",
+        "dev.fluttercommunity.plus/battery/getBatteryState"
+      ],
+      "groundTruth": "파일이 채널 등록과 3개 핸들러를 모두 담는다. 소스 확인: register + handle switch 3 cases."
+    },
+    {
+      "id": "bp-file-dart-channel",
+      "project": "battery",
+      "selection": { "dart": { "files": ["lib/method_channel_battery_plus.dart"], "symbols": [] } },
+      "expectedMethods": [
+        "dev.fluttercommunity.plus/battery/getBatteryLevel",
+        "dev.fluttercommunity.plus/battery/isInBatterySaveMode",
+        "dev.fluttercommunity.plus/battery/getBatteryState"
+      ],
+      "groundTruth": "MethodChannel 생성과 3개 invokeMethod가 한 파일에 있다. EventChannel 생성도 같은 파일이다."
+    },
+    {
+      "id": "bp-symbol-dart-batterylevel",
+      "project": "battery",
+      "selection": { "dart": { "files": [], "symbols": ["package:battery_plus_platform_interface/method_channel_battery_plus.dart::MethodChannelBattery.batteryLevel"] } },
+      "expectedMethods": ["dev.fluttercommunity.plus/battery/getBatteryLevel"],
+      "groundTruth": "batteryLevel()만 invokeMethod('getBatteryLevel')를 호출한다."
+    },
+    {
+      "id": "bp-file-event-handler",
+      "project": "battery",
+      "selection": { "swift": { "files": ["macos/battery_plus/Sources/battery_plus/BatteryPlusChargingHandler.swift"], "symbols": [] } },
+      "expectedMethods": [],
+      "expectedChannels": ["dev.fluttercommunity.plus/charging"],
+      "expectGap": true,
+      "groundTruth": "EventChannel 스트림 핸들러 파일. isthmus는 Event 채널을 미지원하므로 method 경계가 없어야 하며 채널 생성 경계 또는 공백 한계로 드러나야 한다."
+    },
+    {
+      "id": "bp-diff-622-623",
+      "project": "battery-base",
+      "applyArchive": { "archive": "battery_plus@6.2.3", "paths": ["macos", "ios", "android"] },
+      "expectedMethods": [
+        "dev.fluttercommunity.plus/battery/getBatteryLevel",
+        "dev.fluttercommunity.plus/battery/isInBatterySaveMode",
+        "dev.fluttercommunity.plus/battery/getBatteryState"
+      ],
+      "expectKotlinGap": true,
+      "groundTruth": "실제 diff: ios/FPPBatteryPlusPlugin.m에 setBatteryMonitoringEnabled:NO 1줄 + android .kt 변경. ObjC 파일은 등록+3핸들러를 담는다. Kotlin은 미구성이라 unconfigured-platform-changes 한계가 떠야 한다."
+    },
+    {
+      "id": "sp-file-plugin",
+      "project": "shared_prefs",
+      "selection": { "swift": { "files": ["darwin/shared_preferences_foundation/Sources/shared_preferences_foundation/SharedPreferencesPlugin.swift"], "symbols": [] } },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "두 Api 구현 클래스가 이 파일에 있고 Setup이 참조한다. 11개 채널 전부 관련."
+    },
+    {
+      "id": "sp-file-generated",
+      "project": "shared_prefs",
+      "selection": { "swift": { "files": ["darwin/shared_preferences_foundation/Sources/shared_preferences_foundation/messages.g.swift"], "symbols": [] } },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "Pigeon 생성 배선 파일 — 채널 생성·핸들러 등록·codec이 모두 여기 있다."
+    },
+    {
+      "id": "sp-symbol-legacy-remove",
+      "project": "shared_prefs",
+      "selection": { "swift": { "files": [], "symbols": ["s:29shared_preferences_foundation29LegacySharedPreferencesPluginC6remove3keyySS_tF"] } },
+      "expectedPrefixes": ["dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"],
+      "groundTruth": "LegacySharedPreferencesPlugin.remove(key:) 구현만 선택 → dispatchTargets 근거로 해당 채널만 경계가 돼야 한다."
+    },
+    {
+      "id": "sp-diff-253-254",
+      "project": "shared_prefs-base",
+      "applyArchive": { "archive": "shared_preferences_foundation@2.5.4", "paths": ["lib", "darwin", "pubspec.yaml", "LICENSE"] },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "실제 diff: messages.g.swift의 codec 클래스명 변경(messagesPigeonCodec→MessagesPigeonCodec 등). 배선 파일 변경이므로 전 채널."
+    },
+    {
+      "id": "ul-file-plugin",
+      "project": "url_launcher",
+      "selection": { "swift": { "files": ["macos/url_launcher_macos/Sources/url_launcher_macos/UrlLauncherPlugin.swift"], "symbols": [] } },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "UrlLauncherPlugin이 UrlLauncherApi 구현 + register. 2개 채널 전부."
+    },
+    {
+      "id": "ul-symbol-setup",
+      "project": "url_launcher",
+      "selection": { "swift": { "files": [], "symbols": ["s:18url_launcher_macos19UrlLauncherApiSetupC5setUp15binaryMessenger3api20messageChannelSuffixy12FlutterMacOS0p6BinaryK0_p_AA0deF0_pSgSStFZ"] } },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "등록 함수 자체 변경 → 클로저 밖 공유 의존 변경과 동일하게 전체 관련 배선이 포함돼야 한다."
+    },
+    {
+      "id": "ul-diff-321-322",
+      "project": "url_launcher-base",
+      "applyArchive": { "archive": "url_launcher_macos@3.2.2", "paths": ["lib", "macos", "pubspec.yaml", "LICENSE"] },
+      "expectedPrefixes": "ALL",
+      "groundTruth": "실제 diff: Pigeon 재생성(v10→v22)으로 messages.g.swift+messages.g.dart 변경 — UrlLauncherBoolResult wire format 변경. 양쪽 배선 파일."
+    }
+  ]
+}

@@ -285,3 +285,23 @@ test('선택한 v2 message producer는 같은 capture에 포함되고 캐시 설
   assert.equal((await capturePreflight({ ...f.config, messages: true }, { execute })).cached, true);
   await assert.rejects(capturePreflight({ ...f.config, messages: { kotlin: ['ignored'] } }, { execute }));
 });
+
+test('Cartograph가 미인덱스 선택에 64와 부분 문서를 돌려주면 한계로 수집한다', async (t) => {
+  const f = await setup(t);
+  const execute = (command, args, options) => {
+    if (command === 'cartograph' && args[0] === 'impact') {
+      return { status: 64, stdout: JSON.stringify({
+        format: 'change-impact', version: 1, level: 'symbol', status: 'incomplete',
+        selectionIssues: [{ kind: 'file', requested: `${f.root}/ios/Helper.swift`, status: 'unindexed' }],
+        runtimeReview: [], runtimeDependencies: [], changeScope: [], affected: [],
+        limitations: ['objective-c-sources: 1 file(s) are not analysed'],
+        truncated: { depth: false, output: false, sections: [] } }) };
+    }
+    return f.execute(command, args, options);
+  };
+  const result = await capturePreflight(f.config, { execute });
+  const analysis = result.context.analyses.find(({ platform }) => platform === 'swift');
+  assert.ok(analysis, 'Swift analysis must exist');
+  assert.ok(analysis.limitations.some((value) => value.startsWith('cartograph-selection-issues')));
+  assert.equal(analysis.roots.length, 0);
+});

@@ -1,0 +1,4 @@
+# 케이스별 context·cache는 머신 절대 경로를 포함하므로 커밋하지 않는다.
+*.context.json
+*.cache.json
+*.context.json.sources.json

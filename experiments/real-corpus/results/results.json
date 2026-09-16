@@ -1,0 +1,771 @@
+{
+  "format": "isthmus-real-corpus-results",
+  "version": 1,
+  "runtimeExecution": false,
+  "flutterSdk": false,
+  "kotlinCoverage": false,
+  "note": "Stub-compiled Swift index + manual package_config. EventChannel·Kotlin·런타임 실행은 범위 밖.",
+  "tools": {
+    "cartograph": "0.15.1",
+    "dartograph": "dartograph 0.11.0"
+  },
+  "totals": {
+    "tp": 50,
+    "fn": 0,
+    "fp": 3
+  },
+  "cases": [
+    {
+      "id": "bp-file-swift-plugin",
+      "project": "battery",
+      "status": "observed",
+      "predicted": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/battery"
+        ]
+      },
+      "expected": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": []
+      },
+      "truePositives": 3,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 10,
+        "affectedSymbols": 7,
+        "bridgeBoundaries": 4,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 11
+      },
+      "limitations": [
+        "cartograph-runtime-review: 2 item(s) require review in the producer report",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 10611
+    },
+    {
+      "id": "bp-file-dart-channel",
+      "project": "battery",
+      "status": "observed",
+      "predicted": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/battery"
+        ]
+      },
+      "expected": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": []
+      },
+      "truePositives": 3,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 9,
+        "affectedSymbols": 4,
+        "bridgeBoundaries": 0,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 8
+      },
+      "limitations": [
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 1837
+    },
+    {
+      "id": "bp-symbol-dart-batterylevel",
+      "project": "battery",
+      "status": "observed",
+      "predicted": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel"
+        ],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/battery"
+        ]
+      },
+      "expected": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel"
+        ],
+        "prefixes": [],
+        "channels": []
+      },
+      "truePositives": 1,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 2,
+        "affectedSymbols": 1,
+        "bridgeBoundaries": 0,
+        "reviewFiles": 3,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 6
+      },
+      "limitations": [
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor"
+      ],
+      "reviewFiles": 3,
+      "cached": false,
+      "milliseconds": 1786
+    },
+    {
+      "id": "bp-file-event-handler",
+      "project": "battery",
+      "status": "observed",
+      "predicted": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/battery"
+        ]
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/charging"
+        ]
+      },
+      "truePositives": 0,
+      "falseNegatives": 0,
+      "falsePositives": 3,
+      "summary": {
+        "selectedSymbols": 11,
+        "affectedSymbols": 12,
+        "bridgeBoundaries": 4,
+        "reviewFiles": 5,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 11
+      },
+      "limitations": [
+        "cartograph-runtime-review: 2 item(s) require review in the producer report",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor"
+      ],
+      "expectGap": true,
+      "reviewFiles": 5,
+      "cached": false,
+      "milliseconds": 2208
+    },
+    {
+      "id": "bp-diff-622-623",
+      "project": "battery-base",
+      "status": "unobserved",
+      "predicted": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": [
+          "dev.fluttercommunity.plus/battery"
+        ]
+      },
+      "expected": {
+        "methods": [
+          "dev.fluttercommunity.plus/battery/getBatteryLevel",
+          "dev.fluttercommunity.plus/battery/getBatteryState",
+          "dev.fluttercommunity.plus/battery/isInBatterySaveMode"
+        ],
+        "prefixes": [],
+        "channels": []
+      },
+      "truePositives": 3,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 0,
+        "affectedSymbols": 0,
+        "bridgeBoundaries": 0,
+        "reviewFiles": 3,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 14
+      },
+      "limitations": [
+        "cartograph-selection-issues: 1 item(s) require review in the producer report",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "unresolved-impact-inputs: 1 input(s) could not be resolved; deleted, renamed, excluded or unbuilt declarations require the pre-change index or explicit review",
+        "The producer did not resolve a requested change selection.",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unconfigured-platform-changes: 1 kotlin source change(s) require separate review",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "A bridge endpoint has no verified language symbol binding.",
+        "unscanned-event-channels: 1 EventChannel constructor",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
+        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
+        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
+        "unscanned-event-channels: 1 EventChannel constructor"
+      ],
+      "expectKotlinGap": true,
+      "reviewFiles": 3,
+      "cached": false,
+      "milliseconds": 9296
+    },
+    {
+      "id": "sp-file-plugin",
+      "project": "shared_prefs",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "truePositives": 11,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 23,
+        "affectedSymbols": 36,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 5,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 28
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "cartograph-runtime-review: 4 item(s) require review in the producer report",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 5,
+      "cached": false,
+      "milliseconds": 11444
+    },
+    {
+      "id": "sp-file-generated",
+      "project": "shared_prefs",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "truePositives": 11,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 50,
+        "affectedSymbols": 55,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 6,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 28
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "cartograph-runtime-review: 3 item(s) require review in the producer report",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 6,
+      "cached": false,
+      "milliseconds": 3553
+    },
+    {
+      "id": "sp-symbol-legacy-remove",
+      "project": "shared_prefs",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove"
+        ],
+        "channels": []
+      },
+      "truePositives": 1,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 1,
+        "affectedSymbols": 5,
+        "bridgeBoundaries": 1,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 7
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 1967
+    },
+    {
+      "id": "sp-diff-253-254",
+      "project": "shared_prefs-base",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.remove",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setBool",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setDouble",
+          "dev.flutter.pigeon.shared_preferences_foundation.LegacyUserDefaultsApi.setValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.clear",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getAll",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getKeys",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.getValue",
+          "dev.flutter.pigeon.shared_preferences_foundation.UserDefaultsApi.set"
+        ],
+        "channels": []
+      },
+      "truePositives": 11,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 50,
+        "affectedSymbols": 55,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 6,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 29
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "Registry lookups with dynamic or non-string keys: 1.",
+        "cartograph-runtime-review: 3 item(s) require review in the producer report",
+        "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "unmodeled-changes: 1 tracked configuration/resource change(s) require separate review",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
+        "dynamic-method-names: 1 method invocation uses a non-literal name",
+        "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
+        "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
+        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 6,
+      "cached": false,
+      "milliseconds": 11886
+    },
+    {
+      "id": "ul-file-plugin",
+      "project": "url_launcher",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "truePositives": 2,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 11,
+        "affectedSymbols": 5,
+        "bridgeBoundaries": 2,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 9
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "cartograph-runtime-review: 2 item(s) require review in the producer report",
+        "unindexed-sources: 1 of 4 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 9573
+    },
+    {
+      "id": "ul-symbol-setup",
+      "project": "url_launcher",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "truePositives": 2,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 1,
+        "affectedSymbols": 5,
+        "bridgeBoundaries": 2,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 8
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "unindexed-sources: 1 of 4 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 4,
+      "cached": false,
+      "milliseconds": 1882
+    },
+    {
+      "id": "ul-diff-321-322",
+      "project": "url_launcher-base",
+      "status": "observed",
+      "predicted": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "expected": {
+        "methods": [],
+        "prefixes": [
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.canLaunchUrl",
+          "dev.flutter.pigeon.url_launcher_macos.UrlLauncherApi.launchUrl"
+        ],
+        "channels": []
+      },
+      "truePositives": 2,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "summary": {
+        "selectedSymbols": 56,
+        "affectedSymbols": 11,
+        "bridgeBoundaries": 2,
+        "reviewFiles": 5,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 8
+      },
+      "limitations": [
+        "a declared plugin entry point was not found in the graph",
+        "generated declarations are conservative retention roots",
+        "cartograph-runtime-review: 3 item(s) require review in the producer report",
+        "unindexed-sources: 1 of 4 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
+        "unmodeled-changes: 1 tracked configuration/resource change(s) require separate review",
+        "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
+        "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
+        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
+        "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
+      ],
+      "reviewFiles": 5,
+      "cached": false,
+      "milliseconds": 9623
+    }
+  ]
+}
