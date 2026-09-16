@@ -166,8 +166,21 @@ RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method
 
 `module-*`과 `component-*`는 이름 기반으로 조인된다. isthmus는 JS 호출 측과
 Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌트 이름) 키로
-연결한다. JS 측 추출기(`extract-js`)는 아직 없으므로 실제 end-to-end RN 조인은
-그 명령과 함께 완성된다.
+연결한다. JS 측은 내장 추출기 `isthmus extract-js`가 무의존 토큰 스캔으로 낸다 —
+`NativeModules.X`·`NativeModules['X']`·`TurboModuleRegistry.get*('X')`·
+`requireNativeModule`/`requireOptionalNativeModule`·`requireNativeComponent`·
+`codegenNativeComponent`·`requireNativeViewManager`와 같은 파일·상대 import·
+`export { A as B } from` 형태의 배럴 재수출(4홉 상한) 범위의 바인딩 해석,
+그리고 확정된 모듈 식의 멤버 호출(`method-invoke`)까지 읽는다.
+비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
+계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
+동적 사실로 내린다. 스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
+인스턴스 상태)은 `limitations`로만 보고한다 — 정적 이름을 추측해 연결하지
+않는다. 함수·메서드·`{…}` 본문을 가진 화살표의 매개변수는 그 본문 안에서
+파일 바인딩을 가리는 것으로 처리하지만, 식 본문 화살표(`M => M.x()`)·
+`for`/`catch` 등 선언문 밖의 바인딩·`export * from` 재수출은 추적하지 않는다.
+토큰 스캔은 완전한 JS 의미 해석이 아니므로 이 추출기의 출력은 관찰 범위의
+근거다.
 
 ## 조인 규칙 (isthmus 가 적용)
 
@@ -274,7 +287,7 @@ cartograph의 보존 문서는 **Swift 그래프 선언**을 대상으로 완전
 | cartograph | `bridges --format json` | Swift 의 `FlutterMethodChannel(name:)`, `setMethodCallHandler`, `case "…"`, `RCT_EXPORT_*`, `@objc(…)` | `--external-retentions` |
 | dartograph | `bridges --format json` | `MethodChannel(…)`, `invokeMethod(…)`, Pigeon 산출물 | (없음 — Dart 쪽이 부르는 쪽) |
 | kartograph | `bridges --format json` | `MethodChannel(…)`, `setMethodCallHandler`, `when (call.method)`, `@ReactModule`, `@ReactMethod` | `--external-retentions` |
-| isthmus 내장 | `extract-js` | `NativeModules.*`, `TurboModuleRegistry.get`, `requireNativeComponent` | — |
+| isthmus 내장 | `extract-js` | `NativeModules.*`, `TurboModuleRegistry.get*`, `requireNativeModule`, `requireNativeComponent` 계열, 바인딩 해석된 멤버 호출 | — |
 
 **cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 

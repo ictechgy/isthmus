@@ -15,7 +15,17 @@
   `-unverified` warning으로 낮춘다. query의 `module`·`component` 주체, graph의
   `module`·`component` 간선, diff의 added/removed 모듈·컴포넌트와 SARIF 규칙을
   함께 제공한다. diff는 두 스냅샷의 target 집합이 다르면 코드 삭제로 오인하지
-  않고 입력 오류로 거부한다. JS/TS 추출(`extract-js`)은 별도로 남아 있다.
+  않고 입력 오류로 거부한다.
+- `isthmus extract-js <file-or-dir> [more...] [--project <dir>]`: React Native
+  호출 측 bridge-facts 생산자다. 무의존 JS/TS 토큰 스캔으로 `NativeModules.X`·
+  `NativeModules['X']`·`TurboModuleRegistry.get*`·`requireNativeModule`/
+  `requireOptionalNativeModule`·`requireNativeComponent`·`codegenNativeComponent`·
+  `requireNativeViewManager`를 읽고, 같은 파일 상수·바인딩·상대 import·배럴
+  재수출을 해석해 멤버 호출을 `method-invoke`로 귀속한다. 비리터럴 이름은
+  `dynamic: true`에 원문 표현을 실어 보존하고, 스캔 집합을 벗어난 바인딩은
+  `unattributed-js-*` limitations로 보고한다. 출력은 `bridge-facts` v1 문서라
+  기존 check·query·graph·diff 파이프라인에 그대로 들어간다. Expo Modules
+  호출명은 읽지만 Expo 전용 의미(`mechanism`)는 아직 계약에 없다.
 
 ## [0.6.0] - 2026-09-16
 
