@@ -141,6 +141,14 @@ UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으
 `unattributed-method-handles:`로 시작하는 limitation으로 알려야 하며, 없으면 소비자는
 문서를 거부한다.
 
+FFI·JNI 등 채널 계약 밖의 네이티브 interop은 fact로 만들지 않는다 — 심볼 이름 조인은
+런타임 결정 구조라 정적 채널 키로 귀속할 수 없다. 대신 생산자는 소스에서 interop
+근거(dart:ffi 계열 import, `@_cdecl`·Dart C API·dlsym, `external fun`·`System.loadLibrary`·
+`native` 메서드·JNI export 이름)를 관측하면 `unscanned-ffi-interop:`로 시작하는
+limitation에 파일 수를 실어 알린다. 이 라벨은 정보성이다 — 파일 수준 표식만으로는
+어느 채널의 호출·핸들러가 interop으로 가려졌는지 귀속할 수 없으므로 소비자의 공백
+심각도를 바꾸지 않고 그대로 전달한다. 어느 문서에나 실을 수 있다.
+
 ### 종류별 의미
 
 | kind | 누가 내는가 | 뜻 |
