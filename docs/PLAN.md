@@ -67,7 +67,10 @@ cartograph·dartograph 생산, isthmus 조인, cartograph retention 소비를 �
 
 ## Phase 5 — RN (v0.2)
 
-- JS/TS 추출기(`extract-js`, TS 컴파일러 API)
+- [x] JS/TS 추출기(`extract-js`, 무의존 토큰 스캔 — TS 컴파일러 API 대신
+  의존성 없는 스캐너로 고정 형태 호출·상대 import·배럴 재수출을 읽는다)
+- [x] isthmus 소비자 조인(`module-import`↔`module-export`,
+  `component-require`↔`component-export`, `method-invoke`↔`method-handle`)
 - cartograph `bridges` 에 RN 종류 추가
 - 대상: 네이티브 코드가 있는 RN 라이브러리(예: `react-native-webview` — 존재 확실).
   Expo managed 프로젝트처럼 네이티브 소스가 없는 앱은 대상이 아니다

@@ -3,7 +3,8 @@ name: isthmus
 description: >-
   Inspect file or symbol changes across Flutter Dart-to-Swift/Kotlin bridges, trace callers,
   compare snapshots, or produce cartograph retention evidence. Use before changing
-  MethodChannel or Pigeon/Basic handlers and their Dart callers; RN extraction is not supported.
+  MethodChannel or Pigeon/Basic handlers and their Dart callers. `extract-js` extracts
+  React Native caller-side facts from JS/TS sources within its token-scan scope.
 ---
 
 # isthmus
@@ -22,6 +23,12 @@ Obtain both Dart and Swift bridge-facts JSON with identical project roots and an
 Swift production requires a built compiler index; use `cartograph bridges --target flutter --format json`.
 Android preflight uses public Kotlin support: obtain Kotlin facts using
 `kartograph bridges --project <root> --target flutter --graph-file <snapshot.json>`.
+For React Native caller-side facts, run `isthmus extract-js <file-or-dir> [more...] [--project <dir>]`
+on the JS/TS sources; it emits a `bridge-facts` document with `platform: "js"`,
+`target: "react-native"` that joins with kartograph/cartograph RN receiver facts.
+Non-literal names stay `dynamic`, and bindings that leave the scanned file set are
+reported only through `limitations` — token-scan output is observation scope, not
+proof of complete app coverage.
 For Basic/Pigeon add `--messages`. A snapshot must come from the same prepared source/build;
 source-only names are not compiler symbol identities. Use `selection.kotlin` in the context.
 The capture workflow accepts `kartograph` and `kartographSnapshot`; Android-only capture does

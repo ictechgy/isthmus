@@ -46,9 +46,13 @@ fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the public versions above.
 React Native module/component facts (`module-import`↔`module-export`,
-`component-require`↔`component-export`) now join by name on main, and EventChannel v2
-transport is implemented across the sister repositories — but JS/TS extraction
-(`extract-js`) remains planned, so end-to-end RN joins are not yet reproducible.
+`component-require`↔`component-export`) join by name, and `isthmus extract-js`
+extracts caller-side facts from JS/TS sources (`NativeModules.*`,
+`TurboModuleRegistry.get*`, `requireNativeComponent`/`codegenNativeComponent`,
+`requireNativeModule`-family calls, and resolved member calls) — end-to-end RN
+joins are reproducible within the token-scan observation scope documented in
+`GRAPH-EXCHANGE.md`. EventChannel v2 transport is implemented across the
+sister repositories.
 Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 

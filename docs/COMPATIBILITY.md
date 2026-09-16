@@ -17,9 +17,10 @@
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
 preflight 전이 경로, Kotlin 쪽 조인에는 위 표의 버전이 필요하다. EventChannel은
 v2 transport로 세 저장소 main에 구현됐고 아직 발행본은 없다. React Native는
-수신 측 사실(cartograph `RCT_EXPORT_*`·kartograph `@ReactModule`)과 isthmus main의
-모듈·컴포넌트 이름 조인이 갖춰졌지만, JS/TS 호출 측 추출(`extract-js`)이 없어
-end-to-end RN 조인은 아직 재현할 수 없다.
+수신 측 사실(cartograph `RCT_EXPORT_*`·kartograph `@ReactModule`), isthmus의
+모듈·컴포넌트 이름 조인, 그리고 `isthmus extract-js`의 JS/TS 호출 측 추출이
+main에 갖춰졌다. 추출은 토큰 스캔 관찰 범위의 근거다 — 동적 이름·스캔 집합
+밖 바인딩은 limitations로만 보고하며 앱 전체 정확도를 주장하지 않는다.
 
 ## 실측으로 확인한 범위 (2026-09-16)
 

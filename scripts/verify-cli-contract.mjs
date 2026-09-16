@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,7 @@ verifyImpact();
 verifyRuntime();
 verifyPreflight();
 verifyServe();
+verifyExtractJs();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -297,6 +298,32 @@ function verifyServe() {
   verify(query.status === 'found', 'serve tools/call query');
   verify(run(['serve', '--verbose']).status === 64, 'serve usage');
   verify(run(['help', 'serve']).stdout.startsWith('Usage: isthmus serve'), 'serve help');
+}
+
+/** extract-js가 발행 CLI에서 bridge-facts 문서를 내는지 검증한다. */
+function verifyExtractJs() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-extract-js-'));
+  try {
+    const source = join(directory, 'src', 'app.ts');
+    mkdirSync(join(directory, 'src'), { recursive: true });
+    writeFileSync(source,
+      "const M = requireNativeModule('Cam');\nM.shoot();\nrequireNativeComponent('Grid');\n");
+    const result = run(['extract-js', directory]);
+    verify(result.status === 0, 'extract-js exit code');
+    verify(result.stderr === '', 'extract-js stderr');
+    const document = JSON.parse(result.stdout);
+    verify(document.format === 'bridge-facts' && document.version === 1, 'extract-js format');
+    verify(document.platform === 'js' && document.target === 'react-native', 'extract-js identity');
+    const keys = document.facts.map((fact) => `${fact.kind}:${fact.channel}`);
+    verify(keys.includes('module-import:Cam') && keys.includes('method-invoke:Cam')
+      && keys.includes('component-require:Grid'), 'extract-js facts');
+    verify(document.facts.every((fact) => fact.location.path === 'src/app.ts'), 'extract-js locations');
+    verify(run(['extract-js']).status === 64, 'extract-js usage');
+    verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
+    verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */

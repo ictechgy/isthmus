@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
 import type { CommandResult } from './command-support.ts';
+import {
+  extractJsUsage,
+  type ExtractJsFileSystem,
+  runExtractJsCommand,
+} from './extract-js-command.ts';
 import { graphUsage, runGraphCommand } from './graph-command.ts';
 import { diffUsage, runDiffCommand } from './diff-command.ts';
 import { queryUsage, runQueryCommand } from './query-command.ts';
@@ -30,6 +35,7 @@ const commandUsages = new Map([
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
   ['serve', serveUsage],
+  ['extract-js', extractJsUsage],
 ]);
 
 const rootHelp = `Usage: isthmus <command> [options]
@@ -43,6 +49,7 @@ Commands:
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change
   retentions   Produce external retention evidence
+  extract-js   Extract React Native caller-side bridge facts from JS/TS
   serve        Speak MCP over stdio for agent clients
   help         Show command help
 
@@ -55,6 +62,25 @@ const arguments_ = process.argv.slice(2);
 const readTextFile = (path: string) => readFile(path, 'utf8');
 const writeTextFile = (path: string, text: string) =>
   writeTextAtomically(path, text);
+
+/** extract-js가 쓰는 실제 파일시스템 구현이다 — 테스트는 계약만 주입한다. */
+const extractJsFileSystem: ExtractJsFileSystem = {
+  statPath: async (path) => {
+    try {
+      const entry = await stat(path);
+      return entry.isDirectory() ? 'directory' : 'file';
+    } catch {
+      return 'missing';
+    }
+  },
+  listDirectory: async (path) =>
+    (await readdir(path, { withFileTypes: true })).map((entry) => ({
+      name: entry.name,
+      isFile: entry.isFile(),
+      isDirectory: entry.isDirectory(),
+    })),
+  realPath: (path) => realpath(path),
+};
 const informationalResult = await runInformationalCommand(arguments_);
 const result = informationalResult ?? await dispatchCommand(arguments_);
 
@@ -127,6 +153,14 @@ async function dispatchCommand(
       return runPreflightCommand(commandArguments, readTextFile);
     case 'verify-runtime':
       return runRuntimeCommand(commandArguments, readTextFile);
+    case 'extract-js':
+      return runExtractJsCommand(
+        commandArguments,
+        extractJsFileSystem,
+        readTextFile,
+        () => new Date(),
+        await readPackageVersion(),
+      );
     case 'serve':
       return runServeCommand(
         commandArguments,
