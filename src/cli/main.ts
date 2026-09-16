@@ -15,6 +15,7 @@ import {
   retentionUsage,
   runRetentionsCommand,
 } from './retentions-command.ts';
+import { runServeCommand, serveUsage } from './serve-command.ts';
 
 process.stdout.on('error', handleStreamError);
 process.stderr.on('error', handleStreamError);
@@ -28,6 +29,7 @@ const commandUsages = new Map([
   ['preflight', preflightUsage],
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
+  ['serve', serveUsage],
 ]);
 
 const rootHelp = `Usage: isthmus <command> [options]
@@ -41,6 +43,7 @@ Commands:
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change
   retentions   Produce external retention evidence
+  serve        Speak MCP over stdio for agent clients
   help         Show command help
 
 Options:
@@ -124,6 +127,13 @@ async function dispatchCommand(
       return runPreflightCommand(commandArguments, readTextFile);
     case 'verify-runtime':
       return runRuntimeCommand(commandArguments, readTextFile);
+    case 'serve':
+      return runServeCommand(
+        commandArguments,
+        readTextFile,
+        writeTextFile,
+        await readPackageVersion(),
+      );
     case 'retentions': {
       const version = await readPackageVersion();
       return version === undefined
