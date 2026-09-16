@@ -111,6 +111,9 @@ summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 �
 선택적 [Basic/Pigeon v2 입력](docs/BRIDGE-MESSAGES.md)은 literal 주소와
 증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
 이 추가 기능은 위에 나열한 공개 producer 버전의 `bridges --messages`로 사용할 수 있다.
+에이전트 클라이언트는 `isthmus serve`(MCP stdio 서버)로 같은 명령을 도구로 호출할 수 있다 —
+check·query·graph·diff·impact·preflight·retentions를 노출한다.
+[MCP 서버 계약](docs/MCP.md)을 본다.
 검증된 개발 조합을 재현하거나 도구를 직접 감사하려면 로컬 Git의 고정 commit에서
 구축하는 [도구 구축 절차](docs/TOOLCHAIN.md)를 쓴다. Dart AOT 실행 파일, impact와
 Basic을 함께 제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.

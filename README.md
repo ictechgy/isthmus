@@ -123,6 +123,9 @@ Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addre
 proven prefix candidates. Prefix matches preserve unresolved
 suffix and instance wiring. These additions are available in the public producer
 versions listed above (`bridges --messages`).
+Agent clients can call the same commands over `isthmus serve`, an MCP stdio server
+that exposes check, query, graph, diff, impact, preflight, and retentions as tools.
+See the [MCP server contract](docs/MCP.md).
 To reproduce a verified development combination or audit the toolchain, build the tools
 from pinned local Git commits with the
 [toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone

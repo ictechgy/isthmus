@@ -277,8 +277,21 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
    - 실사용 코퍼스 재실행 결과 **TP 54 / FN 0 / FP 0** (기존 TP 50/FP 3):
      `bp-file-event-handler`의 공유 `handle()` switch 입상도 FP 2건 소거,
      `getBatteryState`는 case 절 실의존으로 TP 유지, charging 스트림 경계 3케이스 TP 추가.
-6. 이후 경쟁력 우선순위: kartograph Kotlin EventChannel·Android 실측, FFI/JNI 범위,
-   MCP/에이전트 인터페이스, 코퍼스 확장(앱 수준), cold-cache CI 재현.
+6. **kartograph EventChannel·Android 실측 + FFI/JNI 한계 완료**:
+   - kartograph(`feat/adoption-competitiveness`): `ChannelBridgeScanner` spec 일반화,
+     `bridges --events` v2 문서, v1·v2 수신자 regex `!!`/`?.` 지원. 실제
+     `battery_plus@6.2.3`(SHA-256 검증) Android Kotlin으로 실측 — stream-handle·
+     MethodChannel 경계 확인.
+   - FFI/JNI: 3 producer 전부 `unscanned-ffi-interop` 파일 수준 limitation 방출
+     (dartograph `dart:ffi`/jni 계열 import, kartograph JNI/native 표식,
+     cartograph Dart C API 표식). 계약은 정보성으로 명시 — 심각도 완화 목록에 넣지 않음.
+7. **MCP/에이전트 인터페이스 완료 — `feature/mcp-serve` 브랜치**:
+   - `isthmus serve`: 무의존성 NDJSON JSON-RPC 2.0 stdio 서버.
+     도구 7종(check·query·graph·diff·impact·preflight·retentions)이 도구 인자→argv
+     변환으로 기존 명령 경로를 재사용. 프로토콜 협상·알림 무시·배치 거부.
+   - `isError`는 문서 미생성 실패만 — notFound/strict 발견은 문서 실린 정상 응답.
+   - `docs/MCP.md` 계약, verify-cli-contract에 실제 프로세스 세션 검증 추가.
+8. 남은 경쟁력 우선순위: 실제 앱 수준 코퍼스 확장, cold-cache CI 재현 예시.
 
 ## Resume Prompt
 
