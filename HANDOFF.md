@@ -1,766 +1,262 @@
 # Handoff
 
-## 2026-09-14 — 경쟁력 개선 목표 진행 중
-
-새 사용자 목표: (1) 특정 코드 변경 전 직접·전이 영향 점검, (2) 효율적인 AI 질의 skill/MCP,
-(3) 런타임에서 드러나는 의존성 검증, (4) CI 자동 갱신에 충분한 속도 또는 증분.
-**전체 목표는 active이며 아직 완료되지 않았다.** 단계·검증·다음 작업은
-[COMPETITIVENESS.md](docs/COMPETITIVENESS.md)가 현재 실행 기록이다.
-
-- `main`의 `fe786f9`에서 `feat/change-preflight` 분기. 첫 커밋 `1c528a6`:
-  `impact --file|--symbol|--changes`, 관련 호출/핸들러/배선·검토 파일·진단,
-  미관찰/동적 선택 보존, 공백도 실패시키는 strict, lossless compact, 배포 skill 갱신.
-- 추가 구현 `verify-runtime --expectations`: 시나리오/플랫폼/인스턴스/revision별 통신
-  관찰 대조. 실패/timeout/missing-handler/pending/중단/유실/stale을 구분한다.
-  `1c677e2`가 소비자 구현 커밋이다. 이후 Flutter 수집기와 실제 native 앱 검증도 구현했다.
-- 현재 `packages/isthmus_runtime`은 analyze clean·14 테스트 통과. `impact --runtime --revision`
-  후보 연결과 report.project, AI skill의 snapshot 위치/중복 질의 보강이 추가됐다.
-- 최신 `npm run verify`: 제품 341개, Phase 0 15개, build/CLI/package 통과.
-  line/branch/functions 99.01/96.41/97.08, `/tmp/isthmus-preflight-final-verify.log`.
-- CLI 성능 5회 측정: 영향 40k facts 최대 434ms, 런타임 100k events+1k 기대 최대 167ms.
-  시작·I/O·파싱·분석·직렬화 포함, producer/앱 빌드 제외.
-  `node scripts/benchmark-preflight.mjs` (먼저 최신 build 필요).
-- cartograph에서 다른 세션이 `feature/change-impact-workflow`를 수정 중이다. 변경 보존.
-  `change-impact` v1의 selected/changeScope/affected/via/depth는 읽었지만 연동 전에 재확인한다.
-- 실제 macOS Flutter 앱 검증 통과: 자체 Swift 채널 + 공개 url_launcher_macos 3.2.2 Pigeon.
-  성공 3개 기대, error/missing-handler/timeout 각 1개, pending 1개를 검증.
-  첫 앱 빌드 23.723초, 변경 없는 재빌드 4.984초. iOS/Android 검증은 아니다.
-  `/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-native-evidence-js8D7R/verification.json`.
-- iCloud SDK는 실제 파일 read에서 정지했다. 사용자 SDK를 수정하지 않고 공식 3.32.2를
-  `/tmp/isthmus-flutter-sdk.iW1YxU`에 격리 설치했다. pub 의존성도 준비됨.
-  `node scripts/verify-flutter-runtime.mjs /tmp/isthmus-flutter-sdk.iW1YxU/bin/flutter`로 재현.
-- 새 명령은 개발 소스에만 있다. npm 0.5.0 발행본에 있다고 안내하지 않는다.
-- 계속할 일: producer 전이 영향 연결 → Pigeon/Basic 정적 coverage·실제 앱 통합 및 명시적
-  negative outcome 기대 → CI 자동 갱신/신선도 검증 → 공개 사례·설치본·GLM 리뷰.
-
-이전 발행 기록은 아래에 남긴다. 아래의 "다음 단계"와 "깨끗한 main" 문장은 이전 릴리스
-시점의 기록이며 현재 작업 시작점은 위 active 목표다.
-
-## 2026-09-13 — 0.5.0 발행 완료
-
-사용자가 main(`fc05be2`, PR #67 릴리스 준비)에서 `npm publish --otp`로 발행했다.
-발행 직후 세션에서 404로 보였던 것은 npm 로컬 캐시 문제였고 CDN 직접 조회로 해소
-— **발행 직후 조회가 실패해도 npm view 캐시를 의심하고 registry CDN을 직접 본다.**
-발행 후 검증:
-
-- registry latest 0.5.0(버전 13개 목록에 0.5.0 존재).
-- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 65개 파일
-  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.5.0.
-- 발행본 CLI: `--version` 0.5.0, phase-0 check 코드 0(error 1·warning 2·
-  observedFacts 10·observedLimitations 7)이고 stdout이 골든 check.json과 바이트
-  동일, `--strict` 코드 1, SARIF(2.1.0·driver isthmus 0.5.0·results 3), 베이스라인
-  왕복(update → strict+baseline 억제 3·stale 0·코드 0)까지 확인.
-- 0.5.0 신기능 발행본 확인: `help check`, `graph --format mermaid <files>` 플래그
-  선행, query notFound의 stderr 힌트 + 코드 64, mixed-targets 보류 메시지의
-  관찰량 숫자 보간("10 facts across 2 documents").
-- 격리 설치본(`npm install --prefix` → bin `isthmus`) 0.5.0 실행 확인.
-- git 태그 `v0.5.0`(fc05be2) 푸시, GitHub Release v0.5.0 Latest 발행.
-
-## 2026-09-10 — 0.4.1 전체 개선 리뷰 반영 (PR #65 머지, main `f728394`)
-
-0.4.1 이후 제품 전량을 성능·보안·구조·기능·사용성 다섯 축으로 재검토했다. 보안은 새로운
-중등 이상 발견이 없었고(그래프 노드 ID 충돌, DOT/Mermaid 주입, ReDoS, 프로토타입 오염,
-diff 인수 위치 조작 등 추가 공격면 확인 — 모두 기존 방어로 차단), 성능은 기존 실측 판정이
-유효해 코드 변경 없음. 사용성·기능·구조의 채택 9건 + GLM packet-review 반영 3건을
-PR #65로 main에 squash 머지했다. 발견·처분 전문은 RESEARCH "0.4.1 전체 개선 리뷰" 절.
-
-- **사용성**: 공유 인수 파서(`src/cli/parse-arguments.ts`)로 check·graph·query·retentions의
-  플래그 위치 규칙 통일(임의 순서 + `--` 관례), `-h` 임의 위치 도움말 + `help <command>`.
-- **기능**: 조인 보류(mixed-targets) 메시지와 diff 비교 보류 메시지가 관찰 fact 수·문서 수를
-  숫자 보간으로 노출, query notFound/ambiguous stderr 힌트(종료 코드 64·stdout 불변),
-  query `qualifiedName`의 `:` 이스케이프로 가역 분해 확보(`:` 포함 이름만 값 변화).
-- **구조**: 공유 CLI 인프라 `src/cli/command-support.ts` 분리(기존 장기 후보 해소),
-  `createSarifLog` 지문 주입으로 report 계층의 `node:crypto` 제거,
-  `BridgeDiffDocument` 인터페이스 export.
-- **호환성**: isthmus 출력 v1의 필드·종료 코드·문서 형태 불변. CHANGELOG Unreleased가
-  채워졌으므로 다음 릴리스 때 이 내용이 0.4.2(또는 그 다음 버전)의 구성이 된다.
-- **검증**: `npm run verify` 전체(제품 287개, 커버리지 98.95/95.47/98.03), CI 두 잡 그린,
-  계약 검증기의 query stderr 기대값을 새 힌트 문구로 갱신.
-- **미반영(근거 기록)**: 입력 병렬 읽기(I/O 비병목 실측), 사람용 텍스트 출력 형식
-  (제품 불변 조건 판단 선행), diff의 공유 파서 전환(그룹 경계는 파서 모델이 다름),
-  usage 오류 원인 세분화(인수 재생 방지 설계), EPIPE exit 0(기존 동작).
-
-## 2026-09-10 — git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료
-
-- 누락되었던 버전(`v0.1.5` ~ `v0.4.0`)을 포함하여 최신 `v0.4.1`까지 각 릴리스 커밋에 맞춰 태그를 생성하고 원격 푸시 완료 (`v0.1.0` ~ `v0.4.1` 12개 버전 정렬).
-- GitHub Release에 `isthmus-cli 0.4.1`(`v0.4.1`)을 최신(Latest)으로 발행 완료 (PR #63 머지).
-
-## 2026-09-10 — 0.4.1 발행 완료
-
-PR #61(`fabe186`)로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
-
-- registry latest 0.4.1 반영 확인.
-- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 59개 파일
-  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.4.1.
-- 발행본 CLI: `--version` 0.4.1, phase-0 check 코드 0(error 1·warning 2·
-  observedFacts 10·observedLimitations 7), `--strict` 코드 1, 베이스라인 왕복
-  (update → strict+baseline 억제 3·stale 0·코드 0), SARIF(2.1.0·driver isthmus
-  0.4.1·results 3)까지 확인. 격리 설치본 npx 실행(0.4.1) 확인.
-
-Unreleased는 비어 있다. 0.4.1 구성: 0.4.0 구조·보안·성능 리뷰 반영(mixed-targets
-단어 경계 일치, 짝 없는 서러게이트 사전 거부, retentions 호출자 총예산 100만,
-빈 플래그 값 64, atomic-write mode 0o600).
-
-## 2026-09-10 — 0.4.0 구조·보안·성능 전체 리뷰 반영 완료 (PR #59 머지)
-
-0.4.0(발행 직후) 전체 리뷰의 6건 채택 사항과 문서화가 **PR #59(`c6b5ddb`)**로 main에 squash 머지됐다.
-자체 실측 + GLM packet-review 2회(초기 12건 발견 + PR 제출 전 정밀 검토 3건)를 거쳐 코드·테스트·계약 문서까지 완전 반영했다.
-
-### 성능 실측 (계약 상한 스케일, 0.4.0)
-
-| 시나리오 | 결과 |
-|---|---|
-| check json 87k facts(매치 30k·dedup·dynamic·미귀속 혼합) | 0.16–0.18s(0.3.0과 동일, 회귀 없음) |
-| check sarif 100k facts / 40k 이슈(relatedLocations 2개씩) | 0.39s, 출력 31MB(json 14MB의 ≈2.2배) |
-| 베이스라인 8k 이슈 update·apply | 각 0.15s(억제 8000·stale 0 확인) |
-| 베이스라인 40k 이슈 | 상한 10k 초과 → exit 2 안내 문구(설계대로) |
-| retentions 500메서드×120호출(상한 경로) | 0.15s(callers 100·omitted 20 확인) |
-
-### 반영된 변경 사항 (PR #59)
-
-1. **mixed-targets 단어 경계 토큰 일치**: `(?<![\w-])mixed-targets(?![\w-])/i` 적용. 산문 속 `"non-mixed-targets"` 오판 해소, 낱말 내포 표기 비보류 테스트 추가.
-2. **짝 없는 서러게이트 거부**: `\ud800` 등 미편성 서러게이트가 SARIF `encodeURIComponent`에서 `URIError`(Internal error exit 2)를 내던 문제를 해결하기 위해, 입력 파싱 시 `toWellFormed()`로 사전 거부. tsconfig lib ES2024 갱신.
-3. **retentions 호출자 증폭 예산**: 핸들러별 호출자 재실림 메모리 폭증 방지. 문서 전체 `MAX_RETENTION_CALLER_ENTRIES`(1,000,000) 초과 시 `RetentionValidationError`(exit 2), 상한 밖 호출자 객체 매핑 전 사전 `slice`.
-4. **빈 플래그 값 거부**: `--baseline ''` 빈 문자열 전달 시 exit 64 거부 및 미읽기 단언 테스트.
-5. **atomic-write 경화**: mode 0o600, 주석 정확화(fsync 부재, 심링크 자체 교체), 단위 테스트에 mode 단언 추가.
-6. **고정 문구 갱신**: 파서 "isthmus 0.1" 고정 문구를 "this isthmus version"으로 갱신.
-7. **문서 갱신**:
-   - `docs/GRAPH-EXCHANGE.md`: 서러게이트 거부 식별자 범위, mixed-targets 정규식 대소문자 무시, sourceLanguage 생산자 신뢰 전제, retentions 전체 호출자 총 상한(1,000,000) 및 실패 모드 명시.
-   - `docs/RESEARCH.md`: 0.4.0 구조·보안·성능 리뷰 절(성능 실측치 및 처분 전목록) 추가.
-   - `CHANGELOG.md`: Unreleased Fixed 항목 작성.
-
-
-## 2026-09-10 — 0.4.0 발행 완료
-
-PR #56(`5a0c733`)으로 준비하고 사용자가 `npm publish --otp`로 발행했다. 발행 후 검증:
-
-- registry latest 0.4.0(비동기 — 직후 조회는 0.3.0, 첫 재시도에 반영).
-- 공개 tarball SHA-512가 registry `dist.integrity`와 일치. 압축 해제 59개 파일
-  (dist·Skills·LICENSE·README 양문)이 main 빌드와 바이트 단위 동일, metadata 0.4.0.
-- 발행본 CLI: `--version` 0.4.0, phase-0 check 코드 0(error 1·warning 2·
-  observedFacts 10·observedLimitations 7), `--strict` 코드 1, 베이스라인 왕복
-  (update → strict+baseline 억제 3·stale 0·코드 0), SARIF(2.1.0·driver isthmus
-  0.4.0·results 3)까지 확인.
-
-Unreleased는 비어 있다. 0.4.0 구성: SARIF 리포터, check summary 관찰량, retentions
-다중 호출자 근거(cartograph 0.11.0과 왕복 검증), ObjC usr 없는 이름 신원(cartograph
-0.11.0과 종단 검증).
-
-## 2026-09-10 — cartograph #74·#75 이행(0.11.0) 검증 — Blockers 2·5 완전 종결
-
-cartograph PR #76(릴리스 0.11.0)이 두 제안을 모두 구현했다. 소스 빌드(0.11.0)로
-종단 독립 검증 완료:
-
-- **#75(ObjC 이름 신원)**: 인덱스에 유닛이 없는 `.m`(타깃 밖 파일)이 이제
-  `symbol: {"qualifiedName": "ExtraPlugin.handleMethodCall:result:"}`를 실운다
-  (0.10.1은 symbol 통째 생략). 인덱스 있는 선언은 실제 `c:` USR 유지,
-  `objective-c-handlers` 계수에 반영. isthmus check 수용 — 무인덱스 핸들러의 이름
-  신원이 증거(handler-without-invocation)에 그대로 흐른다.
-- **#74(callers 렌더링)**: 호출 5개 짜리 retentions로 `dead --external-retentions`
-  억제·`--explain` 확인 — `evidence: dart lib/camera.dart:5, dart
-  lib/camera_widget.dart:31, dart lib/gallery.dart:12, +2 more invokes 'takePhoto'
-  on channel 'com.example/camera'`(첫 3개 나열 + 잔여 계수 합산). 보존 판정·단일
-  호출자 문장은 불변(그쪽 테스트 기록).
-- 재현 절차: corpus `Sources/CorpusObjC/`에 타깃 밖 `.m` 추가(registrar 위임
-  패턴) → `bridges`; corpus dart 사실에 호출 복제 → `retentions` → `--explain`.
-- 로컬 brew cartograph는 0.10.1 — 검증 스크립트는 경로 인자라 막히지 않고,
-  필요시 사용자가 수동 tap 갱신 관행대로 0.11.0으로 올린다.
-
-이로 Blockers 2·5가 모두 완전 종결됐다. 남은 blockers는 없다.
-
-## 2026-09-10 — ObjC 무인덱스 신원: 이름 신원 완화 (Blockers 2 잔여 처리)
-
-Blockers 2의 남은 절반(인덱스 없이 빌드된 환경의 ObjC 핸들러 신원)을 제안·소비자
-구현으로 처리했다:
-
-- **결정**: SCIP 합성 usr 안은 기각 — 가짜 안정 식별자를 진짜처럼 싣는 것은 계약
-  철학 위반이고 ObjC 핸들러는 Swift 그래프 보존 대상이 아니어서 전역 식별자가
-  불필요. 대신 Swift `missing-handler-usrs`와 대칭인 **usr 없는 `qualifiedName`-only
-  symbol 허용** 완화를 채택(구문 표기 `Class.selector`는 소스에서 결정적,
-  `BridgeSymbolResolver`가 이미 이름을 알고 있어 생산 비용 없음).
-- **isthmus(선행 배포)**: `parse.ts`가 ObjC 사실의 usr 없는 symbol을 수용. usr이
-  있는 경우 실제 Clang `c:` 접두 요구 유지(거부 테스트는 가짜 usr 사례로 갱신).
-  수용 테스트: 조인·query 증거에 이름 신원 등장, retentions 제외·
-  `omittedObjectiveCHandlers` 계수는 불변.
-- **계약**: GRAPH-EXCHANGE ObjC 조항 갱신(usr 생략 허용·합성 신원 금지 명시).
-  RESEARCH에 기각·채택 근거 기록.
-- **cartograph 제안**: `BridgeSymbolResolver.resolve`가 ObjC 정의 위치 비유일·
-  무인덱스일 때 `attaching(Symbol(qualifiedName:, usr: nil))` 하도록 —
-  [cartograph#75](https://github.com/ictechgy/cartograph/issues/75)로 등록 완료.
-
-## 2026-09-10 — retentions 다중 호출자 근거 (Blockers 5 절반 종결)
-
-external-retentions v0의 additive 확장으로 `evidence.callers`(전체 호출 위치, 대표 포함,
-결정적 순서, 근거당 상한 100)+`callersOmitted`(상한 초과 계수, 0이면 생략)를 실는다.
-대표 `caller`는 옛 소비자 호환으로 유지되고 호출이 하나인 근거는 기존 출력과 바이트가
-같다.
-
-- **하위호환 실측(설치본 cartograph 0.10.1)**: corpus에 호출 하나를 복제한 다중 호출자
-  문서로 `retentions`를 만들어 먹였다 — dead 억제 정상(CameraBridge 미보고), `--explain`
-  정상(대표 호출 문장), exit 0. Swift `JSONDecoder`가 알 수 없는 키를 무시하므로
-  구형 소비자도 그대로 읽는다. 생산자 선행 배포 안전(limitationScopes와 같은 패턴).
-- **계약**: GRAPH-EXCHANGE "되돌려 주는 형식" 절에 예시·규칙(상한·계수 공개·소비자
-  무시 근거) 명문화. README 양문·CHANGELOG 갱신.
-- **남은 것(cartograph 쪽)**: `ExternalRetention`의 `callers` decoding과 `--explain`
-  렌더링(전체 호출 나열 + `+N more`). 합의 issue는
-  [cartograph#74](https://github.com/ictechgy/cartograph/issues/74)로 등록 완료 —
-  이번 세션 토큰은 자매 저장소 issue 쓰기가 열려 있었다(과거 403 기록은 시점별 권한
-  차이). 렌더링 구현되면 Blockers 5 완전 종결.
-
-## 2026-09-10 — check summary 관찰량 노출·오류 분류 경계 분리 (opencode 세션)
-
-- **PR #49 (main `db9ee3a`)**: 지연 리뷰 F4(a)(b) 반영 — 베이스라인 인코딩을 쓰기 try
-  밖으로, JSON 파싱과 문서 검증의 try 분리(오분류 잠재 경로 제거).
-- **이번 PR — Blockers 6 종결**: `isthmus-check` summary에 `observedFacts`(입력 문서
-  fact 총수)·`observedLimitations`(한계 수) 추가(호환 변경). 조인 결과
-  (`BridgeJoinResult.observedFacts`)가 관찰량을 들고 있어 보류(mixed-targets) 결과도
-  관찰량을 보존한다. Phase 0 골든 check.json 재생성(observedFacts 10·
-  observedLimitations 7). "브리지가 없는 프로젝트"와 "아무것도 관찰하지 못한 실행"이
-  이제 구분된다.
-
-## 2026-09-10 — SARIF 리포터·gitignore 커밋·지연 도착 리뷰 후속 (opencode 세션)
-
-- **PR #46**: 사용자 소유였던 `.gitignore` 미커밋 수정을 약속대로 별도 브랜치로 커밈
-  (`.serena/`, experiments 하위 Dart/Swift 산출물). 워크스페이스가 처음으로 깨끗해졌다.
-  사용자는 호스트 dartograph 0.5.0 업그레이드도 완료(Next Steps 1 소멸).
-- **PR #47 (main `ab5c997`)**: Next Steps 3 SARIF 리포터 — `check --format json|sarif`
-  (기본 json 불변). 규칙 id=진단 코드, 주 위치=첫 증거 끝점(세그먼트별 RFC 3986 인코딩
-  URI), 나머지 끝점=relatedLocations, 베이스라인 억제=`external` suppression, 논리 키
-  sha256=`partialFingerprints.isthmusIssueV1`. driver 버전은 package.json에서 주입.
-  GLM 리뷰(지연 도착) 반영: URI 인코딩·ruleIndex 폴백 제거·region 하한 가드·빈 버전
-  생략·테스트 보강. 기각 근거(키 충돌 없음·결정성)와 유보 항목(alarm churn·GitHub
-  업로드 상한 실측)은 RESEARCH 해당 절.
-- **지연 도착한 이전 리뷰(구조·보안·성능)의 후속 지적 처분**: F4(a)(b) —
-  `encodeBaselineDocument`이 쓰기 try 안에 있어 인코더 결함이 쓰기 실패로 오분류,
-  `JSON.parse`와 문서 검증기가 같은 try라 검증기 RangeError가 "not valid JSON"으로
-  오분류될 수 있는 잠재 결합(현재 미발생) — **수정 대기(Next Steps)**. F4(c)는 기각:
-  diff 포함 전 명령이 try/catch + `inputFailureResult ?? internalError` 가드 확인.
-  F5~F9는 문서 수준(단일 패스 정규화·fsync·mode·dangling 참조 등), RESEARCH 리뷰
-  절의 장기 후보로 남김.
-
-## 2026-09-10 — 구조·보안·성능 리뷰와 베이스라인 원자 쓰기 경화 (opencode 세션)
-
-사용자 요청으로 제품 코드 전량 리뷰(실측 포함)를 하고 발견 1건을 수정했다(PR #44).
-기록은 RESEARCH "구조·보안·성능 리뷰(2026-09-10)" 절 — 성능 실측(check 87k facts
-0.17s, graph 92.5k 간선 0.16s 등), 확인된 강점, 발견·처분 전부 거기에 있다.
-
-- **수정**: 베이스라인 임시파일이 `${path}.${pid}.tmp`로 예측 가능하고 `writeFile`
-  기본 플래그가 심링크를 따라가던 문제(공유 시스템 임의 파일 덮기 가능). 를
-  `src/cli/atomic-write.ts`로 분리해 pid+무작위 바이트 이름·`wx` 배타 생성·EEXIST
-  시 미정리(우리 것이 아닌 파일)로 바꿨고 단위 테스트 4건을 추가했다.
-- **문서화**: `limitations` 문자열의 자유 서술·소비자 미검증·텍스트 출력 경로 소독을
-  GRAPH-EXCHANGE에 명문화(의미 변경 없는 v1 동작 설명).
-- 미반영 후보(근거와 함께 RESEARCH에 기록): 비교자 내 `JSON.stringify`,
-  `encodeSortedJson` 깊은 복사, query 전체 결과 구성 — 실측 규모에서 무의미.
-  공유 CLI 인프라의 check-command 편중은 다음 CLI 확장 시 분리.
-
-## 2026-09-09 — limitationScopes 양성 사례 종단 실측 (opencode 세션)
-
-Next Steps 1을 닫았다(PR #43). `scripts/verify-limitation-scopes.mjs`(신규, 자기완결 합성 dogfood,
-네트워크·git 불필요)가 cartograph 0.10.1 + dartograph 0.5.0 + isthmus 0.3.0 조합으로 통과했다:
-
-- **스코프 실발행(양성)**: 위임 참조 핸들러(`setMethodCallHandler(HandlerDelegate().handleCall)`
-  — 클로저도 아니고 같은 파일·`self` 가독 참조도 아님) + 리터럴 채널이면
-  `opaque-handler-bodies:` limitation과 함께
-  `limitationScopes: [{"limitationIndex": 0, "channels": ["demo.example/opaque"]}]`가
-  실제로 발행된다. 발행 트리거의 코드 근거는 RESEARCH "스코프 양성 사례 실측" 절.
-- **채널 단위 완화(소비)**: isthmus check가 스코프 채널의 미처리 호출만
-  `unhandled-invocation-unverified` 경고로 낮추고, 같은 target 인접 채널의 미처리 호출과
-  등록 없는 채널 생성은 error로 유지했다(summary errors 2·warnings 1, `--strict` exit 1).
-  "핸들러만 가린다"는 계약 구분의 종단 확인. **인과 대조**도 포함: 같은 문서에서
-  `limitationScopes`만 빼면 인접 채널까지 완화되는 과완화가 돌아온다(errors 1·warnings 2)
-  — 완화의 원인이 스코프임을 입증.
-- **fixture 주의점(첫 실패에서 확정)**: 위임 본문에 `switch call.method`를 두면 귀속 없는
-  `channel: null` method-handle이 나와 `unattributed-method-handles:`(스코프 없는 공백)가
-  함께 발행되고 전체 완화로 번진다. 본문에서 분기를 제거해 해결했다.
-- 스크립트는 공개 plugin 스크립트와 동일 구조(버전 게이트 cartograph 0.9.0·dartograph
-  0.1.1·isthmus 0.2.0, isthmus-js 오버라이드)이고 사용법 테스트
-  `src/limitation-scopes-script.test.ts`를 추가했다. README 양문·scripts/AGENTS에 명령 안내.
-
-## 2026-09-09 — 통합 검증 전체 그린: cartograph 0.10.1 · dartograph 0.5.0 · isthmus 0.3.0 (opencode 세션)
-
-사용자가 `/var/folders` 쓰기 차단을 열자 cartograph가 샌드박스에서 실행 가능해져,
-차단됐던 두 통합 검증이 **모두 통과**했다(아래 "실행 불가 확정" 절의 판정을 무효화).
-
-- `verify-cartograph-roundtrip.mjs`: cartograph 0.10.1 + dartograph 0.5.0(샌드박스
-  `PUB_CACHE`) + isthmus 0.3.0 dist — producer → retentions → dead 억제 → explain
-  왕복 통과.
-- `verify-public-flutter-plugin.mjs`: plus_plugins 고정 커밋 `13e17047` — macOS Swift
-  근거와 **iOS ObjC 3개 핸들러·제외 계수** 검증 통과.
-- ObjC Flutter 핸들러가 `sourceLanguage: objective-c`와 **실제 clang USR**(`c:objc(cs)…`)이
-  붙은 사실로 추출된다(corpus 실측) — RESEARCH 1차 조사(indexstore-db의 Apple Clang
-  유닛)와 제안 #22의 방향 A가 cartograph 0.10.1에서 구현된 결과다. `objective-c-handlers:`
-  문구는 "outside the Swift analysis graph"로 바뀌었다(USR 부재가 아니라 그래프 밖이
-  본질).
-- 스코프 실측: `limitationScopes`는 **입증 가능한 채널 상한에서만** 발행된다 — 소스에서
-  `opaque-handler-bodies:`이고 전 채널이 알려졌을 때만 스코프를 붙임을 확인했고, corpus의
-  ObjC 공백은 상한 입증 불가로 `null`(계약의 "상한을 증명할 수 없으면 생략" 그대로).
-  양성 사례(스코프 실제 등장)는 미실측 — opaque-handler-bodies 형태 fixture가 필요하다.
-
-샌드박스 운영 기법(이번 실측): guard는 **워크스페이스 안 `.git/config` 쓰기**를 차단한다
-(`git init` 불가, `push -u`의 upstream 저장 실패와 같은 뿌리). dogfood 스크립트는
-checkout을 repositoryRoot에 만들므로 scripts·dist를 tmp로 복사한 뒤 **세 번째 인자
-(isthmus-js 오버라이드)로 재빌드를 건너뛰어** 실행했고, `swift` PATH shim으로
-`--disable-sandbox`를 보급했다(SwiftPM 자체 sandbox-exec 중첩 거부). Node `os.tmpdir()`은
-`$TMPDIR`을 따르지만 `NSTemporaryDirectory()`·xcrun은 confstr(`/var/folders`)을 따른다 —
-cartograph 실행에는 그 경로 개방이 필요했다.
-
-## 2026-09-09 — toolchain 수리 후: cartograph는 샌드박스에서 실행 불가 확정 (opencode 세션)
-
-> **이후 무효**: 같은 날 `/var/folders` 차단이 열리며 cartograph 실행 가능 — 최상단 절 참조.
-
-사용자가 Swift toolchain을 수리했다(hello-world 통과, 컴파일러 6.3.3). corpus
-`swift build`도 guard 플래그(`--disable-sandbox`, 필요 시 `--scratch-path`/`--cache-path`
-`$TMPDIR` 아래)로 성공해 인덱스 스토어(v5)를 만들었다. 그러나 **cartograph의
-인덱스 기반 명령(bridges·dead)은 샌드박스에서 실행할 수 없다**: 가속 DB를
-`NSTemporaryDirectory()`(= confstr `/var/folders/…`, TMPDIR 환경변수를 무시함을
-실측) 아래 `cartograph-index-db/`로 만드는데 그 경로 쓰기가 차단되고, CLI에 DB
-경로 오버라이드가 없다(`IndexStoreProvider.defaultDatabasePath` 하드코딩).
-xcrun도 같은 이유로 캐시 생성에 실패한다. 따라서 **verify-cartograph-roundtrip과
-verify-public-flutter-plugin, cartograph limitationScopes 실측은 사용자 터미널에서
-실행한다**(dartograph·isthmus·swift build는 샌드박스에서 모두 동작 — Blockers 3
-dartograph 쪽 실측은 완료된 상태). 실행 명령은 Next Steps 1에 있다.
-
-## 2026-09-09 — Blockers 3 수정 실측과 Swift toolchain 고장 발견 (opencode 세션)
-
-**dartograph는 샌드박스에서 실행 가능했다** — `dart pub global activate dartograph 0.5.0`이
-격리 `PUB_CACHE`(`…/homes/opencode/<id>/.pub-cache`)에 설치되고 `bridges`가 정상 동작한다.
-이전 기록 "샌드박스에서 실행 불가"는 호스트 `~/.pub-cache`만 본 오판이었다.
-
-합성 pub workspace로 Blockers 3 공유 루트 수정을 종단 실측했다(전부 통과):
-자동 감지(`resolution: workspace` → 조상 `workspace:` 루트)는 project=워크스페이스 루트 +
-location 재기준화(`packages/<pkg>/lib/…`), `--project` 명시도 동일, 비-workspace 패키지는
-자기 루트 유지, orphan은 `pub-workspace-root-not-found` limitation과 함께 폴백(조용하지
-않음). 이어서 isthmus check 조인 exit 0·matched 1/1·이슈 0, retentions 1건(재기준
-evidence 경로 보존), project 불일치 음성은 코드 2 거부. **cartograph 실측 문서가 기록한
-"문서 손 rewriting" 우회가 dartograph 쪽에서 불필요해졌음을 실증했다.** swift 문서는
-합성(hand-synthetic)이었다 — 수신 측 실문서는 아래 toolchain 장애로 보류.
-
-**호스트 Swift toolchain이 깨져 있다**: CLT 컴파일러는 6.3.3인데 SDK 26.5의 stdlib 모듈이
-6.3.2(15.4 SDK는 6.1)라 `swift` hello-world 실행조차 "this SDK is not supported by the
-compiler"로 실패한다. 디스크 파일 버전 사실이라 샌드박스 원인이 아니고, `swift build`
-전반이 불가하다. 이로써 **차단된 것**: verify-cartograph-roundtrip, verify-public-flutter-plugin,
-cartograph 0.10.1의 limitationScopes 실측(bridges는 인덱스 스토어 필수). brew cartograph
-0.10.1 설치 자체는 확인했다. toolchain 수리는 사용자 판단(호스트 시스템 변경은 세션에서
-시도하지 않는다). dartograph#38은 사용자가 닫았다.
-
-## 2026-09-09 — Blockers 3 완전 종결 (opencode 세션)
-
-dartograph가 **#52(merged, 0.5.0으로 pub.dev 발행)**로 공유 루트 (a)+(b)를 모두
-구현했다: `--project <shared-root>`(스캔 범위는 위치 인자 유지, project·location.path
-재기준화, 공유 루트는 realpath 후 package root 포함·동일 필수)와 pub workspace 자동
-감지(`resolution: workspace` → `workspace:` 키를 가진 가장 가까운 조상 pubspec
-디렉터리, Melos 정의와 동일), 우선순위 명시 옵션 > 감지 > 분석 루트, 감지 실패는
-`pub-workspace-root-not-found`·`pub-workspace-pubspec-unparsed` limitation 폴백.
-설치본 isthmus 0.2.0으로 모노레포 2패키지 왕복 실측(조인 성공 + 구행동 거부
-양방향)까지 마쳤다. isthmus는 GRAPH-EXCHANGE의 자리표시자 문구를 이 의미론으로
-구체화했다("생산자가 선언한 조인 루트" 정의 — cartograph의 `--project`=분석 루트와
-dartograph의 재기준화 옵션을 모두 포섭). 두 폴백 limitation은 호출 측 한계라
-isthmus 심각도 정책은 코드 변경 없음. **dartograph#38은 isthmus 계약 갱신까지
-열어 두기로 했으므로 이제 사용자가 닫으면 된다.** dartograph 쪽 비차단 후속:
-workspace 멤버십 검증(현재는 `workspace:` 키 존재만 확인).
-
-## 2026-09-09 — Blockers 3의 realpath 절반 합의 성립 (opencode 세션)
-
-cartograph#72가 **cartograph#73(merged)으로 닫히고 0.10.1로 발행됐다.** 주목할 구현
-세부: Foundation의 `resolvingSymlinksInPath().standardizedFileURL.path`는 그 머신에서
-`/private/tmp`을 `/tmp`으로 출력해 dartograph와 어긋나므로, 주입된 `FileSystem.realPath`
-(POSIX realpath)로 정규화했다. 경로 해결 불가·NUL은 실패다. 사용자 FileSystem 구현은
-새 메서드를 요구한다(기본은 미지원 오류). dartograph는 기존
-`Directory.resolveSymbolicLinks()`로 이미 같은 기준을 만족한다. isthmus는 계약
-(GRAPH-EXCHANGE)에 realpath 정규화 조항을 명문화하는 docs PR로 화답했고, 정확한
-문자열 일치 fail-closed는 유지한다. isthmus#30(초안 보존 issue)은 사용자가 닫았다.
-**모노레포 공유 루트 절반(dartograph#38)은 여전히 open·무응답이다.**
-로컬 brew cartograph는 0.8.2(수동 tap 갱신 관행)라 realpath 수정은 0.10.1로
-업그레이드해야 실제로 적용된다.
-
-## 2026-09-09 — 0.3.0 발행 완료 (opencode 세션)
-
-PR #34로 0.3.0을 준비(`92b160b`)하고 사용자가 `npm publish --otp`로 발행했다.
-check 베이스라인(#29)과 영문 README·README.ko.md 분리(#33, tarball 동봉)가 포함된다.
-발행 후 검증: registry latest 0.3.0(비동기 반영 — 직후 조회는 0.2.0, 약 25초 뒤 반영),
-tarball의 `dist`·영문/한글 README·SKILL.md가 main 빌드와 바이트 일치, package metadata
-0.3.0 확인. 발행본 CLI로 `--version` 0.3.0, phase-0 check 코드 0(error 1·warning 2)·
-`--strict` 코드 1, **베이스라인 왕복**(update가 isthmus-baseline v1 3항목 기록·이번
-실행 미억제 → strict+baseline 코드 0·suppressed 3·stale 0·전 이슈 `suppressed` 표시)
-까지 확인했다. README 영문본이 npm 페이지 대표 문서가 됐다.
-
-## 2026-09-08 — check 베이스라인과 2차 흡수 조사 (opencode 세션)
-
-PR #29 `098c8ef`로 PRD v0.1 목표의 베이스라인(Blockers 4)을 닫았다. isthmus 소유
-`isthmus-baseline` v1 문서, 논리 이슈 키(code·target·channel·method) 억제, `suppressed`
-표시 보존, `--update-baseline` 전체 재작성(자동 prune), `staleBaselineEntries` 계수,
-읽기·쓰기 상한 10,000 대칭, 원자 쓰기(temp+rename). 설계 근거는 RESEARCH의 오픈소스
-조사(ESLint bulk suppressions·detekt baseline·Trivy `.trivyignore`)다. GLM 리뷰
-(packet-review files 모드, effort=high) F1~F4를 전부 코드 검증 후 채택했고 기록은
-PR #29 본문에 있다. 검증: `npm run verify` 전체(제품 246개, 커버리지 98.71/95.84/97.87,
-Phase 0 15개, build·CLI·package 계약), CI 그린.
-
-같은 세션에서 RESEARCH에 흡수 조사 두 건을 머지했다(#24 1차, #28 2차). 1차의 Clang USR
-근거는 0.2.0 구현(#25)에 흡수됐고, 2차는 베이스라인 설계와 Blockers 3 합의 초안으로
-이어졌다. Blockers 3은 양쪽 producer 소스에서 코드 근거를 확정했다: cartograph는
-`CartographService.swift`의 `projectPath`(configuration ?? cwd)를 symlink 해결 없이
-`project`로 싣고, dartograph는 `_runBridges`에서 `resolveSymbolicLinksSync()`로
-정규화한다. 합의 issue는 사용자가 등록했다: [cartograph#72](https://github.com/ictechgy/cartograph/issues/72)
-(realpath 정규화)·[dartograph#38](https://github.com/ictechgy/dartograph/issues/38)
-(모노레포 공유 루트). 초안은 isthmus#30에 보존돼 있다(세션 토큰 권한이 생성만 되고
-코멘트·닫기는 403이라 열려 있음 — 정리는 사용자 몫).
-
-## 2026-09-08 — 0.2.0 발행 완료
-
-PR #25(계약 확장)와 #26(릴리스)은 병합됐다. 릴리스 소스는 `06aa96d`다.
-npm `isthmus-cli@0.2.0`과 latest 0.2.0을 확인했고, 공개 tarball의 SHA-512가 검증한 배포
-파일과 일치했다. 공개 CLI와 설치본 모두 실제 Dart→Swift 보존 왕복을 통과했다.
-설치본 49개 파일도 공개 tarball과 바이트 단위로 일치한다. npm 2단계 인증은 완료됐으며
-소비자 선행 배포 조건을 충족했다. 자세한 검증 기록은 [PR #26](https://github.com/ictechgy/isthmus/pull/26)에 있다.
-
-Cartograph 0.9.0 연계 변경과 배포 기록은 [cartograph #67](https://github.com/ictechgy/cartograph/pull/67)을 본다.
-함수 간 값 전파는 아직 구현하지 않았으며, 심볼 도달성과 구분한 재현/설계 검토가 포함됐다.
-기존 `.gitignore` 변경은 사용자 소유로 계속 보존한다.
-
-
-## 2026-09-08 — issue #64 브리지 범위 확장 (리뷰 준비)
-
-`feat/bridge-coverage-scopes`에서 선택적 v1 `limitationScopes`와 Objective-C 구현 표식,
-`omittedObjectiveCHandlers` 왕복을 구현했다. 소비자 isthmus를 먼저 배포한다. 범위를 모르는
-한계는 전체 target에 계속 적용한다. Objective-C 일반 공백은 일부 리터럴을 읽어도 좁히지 않는다.
-Clang 인덱스가 있으면 실제 `c:` USR을 유일한 선언 위치에서 붙인다. 일반 분석은 Swift 전용이다.
-코퍼스의 실제 Clang USR·Dart/Swift 보존 왕복·고정 battery_plus 검증을 통과했다.
-Cartograph 718 tests, coverage 93.59%, CLI/실제 인덱스 코퍼스/dead·cycles(타입 포함)·rules 통과.
-Isthmus `npm run verify` 통과. GLM packet-ask 검토 지적은 실패 재현 뒤 보완했다.
-후속 요청: CodeQL/Semgrep의 근거 있는 장점과 상수·Needle DI·스토리보드 분기 사각지대를 점검한다.
-
-_Last updated: 2026-09-13 (0.5.0 발행 완료)_
+_Last updated: 2026-09-16 KST by Devin (공개 호환 버전 세트 완성 확인 · 레포 상태 재실측)_
 
 ## Goal
 
-Flutter Dart ↔ Swift의 bridge facts를 조인해 호출 근거·불일치·외부 retention을 제공한다.
-작업 규칙의 정본은 [AGENTS.md](AGENTS.md)이며 CLAUDE.md는 이를 참조한다.
+사용자의 목표는 **변경 전 직접·전이 영향 점검, 효율적인 AI 질의, 런타임 의존성 검증,
+CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다. 타당성 조사를 반복하지 말고
+구현·검증을 이어간다. isthmus 0.6.0 발행에 이어 **네 도구의 공개 호환 버전 세트가 갖춰졌다**
+(아래 표). 시장 경쟁력·앱 전체 정확도까지 입증했다는 뜻은 아니다.
 
 ## Current Status
 
-- **0.5.0 릴리스 소스는 `fc05be2`(PR #67)다.** npm `isthmus-cli@0.5.0`이 최신 발행본이고
-  registry latest도 0.5.0이다(2026-09-13 발행, 검증은 최상단 절). git 태그 `v0.5.0`과
-  GitHub Release 발행 완료. CHANGELOG Unreleased는 다시 비어 있다.
-- 이전 발행본은 0.4.1(`fabe186`, PR #61, 2026-09-10)이고 tarball·발행본 검증 기록은
-  위 "0.4.1 발행 완료" 절에 있다. 0.4.0 이하는 각 발행 절을 본다.
-- **0.1.5는 저장소보다 앞서 나갔다.** 발행 시점의 작업 트리가 기능 브랜치여서 아직 머지하지
-  않은 #15가 tarball에 담겼다. unpublish 대신 #15를 머지하고 0.1.6으로 두 상태를 맞췄다.
-  0.1.5는 registry에 남아 있고 코드 내용은 0.1.6과 사실상 같다.
-- 로컬 `.gitignore` 미커밋 수정은 사용자 소유로 보존한다. 커밋 요청이 오면 별도 브랜치에서 다룬다.
-- 이전 세션들이 남긴 plus_plugins 조사 메모 두 건은 **0.1.5~0.1.6 세션에서 실제 producer로
-  재현됐다.** ObjC 항목은 재현 뒤 수정까지 끝났고(#15, target 귀속 후에도 동작 보존 #18,
-  cartograph 0.10.1의 ObjC 사실 추출로 대부분 해소), 경로 정규화 항목은 2026-09-09
-  cartograph 0.10.1·dartograph 0.5.0·계약 명문화로 닫혔다(Blockers 3 종결).
+- 로컬 `/Users/jinhongan/Desktop/isthmus`: `chore/release-0.6.0` branch(HEAD `3ded085`)에 있다.
+  기존 미커밋 문서 변경(HANDOFF·FEASIBILITY·PRD·RESEARCH)과 미추적 파일
+  (HANDOFF.cartograph-notes.md·default.profraw)은 보존했다.
+- 아래 PR은 **MERGED**다. 이번 갱신에서 GitHub 실측으로 재확인했다.
+
+| 저장소 / PR | 내용 | merge commit |
+| --- | --- | --- |
+| [isthmus #70](https://github.com/ictechgy/isthmus/pull/70) | preflight·runtime | `877b91cfd4fb304a8784339a0e0359768e7549d7` |
+| [isthmus #71](https://github.com/ictechgy/isthmus/pull/71) | 0.6.0 릴리스 | `840aaa0e85f23d6979e5bf2e9c78a4ee15963cd9` |
+| [cartograph #89](https://github.com/ictechgy/cartograph/pull/89) | bridge-facts v2 Basic/Pigeon | `b5c9b841fd1fc6a76179d6d1548c564a59f65c74` |
+| [kartograph #50](https://github.com/ictechgy/kartograph/pull/50) | Basic bridge facts | `31b409f5de7b09914db11b9af23cae75ff38af82` |
+| [kartograph #51](https://github.com/ictechgy/kartograph/pull/51) | why·신뢰도·markdown 리포트 | (squash `8b8721b`) |
+| [kartograph #52](https://github.com/ictechgy/kartograph/pull/52) | 0.10.0 릴리스 준비 | main `57b701c` |
+| [dartograph #94](https://github.com/ictechgy/dartograph/pull/94) | Basic 송신 | `5e5d1c6eea3ef39f0e179e4d9338526c9c36741f` |
+| [dartograph #96](https://github.com/ictechgy/dartograph/pull/96) | 0.10.0 증분 분석 등 | MERGED 2026-09-15 |
+
+- **공개 호환 버전 세트 — 2026-09-16 실측 완성.** TOOLCHAIN.md 요구 조건을 공개 버전이 충족한다.
+
+| 도구 | 공개 버전 | 필요 기능 실측 |
+| --- | --- | --- |
+| isthmus-cli | 0.6.0 (npm·GitHub) | preflight·impact·verify-runtime·--summary/--explain |
+| cartograph | **0.15.1** (GitHub Release Latest, 태그 0.15.0·0.15.1) | 설치본 `/opt/homebrew/bin/cartograph` 0.15.1의 `bridges --help`에 `--messages` 존재 확인 |
+| kartograph | **v0.10.0** (GitHub Release Latest) | main `57b701c`에 `bridges --messages` 코드 존재(AgentCommand.kt·BridgeFactScannerTest.kt) |
+| dartograph | **0.10.0** (pub.dev·GitHub 태그) | `bridges --messages --format json`은 v0.9.0부터 존재, 0.10.0에서 유지 |
+
+- dartograph [PR #98](https://github.com/ictechgy/dartograph/pull/98)(dependency audit·closed-app mode·
+  MCP resources/prompts)은 **OPEN·mergeable·CI 전부 SUCCESS·리뷰 없음**. 머지 여부는 사용자 승인 사안.
+- 자매 로컬 상태(2026-09-16): `../cartograph`는 `refactor/agent-guidance-0.14.0`(`171b313`)에서
+  AGENTS 리팩터링 미커밋(AGENTS.md·HANDOFF.md·Package.swift·Skills/AGENTS.md·Sources/AGENTS.md 수정,
+  Sources/CartographIndexStore/AGENTS.md 신규). `../kartograph`는 `feat/adoption-competitiveness`(`97e0397`)에
+  CI·실험 수정 커밋과 미커밋 AGENTS/HANDOFF 변경. `../dartograph`는 `feature/competitive-gaps`(`f5a078d`,
+  origin과 동기화)에 미추적 HANDOFF-PROGRESS.md. 각 저장소 변경 전 그쪽 AGENTS·status를 다시 확인한다.
+
+## 경쟁력·배포 상태 조사 (2026-09-16)
+
+이 절은 새 구현이나 검증 완료 주장이 아니라 **경쟁력 확보에 필요한 것**과 **공개 배포 상태**를 다시
+실측한 조사 기록이다. 근거는 공개 npm/pub/GitHub API 조회(2026-09-16), 그리고
+`docs/COMPETITIVENESS.md`·`docs/FEASIBILITY.md`(실패 요인 10)·`docs/PRD.md`·`docs/TOOLCHAIN.md` 대조다.
+경쟁 도구는 공식 자료·공개 저장소만 확인했고 직접 설치해 정확도·성능을 비교하지 않았다.
+
+### 공개 버전 실측 (2026-09-16 재실측 — 호환 세트 완성)
+
+| 도구 | 공개 최신 | 발행 | TOOLCHAIN.md 요구 대비 |
+| --- | --- | --- | --- |
+| isthmus-cli | 0.6.0 (npm·GitHub release 동일) | 2026-09-15 | `preflight`·`impact`·`verify-runtime`·`--summary/--explain` **있음** |
+| cartograph | **0.15.1** (Release Latest) | 2026-09-15 | `impact` + `bridges --messages` **있음** (설치본 help 실측) |
+| kartograph | **v0.10.0** (Release Latest) | 2026-09-16 | `impact --graph-file` + `bridges --messages` 코드 main 확인 |
+| dartograph | **0.10.0** (pub.dev 동일) | 2026-09-15 | `bridges --messages --format json` **있음** |
+
+**결론: 공개 버전만으로 호환 세트를 구성할 수 있다.** 네 도구 모두 TOOLCHAIN.md 요구 조건 충족.
+남은 것은 이 세트를 문서로 고정하는 것(버전 표·고정 예제·수집 설정·CI 예시)과 실사용 검증이다.
+
+### 호환 세트 확보를 위해 발행해야 할 것 — 전부 완료
+
+1. ~~isthmus 0.6.0~~ — **완료**(2026-09-15 npm·GitHub Release 발행).
+2. ~~cartograph~~ — **완료**: PR #89로 Basic/Pigeon·handlerScope 통합 후 0.15.0→0.15.1 태그·Release 발행.
+3. ~~kartograph~~ — **완료**: PR #52 머지 후 v0.10.0 Release 발행(2026-09-16).
+4. ~~dartograph~~ — **완료 + 초과**: 0.10.0 발행. README의 "opt-in development-source producer" 표기는
+   지원 수준 disclaim이 아니라 source 입력 사실 기술로 판단됨 — 문구 변경 필요 여부는 재평가 사안.
+5. 공개 호환 버전 표 + 고정 예제·수집 설정·예상 출력·CI 예시 (첫 유용한 보고서까지 15분 목표). ← **남은 유일한 세트 작업**
+
+### 경쟁 지형 재확인 (외부)
+
+- CodeGraph(MIT, 로컬 그래프 + MCP + impact)가 목표 1·2·4와 크게 겹치고 "AI 에이전트 컨텍스트 계층"으로
+  포지셔닝하며 외부 확산 중이다. Dart↔Flutter 채널 조인은 이번에도 확인하지 못했다.
+- Patrol MCP가 AI의 E2E 테스트 작성·실행·디버깅을 이미 점유했고, Marionette MCP가 실행 중 앱 제어로 인접한다.
+- Pigeon 29의 실험적 FFI/JNI, Periphery의 MIT 저장소 archive→상용 전환은 각각 지원 범위 축소와
+  유지관리 리스크 사례다.
+- 따라서 그래프 + MCP + impact 자체는 이미 포화이며, 이 제품이 증명해야 할 차별점은
+  **크로스언어 리터럴 조인 + retention 왕복**(`dead --explain`이 Dart 호출 위치를 돌려주는 지점)이다.
+
+### 경쟁력 확보 우선순위 (조사 판단)
+
+1. ~~공개 호환 버전 세트 + 설치 경로~~ — **달성**(2026-09-16 실측). 남은 것은 이 세트를 문서로 고정하는 것뿐이다.
+2. 실사용 정밀도 코퍼스 — 공개 앱/플러그인 3개 × 실제 변경 10개, 수동 정답 기준 오탐·누락 계수,
+   지원 밖 채널을 분모에서 제외하지 않기. 공통 `setUp` 과잉 전파는 선택 사례에서만 수정된 상태다.
+3. 외부 유지관리자 3명 반복 사용 (2주 내 재실행 2명).
+4. 적용 범위 정직성(EventChannel·FFI/JNI·iOS 실기기·다른 Android API/ABI·release/lifecycle 미검증 명시) 후 확장.
+5. AI 질의 인터페이스 — 대형 입력 9.5MB 출력의 요약/개별 경로 조회 계약. Patrol MCP·CodeGraph와
+   경쟁하기보다 producer/MCP 계층으로 연동하는 선택지 검토.
+6. 유지관리·거버넌스 — 버전·호환 표를 저장소 산출물로 유지하고, 실패 시 독립 도구에서 adapter로
+   축소하는 탈출 경로를 미리 정한다.
+
+### 레포별 남은 작업 (2026-09-16 재실측)
+
+아래는 다음 세션이 이어갈 작업이다. 정본 계약은 `docs/GRAPH-EXCHANGE.md`·`docs/BRIDGE-MESSAGES.md`.
+
+**isthmus — 호환 세트 문서화(남은 유일한 세트 작업)**
+
+- 공개 호환 버전 표(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0)와
+  설치 경로를 README 또는 docs에 고정한다.
+- 고정 예제: producer(cartograph/kartograph/dartograph `bridges --messages`) → isthmus `preflight`/
+  `impact` → `retentions --for cartograph` → `cartograph dead --external-retentions`까지
+  첫 유용한 보고서까지 15분을 목표로 수집 설정·예상 출력·CI 예시를 작성한다.
+- 공개 버전만으로 실제 end-to-end 조인을 한 번 재현해 문서 수치를 검증한다(이전까지는 개발
+  worktree 조합으로만 검증했다).
+
+**dartograph — PR #98 리뷰·머지 판단**
+
+- OPEN·CI SUCCESS·mergeable이나 리뷰 없음. 머지는 사용자 승인 후 진행한다.
+- 로컬 미추적 `HANDOFF-PROGRESS.md` 보존.
+
+**cartograph — 로컬 미커밋 정리 판단**
+
+- `refactor/agent-guidance-0.14.0`의 AGENTS 리팩터링 미커밋 변경은 다른 세션의 진행 중 작업으로
+  보이므로 함부로 커밋·폐기하지 않는다.
+- 공개 main은 `b5c9b841`(0.15.1 머지)까지 진행. 로컬 main ref는 `171b313`에 멈춰 있어 fetch 필요.
+
+**kartograph — 로컬 미커밋 정리 판단**
+
+- `feat/adoption-competitiveness`(`97e0397`)에 CI·실험 수정 커밋 + 미커밋 AGENTS/HANDOFF 변경 보존.
+
+태그 관례: cartograph `0.15.x`(v 없음), kartograph `v0.x.y`, dartograph pubspec 방식.
+
+### 환경 제약 — 이번 세션 기준 갱신
+
+- **해소됨**: 이전 세션에서 `Operation not permitted`였던 `~/.local/share/isthmus/toolchains/`와
+  `../cartograph`를 이번 세션에서는 읽을 수 있었다. 경로 허용은 세션 시작 시 Seatbelt 프로파일에
+  반영되므로 세션마다 다를 수 있다 — 새 세션에서 막히면 그때 다시 확인한다.
+- `zcode_run` 실행 채널이 high demand 오류로 실패하거나 요약본을 반환한 이력이 있다.
+  버전 수치는 재실측으로 교차확인한다.
 
 ## Completed
 
-- PR #4 `30e0396`: 실제 cartograph·dartograph 생산부터 isthmus retention, dead/explain까지 검증.
-- PR #7 `e08ad85`: `diff --before <files...> --after <files...> [--strict]`.
-- PR #8 `a73222d`: 0.1.4 버전·CHANGELOG·설치 안내 갱신과 배포.
-- PR #9 `b2eebfa`: 루트 AGENTS 정본, CLAUDE 참조, src/scripts/docs/experiments별 지침.
-- PR #11 `a5ea24a`: 조인 플랫폼 구성 fail-closed와 입력 오류 원인 구분.
-- PR #12 `122fca6`(이전 세션): 보고 없이 사라지던 관찰 두 곳을 닫았다.
-  - 조인에서 제외한 사실을 isthmus가 직접 세어 `tool`이 `isthmus`인 limitation으로 낸다.
-    `unjoined-dynamic-channels`·`unjoined-dynamic-methods`·`unjoined-unattributed-handlers`.
-    생산자의 신고 여부와 신고한 개수에 의존하지 않는다. 같은 위치 중복은 증거 dedup과 같은
-    규칙으로 한 번만 세고, dynamic이면서 미귀속인 핸들러는 dynamic으로만 센다.
-  - `retentions --for cartograph`가 수신 측 Swift 문서를 요구하고, 호출자가 있는데도 `symbol`이
-    없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 부분 문서 대신 종료 코드 2로 실패한다.
-- PR #13 `8b1c285`(이전 세션): 0.1.5 버전·CHANGELOG·README 상태 갱신.
-- PR #15 `9029a4e`(이전 세션): 수신 측이 신고한 분석 공백을 심각도에 반영한다.
-  Objective-C로 쓰인 Flutter 핸들러처럼 수신 측 분석에 나타날 수 없는 코드가 있으면
-  "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 `-unverified` 경고로 낸다.
-  증거와 한계는 그대로 남기고 `--strict`를 실패시키지 않는다. 공백의 종류를 나눠 채널
-  진단과 메서드 진단을 따로 판단하고, 호출 측 한계는 심각도를 바꾸지 않으며, 알려진
-  접두사만 인정한다.
-- PR #16 `bc497d2`(이전 세션): 0.1.6 준비와 발행 사고 정정. npm 발행 완료.
-- PR #18 `f074bab`(이번 세션): `JoinLimitation`에 target 귀속 추가. check 완화 단위를
-  조인 전체에서 진단의 target으로 좁혔다(Blockers 1의 GLM 변형 절반 닫힘). 사실 없는
-  수신 문서(target null)의 공백은 귀속 근거가 없어 전체 적용 유지(공존 조합 테스트
-  고정). `unjoined-*` 접두사는 tool isthmus만 인정(리뷰 M1 fail-open). mixed-targets
-  문서 한계는 null 귀속. diff 비교 키·DOT/Mermaid 주석에 target 반영. 골든 3종에
-  `"target": "flutter"` 추가. GLM 리뷰 1회: 11건 중 8건 채택, 3건은 이유를 기록하고
-  미채택(PR 코멘트 참조).
-- PR #20 `a25bbf6`(이번 세션): 0.1.7 버전·CHANGELOG·README 상태 갱신과 npm 발행.
-  발행 후 registry·tarball·발행본 실행 검증 완료.
-- PR #22 `a60ebe9`(이번 세션): 완화 범위 축소 제안(방향 A·B + 합의 질문 4개)을
-  RESEARCH에 추가. cartograph 0.8.2 소스와 실측 문서를 clone해 1차 출처로 근거를 댔다.
-  합의 issue는 [cartograph#64](https://github.com/ictechgy/cartograph/issues/64)(사용자 등록,
-  토큰에 자매 저장소 issue 쓰기 권한이 없음).
-- PR #24 `982e67f`·#28 `d103634`(이번 세션): 오픈소스 흡수 조사 두 건을 RESEARCH에 기록.
-  1차(베이스라인·Clang USR·SCIP·SARIF·realpath), 2차(Trivy 만료일·Semgrep baseline-commit·
-  Pub Workspaces/Melos·oxc/knip·CodeQL 비흡수). cartograph#64 코멘트로 Clang USR 근거 전달.
-- PR #29 `098c8ef`(이번 세션): check 베이스라인(`isthmus-baseline` v1, `--baseline`·
-  `--update-baseline`). GLM 리뷰 F1~F4 채택(쓰기 상한·원자 쓰기·멱등 apply·JSON 오류
-  분류). Blockers 4 닫힘.
-- PR #25 `5fded38`·#26 `a25bbf6`·#27 `a2f0952`(별도 세션): 선택적 v1 `limitationScopes`·
-  ObjC `sourceLanguage`·clang USR·`omittedObjectiveCHandlers`·`origin: consumer` 구현과
-  0.2.0 발행, 그 기록. cartograph#65·0.9.0이 생산자 측.
-- PR #31·#32·#35·#38·#39·#40·#41(이번 세션): 이 문서 갱신 일곱 번(베이스라인 머지,
-  Blockers 3 합의 issue, 0.3.0 발행, toolchain 경계, 통합 검증 그린 등).
-- PR #33 `f33d31b`(이번 세션): README 영문 전환 + 퇴고한 한글본 `README.ko.md` 분리
-  (cartograph 관례, tarball 동봉). GLM 리뷰로 영문 문법·양 문서 대조·기술 정합성 점검.
-- PR #34 `92b160b`(이번 세션): 0.3.0 릴리스 준비와 npm 발행(발행·검증 기록은 위 절).
-- PR #43(이번 세션): `verify-limitation-scopes.mjs` 스코프 양성 종단 검증(인과 대조 포함)과
-  사용법 테스트, RESEARCH 실측 절·README 양문·scripts AGENTS 안내. Blockers 1 완전 종결.
-- PR #44(이번 세션): 구조·보안·성능 리뷰(2026-09-10) 반영 — 베이스라인 원자 쓰기 경화
-  (`src/cli/atomic-write.ts`, 무작위 임시 이름·`wx` 배타 생성, 테스트 4종)와 GRAPH-EXCHANGE
-  `limitations` 문자열 동작 명문화. 리뷰 기록은 RESEARCH 해당 절.
-- PR #46(이번 세션): 사용자 소유 `.gitignore` 수정 커밋(Phase 0 산출물·serena 무시).
-- PR #47(이번 세션): `check --format sarif` SARIF 2.1.0 리포터(리뷰 반영 포함).
-- PR #48~#50(이번 세션): HANDOFF 기록 두 건과 check summary 관찰량
-  observedFacts·observedLimitations(Blockers 6 종결, 골든 재생성).
-- PR #51(이번 세션): retentions 다중 호출자 근거 callers·callersOmitted(Blockers 5
-  isthmus 쪽, 하위호환 실측 포함).
-- PR #52(이번 세션): cartograph#74 등록 기록·자매 저장소 쓰기 권한 정정.
-- PR #53~#55(이번 세션): ObjC usr 없는 qualifiedName 신원 허용(SCIP 기각 근거와 함께),
-  cartograph#75 등록, 0.11.0 이행 검증 기록(Blockers 2·5 완전 종결).
-- PR #56(이번 세션): 0.4.0 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행.
-- PR #59 `c6b5ddb`(이번 세션): 0.4.0 구조·보안·성능 리뷰 반영(mixed-targets 단어 경계, 서러게이트 거부, retentions 호출자 예산, 빈 플래그 값 64, atomic-write 0o600 및 모드 단언, parse 고정 문구 갱신, GRAPH-EXCHANGE·RESEARCH·CHANGELOG 문서화). GLM packet-review 2회 반영 완료.
-- PR #61 `fabe186`(이번 세션): 0.4.1 릴리스 준비(버전·CHANGELOG·README Status)와 npm 발행. 발행 후 검증 완료.
-- PR #62 `7912e34`(이번 세션): 0.4.1 발행 기록 및 HANDOFF.md 갱신.
-- PR #63 `ea796d8`(이번 세션): v0.1.5~v0.4.1 git 태그 전량 생성·푸시 및 v0.4.1 GitHub Release 완료 기록.
-- PR #67 `fc05be2`(이번 세션): 0.5.0 릴리스 준비(버전 minor — 사용자 보이는 동작 추가와
-  `:` 포함 이름의 qualifiedName 값 변경)와 npm 발행. 발행 후 검증 완료(최상단 절).
-- PR #66 `2cd120b`·#68 `9d13a93`(이번 세션): 이 문서 갱신 두 번(#65 개선 반영 기록,
-  0.5.0 발행 기록).
-- PR #65 `f728394`(이번 세션): 0.4.1 전체 개선 리뷰 반영 — CLI 사용성 통일(공유 파서·`--`·help),
-  조인 보류·diff 보류 관찰량 노출, query stderr 힌트·`qualifiedName` `:` 이스케이프,
-  command-support 분리·SARIF 지문 주입·`BridgeDiffDocument`. GLM 리뷰 1회 반영.
-- PR #36 `601dcde`·#37 `8d04dfd`(이번 세션): GRAPH-EXCHANGE에 project POSIX realpath
-  정규화 조항과 "생산자가 선언한 조인 루트" 조항 명문화. cartograph#72→#73(0.10.1),
-  dartograph#38→#52(0.5.0) 합의의 isthmus 쪽 이행. #36은 GLM 리뷰 P1×2·P2×4·P3×3 반영.
-- isthmus#30(합의 초안 보존 issue)은 목적 달성 후 사용자 닫기.
-- PR #14 `67de008`·#17 `d3e5ab7`(이전 세션): 이 문서 갱신 두 번. #14는 blocker 재현 기록,
-  #17은 0.1.6 발행과 사고 경위.
+- isthmus: `impact` / `preflight` / `verify-runtime`, summary/explain, Method/Basic/Pigeon,
+  Kotlin impact adapter, 플랫폼별 runtime 후보, Git 변경 선택·내용 지문 기반 capture/cache.
+- isthmus 0.6.0 발행(2026-09-15): PR #71로 릴리스 준비 후 npm·GitHub Release 공개. registry
+  tarball SHA-512가 메타데이터와 일치하고, 추적 파일 14개가 v0.6.0 태그와 바이트 단위 동일함을 확인했다.
+- Dartograph: impact·runtime·MCP, Basic 송신, `source_packages`의 app-local package 분석.
+  AOT `--execute` 자기 실행과 후손이 출력 pipe를 보유하면 timeout 밖에서 기다리는 결함을 수정했다.
+- Kartograph: 실제 JVM snapshot ID를 연결하는 Basic 수신. mutable/조건 분기, quoted 연결식,
+  alias 변환/getter를 literal로 오판하는 문제, UTF-8 위치·모호한 함수 귀속을 수정했다.
+- GLM 지적을 실행 가능한 회귀로 대조하고 CI 성공 후 머지했다. 완료한 PR을 재생성·재머지하지 않는다.
+- Cartograph 0.15.1: 보관 아카이브(f2d77c1)의 Basic/Pigeon·handlerScope 차이를 0.14.0 위에 통합해
+  PR #89 머지, 태그 0.15.0·0.15.1, GitHub Release 발행. 설치본 help에 `--messages` 실측.
+- Kartograph v0.10.0: PR #52로 릴리스 발행. 추가로 PR #51(why·신뢰도 등급·억제·마크다운 리포트) 머지.
+- Dartograph 0.10.0: PR #96으로 증분 분석·검증 장부·reporter까지 포함해 pub.dev 발행.
 
 ## Key Files & State
 
-- [교환 계약](docs/GRAPH-EXCHANGE.md): 조인 규칙에 "세는 주체는 소비자", 완화 단위가
-  진단의 target이라는 것, 보존 문서 부분 생성 금지를 명시했다. 변경 전에 producer/consumer
-  영향을 확인한다.
-- `src/join/join.ts`: `limitationTarget`이 mixed-targets 문서를 null로 귀속시키고,
-  `countFactsByPlatformTarget`가 조인 제외 사실을 (platform, target)별로 센다.
-  `unjoinedFactKey`를 JSON으로 만드는 이유는 `channel`이 null일 수 있어서다(주석 참조).
-- `src/report/retentions.ts`: `validateCartographRetentionInputs`(Swift 문서 요구)와
-  `rejectUnresolvedSwiftHandlers`(심볼 없는 매치 핸들러 거부).
-- `src/report/check-report.ts`: `receiverCoverageGaps(target)`이 수신 측 한계를 "핸들러를
-  가리는 공백"과 "등록을 가리는 공백"으로 나누고 진단의 target별로 완화한다. 접두사
-  목록은 닫혀 있고 계약이며, `unjoined-*`는 `tool`이 isthmus인 항목만 인정한다.
-- `src/report/diff.ts`·`src/report/graph.ts`: 한계 비교 키와 텍스트 주석
-  (`platform/target/tool`)에 target을 싣는다. diff 문서 형태는 `BridgeDiffDocument`로
-  명시돼 있다.
-- `src/cli/command-support.ts`: 모든 명령이 쓰는 CLI 인프라(`readBridgeDocuments`,
-  bridge-facts 입력 오류 4종과 그 매퍼, `CommandResult`, 지연 조인 메시지의 관찰량
-  보간). `src/cli/parse-arguments.ts`: 공유 플래그 파서(임의 순서 플래그, `--` 관례,
-  중복·빈 값 거부).
-- `src/cli/check-command.ts`: check 고유의 baseline 입력·쓰기 오류(읽기·JSON·계약·
-  크기·쓰기·쓰기 상한)와 그 매퍼. 보간값은 숫자 `inputPosition`·`MAX_BASELINE_ENTRIES`와
-  parse/baseline의 정적 `reason`뿐이다. SARIF 지문의 sha256 구현도 여기 있다.
-- `src/report/baseline.ts`: `isthmus-baseline` v1 parse/create/encode/apply. 항목 키
-  `baselineEntryKey`는 diff의 이슈 비교 키와 동일하다(단일 원천). apply는 키 교집합
-  기반이라 멱등이고, 억제는 `suppressed: true` 표시로 사실·증거를 보존한다.
-- `experiments/phase-0/expected/{check,graph,query}.json`: limitations가 `target` 필드를
-  담는다. `join.json`은 `{platform, message}` 투영이라 JoinLimitation 형태 영향이 없다.
-- [README](README.md): `tool`이 `isthmus`인 한계 세 종류, target별 완화 단위, retentions
-  거부 조건, 출력 문서 버전 1의 호환 변경 정책을 설명한다.
-- [RESEARCH](docs/RESEARCH.md): "완화 범위 축소 제안 (2026-09-08)"이 Blockers 1의 합의
-  초안이다(방향 A: cartograph의 ObjC Flutter 핸들러 사실화, 방향 B: 공백 limitation의
-  채널 스코프 접미사). 실측 근거와 isthmus 쪽 구현 약속·합의 질문이 들어 있다.
+- [docs/GRAPH-EXCHANGE.md](docs/GRAPH-EXCHANGE.md): producer/consumer 계약. 계약 변경 전에 읽는다.
+- [docs/PREFLIGHT.md](docs/PREFLIGHT.md), [docs/RUNTIME.md](docs/RUNTIME.md),
+  [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md): 입력·실행 검증·고정 소스 구축 절차.
+- `src/exchange/{preflight-context,kartograph-impact}.ts`, `src/report/preflight*.ts`: 파싱·투영·근거 연결.
+- `scripts/{capture-preflight,build-preflight-toolchain}.mjs`, `packages/isthmus_runtime/`,
+  `Skills/isthmus/SKILL.md`: 수집·구축·Flutter recorder·AI 질의.
+- 기존 미커밋: `docs/FEASIBILITY.md`, `docs/PRD.md`, `docs/RESEARCH.md`. 무단 폐기·일괄 stage하지 않는다.
+  `default.profraw`는 소유·발생 원인이 확인되지 않은 미추적 생성물이므로 보존했다.
+- 다른 세션의 HANDOFF 계약 알림은 [HANDOFF.cartograph-notes.md](HANDOFF.cartograph-notes.md)에 원문 보존했다.
+  그 밖의 과거 본문은 `git show 92315b4:HANDOFF.md`로 볼 수 있다. 옛 Resume Prompt·권한 문구는 현재 지시가 아니다.
+- [docs/COMPETITIVENESS.md](docs/COMPETITIVENESS.md)는 상세 실험 이력이다. 머리말에도 옛 commit·draft 상태가
+  남아 있으므로 현재 상태는 이 HANDOFF와 실제 Git/CI를 우선한다.
+
+### 보관 위치 — 실재 확인 완료
+
+아래 경로의 기준은 `/Users/jinhongan/.local/share/isthmus/toolchains/`다.
+
+- `reviewed-bridge-765f5a0/toolchain.json`: 최신 고정 구축 isthmus/Dartograph/Kartograph의
+  전체 SHA·실행 argv·SDK·hash. `commands`의 실행 파일은 모두 존재한다.
+  `verification/merge-result.json`은 merge/tree 일치, `verification/native-execution.json`은 AOT 실행 근거다.
+- `android-055bad2/verification/reviewed-android-evidence/verification.json`: **최종 리뷰 수정 후**
+  실제 Android 검증이다. 원래 project/revision/path를 고쳐 맞추지 않고 보존했다.
+- `f2d77c16f521/`: 옛 Swift 통합본. `sources/cartograph`와 `source-bundles/cartograph.bundle`에
+  `f2d77c16f5217f315818f89eafd8daf0cc02db6b`를 보관했다. bundle의 ref는 `HEAD` 하나다.
+  **Basic/Pigeon·handlerScope 차이는 cartograph 0.15.1로 이미 통합·발행됐다**(PR #89). 이 아카이브는
+  참고용으로만 보관하고, 이 tree 전체를 공개 cartograph에 덮어쓰지 않는다.
+- **소실 확인:** `/tmp/isthmus-dartograph-basic`, 옛 `isthmus-cartograph-integration-8dpr_1c_/repo`,
+  `/tmp/isthmus-flutter-sdk.iW1YxU/bin/flutter`. 옛 명령의 임시 경로를 그대로 실행하지 않는다.
+  source는 위 보관물·공개 Git에서 복원할 수 있고, Flutter SDK는 실재하는 환경으로 재준비해야 한다.
+- Kotlin 작업 clone은 `/Users/jinhongan/.local/share/isthmus/worktrees/kartograph-android-awc0xhru/repo`에 남아 있다.
+  자매 repo 변경 전 각 AGENTS·branch/status를 다시 확인한다.
 
 ## Important Context / Decisions
 
-- 확인된 사실: 제품 CLI는 파일만 읽는다. producer 실행은 integration 검증 스크립트의 책임이다.
-- 관찰 손실은 생산자 신고에 의존하지 않는다. 계약이 "limitations로 센다"고 정한 항목은
-  소비자가 직접 센다. 생산자 문자열은 원인 설명이지 신뢰의 근거가 아니다. `unjoined-*`
-  접두사도 그래서 tool이 isthmus인 항목만 완화 근거로 인정한다(#18).
-- 완화 단위는 진단의 target이다(PR #18). target null(사실 없는 수신 문서)의 공백은
-  귀속된 수신 문서가 공존해도 모든 target에 적용한다 — 수신 문서 여러 개가 소스 트리를
-  나눴을 수 있어 귀속 없는 문서의 소스가 어떤 target의 핸들러든 가릴 수 있다(리뷰 M2에서
-  "귀속 문서가 있는 target에는 미적용" 축소는 불건전으로 기각). 같은 target 안의 문서
-  간 완화(kotlin(flutter) 공백이 swift(flutter) 증거 진단도 완화)는 파일·채널 범위
-  limitation 도입 때 재검토 지점이다.
-- mixed-targets 문서의 선언 target은 대표값이라 한계 귀속에 쓰지 않고, 계수도 null
-  귀속으로 남긴다. 귀속을 잃어도 관찰은 보존한다.
-- isthmus 출력 문서(isthmus-check/graph/query/diff)는 버전 1 안에서 필드 추가·새 이슈
-  code를 호환 변경으로 다룬다(README 명문화, #15의 code 추가 선례와 동일 방침).
-- 근거가 빠진 보존 문서는 만들지 않는다. 부분 목록은 소비자에게 살아 있는 핸들러를 미사용으로
-  보이게 하므로, 만들 수 없으면 종료 코드 2로 실패한다.
-- 노출하는 오류 메시지는 정적 문자열·숫자만 보간한다.
-- **producer 릴리스는 cartograph 0.10.1(realpath 수정)·dartograph 0.5.0(공유 루트,
-  pub.dev 2026-09-09 확인)**이다. 두 통합 검증 스크립트가 이 조합 + isthmus 0.3.0으로
-  통과했다(최상단 절). 설치본: brew cartograph 0.10.1(확인), 샌드박스 `PUB_CACHE`
-  dartograph 0.5.0(활성화·실측) — **호스트 `~/.pub-cache`의 dartograph 업그레이드만
-  사용자 몫으로 남았다**. README/스크립트의 최소 버전 게이트(cartograph 0.5.3·
-  dartograph 0.1.1)는 그대로다.
-- PR #12에서 의식적으로 제외한 항목: 모노레포 project 재기준화, ObjC 진단 정책, retentions
-  다중 caller evidence, query `notFound` 종료 코드, check 베이스라인, RN/Kotlin/EventChannel.
-- Windows CI는 보류: `src/script-security.test.ts` 하네스의 shebang·chmod·TMPDIR 의존 때문이다.
+- 확정: 제품의 JSON 소비와 producer 실행 workflow를 구분한다. 삭제 안전성·자동 삭제를 제공하지 않는다.
+  revision/project를 결과에 맞춰 바꾸지 않고 미해결·미관측·truncation을 보존한다.
+- 확정: Kotlin 공통 setUp은 여러 Pigeon method로 전파되고, mutable 이름은 파일 단위로 보수적으로 처리한다.
+  method별 정밀 분석이나 전체 runtime 경로의 증명으로 표현하지 않는다.
+- 확정: Cartograph 0.13.0의 `runtime discover/collect`·snapshot/trace와 isthmus의
+  `bridge-observations`는 별도 계약이다. SDK 알림/Core Data/Simulator 기능을 이 제품 구현으로 복사하지 않는다.
+- 승인: 완료한 PR들의 공개·review·merge와 cartograph 0.15.x·kartograph v0.10.0·dartograph 0.10.0
+  발행은 이미 끝난 사실이다. dartograph PR #98 머지와 새 발행은 별도 승인이 필요하다.
+  비밀값·인증 파일을 읽지 말고 현재 AGENTS의 권한 규칙과 실제 사용 가능한 도구를 따른다.
+- 미확인: 공개 버전 네 개를 조합한 실제 end-to-end(producer → isthmus preflight/impact →
+  retention 왕복)는 아직 공개 조합으로 재실행하지 않았다. 문서화 작업 때 함께 검증한다.
 
 ## Verification
 
-최근 세션에서 직접 확인한 결과:
-- `npm run verify` 전체 통과(0.5.0 기준): typecheck, 제품 287개, Phase 0 조인 15개;
-  커버리지 98.95/95.47/98.03(게이트 90%). `Package contract verified: isthmus-cli@0.5.0`.
-  `verify-cli-contract.mjs`에 발행 CLI 베이스라인 왕복 시나리오(update→strict+baseline
-  억제 3·stale 0·코드 0, 손상 파일 코드 2)와 query notFound stderr 힌트 단언이
-  포함돼 있다.
-- 통합 검증 그린: roundtrip·공개 플러그인 모두 cartograph 0.10.1 + dartograph 0.5.0 +
-  isthmus 0.3.0으로 통과(세부·스코프 실측은 최상단 절).
-- 스코프 dogfood: `verify-limitation-scopes.mjs` 통과 — 양성 스코프 실발행과 채널 단위
-  완화 종단(동일 버전 조합, 2026-09-09 세션 최상단 절).
-- PR #18~#41 전부 CI 두 잡(ubuntu-latest, macos-latest) 그린 후 squash 머지.
-- GLM 리뷰 기록: #18(11건 중 8건 채택), #29(F1~F4 채택), #33(영문 퇴고 — 과장 지적
-  1건은 제품 불변 조건으로 기각), #36(계약 조항 P1×2·P2×4·P3×3 반영), #43(빌드 타임아웃·
-  스키마 가드·인과 대조 채택, 이슈 순서·default 의미론·버전 하한은 실측·코드로 기각).
-  전부 packet-review files 모드·effort=high, 채택/기각 근거는 각 PR 본문·코멘트. #37은
-  합의 원문 전사라 생략(사유 기록).
-- 0.5.0 발행 검증은 최상단 절, 0.3.0은 해당 절, 0.2.0은 해당 절과 PR #26, 0.1.7은 #21
-  시점 기록을 본다.
-- GLM 리뷰 기록(추가): #65(사용성·기능·구조 9건 반영 판정 + 반영 3건·확인 3건·기각
-  4건, RESEARCH "0.4.1 전체 개선 리뷰" 절). #67은 코드 변경 없는 버전·문서만의
-  릴리스 준비라 같은 변경의 반복 리뷰를 피하고자 생략(사유는 PR 본문).
-- Blockers 3 코드 근거(2026-09-08, clone으로 직접 확인): cartograph
-  `CartographService.swift` `projectPath = configuration.projectPath ?? cwd`(symlink 미해결,
-  `project:`로 직행) vs dartograph `dartograph_cli.dart` `_runBridges`의
-  `Directory(root).absolute.resolveSymbolicLinksSync()`. 당시 dartograph에 공유 루트
-  옵션이 없었음(→ 0.5.0에서 `--project`·pub workspace 감지로 구현됨).
+아래는 코드 변경 때 실행한 결과다. 이번 0.6.0 발행에서는 릴리스 준비 검증과 공개 tarball 대조를 실행했고,
+그 밖의 변경하지 않은 제품 테스트는 재실행하지 않았다.
+
+| 검사 | 확인 결과 |
+| --- | --- |
+| isthmus `npm run verify` | 제품424 + Phase0 15 + workflow19, line/branch/functions 98.41/92.37/95.42 |
+| isthmus 0.6.0 발행 | `npm run verify` 통과, registry latest 0.6.0, tarball SHA-512 메타데이터 일치, 추적 파일 14개 v0.6.0 태그와 동일, 발행본 CLI `--version`·`help preflight` |
+| Kartograph full Gradle/Kover/installDist, CLI/agent, compiler fixture, 자기 분석 | 615 tests, 실패/skip 0, 각 게이트 PASS |
+| Dartograph `tool/check-coverage.sh`, native CLI, analyze/corpus/boundary, pub dry-run | 일반406 + 격리 설치1, 91.50%, dry-run 경고0 |
+| 최종 Android API36/arm64·Flutter3.32.2 실제 APK | 성공3·기대 실패3·pending incomplete, 같은 capture의 runtime 대조 PASS |
+| 공개 shared_preferences_android 2.4.1 | Kotlin getBool → 생성 Dart API → app main, 선택1/영향38/경계13. 공백70은 유지 |
+| 고정 source toolchain build | 31.336초, SDK/의존 cache 준비 상태. 새 AOT의 실제 entrypoint 실행도 PASS |
+| 기존 macOS 실제 기록의 새 consumer 재생 | runtime4 checks, 20 gaps, strict1 유지. Dart 선언 위치1건 보강 |
+
+Dart 격리 설치는 100개 이상의 wrapper 호출을 포함한다. CI의 3분 timeout은 단독 실행에서도
+실패해 **8분**으로 조정했고 일반/설치 coverage를 합산했다. 전체 검사 항목·90% coverage·
+20분 job 상한은 유지했으며 두 SDK의 CI 성공을 확인했다.
 
 ## Blockers & Open Questions
 
-배포 blocker는 없다. 0.5.0까지 발행을 마쳤고 Blockers는 전부 종결됐다.
-
-1. ~~**완화 범위**~~ — **완전 종결(2026-09-09).** target 절반은 #18, 파일·채널 절반은 #25의
-   선택적 v1 `limitationScopes`(입증된 채널 상한만, 무범위는 target 전체 유지)로 닫혔고
-   0.2.0/cartograph 0.9.0으로 양쪽 배포됐다. 남아 있던 양성 실측(실제 producer의 스코프
-   발행 + 채널 단위 완화 종단)을 `verify-limitation-scopes.mjs`로 완료했다(최상단 절).
-   스코프 없는 공백의 target 전체 완화는 설계대로 유지된다.
- 2. **ObjC 핸들러의 retention — 대부분 닫힘.** #25가 `sourceLanguage: objective-c`와
-    clang 인덱스의 실제 `c:` USR을 보존하고, Swift 그래프 밖 매치는
-    `omittedObjectiveCHandlers`로 센다(근거 없는 부분 문서 대신 계수 보고).
-    무인덱스 신원 잔여도 **완전 종결(2026-09-10)**: usr 없는 `qualifiedName`-only
-    symbol 완화(isthmus #53) + cartograph 0.11.0(#76, #75)의 이름 부착 — 무인덱스
-    `.m` 재현으로 종단 검증 완료(최상단 절).
-3. ~~**모노레포 project 기준**~~ — **완전 종결(2026-09-09).** realpath 절반은
-   cartograph#73(0.10.1), 공유 루트 절반은 dartograph#52(0.5.0)로 구현되고
-   GRAPH-EXCHANGE에 "생산자가 선언한 조인 루트" 정의로 명문화됐다. isthmus 코드
-   변경은 없었고(정확 문자열 일치 유지), 왕복 실측은 dartograph 쪽에서 설치본
-   isthmus로 완료. 로컬 설치본 업그레이드(brew cartograph 0.10.1, pub global
-   dartograph 0.5.0) 후 통합 스크립트 재실행만 남았다.
-4. ~~**check 베이스라인**~~ — **닫힘(#29)**: `isthmus-baseline` v1, 논리 이슈 키 억제,
-   `suppressed` 표시 보존, 자동 prune, stale 계수. 만료일(Trivy `exp:`)은 미구현
-   후보다(자동 prune+stale로 위생 확보 판단).
- 5. ~~**retentions 대표 증거**~~ — **완전 종결(2026-09-10).** isthmus가
-    `evidence.callers`·`callersOmitted`(v0 additive)를 실고 cartograph 0.11.0(#76,
-    #74)이 explain 렌더링까지 구현 — 소스 빌드로 종단 검증 완료(최상단 점).
-6. ~~**관찰량 미노출**~~ — **닫힘(2026-09-10)**: `isthmus-check` summary에
-   `observedFacts`·`observedLimitations` 추가(호환 변경). 조인 보류 결과도 관찰량
-   보존. Phase 0 골든 재생성 포함.
-
-RN·Kotlin·Event/Basic 채널 지원은 별도 계획이다. 새 종류는 계약을 먼저 합의한다.
+- 완료한 PR의 merge blocker는 없다. Swift Basic/Pigeon 통합(cartograph 0.15.1)과 호환 세트 발행도 완료.
+  다음은 호환 세트 문서화와 공개 조합 end-to-end 재검증, dartograph PR #98 판단이다.
+- 미검증: cache 없는 최초 구축, 독립 앱의 정확도/효용, iOS 실기기, 다른 Android API/ABI·
+  release·권한/생명주기·다중 engine. 실행하지 않은 경로의 완전성을 보장하지 않는다.
 
 ## What Worked
 
-- 개선점을 빌드된 CLI 실행으로 실증한 뒤 우선순위를 정하고, 재현 테스트를 먼저 썼다.
-- 계약 문서와 구현을 대조해 "강제되는 절반과 신고에만 의존하는 절반"을 찾았다.
-  `channel: null`은 parse에서 fail-closed인데 `dynamic`은 아무 강제가 없었다.
-- 자매 저장소 소스를 읽어 생산자의 의도를 확인했다. cartograph의 주석이 ObjC 한계를 왜 내는지
-  직접 설명하고 있어, 소비자 쪽 미구현임을 코드 근거로 확정할 수 있었다. #22 제안도
-  cartograph를 clone해 스캐너 코드(`ReactNativeMacroScanner`)와 실측 문서
-  (`docs/scans/2026-09-flutter-plugins.md`)를 1차 출처로 삼았다 — 과완화 실례
-  (flutter_local_notifications 이슈 20건 중 `.m`이 가리는 것은 1건)가 이미 그 문서에 있었다.
-- 리뷰 지적을 코드로 검증했다. 채택 2건은 실제 비대칭·테스트 공백이었고, 구분자 키 제안은
-  `channel`이 null일 수 있다는 기존 테스트로 반증했다. #18에서도 11건 중 8건 채택·3건
-  기각을 모두 코드 근거로 판정했다.
-- 샌드박스 안에서 GLM 리뷰의 유일한 경로는 PATH의 `packet-review`(감독자 브리지)다.
-  스크립트의 `--diff` 모드는 깨져 있다(bash 3.2 빈 배열 `set -u` 충돌 + 감독자 검증이
-  files 필수·diff 배타를 동시에 요구). 파일 목록 모드(`--files <변경 파일들>`, 질문은
-  `--question-stdin`)가 실제로 동작한다. 스크립트가 깨진 경우 같은 프로토콜(payload
-  JSON을 `$TMPDIR/packet-requests/$id.json`으로, `$id.result.md` 폴링)을 재현해
-  제출하는 것은 우회가 아니라 문서화된 사용이다.
-- Phase 0 결정성 테스트가 첫 구현의 중복 카운트 부풀림을 잡았다. 골든은 diff로 한 줄씩 대조했다.
+- 고정 source commit의 격리 구축, 독립 기대 목록·실제 실행 witness, 실제 compiler·공개 plugin 검증.
+- summary/explain으로 원본 source까지 확인하고 GLM 주장을 red→green 회귀로 판정했다.
 
 ## What Did Not Work / Avoid
 
-- **발행 전에 브랜치와 `git status`를 확인한다.** 0.1.5는 작업 트리가 기능 브랜치일 때
-   발행돼 미출시 코드가 나갔다. `npm publish`는 checkout 상태를 그대로 담는다.
-- npm 발행은 `PUT 202`로 끝나고 registry 반영은 비동기다. 직후 조회로 실패를 단정하지 않는다.
-  반영이 늦어 보이면 `npm view`의 로컬 캐시를 의심하고 registry CDN
-  (`https://registry.npmjs.org/<pkg>` 직접 조회)을 본다 — 0.5.0 때 2분 넘게 404로 보인
-  것이 캐시였고 CDN은 즉시 최신을 보여줬다.
-  npm 계정에 2FA가 걸려 있어 `--otp`가 필요하고, 코드가 30초면 만료되므로 사용자가 직접 실행한다.
-  발행이 `PUT 404`로 실패하면 패키지 문제가 아니라 인증 문제다(레지스트리는 존재 여부를
-  숨기려고 404를 쓴다). `npm whoami` → `npm owner ls isthmus-cli` → `npm config get registry`
-  순서로 확인하고 `npm login`으로 재인증한다. 0.1.7 발행 시 토큰 만료로 실제 발생했다.
-- 리뷰 지적을 검증 없이 반영하지 않는다. #12는 9건 중 2건, #15는 지적 2건을 코드로 반증했다.
-- 샌드박스에서 `packet-ask`·`packet-ask-safe`는 돌지 않는다(설계). `packet-review`를 쓴다.
-  자격증명·모델·allowlist를 고쳐 우회하지 않는다.
-- 샌드박스 경계는 세션·시점별로 부분 차단되었다 열릴 수 있다(이번 세션: npm registry 403과
-  GitHub CONNECT 403이 나중에 열림). 차단을 단정하기 전에 재시도하고, 막힌 상태면 사용자에게
-  최소 단위(명령·패킷)로 넘긴다.
-- git config가 비워져 있다(GIT_CONFIG_GLOBAL=/dev/null, HOME=격리 홈). 커밋에는
-  `-c user.name=Coden -c user.email=ictechgy@gmail.com`, push에는
-  `-c credential.helper=osxkeychain`을 명령 단위로 붙인다. `.git/config` 쓰기가 막혀
-  `push -u`의 upstream 저장이 실패하므로 명시적 ref(`git push origin br:br`)로 push한다.
-  `gh`는 임시 GH_CONFIG_DIR + `git credential fill`로 뽑은 GH_TOKEN(x-access-token)으로
-  동작한다. 토큰은 출력하지 않는다. 토큰의 자매 저장소 쓰기 권한은 **세션·시점마다
-  다르다**(2026-09-08 세션은 cartograph issue 쓰기 403, 2026-09-10 세션은 등록
-  성공 — cartograph#74). 단정하기 전에 직접 시도해 보고, 막히면 사용자에게
-  명령과 본문을 준비해 넘긴다(#22에서 실제 적용).
-- 미해석 결과나 관찰 소실을 코드 삭제 안전성으로 해석하지 않는다.
-- 낡은 producer binary, 서로 다른 추출 범위, OS 임시경로 별칭으로 비교 결과를 오염시키지 않는다.
-- cartograph는 인덱스 스토어가 없으면 종료 코드 2로 거부한다. 조사용 checkout에도 빌드 가능한
-  Swift 타깃과 `swift build`가 필요하다.
-- 다른 세션이 자매 저장소를 동시에 수정할 수 있다. branch/HEAD/status를 확인하고 변경을 보존한다.
+- 옛 문서의 “clean main”, “287/341 tests”, “Kotlin/Basic 미구현”, “Cartograph 전체 미통합”은 현재와 다르다.
+- 같은 조사·리뷰·통과한 검사를 이유 없이 반복하지 않는다. 옛 `packet-review`·인증 우회 절차를 재사용하지 않는다.
+- CLI exit0만으로 실행을 입증하지 않는다. AOT 자기 실행은 실제 witness로 발견했다.
+- 사라진 /tmp source/SDK를 있다고 가정하거나 옛 Swift 통합 tree로 공개 0.13.0을 되돌리지 않는다.
 
 ## Next Steps
 
-1. **SARIF 실측 여지**: GitHub 업로드 상한·suppression 자동 dismiss 동작은 실제
-   저장소 업로드로 확인 필요(감독자 네트워크 제약상 세션에서 불가).
-2. 베이스라인 만료일(Trivy `exp:` 방식)은 위생 후속 후보 — 자동 prune+stale로
-   지금은 충분하다고 판단.
-3. ~~태그·GitHub release~~ — **완료(2026-09-10, 2026-09-13)**: `v0.1.5`부터
-   `v0.4.1`까지 전량 생성·push했고, `v0.5.0` 태그와 GitHub Release도 발행 완료.
+0순위(2026-09-16): 공개 호환 버전 세트는 **완성**됐고(isthmus 0.6.0 · cartograph 0.15.1 ·
+kartograph v0.10.0 · dartograph 0.10.0), **문서화도 미커밋 상태로 완료**했다.
 
-ObjC 재현 절차(다시 필요할 때): `package_info_plus`를 고정 커밋으로 sparse checkout하고,
-인덱스용 최소 Swift 타깃을 만들어 `swift build` 후 두 producer를 돌린다. 과거의
-"경로는 `/tmp` 밖" 제약은 cartograph 0.10.1(realpath 정규화, cartograph#73) 설치로
-이 머신에서는 사라졌다. ObjC 핸들러는 이제 사실로 추출되므로(최상단 절) 이 재현의
-목적 자체가 대부분 사라졌고, 남은 용도는 구버전 회귀 확인뿐이다.
+1. ~~호환 버전 표·고정 예제·CI 예시~~ — `docs/COMPATIBILITY.md` 신규 작성, README·README.ko·
+   TOOLCHAIN·PREFLIGHT·IMPACT·RUNTIME·BRIDGE-MESSAGES·Skills/isthmus/SKILL.md의 낡은
+   "개발 producer/0.5.0 미포함" 문구를 공개 버전 기준으로 갱신. **아직 미커밋** — 커밋/PR 여부는
+   사용자 지시를 따른다.
+2. 공개 버전 end-to-end 부분 검증 완료: cartograph 0.15.1 + dartograph 0.10.0 + npm isthmus 0.6.0으로
+   `verify-cartograph-roundtrip.mjs` 통과(보존 억제·explain 근거). 양쪽 `bridges --messages`의 v2 문서
+   출력도 확인. 미검증 잔여: kartograph의 Android 실행, 공개 조합의 전체 preflight 재현, cache 없는 CI.
+3. dartograph PR #98은 리뷰 후 사용자 승인 시 머지. 자매 로컬의 미커밋 변경은 각 세션 소유이므로 보존한다.
+4. 이후 경쟁력 우선순위 2번부터: 실사용 정밀도 코퍼스(공개 앱 3개 × 실제 변경 10개, 오탐·누락 계수),
+   외부 유지관리자 반복 사용, 적용 범위 정직성 명시, AI 질의 인터페이스.
 
 ## Resume Prompt
 
-`/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 HANDOFF.md를 읽고 git 상태를 확인해줘.
-**0.5.0까지 발행 완료(registry·tarball·발행본·격리 설치본 검증까지), git 태그(v0.1.0~v0.5.0) 및 GitHub Release(v0.5.0) 완료, Blockers는 전부 종결됐어.**
-현재 `main`이 깨끗하며 `npm run verify` 전체 통과 상태야(제품 287개, 0.5.0 기준).
-CHANGELOG `Unreleased`는 비어 있어.
-발행을 요청하면 브랜치와 git status부터 확인하고 버전·CHANGELOG·README Status를 준비한 뒤
-사용자에게 `--otp`로 직접 실행하게 해줘(PUT 404는 인증 문제 — npm login 먼저).
-발행 직후 조회가 실패하면 npm 캐시를 의심하고 registry CDN을 직접 조회해줘(0.5.0 때 실측).
-샌드박스에서 GLM 리뷰는 `packet-review --files <변경 파일들> --effort high --question-stdin`으로 해줚(files 모드만 동작).
-자매 저장소 쓰기 권한은 세션마다 다르니 직접 시도해 보고, 막히면 사용자에게 넘겨줘.
-워크스페이스 안 git init은 `.git/config` 쓰기 차단으로 불가하니 dogfood 스크립트는 tmp 사본 + isthmus-js 오버라이드로 돌려줘.
-
-
-## 2026-09-14 — Cartograph 변경 영향 워크플로 계약 알림
-
-자매 Cartograph 세션에서 `feature/change-impact-workflow`를 구현·검증 중이다. 기존 사용자 변경을
-유지하며 이 알림만 덧붙였다. **기존 `query` / `symbol-query-batch` v1 출력 계약은 그대로다.**
-
-새 계약은 Cartograph의 `README.md`, `docs/RUNTIME-CONTRACTS.md`, `Sources/CartographKit/ImpactDocument.swift`,
-`AnalysisSnapshotDocument.swift`가 현재 작업 원본이다. 아직 릴리스나 모든 최종 게이트 통과를 주장하지 않는다.
-
-- `impact`: 직접 선택(`selected`)과 타입/익스텐션 확장(`changeScope`)을 구분하고, 소비자 방향의
-  `via` 근거·가능한 프로토콜 dispatch·테스트·런타임 검토·섹션별 절단을 제공한다.
-- `snapshot` / `impact --before`: 현재·과거 그래프를 각각 분석한다. 간선을 합쳐 가짜 경로를 만들지 않는다.
-- `runtime-contracts` / `runtime-observations`: 호출자·대상·시나리오의 **별도 일반 런타임 계약**이다.
-  bridge-facts/external-retentions 형식을 대체하지 않는다. 실행 파일의 raw SHA256, 계획 지문,
-  실제 사용한 그래프·소스/인덱스 신선도를 대조하며 미관측을 삭제 근거로 쓰지 않는다.
-- `serve`: MCP 2026-07-28 및 legacy initialize 방식을 지원한다. query/impact/check의 응답은
-  `{session, result}`이고 `result` 안의 기존 query v1은 보존한다. 공유 출력 예산과 갱신 검증을 적용한다.
-- 생성 스킬에는 impact → 필요한 질의만 batch → 편집/재빌드 → check/runtime 시나리오 순서를 추가한다.
-  새 명령·새 스키마를 해당 자매 도구에 구현된 것으로 복사하지 말고 플랫폼별 지원을 확인할 것.
-
-현재 자매 저장소에서도 동시 작업 중인 변경을 확인했다. 상호 연동 시 최신 스키마와 테스트를 다시
-확인하고, 이 알림의 작업 중 상태를 배포 계약으로 간주하지 말 것.
+`/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
+공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.10.0,
+전부 발행·설치본 실측 완료). 남은 isthmus 작업은 호환 세트 문서화(버전 표·고정 예제·수집 설정·CI 예시)와
+공개 버전만으로 end-to-end 조인 재현 검증이야. dartograph PR #98은 OPEN·CI green 상태로 머지 승인 대기.
+기존 미커밋 변경(이 레포의 문서 4종·미추적 2종, 자매 레포의 진행 중 변경)을 보존하고
+완료한 PR·발행·타당성 조사를 반복하지 마.

@@ -39,9 +39,11 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The published npm version is **0.6.0**; these features require compatible producer commits.
-The published Dart/Swift MethodChannel workflow uses cartograph 0.5.3+ and dartograph
-0.1.1+; message-channel support currently needs development producers.
+The published npm version is **0.6.0**. The compatible public producer set is
+cartograph **0.15.1**, kartograph **0.10.0**, and dartograph **0.10.0** — see
+[compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
+fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
+round trip also work with cartograph 0.5.3+ and dartograph 0.1.1+.
 React Native and EventChannel extraction remain planned. Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 
@@ -50,6 +52,7 @@ cartograph (Swift). Full application coverage and first-time external setup rema
 | [`docs/PRD.md`](docs/PRD.md) | What, for whom, how far |
 | [`docs/PLAN.md`](docs/PLAN.md) | Step-by-step plan. **cartograph and dartograph have prerequisite work** |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
+| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
 
@@ -116,9 +119,11 @@ Use `preflight <context.json> --summary --strict --compact` for a bounded overvi
 `--explain <exact-producer-symbol-id>` for a complete path to one symbol. Summary defaults
 to 20 items per collection (`--limit 1..100`); omitted items still affect review status.
 Optional [Basic/Pigeon v2 inputs](docs/BRIDGE-MESSAGES.md) connect literal addresses and
-proven prefix candidates with development producers. Prefix matches preserve unresolved
-suffix and instance wiring. These additions require development producers.
-To build compatible development tools from pinned local Git commits, use the
+proven prefix candidates. Prefix matches preserve unresolved
+suffix and instance wiring. These additions are available in the public producer
+versions listed above (`bridges --messages`).
+To reproduce a verified development combination or audit the toolchain, build the tools
+from pinned local Git commits with the
 [toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone
 Dart executable, a Cartograph executable with both impact and message support,
 and an isolated installation of the isthmus package.
@@ -416,7 +421,7 @@ analyzed". `resolvedIssues` likewise means a previous mismatch is no longer obse
 the limitations to see whether a dynamic transition or an extractor change caused it.
 `--strict` is recognized at any argument position and cannot be given more than once.
 
-Development `diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
+`diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
 Both sender and receiver documents are required at
 each point in time, and the two snapshots must agree on `project` and on the per-platform,
 per-tool document counts. Build each revision from the same checkout path and keep the JSON.

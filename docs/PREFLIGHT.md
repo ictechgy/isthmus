@@ -1,12 +1,14 @@
 # 언어 간 변경 사전 점검
 
-개발 소스 기능이며 npm 0.5.0 발행본에는 없다. `isthmus preflight`는 JSON만 읽는다.
-세 도구를 고정 source commit에서 새로 구축하는 방법은 [TOOLCHAIN.md](TOOLCHAIN.md)에 있다.
+`isthmus preflight`는 npm 0.6.0 발행본에 포함되며 JSON만 읽는다. 공개 호환 버전은
+[COMPATIBILITY.md](COMPATIBILITY.md), 고정 source commit에서 새로 구축하는 방법은
+[TOOLCHAIN.md](TOOLCHAIN.md)에 있다.
 언어 내부 해석과 compiler index 생성은 producer 및 별도 workflow가 맡는다.
-개발 소스는 Flutter Dart↔Swift/Kotlin의 MethodChannel과 producer가 제공한 사용 관계를 연결한다.
+Flutter Dart↔Swift/Kotlin의 MethodChannel과 producer가 제공한 사용 관계를 연결한다.
 선택적 [BasicMessageChannel v2 입력](BRIDGE-MESSAGES.md)을 함께 수집하면 literal 주소와
 Pigeon의 증명된 prefix 후보도 연결한다. 플랫폼별 실제 실행·모든 생성 형태·앱 전체 정확도는
-별도 검증 범위다. Kotlin 및 Basic producer 확장은 현재 개발 버전이 필요하다.
+별도 검증 범위다. Kotlin 및 Basic producer 확장은 공개 버전(cartograph 0.15.1·kartograph
+0.10.0·dartograph 0.10.0)에 포함됐다.
 
 ```bash
 isthmus preflight context.json --strict --compact
@@ -170,8 +172,8 @@ base/current를 섞은 입력은 거부한다. 경로 중간 심볼·위치·출
 adapter는 경로의 node/edge 항목을 합해 1,000,000개까지 읽고 상한 초과는 입력 오류로
 거부한다. 수집 명령은 producer의 depth 128·출력 10,000개 한도를 사용한다.
 
-앱 내부에 복사한 공개 Pigeon 패키지의 Dart 구현까지 연결하려면 이를 지원하는 개발
-Dartograph의 `dartograph.yaml`에서 분석할 로컬 패키지를 명시한다.
+앱 내부에 복사한 공개 Pigeon 패키지의 Dart 구현까지 연결하려면 Dartograph의
+`dartograph.yaml`에서 분석할 로컬 패키지를 명시한다(`source_packages`, dartograph 0.9.0부터).
 
 ```yaml
 source_packages:
@@ -251,14 +253,16 @@ review·runtime dependency 항목은 공백으로 표시하고 원문 producer �
 런타임 통신은 [별도 검증](RUNTIME.md)을 사용하며 이 정적 경로에 실제 실행 신원을 추측해 붙이지 않는다.
 
 Basic 수집은 설정에 `"messages": true`를 추가한다. 같은 producer에 `bridges --messages`를
-호출하며 그 기능이 있는 개발 버전이 필요하다. 별도의 message producer를 쓸 때는
+호출하며 공개 호환 버전(cartograph 0.15.1·kartograph 0.10.0·dartograph 0.10.0)에 포함된
+기능이다. 별도의 message producer를 쓸 때는
 `"messages": {"cartograph": ["/path/to/message-cartograph"], "dartograph": ["/path/to/message-dartograph"]}`처럼
 명령을 지정한다. 생략한 쪽은 기본 producer를 사용한다. override 실행 파일과 관련 구현도
 `toolInputs`에 넣어야 하며 feature 설정·명령·override 버전은 캐시 키에 포함된다.
 
 ## 실행 근거
 
-현재 개발 producer가 있는 환경에서 다음 검증을 실행했다.
+당시 개발 producer가 있던 환경에서 다음 검증을 실행했다. 현재는 공개 호환 버전으로도
+재현할 수 있다([COMPATIBILITY.md](COMPATIBILITY.md)).
 
 ```bash
 node scripts/verify-preflight-producers.mjs /path/to/cartograph /path/to/dartograph/bin/dartograph.dart /path/to/flutter

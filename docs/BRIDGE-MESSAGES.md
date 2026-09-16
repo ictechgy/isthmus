@@ -1,10 +1,10 @@
-# BasicMessageChannel 개발 교환 계약
+# BasicMessageChannel 교환 계약 (bridge-facts v2)
 
-2026-09-14 개발 소스. bridge-facts v1 MethodChannel 동작과 섞지 않고 opt-in
-`bridges --messages`가 아래 v2 문서를 출력한다. producer/consumer 구현과 공개 source
-연결을 검증했으며 handler별 의존 근거 보강은 추가 검증 중이다.
-현재 사용자에게 완성된 지원으로 안내하지 않는다. 자매 저장소의 기존 작업은 보존하며
-별도 worktree에서 구현·검증한다. 최종 통합/PR/호환 검증은 [진행 기록](COMPETITIVENESS.md)에 남긴다.
+bridge-facts v1 MethodChannel 동작과 섞지 않고 opt-in `bridges --messages`가 아래
+v2 문서를 출력한다. 공개 호환 버전(cartograph 0.15.1·kartograph 0.10.0·dartograph
+0.10.0)에 포함됐으며 isthmus 0.6.0이 소비한다. producer/consumer 구현과 공개 source
+연결을 검증했으며, 플랫폼별 실제 실행·모든 Pigeon 생성 형태의 해석은 별도 검증 범위다.
+통합/검증 이력은 [진행 기록](COMPETITIVENESS.md)에 남긴다.
 
 ```json
 {
