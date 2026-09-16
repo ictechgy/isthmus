@@ -352,7 +352,7 @@ test('분기 근거가 완전한 method 경로는 도달한 분기 의존만 열
   // getState의 절은 도달한 callee를 호출하고, other의 절은 도달하지 않은 심볼을 호출한다.
   assert.deepEqual(methods, ['getState']);
   const boundary = report.affected.find(({ subject }) => subject.kind === 'bridge');
-  assert.equal(boundary?.relations[0]?.kind, 'bridge-message-dependency');
+  assert.equal(boundary?.relations[0]?.kind, 'bridge-method-dependency');
   // 다른 메서드의 호출로 도달한 공유 dispatch와 등록 선언은 배선을 열지 않는다.
   assert.equal(report.boundaries.some(({ subject }) => subject.method === 'other'), false);
   assert.equal(report.summary.evidenceGaps, 0);

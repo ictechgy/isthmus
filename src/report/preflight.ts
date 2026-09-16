@@ -28,7 +28,7 @@ export type PreflightSubject = {
 export type PreflightRelation = {
   readonly kind: 'language'; readonly analysis: string; readonly relationships: readonly string[];
 } | {
-  readonly kind: 'bridge-message-dependency' | 'bridge-stream-dependency'; readonly evidence: BridgeEndpoint;
+  readonly kind: 'bridge-message-dependency' | 'bridge-stream-dependency' | 'bridge-method-dependency'; readonly evidence: BridgeEndpoint;
   readonly dependency: Omit<BridgeHandlerDependency, 'dispatchTargets'>;
   readonly dispatchTarget?: BridgeSymbol;
 } | {
@@ -190,7 +190,8 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
       missing: [] as BridgeEndpoint[], imprecise: [] as BridgeEndpoint[] };
     const handlerKind = transport === undefined ? 'bridge-handler'
       : transport.kind === 'event-channel' ? 'bridge-stream-handler' : 'bridge-message-handler';
-    const dependencyKind = transport?.kind === 'event-channel' ? 'bridge-stream-dependency' : 'bridge-message-dependency';
+    const dependencyKind = transport === undefined ? 'bridge-method-dependency'
+      : transport.kind === 'event-channel' ? 'bridge-stream-dependency' : 'bridge-message-dependency';
     const receiverOf = new Map<BridgeEndpoint, string>();
     for (const endpoint of [...handlers, ...wire]) {
       const receiver = endpointKey(endpoint);
