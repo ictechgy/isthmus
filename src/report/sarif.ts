@@ -73,6 +73,8 @@ const ruleDescriptions: Record<CheckIssueCode, string> = {
     'A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism.',
   'module-export-without-import':
     'A receiver-side native module export has no matching caller-side import.',
+  'module-export-mechanism-mismatch':
+    'A receiver-side native module export matches an import name, but the observed imports resolve through a different bridge mechanism.',
   'component-require-without-export':
     'A caller-side native component require has no matching export on any receiver-side document.',
   'component-require-without-export-unverified':
@@ -81,6 +83,8 @@ const ruleDescriptions: Record<CheckIssueCode, string> = {
     'A caller-side native component require matches an export name, but the observed exports resolve through a different bridge mechanism.',
   'component-export-without-require':
     'A receiver-side native component export has no matching caller-side require.',
+  'component-export-mechanism-mismatch':
+    'A receiver-side native component export matches a require name, but the observed requires resolve through a different bridge mechanism.',
 };
 
 /** SARIF 2.1.0 로그 문서다. 결정적 정렬로 인코딩한다. */

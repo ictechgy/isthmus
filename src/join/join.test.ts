@@ -1315,3 +1315,79 @@ test('같은 이름에 섞인 mechanism 호출자는 만족한 쪽만 매치로 
   // export는 expo 호출자에게 도달했으므로 미호출 경고가 아니다.
   assert.deepEqual(result.moduleExportsWithoutImports, []);
 });
+
+test('Expo component-require와 expo component-export는 같은 mechanism으로 잇는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'SheetView', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'SheetView', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.equal(result.matchedComponents.length, 1);
+  assert.deepEqual(result.componentRequiresWithoutExports, []);
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+});
+
+test('mechanism이 섞인 호출자는 만족한 쪽만 매치하고 나머지는 미수출로 남긴다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'CameraView', mechanism: 'expo', path: 'src/expo.ts' },
+    { kind: 'component-require', channel: 'CameraView', path: 'src/core.ts' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'CameraView' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  // core 호출자는 core export와 매치하고, expo 호출자는 불일치 미수출로 남는다 —
+  // 한 이름이 매치와 미수출 컬렉션에 동시에 나타난다.
+  assert.equal(result.matchedComponents.length, 1);
+  assert.equal(result.matchedComponents[0]?.callers[0]?.mechanism, undefined);
+  assert.equal(result.componentRequiresWithoutExports.length, 1);
+  assert.equal(
+    result.componentRequiresWithoutExports[0]?.callers[0]?.mechanism,
+    'expo',
+  );
+  assert.equal(
+    result.componentRequiresWithoutExports[0]?.incompatibleReceivers?.length,
+    1,
+  );
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+});
+
+test('수신 측 관찰이 아예 없으면 불일치 증거 없이 미수출로만 남는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'AnyModule', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'OtherModule' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.equal(result.moduleImportsWithoutExports.length, 1);
+  assert.equal(
+    result.moduleImportsWithoutExports[0]?.incompatibleReceivers,
+    undefined,
+  );
+});
+
+test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CameraModule' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  const unrequired = result.moduleExportsWithoutImports;
+  assert.equal(unrequired.length, 1);
+  // 호출이 아예 없는 게 아니라 mechanism만 다른 호출이 관찰됐음이 남는다.
+  assert.equal(unrequired[0]?.incompatibleCallers?.length, 1);
+  assert.equal(unrequired[0]?.incompatibleCallers?.[0]?.mechanism, undefined);
+});

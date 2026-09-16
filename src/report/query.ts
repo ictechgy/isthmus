@@ -195,6 +195,8 @@ function nameResults(
     usedBy: readonly BridgeEndpoint[],
     dependsOn: readonly BridgeEndpoint[],
   ): void => {
+    // 합침 키의 NUL 구분자는 파서가 이름의 제어문자를 거부한다는 데 의존한다 —
+    // parse를 우회해 조립하는 경로가 생기면 이 구분자는 안전하지 않다.
     const key = `${target}\u0000${name}`;
     const entry = merged.get(key) ??
       { target, name, usedBy: [], dependsOn: [] };

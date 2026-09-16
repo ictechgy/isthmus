@@ -213,10 +213,11 @@ function validateDocumentMetadata(
   if ((document.target === null) !== (document.facts.length === 0)) {
     fail('Target must be set exactly when facts are present.');
   }
-  if (document.target !== 'react-native' && document.facts.some(
+  const mechanismIndex = document.facts.findIndex(
     (fact) => isJsonObject(fact) && fact.mechanism !== undefined,
-  )) {
-    fail('Mechanism requires the react-native target.');
+  );
+  if (document.target !== 'react-native' && mechanismIndex >= 0) {
+    fail(`Mechanism requires the react-native target at fact index ${mechanismIndex}.`);
   }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
   validateLimitationScopes(document.limitationScopes, document.limitations.length);

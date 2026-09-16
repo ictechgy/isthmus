@@ -1,4 +1,5 @@
 import { compareStrings } from '../compare.ts';
+import { isReceiverPlatform } from '../exchange/parse.ts';
 import type { BridgeEndpoint, JoinLimitation } from '../join/join.ts';
 import { hasPreflightBlockers, PreflightGraphError, type PreflightAffected, type PreflightRelation, type PreflightReport, type PreflightSubject } from './preflight.ts';
 import type { RuntimeCheckResult } from './runtime.ts';
@@ -240,6 +241,11 @@ function runtimeRoutePreview(route: NonNullable<PreflightReport['runtime']>['rou
   };
 }
 
+/** 증거 위치가 수신 측(네이티브) 플랫폼에서 온 것인지 구분한다. */
+function isReceiverEndpoint(endpoint: BridgeEndpoint): boolean {
+  return isReceiverPlatform(endpoint.platform);
+}
+
 function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssuePreview {
   const route = issue.method === undefined ? issue.channel : `${issue.channel}.${issue.method}`;
   const message = issue.code === 'unhandled-invocation' || issue.code === 'unhandled-invocation-unverified'
@@ -253,14 +259,22 @@ function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssueP
           : issue.code === 'module-import-mechanism-mismatch'
             ? `Observed module exports for ${route} resolve through a different bridge mechanism.`
             : issue.code === 'component-require-without-export' || issue.code === 'component-require-without-export-unverified'
-              ? `No native component export was verified for ${route}.`
+              // Expo require가 코어 export만 관찰된 경우 error 코드지만
+              // 원인은 mechanism 불일치다 — 없다는 문구는 틀리다.
+              ? issue.evidence.some(isReceiverEndpoint)
+                ? `Observed component exports for ${route} resolve through a different bridge mechanism.`
+                : `No native component export was verified for ${route}.`
               : issue.code === 'component-require-mechanism-mismatch'
                 ? `Observed component exports for ${route} resolve through a different bridge mechanism.`
                 : issue.code === 'module-export-without-import'
                   ? `Native module export has no verified import for ${route}.`
-                  : issue.code === 'component-export-without-require'
-                    ? `Native component export has no verified require for ${route}.`
-                    : `Native handler has no verified invocation for ${route}.`;
+                  : issue.code === 'module-export-mechanism-mismatch'
+                    ? `Observed module imports for ${route} resolve through a different bridge mechanism.`
+                    : issue.code === 'component-export-without-require'
+                      ? `Native component export has no verified require for ${route}.`
+                      : issue.code === 'component-export-mechanism-mismatch'
+                        ? `Observed component requires for ${route} resolve through a different bridge mechanism.`
+                        : `Native handler has no verified invocation for ${route}.`;
   return {
     code: issue.code, severity: issue.severity, channel: issue.channel,
     ...(issue.method === undefined ? {} : { method: issue.method }), message,

@@ -940,9 +940,10 @@ test('같은 이름이 mechanism만 다르면 미수출 error가 아니라 불�
   assert.deepEqual(codesOf(report, 'module-import'), [
     'module-import-mechanism-mismatch',
   ]);
-  // 도달하지 못한 expo export도 미호출 warning으로 남는다.
+  // 도달하지 못한 expo export는 호출자가 있지만 mechanism이 달라
+  // 미호출이 아니라 불일치 warning이다.
   assert.deepEqual(codesOf(report, 'module-export'), [
-    'module-export-without-import',
+    'module-export-mechanism-mismatch',
   ]);
 });
 
@@ -996,4 +997,60 @@ test('Expo module-import는 폴백으로 core export에 도달해 이슈가 없�
 
   assert.equal(report.summary.matchedModules, 1);
   assert.equal(report.issues.length, 0);
+});
+
+test('mechanism 불일치 진단은 호출·수신 양쪽 증거 위치를 함께 실는다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  // Expo require에 코어 export만 보인 확정 error다 — 증거에는 관찰된 수신 측
+  // export 위치까지 실려 어느 export가 다른 경로로 해석되는지 보인다.
+  const issue = report.issues.find(
+    ({ code }) => code === 'component-require-without-export');
+  assert.deepEqual(
+    issue?.evidence.map(({ platform }) => platform).sort(),
+    ['js', 'swift'],
+  );
+  // 도달 못한 core export도 불일치 호출 증거와 함께 warning으로 남는다.
+  const exportIssue = report.issues.find(
+    ({ code }) => code === 'component-export-mechanism-mismatch');
+  assert.deepEqual(
+    exportIssue?.evidence.map(({ platform }) => platform).sort(),
+    ['js', 'swift'],
+  );
+});
+
+test('mechanism이 섞인 호출자는 만족한 쪽만 매치하고 미만족 쪽을 따로 진단한다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView' },
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  // core 호출은 core export와 매치되고, expo 호출은 폴백이 없어 확정 error다.
+  assert.equal(report.summary.matchedComponents, 1);
+  assert.equal(report.summary.errors, 1);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-without-export',
+  ]);
+  const issue = report.issues.find(
+    ({ code }) => code === 'component-require-without-export');
+  assert.deepEqual(
+    issue?.evidence.map(({ mechanism }) => mechanism ?? 'core').sort(),
+    ['core', 'expo'],
+  );
 });

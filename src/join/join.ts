@@ -103,11 +103,18 @@ export interface UnexportedBoundaryName {
   readonly incompatibleReceivers?: readonly BridgeEndpoint[];
 }
 
-/** 호출 측 import·require를 찾지 못한 논리 이름과 모든 수신 측 증거다. */
+/**
+ * 호출 측 import·require를 찾지 못한 논리 이름과 모든 수신 측 증거다.
+ *
+ * `incompatibleCallers`는 같은 이름으로 관찰됐지만 mechanism이 달라
+ * 이 수신들에게 도달할 수 없는 호출 측 증거다. 호출이 아예 없는 경우와
+ * 구분해 보고 층이 불일치 경고로 내린다.
+ */
 export interface UnrequiredBoundaryName {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly receivers: readonly BridgeEndpoint[];
+  readonly incompatibleCallers?: readonly BridgeEndpoint[];
 }
 
 /**
@@ -757,7 +764,7 @@ interface NameClassification {
  * 한 이름 아래 호출자·수신자가 mechanism이 섞여 있을 수 있으므로 그룹
  * 전체가 아니라 증거 쌍 단위로 판정한다. 만족한 호출자·도달한 수신자만
  * 매치로 고정하고, 나머지는 각각 미수출·미호출 증거로 남긴다 — 한 이름이
- * 세 컬렉션에 동시에 나타날 수 있다.
+ * 두 컬렉션에 동시에 나타날 수 있다.
  */
 function classifyNameGroups(
   groups: Map<string, MutableNameGroup>,
@@ -777,7 +784,9 @@ function classifyNameGroups(
       group.callers.some((caller) => compatible(caller, receiver)));
     const unreached = group.receivers.filter((receiver) =>
       !group.callers.some((caller) => compatible(caller, receiver)));
-    if (satisfied.length > 0 && reached.length > 0) {
+    // 만족한 호출자가 있으면 그와 호환되는 수신자가 존재하므로 도달한
+    // 수신자도 비어 있지 않다.
+    if (satisfied.length > 0) {
       matched.push({
         target: group.target,
         channel: group.channel,
@@ -788,28 +797,30 @@ function classifyNameGroups(
     if (unsatisfied.length > 0) {
       // unsatisfied 호출자에게는 이 그룹의 수신자가 모두 도달 불가다 —
       // 호환되는 수신자가 하나라도 있었다면 그 호출자는 만족했을 것이다.
-      // 불일치가 있을 때는 호출자 mechanism별로 나눠야 보고 층이 Expo의
-      // 폴백 없는 require(error)와 코어 require의 미해결 상호운용(warning)을
-      // 같은 이름 안에서 구분할 수 있다.
-      const callerGroups = group.receivers.length === 0
-        ? [unsatisfied]
-        : [...groupByMechanism(unsatisfied).values()];
-      for (const callers of callerGroups) {
-        unexported.push({
-          target: group.target,
-          channel: group.channel,
-          callers,
-          ...(group.receivers.length === 0
-            ? {}
-            : { incompatibleReceivers: group.receivers }),
-        });
-      }
+      // mechanism이 두 값뿐이라 미만족 호출자는 항상 한 mechanism으로
+      // 모인다(비어 있지 않은 수신자가 한 mechanism이면 그 mechanism의
+      // 호출자는 만족한다) — 호출자 mechanism 구성은 엔트리 증거에 남고
+      // 보고 층이 Expo의 폴백 없는 require(error)와 코어 require의 미해결
+      // 상호운용(warning)을 구분한다.
+      unexported.push({
+        target: group.target,
+        channel: group.channel,
+        callers: unsatisfied,
+        ...(group.receivers.length === 0
+          ? {}
+          : { incompatibleReceivers: group.receivers }),
+      });
     }
     if (unreached.length > 0) {
+      // 도달 못한 수신자에게는 모든 호출자가 비호환이다 — 호환 호출자가
+      // 있었다면 도달했을 것이다. 호출자가 있으면 mechanism 불일치 증거다.
       unrequired.push({
         target: group.target,
         channel: group.channel,
         receivers: unreached,
+        ...(group.callers.length === 0
+          ? {}
+          : { incompatibleCallers: group.callers }),
       });
     }
   }
@@ -817,20 +828,6 @@ function classifyNameGroups(
   unexported.sort(compareChannels);
   unrequired.sort(compareChannels);
   return { matched, unexported, unrequired };
-}
-
-/** 증거 목록을 mechanism(생략은 core)별로 묶는다. */
-function groupByMechanism(
-  endpoints: readonly BridgeEndpoint[],
-): Map<BridgeMechanism, BridgeEndpoint[]> {
-  const groups = new Map<BridgeMechanism, BridgeEndpoint[]>();
-  for (const endpoint of endpoints) {
-    const mechanism = endpoint.mechanism ?? 'core';
-    const list = groups.get(mechanism) ?? [];
-    list.push(endpoint);
-    groups.set(mechanism, list);
-  }
-  return groups;
 }
 
 /**

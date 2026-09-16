@@ -43,10 +43,12 @@ export const checkIssueCodes = [
   'module-import-without-export-unverified',
   'module-import-mechanism-mismatch',
   'module-export-without-import',
+  'module-export-mechanism-mismatch',
   'component-require-without-export',
   'component-require-without-export-unverified',
   'component-require-mechanism-mismatch',
   'component-export-without-require',
+  'component-export-mechanism-mismatch',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -141,15 +143,21 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
             : 'module-import-without-export',
         target: item.target,
         channel: item.channel,
-        evidence: item.callers,
+        // 불일치 수신 측 위치까지 실어야 어느 export가 다른 경로로
+        // 해석되는지 보고서에서 보인다.
+        evidence: [...item.callers, ...(item.incompatibleReceivers ?? [])],
       };
     }),
     ...joined.moduleExportsWithoutImports.map<CheckIssue>((item) => ({
       severity: 'warning',
-      code: 'module-export-without-import',
+      // 같은 이름의 호출이 mechanism만 다르게 관찰됐다면 미호출이 아니라
+      // 해석 경로 불일치다.
+      code: item.incompatibleCallers !== undefined
+        ? 'module-export-mechanism-mismatch'
+        : 'module-export-without-import',
       target: item.target,
       channel: item.channel,
-      evidence: item.receivers,
+      evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
     ...joined.componentRequiresWithoutExports.map<CheckIssue>((item) => {
       const mismatched = item.incompatibleReceivers !== undefined;
@@ -170,15 +178,17 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
             : 'component-require-without-export',
         target: item.target,
         channel: item.channel,
-        evidence: item.callers,
+        evidence: [...item.callers, ...(item.incompatibleReceivers ?? [])],
       };
     }),
     ...joined.componentExportsWithoutRequires.map<CheckIssue>((item) => ({
       severity: 'warning',
-      code: 'component-export-without-require',
+      code: item.incompatibleCallers !== undefined
+        ? 'component-export-mechanism-mismatch'
+        : 'component-export-without-require',
       target: item.target,
       channel: item.channel,
-      evidence: item.receivers,
+      evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
   ];
   return {

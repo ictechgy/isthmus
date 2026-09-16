@@ -119,6 +119,41 @@ test('explanation reports unknown and ambiguous identities with bounded candidat
   assert.equal(many.candidates?.items.length, 2);
 });
 
+test('mechanism 불일치 이슈는 수신 증거가 있으면 불일치 문구로 표시한다', () => {
+  const endpoint = (platform: 'js' | 'swift', mechanism?: 'expo') => ({
+    platform,
+    location: { path: 'src/x.ts', line: 1, column: 1 },
+    ...(mechanism === undefined ? {} : { mechanism }),
+  });
+  const withIssues: PreflightReport = {
+    ...report,
+    issues: [
+      // Expo require가 코어 export만 관찰한 확정 error — 증거에 수신 측이
+      // 실렸으므로 "없다"가 아니라 "다른 경로로 해석된다"가 맞다.
+      { code: 'component-require-without-export', severity: 'error',
+        target: 'react-native', channel: 'ExpoOnly',
+        evidence: [endpoint('js', 'expo'), endpoint('swift')] },
+      // 같은 코드라도 수신 증거가 없으면 진짜 미관찰이다.
+      { code: 'component-require-without-export', severity: 'error',
+        target: 'react-native', channel: 'Absent',
+        evidence: [endpoint('js', 'expo')] },
+      { code: 'module-export-mechanism-mismatch', severity: 'warning',
+        target: 'react-native', channel: 'Cam',
+        evidence: [endpoint('swift'), endpoint('js')] },
+    ],
+  };
+  const view = createPreflightSummary(withIssues, 10);
+  const byChannel = new Map(
+    view.issues.items.map((item) => [item.channel, item.message]));
+
+  assert.equal(byChannel.get('ExpoOnly'),
+    'Observed component exports for ExpoOnly resolve through a different bridge mechanism.');
+  assert.equal(byChannel.get('Absent'),
+    'No native component export was verified for Absent.');
+  assert.equal(byChannel.get('Cam'),
+    'Observed module imports for Cam resolve through a different bridge mechanism.');
+});
+
 test('invalid limits and broken or cyclic paths fail with PreflightGraphError', () => {
   assert.throws(() => createPreflightSummary(report, 0), RangeError);
   assert.throws(() => createPreflightSummary(report, 101), RangeError);

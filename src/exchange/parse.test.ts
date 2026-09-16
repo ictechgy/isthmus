@@ -556,7 +556,39 @@ test('mechanism은 허용 값·허용 종류·react-native target 안에서만 �
     }),
     {
       name: 'BridgeFactsValidationError',
-      message: 'Mechanism requires the react-native target.',
+      message: 'Mechanism requires the react-native target at fact index 0.',
     },
   );
+
+  // capacitor 등 다른 target 문서에도 mechanism은 실을 수 없다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'js',
+      target: 'capacitor',
+      facts: [{ ...boundaryFact, mechanism: 'expo' }],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Mechanism requires the react-native target at fact index 0.',
+    },
+  );
+});
+
+test('mechanism은 dynamic 사실에도 실려 정규화 뒤에도 보존된다', () => {
+  const parsed = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'js',
+    target: 'react-native',
+    facts: [{
+      kind: 'module-import',
+      channel: 'nameExpr',
+      mechanism: 'expo',
+      dynamic: true,
+      location: { path: 'src/boundary.ts', line: 3, column: 1 },
+    }],
+  });
+
+  assert.equal(parsed.facts[0]?.mechanism, 'expo');
+  assert.equal(parsed.facts[0]?.dynamic, true);
 });
