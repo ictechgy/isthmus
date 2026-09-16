@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tokenizeJsSource } from './js-tokens.ts';
+import { tokenizeJsSource } from './lexer.ts';
 
 test('식별자·키워드·문자열을 위치와 함께 토큰화한다', () => {
   const tokens = tokenizeJsSource(
@@ -89,4 +89,27 @@ test('닫히지 않은 템플릿과 보간 안 문자열의 중괄호를 견딘�
   assert.equal(unterminated[0]?.kind, 'template');
   const tokens = tokenizeJsSource("`a${'b}c'}d` end");
   assert.equal(tokens.at(-1)?.text, 'end');
+});
+
+test('비교·증감·복합 대입 연산자가 한 토큰이다', () => {
+  const tokens = tokenizeJsSource("a === b !== c++ --d += e");
+  assert.deepEqual(
+    tokens.map((token) => token.text),
+    ['a', '===', 'b', '!==', 'c', '++', '--', 'd', '+=', 'e'],
+  );
+});
+
+test('증감 연산 뒤의 /는 정규식이 아니라 나눗셈이다', () => {
+  const tokens = tokenizeJsSource('count++ / total');
+  // `/`는 구두점 집합에 없어 나눗셈도 정규식도 other로 남는다 — 중요한 것은
+  // 정규식으로 삼켜 뒤 토큰을 잃지 않는 것이다.
+  assert.deepEqual(
+    tokens.map((token) => [token.kind, token.text]),
+    [
+      ['identifier', 'count'],
+      ['punct', '++'],
+      ['other', '/'],
+      ['identifier', 'total'],
+    ],
+  );
 });

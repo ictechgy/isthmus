@@ -7,6 +7,7 @@
  * 만들지 않는다.
  */
 
+import { sep } from 'node:path';
 import {
   createJsFactsDocument,
   JS_SOURCE_EXTENSIONS,
@@ -112,7 +113,8 @@ export async function runExtractJsCommand(
     let candidates: string[];
     try {
       candidates = kind === 'directory'
-        ? await walkDirectory(fileSystem, absolute)
+        ? await walkDirectory(
+          fileSystem, absolute, MAX_SCANNED_FILES - discovered.length)
         : [absolute];
     } catch {
       return inputFailure(
@@ -187,14 +189,20 @@ export async function runExtractJsCommand(
   return { standardOutput: encodeSortedJson(document), standardError: '', exitCode: 0 };
 }
 
-/** 디렉터리 아래 JS/TS 파일을 재귀로 모은다. 실패는 빈 목록이 아니라 던진다. */
+/**
+ * 디렉터리 아래 JS/TS 파일을 재귀로 모은다. 실패는 빈 목록이 아니라 던진다.
+ *
+ * `budget`은 아직 받을 수 있는 파일 수다 — 거대한 트리 전체를 열거한 뒤에야
+ * 상한 오류를 내지 않도록 예산을 넘으면 즉시 멈추고 호출자가 상한을 보고한다.
+ */
 async function walkDirectory(
   fileSystem: ExtractJsFileSystem,
   directory: string,
+  budget: number,
 ): Promise<string[]> {
   const found: string[] = [];
   const pending = [directory];
-  while (pending.length > 0) {
+  while (pending.length > 0 && found.length <= budget) {
     const current = pending.pop()!;
     let entries: readonly JsDirectoryEntry[];
     try {
@@ -264,9 +272,14 @@ function isJsSource(path: string): boolean {
   return dot !== -1 && jsExtensions.has(path.slice(dot + 1));
 }
 
-/** OS 경로 구분자를 계약이 요구하는 `/`로 통일한다. */
+/**
+ * OS 경로 구분자를 계약이 요구하는 `/`로 통일한다.
+ *
+ * `\`는 POSIX에서 유효한 파일명 문자이므로 구분자가 `\`인 플랫폼에서만
+ * 바꾼다 — 무조건 치환하면 `a\b.ts` 같은 합법 파일명이 깨진다.
+ */
 function normalizeSeparators(path: string): string {
-  return path.replace(/\\/g, '/');
+  return sep === '\\' ? path.replace(/\\/g, '/') : path;
 }
 
 /** realpath가 던지는 입력을 경로 없는 undefined로 정규화한다. */

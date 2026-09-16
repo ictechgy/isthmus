@@ -40,8 +40,18 @@ const keywords = new Set([
   'while', 'yield', 'from', 'as', 'get', 'set',
 ]);
 
-/** 타입 인수 스킵에 의미가 있는 복합 구두점만 하나의 토큰으로 묶는다. */
-const multiCharPuncts = ['=>', '?.', '...'];
+/**
+ * 한 토큰으로 묶는 복합 구두점이다 — 긴 것부터 앞에 둬야 `===`가 `=`+`==`로
+ * 쪼개지지 않는다. 비교 연산이 `=`로 보이면 스캐너가 대입으로 오인해 살아 있는
+ * 바인딩을 지우므로 비교·대입·증감 연산자 전부를 포함한다.
+ */
+const multiCharPuncts = [
+  '>>>=',
+  '===', '!==', '>>>', '**=', '<<=', '>>=', '&&=', '||=', '??=',
+  '=>', '?.', '==', '!=', '<=', '>=', '&&', '||', '??', '++', '--',
+  '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**', '<<', '>>',
+  '...',
+];
 
 /**
  * 정규식 리터럴이 시작될 수 있는 위치인지 추정한다.
@@ -57,7 +67,10 @@ function isRegexPosition(previous: JsToken | undefined): boolean {
     return false;
   }
   if (previous.kind === 'punct' &&
-    (previous.text === ')' || previous.text === ']' || previous.text === '}')) {
+    (previous.text === ')' || previous.text === ']' || previous.text === '}' ||
+      // `count++ / total`의 `/`는 나눗셈이다 — 증감 뒤를 정규식 위치로 보면
+      // 뒤 텍스트가 통째로 삼켜진다.
+      previous.text === '++' || previous.text === '--')) {
     return false;
   }
   return true;

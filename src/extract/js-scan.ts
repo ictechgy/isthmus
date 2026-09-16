@@ -10,8 +10,9 @@
  */
 
 import type { BridgeFact } from '../exchange/parse.ts';
-import type { JsToken } from './js-tokens.ts';
-import { tokenizeJsSource } from './js-tokens.ts';
+import { isSafeNonEmptyString } from '../exchange/parse.ts';
+import type { JsToken } from './lexer.ts';
+import { tokenizeJsSource } from './lexer.ts';
 
 /** `requireNativeModule` 계열 — 모듈을 부르는 호출 측 API 이름이다. */
 const moduleImportCalls = new Set([
@@ -122,7 +123,21 @@ interface ScanContext {
     dynamicComponentNames: number;
     dynamicMethodNames: number;
   };
+  /**
+   * 매개변수가 가리는 토큰 구간이다. `function f(M) {…}`·`f(M) {…}`·
+   * `(M) => {…}` 형태의 `{…}` 본문 구간과 매개변수 이름을 담는다 — 파일
+   * 전역 바인딩 지도는 스코프를 모르기 때문에 이 구간 안에서는 같은 이름의
+   * 바인딩을 적용하지 않는다.
+   */
+  readonly paramShadows: readonly ParamShadow[];
   defaultExport?: BoundName;
+}
+
+/** 매개변수 이름이 가리는 토큰 구간(토큰 인덱스, 끝은 배타적)이다. */
+interface ParamShadow {
+  readonly from: number;
+  readonly to: number;
+  readonly names: ReadonlySet<string>;
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
@@ -143,6 +158,7 @@ export function scanJsSource(source: string): JsFileScan {
       dynamicComponentNames: 0,
       dynamicMethodNames: 0,
     },
+    paramShadows: collectParamShadows(tokens),
   };
   collectBindings(context);
   collectCalls(context);
@@ -189,7 +205,9 @@ function collectBindings(context: ScanContext): void {
       continue;
     }
     // 모듈 객체의 재대입은 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다.
-    if (token.kind === 'identifier' && tokens[index + 1]?.text === '=') {
+    // `obj.prop = v`의 prop은 로컬 바인딩이 아니라 속성명이므로 제외한다.
+    if (token.kind === 'identifier' && tokens[index + 1]?.text === '=' &&
+      tokens[index - 1]?.text !== '.' && tokens[index - 1]?.text !== '?.') {
       context.bindings.delete(token.text);
       context.constStrings.delete(token.text);
     }
@@ -201,7 +219,7 @@ function collectBindings(context: ScanContext): void {
       tokens[index + 3]?.text === '='
     ) {
       const bound = readModuleExpression(context, index + 4);
-      if (bound !== undefined) {
+      if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
         context.defaultExport = bound.value;
         index = bound.endIndex;
       }
@@ -215,7 +233,7 @@ function collectBindings(context: ScanContext): void {
       tokens[index + 3]?.text === '='
     ) {
       const bound = readModuleExpression(context, index + 4);
-      if (bound !== undefined) {
+      if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
         context.namedExports.set(tokens[index + 2]!.text, bound.value);
         index = bound.endIndex;
       }
@@ -326,7 +344,7 @@ function collectExport(context: ScanContext, start: number): number {
   if (next === undefined) return start;
   if (next.kind === 'keyword' && next.text === 'default') {
     const bound = readModuleExpression(context, start + 2);
-    if (bound !== undefined) {
+    if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
       context.defaultExport = bound.value;
       return bound.endIndex;
     }
@@ -394,25 +412,52 @@ function collectExport(context: ScanContext, start: number): number {
   return start;
 }
 
-/** `const/let/var` 선언의 바인딩을 수집한다 — 식별자와 구조 분해 둘 다. */
+/**
+ * `const/let/var` 선언의 바인딩을 수집한다 — 식별자와 구조 분해 둘 다.
+ *
+ * 선언자는 선언 키워드 직후나 같은 깊이의 `,` 뒤에만 온다 — 이 조건이 없으면
+ * 세미콜론 없는 코드에서 뒤 문장의 `state.handler = Cam` 같은 대입이
+ * 선언자로 오인돼 바인딩이 파일 전역으로 새어 나간다.
+ */
 function collectDeclaration(context: ScanContext, start: number): number {
   const { tokens } = context;
   let index = start + 1;
+  // 선언자의 `,`는 깊이 0에만 온다 — `f(x, y = z)` 인자 안의 `,`는 무관하다.
+  let depth = 0;
   while (index < tokens.length) {
     const token = tokens[index]!;
-    if (token.text === ';') return index;
+    if (token.text === ';' && depth === 0) return index;
+    if (token.text === '(' || token.text === '[') {
+      depth++;
+      index++;
+      continue;
+    }
+    if (token.text === ')' || token.text === ']') {
+      depth--;
+      index++;
+      continue;
+    }
     if (token.kind === 'identifier') {
-      if (tokens[index + 1]?.text === '=') {
-        const bound = readModuleExpression(context, index + 2);
-        if (bound !== undefined) {
+      const declarator = index === start + 1 ||
+        (depth === 0 && tokens[index - 1]?.text === ',');
+      let cursor = index + 1;
+      // `const M: TurboModule = …`의 타입 주석은 건너뛰고 `=`를 찾는다.
+      if (declarator && tokens[cursor]?.text === ':') {
+        cursor = skipTypeAnnotation(tokens, cursor + 1);
+      }
+      if (declarator && tokens[cursor]?.text === '=') {
+        const bound = readModuleExpression(context, cursor + 1);
+        if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
           context.bindings.set(token.text, bound.value);
-          index = bound.endIndex;
+          // 초기값 식 내부의 괄호는 depth에 반영되지 않았으니 마지막 토큰까지
+          // 건너뛴다 — `)`를 다시 처리하면 depth가 음수로 내려간다.
+          index = bound.endIndex + 1;
           continue;
         }
-        const literal = readLiteralExpression(context, index + 2);
-        if (literal !== undefined) {
+        const literal = readLiteralExpression(context, cursor + 1);
+        if (literal !== undefined && endsExpression(tokens, literal.endIndex)) {
           context.constStrings.set(token.text, literal.value);
-          index = literal.endIndex;
+          index = literal.endIndex + 1;
           continue;
         }
       }
@@ -431,6 +476,62 @@ function collectDeclaration(context: ScanContext, start: number): number {
       }
       index = close + 1;
       continue;
+    }
+    index++;
+  }
+  return index;
+}
+
+/**
+ * 초기값 식이 `endIndex`에서 끝나는지 확인한다.
+ *
+ * `'Hel' + 'lo'`처럼 리터럴 뒤에 식이 계속되면 첫 토큰만 바인딩해 잘못된
+ * 정적 이름이 되므로, 같은 줄에서는 `,`·`;`·닫는 괄호만 끝으로 인정한다.
+ * 줄이 바뀌면 ASI로 문장이 끝날 수 있지만 `[`·`(`·이항 연산자 등은 여전히
+ * 식을 이으므로 계속 토큰 집합에 있으면 끝이 아니다.
+ */
+function endsExpression(
+  tokens: readonly JsToken[],
+  endIndex: number,
+): boolean {
+  const next = tokens[endIndex + 1];
+  if (next === undefined) return true;
+  const sameLineEnd = next.text === ',' || next.text === ';' ||
+    next.text === ')' || next.text === ']' || next.text === '}';
+  if (next.line === tokens[endIndex]!.line) return sameLineEnd;
+  return !expressionContinuations.has(next.text);
+}
+
+/** 줄이 바뀌어도 앞 식을 잇는 토큰이다 — ASI로 끝나지 않는 연속부다. */
+const expressionContinuations = new Set([
+  '.', '?.', '(', '[', '`', '?', ':',
+  '+', '-', '*', '/', '%', '**', '&', '|', '^', '<', '>', '=',
+  '&&', '||', '??', '=>', '==', '===', '!=', '!==', '<=', '>=',
+  'instanceof', 'in', 'as',
+]);
+
+/**
+ * 타입 주석 구간을 건너뛰어 `=`·`,`·`;` 위치를 돌려준다.
+ *
+ * 타입 안의 `=`(예: 제네릭 기본값 `<T = X>`)는 괄호 깊이 안에 있으므로
+ * 깊이 0의 `=`·`,`·`;`에서 멈춘다.
+ */
+function skipTypeAnnotation(
+  tokens: readonly JsToken[],
+  start: number,
+): number {
+  let depth = 0;
+  let index = start;
+  while (index < tokens.length) {
+    const text = tokens[index]!.text;
+    if (text === '(' || text === '[' || text === '{' || text === '<') {
+      depth++;
+    } else if (text === ')' || text === ']' || text === '}' || text === '>') {
+      depth--;
+      if (depth < 0) return index;
+    } else if (depth === 0 &&
+      (text === '=' || text === ',' || text === ';')) {
+      return index;
     }
     index++;
   }
@@ -511,11 +612,14 @@ function readModuleExpression(
     if (next?.text === '[') {
       const arg = readArgument(context, start + 2);
       if (arg === undefined) return undefined;
+      // endIndex는 식 전체의 끝 — `NativeModules['X'].foo`의 `.foo`까지
+      // 바인딩하면 속성값을 모듈로 오인한다.
+      const close = findMatching(tokens, start + 1, '[', ']');
       return {
         value: arg.value === undefined
           ? { dynamicExpression: arg.expression }
           : { name: arg.value },
-        endIndex: arg.endIndex,
+        endIndex: close ?? arg.endIndex,
       };
     }
     return undefined;
@@ -536,7 +640,8 @@ function readModuleExpression(
       : { value: call.value, endIndex: call.endIndex };
   }
   // 바인딩된 식별자의 추적(`const N = M`)은 한 단계만 허용한다.
-  if (token.kind === 'identifier') {
+  // 같은 이름의 매개변수가 가리는 구간 안에서는 파일 바인딩을 적용하지 않는다.
+  if (token.kind === 'identifier' && !isShadowed(context, token.text, start)) {
     const bound = context.bindings.get(token.text);
     return bound === undefined
       ? undefined
@@ -563,11 +668,14 @@ function readNamedCall(
   if (tokens[index]?.text !== '(') return undefined;
   const arg = readArgument(context, index + 1);
   if (arg === undefined) return undefined;
+  // endIndex는 호출의 닫는 `)` — `f('A').x`를 `f('A')`까지만 읽은 것처럼
+  // 끝내면 `.x` 속성 접근이 모듈 바인딩으로 오인된다.
+  const close = findMatching(tokens, index, '(', ')');
   return {
     value: arg.value === undefined
       ? { dynamicExpression: arg.expression }
       : { name: arg.value },
-    endIndex: arg.endIndex,
+    endIndex: close ?? arg.endIndex,
   };
 }
 
@@ -605,15 +713,21 @@ function readArgument(
     end.text === ',' || end.text === ')' || end.text === ']';
   // 한 단계 상수 추적 — `const X = 'lit'` 같은 파일 선언만 본다.
   if (token.kind === 'identifier' && singleToken) {
-    const literal = context.constStrings.get(token.text);
-    return literal === undefined
+    const literal = isShadowed(context, token.text, start)
+      ? undefined
+      : context.constStrings.get(token.text);
+    return literal === undefined || !isSafeNonEmptyString(literal)
       ? { expression: sanitizeExpression(token.text), endIndex: start }
       : { value: literal, expression: token.text, endIndex: start };
   }
   if (singleToken &&
     (token.kind === 'string' || token.kind === 'template') &&
     token.value !== undefined) {
-    return { value: token.value, expression: token.text, endIndex: start };
+    // 계약이 허용하지 않는 이름(빈 값·제어 문자·짝 없는 서러게이트)은 정적
+    // 사실이 될 수 없다 — 원문을 실은 동적 사실로 내려 증거를 보존한다.
+    return isSafeNonEmptyString(token.value)
+      ? { value: token.value, expression: token.text, endIndex: start }
+      : { expression: sanitizeExpression(token.text), endIndex: start };
   }
   // 그 외 표현식은 닫는 `)`나 같은 깊이의 `,`까지 원문을 보존한다.
   let depth = 0;
@@ -889,8 +1003,9 @@ function recordDirectMethodCall(
 function collectBoundMemberCall(context: ScanContext, start: number): number {
   const { tokens } = context;
   const token = tokens[start]!;
-  const bound = context.bindings.has(token.text) ||
-    context.imports.some((entry) => entry.localName === token.text);
+  const bound = !isShadowed(context, token.text, start) &&
+    (context.bindings.has(token.text) ||
+      context.imports.some((entry) => entry.localName === token.text));
   const accessor = tokens[start + 1];
   // `M[expr]()` — 대괄호 접근은 식별자 바로 뒤에 온다.
   if (accessor?.text === '[') {
@@ -958,6 +1073,78 @@ function isCallAt(tokens: readonly JsToken[], start: number): boolean {
 /** BoundName을 사실의 channel 문자열로 바꾼다. */
 function boundChannel(bound: BoundName): string {
   return 'name' in bound ? bound.name : bound.dynamicExpression;
+}
+
+/**
+ * 매개변수가 파일 전역 바인딩을 가리는 본문 구간을 모은다.
+ *
+ * 인식하는 형태는 `function f(M) {…}`·`f(M) {…}`(메서드 약칭)·`(M) => {…}`·
+ * `M => {…}`다. `foo(x) {…}`처럼 호출 뒤 블록이 오는 문장도 매개변수 목록으로
+ * 보이지만, 그 경우의 과도한 가림은 사실을 놓칠 뿐 거짓 사실을 만들지 않는다.
+ * 본문이 `{`로 시작하지 않는 화살표(`M => M.x()`)는 끝을 알 수 없어 건너뛴다.
+ */
+function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
+  const shadows: ParamShadow[] = [];
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    // `M => {…}` 단일 매개변수 화살표다.
+    if ((token.kind === 'identifier' || token.kind === 'keyword') &&
+      tokens[index + 1]?.text === '=>' && tokens[index + 2]?.text === '{') {
+      const close = findMatching(tokens, index + 2, '{', '}');
+      if (close !== undefined) {
+        shadows.push({
+          from: index + 2,
+          to: close + 1,
+          names: new Set([token.text]),
+        });
+        index = close;
+      }
+      continue;
+    }
+    if (token.text !== '(') continue;
+    const previous = tokens[index - 1];
+    // `function f(…)`·`function (…)`의 매개변수 목록이다.
+    let isParams = previous?.text === 'function' ||
+      (previous?.kind === 'identifier' &&
+        tokens[index - 2]?.text === 'function');
+    const close = findMatching(tokens, index, '(', ')');
+    if (close === undefined) continue;
+    if (!isParams) {
+      const afterClose = tokens[close + 1];
+      isParams = afterClose?.text === '=>' ||
+        // `f(M) {…}` 메서드 약칭 — `(` 앞이 식별자일 때만 본다.
+        // `if (M) {…}` 같은 키워드 조건절은 매개변수가 아니다.
+        (previous?.kind === 'identifier' && afterClose?.text === '{');
+    }
+    if (!isParams) continue;
+    let bodyIndex = close + 1;
+    if (tokens[bodyIndex]?.text === '=>') bodyIndex++;
+    if (tokens[bodyIndex]?.text !== '{') continue;
+    const bodyClose = findMatching(tokens, bodyIndex, '{', '}');
+    if (bodyClose === undefined) continue;
+    const names = new Set<string>();
+    for (let cursor = index + 1; cursor < close; cursor++) {
+      const param = tokens[cursor]!;
+      if (param.kind === 'identifier' || param.kind === 'keyword') {
+        names.add(param.text);
+      }
+    }
+    shadows.push({ from: bodyIndex, to: bodyClose + 1, names });
+    index = close;
+  }
+  return shadows;
+}
+
+/** 위치 `index`의 `name`이 매개변수에 가려졌는지 판정한다. */
+function isShadowed(
+  context: ScanContext,
+  name: string,
+  index: number,
+): boolean {
+  return context.paramShadows.some(
+    (shadow) =>
+      index >= shadow.from && index < shadow.to && shadow.names.has(name),
+  );
 }
 
 /** 짝 맞는 괄호 토큰을 찾는다. */

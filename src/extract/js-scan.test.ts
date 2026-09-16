@@ -230,3 +230,69 @@ test('인자 없는 호출과 비호출 참조는 사실로 만들지 않는다'
     { kind: 'component-require', channel: 'View', method: undefined, dynamic: false },
   ]);
 });
+
+test('계약이 허용하지 않는 리터럴 이름은 동적 사실로 내린다', () => {
+  const scan = scanJsSource(
+    "requireNativeModule('');\nrequireNativeModule('A\\u0007B');\nconst M = requireNativeModule('Cam');\nM['a\\u0001']();",
+  );
+  // 빈 값·제어 문자 이름은 정적 채널이 될 수 없어 원문을 실은 동적 사실이다.
+  assert.deepEqual(
+    scan.facts.map((fact) => [fact.kind, fact.channel, fact.dynamic]),
+    [
+      ['module-import', "''", true],
+      ['module-import', "'A\\u0007B'", true],
+      ['module-import', 'Cam', false],
+    ],
+  );
+  assert.deepEqual(
+    scan.memberCalls.map((call) => [call.method, call.dynamicMethod]),
+    [["'a\\u0001'", true]],
+  );
+});
+
+test('세미콜론 없는 뒤 문장의 대입이 선언 바인딩으로 새지 않는다', () => {
+  const scan = scanJsSource(
+    "const Cam = requireNativeModule('Camera')\nstate.handler = Cam\nfunction run(handler) { handler.start() }",
+  );
+  assert.equal(scan.bindings.has('handler'), false);
+  assert.equal(scan.bindings.has('state'), false);
+  assert.equal(scan.memberCalls.length, 0);
+});
+
+test('타입 주석 선언은 바인딩하고 연결 초기값은 첫 토큰으로 자르지 않는다', () => {
+  const scan = scanJsSource(
+    "const M: Spec = TurboModuleRegistry.get('X');\nconst G = 'He' + 'llo';\nrequireNativeModule(G);\nM.ping();",
+  );
+  assert.deepEqual(scan.bindings.get('M'), { name: 'X' });
+  assert.equal(scan.constStrings.has('G'), false);
+  // `get('X')`는 호출 위치에서도 module-import를 내고, G는 미해석이라 동적이다.
+  assert.deepEqual(
+    scan.facts.map((fact) => [fact.kind, fact.channel, fact.dynamic]),
+    [['module-import', 'X', false], ['module-import', 'G', true]],
+  );
+  assert.deepEqual(scan.memberCalls.map((call) => call.method), ['ping']);
+});
+
+test('비교 연산과 속성 대입이 살아 있는 바인딩을 지우지 않는다', () => {
+  const scan = scanJsSource(
+    "const MODE = 'cam';\nif (MODE === 'cam') { log(); }\nrequireNativeModule(MODE);\nconst prop = 'x';\nobj.prop = y;\nrequireNativeModule(prop);",
+  );
+  assert.deepEqual(
+    scan.facts.map((fact) => [fact.channel, fact.dynamic]),
+    [['cam', false], ['x', false]],
+  );
+});
+
+test('함수 매개변수가 파일 바인딩을 가리면 그 본문 호출을 귀속하지 않는다', () => {
+  const scan = scanJsSource(
+    "const M = requireNativeModule('A');\nfunction f(M) { M.call(); }\nconst g = (M) => { M.other(); };\nM.top();",
+  );
+  assert.deepEqual(scan.memberCalls.map((call) => call.method), ['top']);
+});
+
+test('증감 연산 뒤의 나눗셈이 정규식으로 삼켜져 호출을 잃지 않는다', () => {
+  const facts = flatten("x++ / requireNativeModule('A') / 1;");
+  assert.deepEqual(facts, [
+    { kind: 'module-import', channel: 'A', method: undefined, dynamic: false },
+  ]);
+});

@@ -202,3 +202,27 @@ test('디렉터리 나열 실패는 코드 2로 분류된다', async () => {
   assert.equal(result.exitCode, 2);
   assert.ok(result.standardError.includes('list'));
 });
+
+test('파일 수 상한을 넘는 트리는 조기에 멈추고 코드 2다', async () => {
+  const names = Array.from({ length: 10_001 }, (_, index) => `f${index}.ts`);
+  const files = new Map(names.map((name) => [`/big/${name}`, 'x']));
+  const dirs = new Map<string, readonly string[]>([['/big', names]]);
+  const result = await runExtractJsCommand(
+    ['extract-js', '/big'], fakeFs(files, dirs), readerFor(files),
+    fixedNow, '1.0.0',
+  );
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.standardError.includes('files'));
+});
+
+test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다', async () => {
+  const files = new Map([['/p/a\\b.ts', "requireNativeModule('B');"]]);
+  const dirs = new Map<string, readonly string[]>([['/p', ['a\\b.ts']]]);
+  const result = await runExtractJsCommand(
+    ['extract-js', '/p'], fakeFs(files, dirs), readerFor(files),
+    fixedNow, '1.0.0',
+  );
+  assert.equal(result.exitCode, 0);
+  const document = parseBridgeFactsDocument(JSON.parse(result.standardOutput));
+  assert.equal(document.facts[0]?.location.path, 'a\\b.ts');
+});
