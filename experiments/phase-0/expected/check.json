@@ -109,7 +109,9 @@
   "summary": {
     "errors": 1,
     "matchedChannels": 1,
+    "matchedComponents": 0,
     "matchedMethods": 1,
+    "matchedModules": 0,
     "observedFacts": 10,
     "observedLimitations": 7,
     "warnings": 2

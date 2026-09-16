@@ -248,7 +248,15 @@ function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssueP
       ? `No native registration was verified for ${route}.`
       : issue.code === 'registration-without-creation'
         ? `Native registration has no verified channel creation for ${route}.`
-        : `Native handler has no verified invocation for ${route}.`;
+        : issue.code === 'module-import-without-export' || issue.code === 'module-import-without-export-unverified'
+          ? `No native module export was verified for ${route}.`
+          : issue.code === 'component-require-without-export' || issue.code === 'component-require-without-export-unverified'
+            ? `No native component export was verified for ${route}.`
+            : issue.code === 'module-export-without-import'
+              ? `Native module export has no verified import for ${route}.`
+              : issue.code === 'component-export-without-require'
+                ? `Native component export has no verified require for ${route}.`
+                : `Native handler has no verified invocation for ${route}.`;
   return {
     code: issue.code, severity: issue.severity, channel: issue.channel,
     ...(issue.method === undefined ? {} : { method: issue.method }), message,

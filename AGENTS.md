@@ -7,7 +7,8 @@
 
 - TypeScript CLI. npm 패키지 `isthmus-cli`, 실행 명령 `isthmus` / `npx isthmus-cli`.
 - Flutter Dart ↔ Swift/Kotlin bridge facts를 조인한다. Swift/Dart/Kotlin 해석은 자매 producer가 책임지고,
-  JS/TS 추출은 향후 예외다. Kotlin 사전 점검·Basic/Pigeon은 개발 범위이며 RN·Event 채널은 계획이다.
+  JS/TS 추출은 향후 예외다. Kotlin 사전 점검·Basic/Pigeon·Event 채널은 개발 범위다.
+  RN은 수신 측 사실과 소비자 조인까지 구현됐고 JS 추출(`extract-js`)만 남았다.
   Capacitor·Cordova·KMP는 v0.1 밖이다. 플랫폼별 구현·실행 검증·발행 상태를 구분한다.
 - 제품은 JSON 파일만 읽고 쓴다. 자매 도구 실행은 `scripts/`의 검증 작업이며 전체 언어 그래프는 조인하지 않는다.
 - `retentions --for cartograph`의 결과를 `cartograph dead --external-retentions <path>`에 전달한다.

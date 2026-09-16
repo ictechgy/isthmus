@@ -71,6 +71,33 @@ export interface HandlerWithoutInvocation {
 }
 
 /**
+ * 논리 모듈·컴포넌트 이름 하나에 모인 호출 측·수신 측 증거다.
+ *
+ * 호출 측은 `module-import`·`component-require`, 수신 측은 `module-export`·
+ * `component-export` 사실이다. `channel` 필드에는 RN 모듈·컴포넌트 이름이 든다.
+ */
+export interface MatchedBoundaryName {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly callers: readonly BridgeEndpoint[];
+  readonly receivers: readonly BridgeEndpoint[];
+}
+
+/** 수신 측 export를 찾지 못한 논리 이름과 모든 호출 측 증거다. */
+export interface UnexportedBoundaryName {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly callers: readonly BridgeEndpoint[];
+}
+
+/** 호출 측 import·require를 찾지 못한 논리 이름과 모든 수신 측 증거다. */
+export interface UnrequiredBoundaryName {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly receivers: readonly BridgeEndpoint[];
+}
+
+/**
  * 생산 문서가 밝힌 분석 한계와 출처다.
  *
  * `target`은 이 한계를 신고한 문서의 브리지 메커니즘이다. 사실은 target별로만
@@ -99,6 +126,12 @@ export interface BridgeJoinResult {
   readonly matchedMethods: readonly MatchedMethod[];
   readonly unhandledInvocations: readonly UnhandledInvocation[];
   readonly handlersWithoutInvocations: readonly HandlerWithoutInvocation[];
+  readonly matchedModules: readonly MatchedBoundaryName[];
+  readonly moduleImportsWithoutExports: readonly UnexportedBoundaryName[];
+  readonly moduleExportsWithoutImports: readonly UnrequiredBoundaryName[];
+  readonly matchedComponents: readonly MatchedBoundaryName[];
+  readonly componentRequiresWithoutExports: readonly UnexportedBoundaryName[];
+  readonly componentExportsWithoutRequires: readonly UnrequiredBoundaryName[];
   readonly limitations: readonly JoinLimitation[];
 }
 
@@ -171,6 +204,8 @@ export function joinBridgeDocuments(
       handlers,
     }))
     .sort(compareMethodKeys);
+  const moduleGroups = collectNameGroups(documents, 'module-import', 'module-export');
+  const componentGroups = collectNameGroups(documents, 'component-require', 'component-export');
   return {
     deferred: false,
     observedFacts,
@@ -180,6 +215,12 @@ export function joinBridgeDocuments(
     matchedMethods,
     unhandledInvocations,
     handlersWithoutInvocations,
+    matchedModules: matchedNames(moduleGroups),
+    moduleImportsWithoutExports: unexportedNames(moduleGroups),
+    moduleExportsWithoutImports: unrequiredNames(moduleGroups),
+    matchedComponents: matchedNames(componentGroups),
+    componentRequiresWithoutExports: unexportedNames(componentGroups),
+    componentExportsWithoutRequires: unrequiredNames(componentGroups),
     limitations,
   };
 }
@@ -252,6 +293,12 @@ function emptyJoinResult(
     matchedMethods: [],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
     limitations,
   };
 }
@@ -308,6 +355,18 @@ function unjoinedFactLimitations(
       isUnattributedHandler,
       'unjoined-unattributed-handlers',
       'method handler facts without a channel',
+    ),
+    ...unjoinedLimitations(
+      documents,
+      isUnjoinedDynamicImport,
+      'unjoined-dynamic-imports',
+      'module import or component require facts with a non-literal name',
+    ),
+    ...unjoinedLimitations(
+      documents,
+      isUnjoinedDynamicExport,
+      'unjoined-dynamic-exports',
+      'module or component export facts with a non-literal name',
     ),
   ];
 }
@@ -419,6 +478,22 @@ function isUnjoinedDynamicMethod(fact: BridgeFact): boolean {
  */
 function isUnattributedHandler(fact: BridgeFact): boolean {
   return fact.kind === 'method-handle' && fact.channel === null && !fact.dynamic;
+}
+
+/** 이름이 리터럴이 아니어서 조인하지 못한 모듈 import·컴포넌트 require 사실인지 확인한다. */
+function isUnjoinedDynamicImport(fact: BridgeFact): boolean {
+  return (
+    fact.dynamic &&
+    (fact.kind === 'module-import' || fact.kind === 'component-require')
+  );
+}
+
+/** 이름이 리터럴이 아니어서 조인하지 못한 모듈·컴포넌트 export 사실인지 확인한다. */
+function isUnjoinedDynamicExport(fact: BridgeFact): boolean {
+  return (
+    fact.dynamic &&
+    (fact.kind === 'module-export' || fact.kind === 'component-export')
+  );
 }
 
 /** 생성 시각 차이가 하루를 넘을 때 교차 입력 한계를 만든다. */
@@ -617,6 +692,72 @@ function createChannelGroup(
   return { target, channel, creations: [], registrations: [] };
 }
 
+/**
+ * 모듈·컴포넌트 이름 키별로 호출 측·수신 측 증거를 모은다.
+ *
+ * RN의 `module-import`↔`module-export`와 `component-require`↔`component-export`는
+ * 같은 (target, channel=모듈·컴포넌트 이름) 조인 규칙을 공유하므로 수집기를
+ * 재사용한다. dynamic 사실은 조인하지 않고 소비자 계수 한계로 넘긴다.
+ */
+function collectNameGroups(
+  documents: readonly BridgeFactsDocument[],
+  callerKind: BridgeFact['kind'],
+  receiverKind: BridgeFact['kind'],
+): Map<string, MutableNameGroup> {
+  const groups = new Map<string, MutableNameGroup>();
+  for (const document of documents) {
+    if (document.target === null) continue;
+    for (const fact of document.facts) {
+      if (fact.dynamic || fact.channel === null) continue;
+      if (fact.kind !== callerKind && fact.kind !== receiverKind) continue;
+      const key = `${document.target}\u0000${fact.channel}`;
+      const group = groups.get(key) ?? {
+        target: document.target,
+        channel: fact.channel,
+        callers: [],
+        receivers: [],
+      };
+      const endpoints = fact.kind === callerKind ? group.callers : group.receivers;
+      endpoints.push(toEndpoint(document.platform, fact));
+      groups.set(key, group);
+    }
+  }
+  for (const group of groups.values()) {
+    sortUniqueEndpoints(group.callers);
+    sortUniqueEndpoints(group.receivers);
+  }
+  return groups;
+}
+
+/** 양쪽 증거가 모인 이름 그룹을 매치 결과로 고정한다. */
+function matchedNames(
+  groups: Map<string, MutableNameGroup>,
+): MatchedBoundaryName[] {
+  return [...groups.values()]
+    .filter((group) => group.callers.length > 0 && group.receivers.length > 0)
+    .sort(compareChannels);
+}
+
+/** 호출 측만 있는 이름 그룹을 미수출 진단 재료로 고정한다. */
+function unexportedNames(
+  groups: Map<string, MutableNameGroup>,
+): UnexportedBoundaryName[] {
+  return [...groups.values()]
+    .filter((group) => group.callers.length > 0 && group.receivers.length === 0)
+    .map(({ target, channel, callers }) => ({ target, channel, callers }))
+    .sort(compareChannels);
+}
+
+/** 수신 측만 있는 이름 그룹을 미호출 경고 재료로 고정한다. */
+function unrequiredNames(
+  groups: Map<string, MutableNameGroup>,
+): UnrequiredBoundaryName[] {
+  return [...groups.values()]
+    .filter((group) => group.receivers.length > 0 && group.callers.length === 0)
+    .map(({ target, channel, receivers }) => ({ target, channel, receivers }))
+    .sort(compareChannels);
+}
+
 /** 사실을 플랫폼이 포함된 증거 위치로 바꾼다. */
 function toEndpoint(
   platform: BridgePlatform,
@@ -663,6 +804,12 @@ interface MutableChannelGroup extends MatchedChannel {
 interface MutableMethodGroup extends MatchedMethod {
   readonly invocations: BridgeEndpoint[];
   readonly handlers: BridgeEndpoint[];
+}
+
+/** 조립 중인 모듈·컴포넌트 이름 증거 그룹이다. */
+interface MutableNameGroup extends MatchedBoundaryName {
+  readonly callers: BridgeEndpoint[];
+  readonly receivers: BridgeEndpoint[];
 }
 
 const millisecondsPerHour = 60 * 60 * 1_000;

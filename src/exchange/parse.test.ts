@@ -123,6 +123,15 @@ test('플랫폼은 자기 역할의 fact kind만 생산할 수 있다', () => {
       platform: 'swift',
       fact: { ...validMethodFact, kind: 'method-invoke' },
     },
+    {
+      platform: 'swift',
+      fact: {
+        kind: 'module-import',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+      },
+    },
   ];
 
   for (const { platform, fact } of invalidCases) {
@@ -141,35 +150,31 @@ test('플랫폼은 자기 역할의 fact kind만 생산할 수 있다', () => {
   }
 });
 
-test('아직 조인하지 않는 module·component fact는 fail-closed로 거부한다', () => {
-  const unsupportedFacts = [
+test('module·component fact는 이름 기반 조인 대상으로 받아들인다', () => {
+  const supportedFacts = [
     { platform: 'js', kind: 'module-import' },
     { platform: 'swift', kind: 'module-export' },
     { platform: 'js', kind: 'component-require' },
     { platform: 'kotlin', kind: 'component-export' },
   ];
 
-  for (const { platform, kind } of unsupportedFacts) {
-    assert.throws(
-      () => parseBridgeFactsDocument({
-        ...emptyDocument,
-        platform,
-        target: 'react-native',
-        facts: [
-          {
-            kind,
-            channel: 'CameraModule',
-            dynamic: false,
-            location: { path: 'src/camera.ts', line: 1, column: 1 },
-          },
-        ],
-      }),
-      {
-        name: 'BridgeFactsValidationError',
-        message:
-          'Fact kind is reserved but not supported by this isthmus version at index 0.',
-      },
-    );
+  for (const { platform, kind } of supportedFacts) {
+    const parsed = parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform,
+      target: 'react-native',
+      facts: [
+        {
+          kind,
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        },
+      ],
+    });
+
+    assert.equal(parsed.facts[0]?.kind, kind);
+    assert.equal(parsed.facts[0]?.channel, 'CameraModule');
   }
 });
 

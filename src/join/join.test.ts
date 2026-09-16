@@ -927,6 +927,243 @@ test('같은 메서드의 여러 핸들러 위치를 한 논리 매치에 정렬
   );
 });
 
+test('RN 모듈·컴포넌트 이름에 호출 측과 수신 측 증거를 함께 연결한다', () => {
+  const result = joinBridgeDocuments([
+    reactNativeJsDocument,
+    reactNativeSwiftDocument,
+    reactNativeKotlinDocument,
+  ]);
+
+  assert.deepEqual(result.matchedModules, [
+    {
+      target: 'react-native',
+      channel: 'CameraModule',
+      callers: [
+        {
+          platform: 'js',
+          location: { path: 'src/camera.ts', line: 2, column: 30 },
+        },
+      ],
+      receivers: [
+        {
+          platform: 'swift',
+          location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(result.matchedComponents, [
+    {
+      target: 'react-native',
+      channel: 'CameraView',
+      callers: [
+        {
+          platform: 'js',
+          location: { path: 'src/Camera.tsx', line: 5, column: 22 },
+        },
+      ],
+      receivers: [
+        {
+          platform: 'kotlin',
+          location: { path: 'android/CameraViewManager.kt', line: 8, column: 5 },
+        },
+        {
+          platform: 'swift',
+          location: { path: 'ios/CameraViewManager.m', line: 9, column: 1 },
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(result.moduleImportsWithoutExports, []);
+  assert.deepEqual(result.moduleExportsWithoutImports, []);
+  assert.deepEqual(result.componentRequiresWithoutExports, []);
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+});
+
+test('짝 없는 모듈·컴포넌트 이름을 호출 측과 수신 측으로 나누어 남긴다', () => {
+  const unmatchedReceiver = parseBridgeFactsDocument({
+    ...reactNativeSwiftDocument,
+    facts: reactNativeSwiftDocument.facts.map((fact) => ({
+      ...fact,
+      channel: `Native${fact.channel}`,
+    })),
+  });
+  const unmatchedKotlin = parseBridgeFactsDocument({
+    ...reactNativeKotlinDocument,
+    facts: [],
+    target: null,
+  });
+
+  const result = joinBridgeDocuments([
+    reactNativeJsDocument,
+    unmatchedReceiver,
+    unmatchedKotlin,
+  ]);
+
+  assert.deepEqual(result.matchedModules, []);
+  assert.deepEqual(result.matchedComponents, []);
+  assert.deepEqual(
+    result.moduleImportsWithoutExports.map(({ channel }) => channel),
+    ['CameraModule'],
+  );
+  assert.deepEqual(
+    result.componentRequiresWithoutExports.map(({ channel }) => channel),
+    ['CameraView'],
+  );
+  assert.deepEqual(
+    result.moduleExportsWithoutImports.map(({ channel }) => channel),
+    ['NativeCameraModule'],
+  );
+  assert.deepEqual(
+    result.componentExportsWithoutRequires.map(({ channel }) => channel),
+    ['NativeCameraView'],
+  );
+});
+
+test('dynamic 모듈·컴포넌트 이름은 조인하지 않고 소비자 한계로 센다', () => {
+  const dynamicJs = parseBridgeFactsDocument({
+    ...reactNativeJsDocument,
+    facts: reactNativeJsDocument.facts.map((fact) => ({ ...fact, dynamic: true })),
+  });
+  const dynamicSwift = parseBridgeFactsDocument({
+    ...reactNativeSwiftDocument,
+    facts: reactNativeSwiftDocument.facts.map((fact) => ({ ...fact, dynamic: true })),
+  });
+  const dynamicKotlin = parseBridgeFactsDocument({
+    ...reactNativeKotlinDocument,
+    facts: reactNativeKotlinDocument.facts.map((fact) => ({ ...fact, dynamic: true })),
+  });
+
+  const result = joinBridgeDocuments([dynamicJs, dynamicSwift, dynamicKotlin]);
+
+  assert.deepEqual(result.matchedModules, []);
+  assert.deepEqual(result.matchedComponents, []);
+  assert.deepEqual(result.moduleImportsWithoutExports, []);
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+  assert.deepEqual(
+    result.limitations.filter(({ origin }) => origin === 'consumer'),
+    [
+      {
+        platform: 'js',
+        target: 'react-native',
+        tool: 'isthmus',
+        origin: 'consumer',
+        message:
+          'unjoined-dynamic-imports: 2 module import or component require facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'kotlin',
+        target: 'react-native',
+        tool: 'isthmus',
+        origin: 'consumer',
+        message:
+          'unjoined-dynamic-exports: 1 module or component export facts with a non-literal name were not joined',
+      },
+      {
+        platform: 'swift',
+        target: 'react-native',
+        tool: 'isthmus',
+        origin: 'consumer',
+        message:
+          'unjoined-dynamic-exports: 2 module or component export facts with a non-literal name were not joined',
+      },
+    ],
+  );
+});
+
+test('target이 다른 같은 이름의 모듈 사실은 연결하지 않는다', () => {
+  const flutterJs = parseBridgeFactsDocument({
+    ...reactNativeJsDocument,
+    platform: 'dart',
+    target: 'flutter',
+    tool: { name: 'dartograph', version: '0.1.0' },
+  });
+
+  const result = joinBridgeDocuments([flutterJs, reactNativeSwiftDocument, reactNativeKotlinDocument]);
+
+  assert.deepEqual(result.matchedModules, []);
+  assert.deepEqual(
+    result.moduleImportsWithoutExports.map(({ target, channel }) => [target, channel]),
+    [['flutter', 'CameraModule']],
+  );
+  assert.deepEqual(
+    result.moduleExportsWithoutImports.map(({ target, channel }) => [target, channel]),
+    [['react-native', 'CameraModule']],
+  );
+});
+
+/** RN 호출 측 문서다. 실제 extract-js 산출물 형태를 미리 세운 독립 기대값이다. */
+const reactNativeJsDocument = parseBridgeFactsDocument({
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  platform: 'js',
+  target: 'react-native',
+  project: '/fixture',
+  facts: [
+    {
+      kind: 'module-import',
+      channel: 'CameraModule',
+      dynamic: false,
+      location: { path: 'src/camera.ts', line: 2, column: 30 },
+    },
+    {
+      kind: 'component-require',
+      channel: 'CameraView',
+      dynamic: false,
+      location: { path: 'src/Camera.tsx', line: 5, column: 22 },
+    },
+  ],
+  limitations: [],
+});
+
+/** RN iOS 수신 측 문서다. cartograph의 RCT_EXPORT_* 스캔 형태를 따른다. */
+const reactNativeSwiftDocument = parseBridgeFactsDocument({
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'cartograph', version: '0.1.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  platform: 'swift',
+  target: 'react-native',
+  project: '/fixture',
+  facts: [
+    {
+      kind: 'module-export',
+      channel: 'CameraModule',
+      dynamic: false,
+      location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+    },
+    {
+      kind: 'component-export',
+      channel: 'CameraView',
+      dynamic: false,
+      location: { path: 'ios/CameraViewManager.m', line: 9, column: 1 },
+    },
+  ],
+  limitations: [],
+});
+
+/** RN Android 수신 측 문서다. kartograph의 @ReactModule 스캔 형태를 따른다. */
+const reactNativeKotlinDocument = parseBridgeFactsDocument({
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'kartograph', version: '0.1.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  platform: 'kotlin',
+  target: 'react-native',
+  project: '/fixture',
+  facts: [
+    {
+      kind: 'component-export',
+      channel: 'CameraView',
+      dynamic: false,
+      location: { path: 'android/CameraViewManager.kt', line: 8, column: 5 },
+    },
+  ],
+  limitations: [],
+});
+
 /** 저장된 JSON을 제품 파서로 검증해 테스트 입력으로 사용한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

@@ -204,6 +204,12 @@ test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한
     matchedMethods: [],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
     limitations: [],
   };
 
@@ -263,6 +269,12 @@ test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합
     ],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
     limitations: [],
   };
 
@@ -316,6 +328,12 @@ test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', (
     ],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
     limitations: [],
   };
 
@@ -373,6 +391,12 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
     ],
     unhandledInvocations: [],
     handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
     limitations: [],
   };
 
@@ -383,6 +407,78 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
     qualifiedName: 'Plugin.handle',
     usr: 's:Plugin.handle',
   });
+});
+
+test('매치된 RN 모듈·컴포넌트를 호출→export 간선으로 만든다', () => {
+  const joined = joinBridgeDocuments([
+    parseBridgeFactsDocument({
+      format: 'bridge-facts',
+      version: 1,
+      tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+      generatedAt: '2026-09-04T12:00:00Z',
+      platform: 'js',
+      target: 'react-native',
+      project: '/fixture',
+      facts: [
+        {
+          kind: 'module-import',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 2, column: 30 },
+        },
+        {
+          kind: 'component-require',
+          channel: 'CameraView',
+          dynamic: false,
+          location: { path: 'src/Camera.tsx', line: 5, column: 22 },
+        },
+      ],
+      limitations: [],
+    }),
+    parseBridgeFactsDocument({
+      format: 'bridge-facts',
+      version: 1,
+      tool: { name: 'cartograph', version: '0.1.0' },
+      generatedAt: '2026-09-04T12:00:00Z',
+      platform: 'swift',
+      target: 'react-native',
+      project: '/fixture',
+      facts: [
+        {
+          kind: 'module-export',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+        },
+        {
+          kind: 'component-export',
+          channel: 'CameraView',
+          dynamic: false,
+          location: { path: 'ios/CameraViewManager.m', line: 9, column: 1 },
+        },
+      ],
+      limitations: [],
+    }),
+  ]);
+
+  const graph = createBridgeGraph(joined);
+
+  assert.deepEqual(graph.edges, [
+    {
+      from: 'js:src/Camera.tsx:5:22',
+      to: 'swift:ios/CameraViewManager.m:9:1',
+      kind: 'component',
+      target: 'react-native',
+      channel: 'CameraView',
+    },
+    {
+      from: 'js:src/camera.ts:2:30',
+      to: 'swift:ios/CameraModule.m:4:1',
+      kind: 'module',
+      target: 'react-native',
+      channel: 'CameraModule',
+    },
+  ]);
 });
 
 test('보류된 조인을 빈 graph로 만들지 않는다', () => {

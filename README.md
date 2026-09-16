@@ -45,7 +45,11 @@ cartograph **0.15.1**, kartograph **0.10.0**, and dartograph **0.10.0** — see
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the public versions above.
-React Native and EventChannel extraction remain planned. Retention export currently targets
+React Native module/component facts (`module-import`↔`module-export`,
+`component-require`↔`component-export`) now join by name on main, and EventChannel v2
+transport is implemented across the sister repositories — but JS/TS extraction
+(`extract-js`) remains planned, so end-to-end RN joins are not yet reproducible.
+Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 
 | Document | Contents |

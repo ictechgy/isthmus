@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-17 KST by Devin (GLM 리뷰 반영 완료 · PR #74 발행 — 머지 대기)_
+_Last updated: 2026-09-17 KST by Devin (PR 3건 머지 완료 · cold-cache 첫 원격 실행 SUCCESS)_
 
 ## Goal
 
@@ -11,9 +11,9 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 
 ## Current Status
 
-- 로컬 `/Users/jinhongan/Desktop/isthmus`: `chore/release-0.6.0` branch(HEAD `3ded085`)에 있다.
-  기존 미커밋 문서 변경(HANDOFF·FEASIBILITY·PRD·RESEARCH)과 미추적 파일
-  (HANDOFF.cartograph-notes.md·default.profraw)은 보존했다.
+- 로컬 `/Users/jinhongan/Desktop/isthmus`: `feature/mcp-serve` branch에 있다(머지 완료된
+  브랜치 — origin/main은 `57a0bf0`). 기존 미커밋 문서 변경(HANDOFF·FEASIBILITY·PRD·RESEARCH)과
+  미추적 파일(HANDOFF.cartograph-notes.md·default.profraw)은 보존했다.
 - 아래 PR은 **MERGED**다. 이번 갱신에서 GitHub 실측으로 재확인했다.
 
 | 저장소 / PR | 내용 | merge commit |
@@ -307,31 +307,61 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
    3방향 조인까지), `fixtures/bridge`(camera 채널 문서 쌍+불일치 쌍),
    `fixtures/bridge-app`(단일 루트 Dart·Swift 스텁 SwiftPM·Kotlin 소스),
    `.github/workflows/cold-cache.yml`(주 1회 새 러너 발행 설치→검증 감시).
-   로컬에서 두 모드 실제 실행으로 검증. 첫 원격 실행 결과는 미확인 — 워크플로 기록 확인 필요.
+   로컬에서 두 모드 실제 실행으로 검증. 첫 원격 실행도 완료(run `35097769609`, 두 잡 SUCCESS).
 10. 경쟁력 우선순위 전부 소화됨. 다음은 자유 선택: FFI/JNI 심볼 조인(계약 개정 필요),
     MCP `serve` 추가 도구, 실측 코퍼스 확장.
 
 ## PR 상태 (2026-09-17)
 
-- **isthmus PR #74** — `feature/mcp-serve` → main, **OPEN·머지 대기**. 위 Next Steps의
+- **isthmus PR #74** — **MERGED**(squash `57a0bf0`). 위 Next Steps의
   5~9항(EventChannel·MCP serve·LocalSend 코퍼스·cold-cache) 전부 + GLM 리뷰 반영
-  3커밋(19ca9b1·cc8c9f7·91bcff0)을 포함한다. `npm run verify` 통과 확인.
-- **dartograph PR #103** — `feature/bridge-events` → main, **OPEN**. GLM 반영
-  `b6075aa`(mutable 재대입 전 형태 감지) 포함, 531 테스트 통과.
-- **kartograph PR #60** — `feat/event-channel-ffi` → main, **OPEN**. GLM 반영
-  `b0f62fb`(JNI 문자열 마스킹·연쇄 `!!` 귀속) 포함, `:index:test` 통과.
+  3커밋(19ca9b1·cc8c9f7·91bcff0)을 포함했다. origin/main은 `57a0bf0`.
+- **dartograph PR #103** — **MERGED**(squash `eb43f1b`). 머지 전 CI의
+  `dart format --set-exit-if-changed` 실패를 발견해 `46b4a81`(style: dart format
+  적용)을 푸시했다 — `dart pub get` 없이 포맷하면 언어 버전이 최신으로 적용돼
+  39개 파일이 바뀌므로 pub get → format 순서를 지킨다. GLM 반영 `b6075aa` 포함.
+- **kartograph PR #60** — **MERGED**(squash `e0974c3`). GLM 반영
+  `b0f62fb`(JNI 문자열 마스킹·연쇄 `!!` 귀속) 포함.
 - **cartograph는 별도 PR 없음** — EventChannel·FFI·셸 인용 3커밋이 이미 PR #92로
   main 머지(`9c3bd52`)됐고, main 구현이 더 개선됐다(미귀속 수신자도 dynamic 사실
   방출 등). 삭제된 `cartograph-competitive` 워크트리의 커밋 객체는 본 repo에 남아
   있으나 복구 불필요 — origin/main이 상위 집합이다.
-- GLM 기각 지적과 근거는 각 PR 본문에 기록했다. 머지는 사용자 승인 사안.
+- **cold-cache.yml 첫 원격 실행 완료**(2026-09-17, workflow_dispatch run
+  `35097769609`): `published-package`·`producers` 두 잡 모두 SUCCESS.
+  주 1회 스케줄(cron `17 3 * * 1`)이 유효함을 확인했다.
+- GLM 기각 지적과 근거는 각 PR 본문에 기록했다.
+
+## 진행 중 — RN 소비자 조인 (2026-09-17, `feature/rn-join`)
+
+코어 RN 지원의 첫 번째 PR(소비자 측)이 `feature/rn-join` 브랜치에 **미커밋**으로 있다.
+`npm test` 466개·`npm run verify` 전체 통과. 남은 것은 커밋 → PR → GLM 리뷰다.
+
+- **범위 합의**: 코어 RN만. Expo Modules(`requireNativeModule`)는 추후 재평가 —
+  닫힌 `target` 어휘 개정이 필요하다. `extract-js`(JS/TS 호출 측 추출)는 별도 PR 2.
+- **변경 요약**: `parse.ts`가 예약 4종(`module-import`/`module-export`/
+  `component-require`/`component-export`)을 수용 — 8종 전부 지원돼 reserved 분기는
+  제거됨. `join.ts`에 (target, channel=이름) 조인 그룹·`MatchedBoundaryName` 등
+  신규 결과 6종·`unjoined-dynamic-imports/exports:` 소비자 한계.
+  `check-report.ts`에 이슈 코드 6종 — 미수출 import/require는 error,
+  `unjoined-dynamic-exports:`(consumer-origin)가 있으면 `-unverified` warning으로
+  강등, 미호출 export는 warning. diff는 스냅샷 간 target 집합 일치를 요구.
+  query는 `module`/`component` subject, graph는 모듈·컴포넌트 엣지를 낸다.
+- **설계 메모**: 이름 조인은 channel 필드 재사용 — 별도 이름 필드 추가 없음.
+  retentions는 matchedMethods만 본다(모듈 매치는 심볼 보존이 아님 — cartograph 측
+  계약 변경이 필요해 이번 범위 밖).
+- **커밋·푸시 후**: GRAPH-EXCHANGE에 모듈·컴포넌트 조인 문단과 심각도·한계 규칙이
+  반영돼 있다. 자매 repo(카트/카르토그라프) 산출물과의 계약 정합은 이미 확인.
+- **PR 2 범위(extract-js)**: `NativeModules.X`·`TurboModuleRegistry.get*('X')`·
+  `requireNativeComponent('X')`·`NativeX.ts` codegen 스펙을 무의존 토큰 스캔으로.
+  RESEARCH.md 시장조사 참고 — CodeGraph가 RN 브리지 조인을 이미 광고하므로
+  "경계 조인 자체가 새롭다"는 주장 금지, 차별점은 진단·심각도·retention·CI 게이트.
 
 ## Resume Prompt
 
 `/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
 공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.11.0).
-**현재 PR 3건이 OPEN 상태**야: isthmus #74(feature/mcp-serve — MCP serve·EventChannel·LocalSend 코퍼스·
-cold-cache·GLM 반영 3커밋), dartograph #103(feature/bridge-events — EventChannel+FFI+mutable 재대입),
-kartograph #60(feat/event-channel-ffi — EventChannel+`!!`/`?.`+JNI 한계). cartograph는 PR #92로 이미 머지돼
-별도 PR 없음. 다음: 3개 PR의 CI·리뷰 확인 후 머지(사용자 승인 필요), 머지되면 `cold-cache.yml` 첫
-원격 실행 결과 확인. 완료한 PR·발행·타당성 조사를 반복하지 마.
+**PR 3건 전부 머지됐어**(isthmus #74 → `57a0bf0`, dartograph #103 → `eb43f1b` — format 커밋 `46b4a81` 포함,
+kartograph #60 → `e0974c3`). `cold-cache.yml` 첫 원격 실행도 SUCCESS(두 잡).
+**진행 중**: `feature/rn-join` 브랜치에 RN 소비자 조인(코어 RN: 모듈·컴포넌트 이름 조인, 미커밋)이 있다 —
+위 "진행 중" 섹션의 변경 요약·남은 단계(커밋→PR→GLM 리뷰→`extract-js` PR 2)를 따른다.
+완료한 PR·발행·타당성 조사를 반복하지 마.

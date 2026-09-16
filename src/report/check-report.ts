@@ -14,6 +14,8 @@ export interface CheckSummary {
   readonly warnings: number;
   readonly matchedChannels: number;
   readonly matchedMethods: number;
+  readonly matchedModules: number;
+  readonly matchedComponents: number;
   /** 입력 문서 전체가 관찰한 fact 수다. 0이면 아무것도 관찰하지 못한 실행이다. */
   readonly observedFacts: number;
   /** 이 실행에 보고된 분석 한계 수다. */
@@ -37,6 +39,12 @@ export const checkIssueCodes = [
   'unregistered-channel-creation-unverified',
   'registration-without-creation',
   'handler-without-invocation',
+  'module-import-without-export',
+  'module-import-without-export-unverified',
+  'module-export-without-import',
+  'component-require-without-export',
+  'component-require-without-export-unverified',
+  'component-export-without-require',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -115,6 +123,38 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       method: item.method,
       evidence: item.handlers,
     })),
+    ...joined.moduleImportsWithoutExports.map<CheckIssue>((item) => ({
+      severity: gaps.hidesExports(item.target) ? 'warning' : 'error',
+      code: gaps.hidesExports(item.target)
+        ? 'module-import-without-export-unverified'
+        : 'module-import-without-export',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.callers,
+    })),
+    ...joined.moduleExportsWithoutImports.map<CheckIssue>((item) => ({
+      severity: 'warning',
+      code: 'module-export-without-import',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.receivers,
+    })),
+    ...joined.componentRequiresWithoutExports.map<CheckIssue>((item) => ({
+      severity: gaps.hidesExports(item.target) ? 'warning' : 'error',
+      code: gaps.hidesExports(item.target)
+        ? 'component-require-without-export-unverified'
+        : 'component-require-without-export',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.callers,
+    })),
+    ...joined.componentExportsWithoutRequires.map<CheckIssue>((item) => ({
+      severity: 'warning',
+      code: 'component-export-without-require',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.receivers,
+    })),
   ];
   return {
     format: 'isthmus-check',
@@ -124,6 +164,8 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       warnings: issues.filter(({ severity }) => severity === 'warning').length,
       matchedChannels: joined.matchedChannels.length,
       matchedMethods: joined.matchedMethods.length,
+      matchedModules: joined.matchedModules.length,
+      matchedComponents: joined.matchedComponents.length,
       observedFacts: joined.observedFacts,
       observedLimitations: joined.limitations.length,
     },
@@ -136,6 +178,11 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
 interface ReceiverCoverageGaps {
   hidesHandlers(target: BridgeTarget, channel: string): boolean;
   hidesRegistrations(target: BridgeTarget, channel: string): boolean;
+  /**
+   * 동적 export 계수는 소비자만 세며 소비자 한계는 채널 범위를 갖지 않으므로
+   * 이 공백은 target 단위로만 적용된다.
+   */
+  hidesExports(target: BridgeTarget): boolean;
 }
 
 /**
@@ -167,14 +214,14 @@ function receiverCoverageGaps(
     isReceiverPlatform(platform),
   );
   const memoized = new Map<BridgeTarget, {
-    allHandlers: boolean; allRegistrations: boolean;
+    allHandlers: boolean; allRegistrations: boolean; allExports: boolean;
     handlerChannels: Set<string>; registrationChannels: Set<string>;
   }>();
   const gapsFor = (target: BridgeTarget) => {
     const existing = memoized.get(target);
     if (existing !== undefined) return existing;
     const gaps = {
-      allHandlers: false, allRegistrations: false,
+      allHandlers: false, allRegistrations: false, allExports: false,
       handlerChannels: new Set<string>(), registrationChannels: new Set<string>(),
     };
     for (const { target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
@@ -183,10 +230,13 @@ function receiverCoverageGaps(
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
       const registrations = startsWithAny(sourceCoverageGapPrefixes)(message) ||
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusRegistrationGapPrefixes)(message));
+      const exports = origin === 'consumer' && tool === 'isthmus' &&
+        startsWithAny(isthmusExportGapPrefixes)(message);
       // 하나라도 범위가 불명확한 공백이 있으면 같은 target의 좁은 범위로 덮지 않는다.
       if (channels === undefined) {
         gaps.allHandlers ||= handlers;
         gaps.allRegistrations ||= registrations;
+        gaps.allExports ||= exports;
       } else {
         for (const channel of channels) {
           if (handlers) gaps.handlerChannels.add(channel);
@@ -206,6 +256,7 @@ function receiverCoverageGaps(
       const gaps = gapsFor(target);
       return gaps.allRegistrations || gaps.registrationChannels.has(channel);
     },
+    hidesExports: (target) => gapsFor(target).allExports,
   };
 }
 
@@ -248,3 +299,11 @@ const isthmusHandlerGapPrefixes = [
 
 /** isthmus가 직접 센 한계 중 채널 등록을 가리는 접두사다. */
 const isthmusRegistrationGapPrefixes = ['unjoined-dynamic-channels:'];
+
+/**
+ * isthmus가 직접 센 한계 중 모듈·컴포넌트 export를 가리는 접두사다.
+ *
+ * RN의 export 사실은 이름이 리터럴일 때만 조인되므로, 동적 이름을 가진
+ * 수신 측 사실이 곧 가려진 export의 상한이다.
+ */
+const isthmusExportGapPrefixes = ['unjoined-dynamic-exports:'];

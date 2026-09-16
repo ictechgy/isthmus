@@ -4,15 +4,18 @@ import type {
   BridgeEndpoint,
   BridgeJoinResult,
   JoinLimitation,
+  MatchedBoundaryName,
+  UnexportedBoundaryName,
+  UnrequiredBoundaryName,
 } from '../join/join.ts';
 import { isBridgeJoinDeferred } from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
-/** query가 식별한 채널 또는 메서드 키다. */
+/** query가 식별한 채널·메서드·모듈·컴포넌트 키다. */
 export interface BridgeQuerySubject {
   readonly name: string;
   readonly qualifiedName: string;
-  readonly kind: 'channel' | 'method';
+  readonly kind: 'channel' | 'method' | 'module' | 'component';
 }
 
 /** 한 브리지 키에서 본 호출 측과 수신 측 증거다. */
@@ -47,7 +50,14 @@ export function createBridgeQuery(
   if (isBridgeJoinDeferred(joined)) {
     throw new Error('Cannot query a deferred bridge join.');
   }
-  const results = [...channelResults(joined), ...methodResults(joined)];
+  const results = [
+    ...channelResults(joined),
+    ...methodResults(joined),
+    ...nameResults(joined.matchedModules, joined.moduleImportsWithoutExports,
+      joined.moduleExportsWithoutImports, 'module'),
+    ...nameResults(joined.matchedComponents, joined.componentRequiresWithoutExports,
+      joined.componentExportsWithoutRequires, 'component'),
+  ];
   const exact = results.filter(
     ({ subject }) => subject.qualifiedName === requested,
   );
@@ -91,9 +101,14 @@ function ambiguousQuery(
     requested,
     level: 'bridge',
     limitations: joined.limitations,
-    candidates: results
-      .map(({ subject }) => ({ qualifiedName: subject.qualifiedName }))
-      .sort((left, right) => compareStrings(left.qualifiedName, right.qualifiedName)),
+    candidates: [
+      ...new Map(
+        results.map(({ subject }) => [
+          subject.qualifiedName,
+          { qualifiedName: subject.qualifiedName },
+        ]),
+      ).values(),
+    ].sort((left, right) => compareStrings(left.qualifiedName, right.qualifiedName)),
   };
 }
 
@@ -155,11 +170,28 @@ function channelResults(
   return [...matched, ...unregistered, ...registrations];
 }
 
+/** 요청 문자열과 정확히 같은 논리 모듈·컴포넌트 이름 결과를 만든다. */
+function nameResults(
+  matched: readonly MatchedBoundaryName[],
+  unexported: readonly UnexportedBoundaryName[],
+  unrequired: readonly UnrequiredBoundaryName[],
+  kind: 'module' | 'component',
+): BridgeQueryResult[] {
+  return [
+    ...matched.map(({ target, channel, callers, receivers }) =>
+      makeQueryResult(target, channel, kind, callers, receivers)),
+    ...unexported.map(({ target, channel, callers }) =>
+      makeQueryResult(target, channel, kind, callers, [])),
+    ...unrequired.map(({ target, channel, receivers }) =>
+      makeQueryResult(target, channel, kind, [], receivers)),
+  ];
+}
+
 /** 조인 키와 양쪽 증거를 query result 골격으로 바꾼다. */
 function makeQueryResult(
   target: BridgeTarget,
   name: string,
-  kind: 'channel' | 'method',
+  kind: 'channel' | 'method' | 'module' | 'component',
   usedBy: readonly BridgeEndpoint[],
   dependsOn: readonly BridgeEndpoint[],
 ): BridgeQueryResult {

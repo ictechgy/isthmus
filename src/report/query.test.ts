@@ -433,8 +433,170 @@ test('`:`가 든 채널도 qualifiedName에서 구분자와 구분되고 되돌�
   assert.equal(decodeURIComponent(encodedMethod), 'takePhoto');
 });
 
+test('RN 모듈 질의가 import 위치와 export 위치를 양방향으로 답한다', () => {
+  const joined = joinBridgeDocuments([
+    reactNativeJsDocument,
+    reactNativeSwiftDocument,
+  ]);
+
+  const document = createBridgeQuery(joined, 'CameraModule');
+
+  assert.equal(document.status, 'found');
+  assert.deepEqual(document.result?.subject, {
+    name: 'CameraModule',
+    qualifiedName: 'react-native:CameraModule',
+    kind: 'module',
+  });
+  assert.deepEqual(document.result?.usedBy, [
+    {
+      platform: 'js',
+      location: { path: 'src/camera.ts', line: 2, column: 30 },
+    },
+  ]);
+  assert.deepEqual(document.result?.dependsOn, [
+    {
+      platform: 'swift',
+      location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+    },
+  ]);
+});
+
+test('RN 컴포넌트 질의가 require 위치와 export 위치를 양방향으로 답한다', () => {
+  const joined = joinBridgeDocuments([
+    reactNativeJsDocument,
+    reactNativeSwiftDocument,
+  ]);
+
+  const document = createBridgeQuery(joined, 'CameraView');
+
+  assert.equal(document.status, 'found');
+  assert.equal(document.result?.subject.kind, 'component');
+  assert.equal(
+    document.result?.subject.qualifiedName,
+    'react-native:CameraView',
+  );
+});
+
+test('짝 없는 모듈 이름도 호출 측 증거만으로 질의할 수 있다', () => {
+  const joined = joinBridgeDocuments([
+    reactNativeJsDocument,
+    parseBridgeFactsDocument({
+      ...reactNativeSwiftDocument,
+      target: null,
+      facts: [],
+    }),
+  ]);
+
+  const document = createBridgeQuery(joined, 'CameraModule');
+
+  assert.equal(document.status, 'found');
+  assert.equal(document.result?.subject.kind, 'module');
+  assert.equal(document.result?.usedBy.length, 1);
+  assert.deepEqual(document.result?.dependsOn, []);
+});
+
+test('같은 이름의 모듈과 컴포넌트는 종류를 추측하지 않고 모호로 답한다', () => {
+  const sharedJs = parseBridgeFactsDocument({
+    ...reactNativeJsDocument,
+    facts: [
+      {
+        kind: 'module-import',
+        channel: 'Shared',
+        dynamic: false,
+        location: { path: 'src/shared.ts', line: 1, column: 30 },
+      },
+      {
+        kind: 'component-require',
+        channel: 'Shared',
+        dynamic: false,
+        location: { path: 'src/Shared.tsx', line: 2, column: 22 },
+      },
+    ],
+  });
+  const sharedSwift = parseBridgeFactsDocument({
+    ...reactNativeSwiftDocument,
+    facts: [
+      {
+        kind: 'module-export',
+        channel: 'Shared',
+        dynamic: false,
+        location: { path: 'ios/Shared.m', line: 3, column: 1 },
+      },
+      {
+        kind: 'component-export',
+        channel: 'Shared',
+        dynamic: false,
+        location: { path: 'ios/SharedManager.m', line: 4, column: 1 },
+      },
+    ],
+  });
+
+  const document = createBridgeQuery(
+    joinBridgeDocuments([sharedJs, sharedSwift]),
+    'Shared',
+  );
+
+  // 두 종류 모두 같은 qualifiedName을 가지므로 재요청 키는 하나뿐이다.
+  assert.equal(document.status, 'ambiguous');
+  assert.deepEqual(document.candidates, [
+    { qualifiedName: 'react-native:Shared' },
+  ]);
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   return parseBridgeFactsDocument(JSON.parse(text));
 }
+
+/** RN 호출 측 js 문서다. extract-js 산출물 형태를 미리 세운 독립 기대값이다. */
+const reactNativeJsDocument = parseBridgeFactsDocument({
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  platform: 'js',
+  target: 'react-native',
+  project: '/fixture',
+  facts: [
+    {
+      kind: 'module-import',
+      channel: 'CameraModule',
+      dynamic: false,
+      location: { path: 'src/camera.ts', line: 2, column: 30 },
+    },
+    {
+      kind: 'component-require',
+      channel: 'CameraView',
+      dynamic: false,
+      location: { path: 'src/Camera.tsx', line: 5, column: 22 },
+    },
+  ],
+  limitations: [],
+});
+
+/** RN iOS 수신 측 문서다. cartograph의 RCT_EXPORT_* 스캔 형태를 따른다. */
+const reactNativeSwiftDocument = parseBridgeFactsDocument({
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'cartograph', version: '0.1.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  platform: 'swift',
+  target: 'react-native',
+  project: '/fixture',
+  facts: [
+    {
+      kind: 'module-export',
+      channel: 'CameraModule',
+      dynamic: false,
+      location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+    },
+    {
+      kind: 'component-export',
+      channel: 'CameraView',
+      dynamic: false,
+      location: { path: 'ios/CameraViewManager.m', line: 9, column: 1 },
+    },
+  ],
+  limitations: [],
+});
