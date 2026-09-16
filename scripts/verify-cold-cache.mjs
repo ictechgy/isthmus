@@ -67,7 +67,7 @@ try {
     verify(dart.status === 0, 'dartograph bridges');
     const swift = run(cartograph, ['bridges', '--project', bridgeApp, '--target', 'flutter', '--format', 'json']);
     verify(swift.status === 0, 'cartograph bridges');
-    const kotlin = run(kartograph, ['bridges', '--project', bridgeApp, '--format', 'json']);
+    const kotlin = run(kartograph, ['bridges', '--project', bridgeApp, '--target', 'flutter', '--format', 'json']);
     verify(kotlin.status === 0, 'kartograph bridges');
 
     const paths = { dart: 'dart.json', swift: 'swift.json', kotlin: 'kotlin.json' };

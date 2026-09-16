@@ -252,7 +252,7 @@ for (const corpusCase of manifest.cases) {
     ...(corpusCase.expectGap === true
       ? { expectGap: limitationText.some((l) => l.includes('unscanned-event-channels')) } : {}),
   };
-  if (corpusCase.kotlin === true) kotlinUsed = true;
+  if (corpusCase.kotlin === true && kartographReal !== undefined) kotlinUsed = true;
   rows.push({
     id: corpusCase.id,
     project: corpusCase.project,
@@ -281,5 +281,7 @@ const document = {
   totals, cases: rows,
 };
 await writeFile(join(resultsDir, 'results.json'), JSON.stringify(document, null, 2));
-process.stdout.write(`${JSON.stringify({ work, totals, cases: rows.map(({ id, status, truePositives, falseNegatives, falsePositives, error }) =>
-  ({ id, status, tp: truePositives, fn: falseNegatives, fp: falsePositives, error })) }, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify({ work, totals, cases: rows.map(({ id, status, truePositives, falseNegatives, falsePositives, error, expectGap }) =>
+  ({ id, status, tp: truePositives, fn: falseNegatives, fp: falsePositives, error,
+    // 기대한 커버리지 공백이 사라지면 결과 행에도 남긴다 — 조용한 회귀를 알아차리기 위해서다.
+    ...(expectGap === false ? { expectGap } : {}) })) }, null, 2)}\n`);
