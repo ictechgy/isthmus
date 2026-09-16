@@ -1,8 +1,10 @@
 import type { BridgeFactsDocument, BridgeTarget } from '../exchange/parse.ts';
+import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import type {
   BridgeJoinResult,
   JoinLimitation,
+  MatchedBoundaryName,
   MatchedMethod,
 } from '../join/join.ts';
 import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
@@ -31,12 +33,20 @@ export interface BridgeDiffDocument {
   readonly summary: {
     readonly addedMethods: number;
     readonly removedMethods: number;
+    readonly addedModules: number;
+    readonly removedModules: number;
+    readonly addedComponents: number;
+    readonly removedComponents: number;
     readonly introducedErrors: number;
     readonly introducedWarnings: number;
     readonly resolvedIssues: number;
   };
   readonly addedMethods: readonly MatchedMethod[];
   readonly removedMethods: readonly MatchedMethod[];
+  readonly addedModules: readonly MatchedBoundaryName[];
+  readonly removedModules: readonly MatchedBoundaryName[];
+  readonly addedComponents: readonly MatchedBoundaryName[];
+  readonly removedComponents: readonly MatchedBoundaryName[];
   readonly introducedIssues: readonly CheckIssue[];
   readonly resolvedIssues: readonly CheckIssue[];
   readonly limitations: {
@@ -71,6 +81,10 @@ export function createBridgeDiff(
   const newReport = createCheckReport(newJoin);
   const addedMethods = difference(newJoin.matchedMethods, oldJoin.matchedMethods, logicalKey);
   const removedMethods = difference(oldJoin.matchedMethods, newJoin.matchedMethods, logicalKey);
+  const addedModules = difference(newJoin.matchedModules, oldJoin.matchedModules, logicalKey);
+  const removedModules = difference(oldJoin.matchedModules, newJoin.matchedModules, logicalKey);
+  const addedComponents = difference(newJoin.matchedComponents, oldJoin.matchedComponents, logicalKey);
+  const removedComponents = difference(oldJoin.matchedComponents, newJoin.matchedComponents, logicalKey);
   const introducedIssues = difference(newReport.issues, oldReport.issues, baselineEntryKey);
   const resolvedIssues = difference(oldReport.issues, newReport.issues, baselineEntryKey);
   return {
@@ -79,12 +93,20 @@ export function createBridgeDiff(
     summary: {
       addedMethods: addedMethods.length,
       removedMethods: removedMethods.length,
+      addedModules: addedModules.length,
+      removedModules: removedModules.length,
+      addedComponents: addedComponents.length,
+      removedComponents: removedComponents.length,
       introducedErrors: introducedIssues.filter((issue) => issue.severity === 'error').length,
       introducedWarnings: introducedIssues.filter((issue) => issue.severity === 'warning').length,
       resolvedIssues: resolvedIssues.length,
     },
     addedMethods,
     removedMethods,
+    addedModules,
+    removedModules,
+    addedComponents,
+    removedComponents,
     introducedIssues,
     resolvedIssues,
     limitations: {
@@ -101,17 +123,30 @@ export function createBridgeDiff(
 function validateSnapshots(before: readonly BridgeFactsDocument[], after: readonly BridgeFactsDocument[]): void {
   const all = [...before, ...after];
   if (new Set(all.map((doc) => doc.project)).size !== 1 ||
-    new Set(all.filter((doc) => doc.platform === 'swift' || doc.platform === 'kotlin').map((doc) => doc.platform)).size !== 1 ||
-    ![before, after].every((docs) => docs.some((doc) => doc.platform === 'dart') &&
-      docs.some((doc) => doc.platform === 'swift' || doc.platform === 'kotlin')) ||
+    new Set(all.filter((doc) => isReceiverPlatform(doc.platform)).map((doc) => doc.platform)).size !== 1 ||
+    ![before, after].every((docs) => docs.some((doc) => isCallerPlatform(doc.platform)) &&
+      docs.some((doc) => isReceiverPlatform(doc.platform))) ||
     JSON.stringify(producerInventory(before)) !== JSON.stringify(producerInventory(after)) ||
-    all.some((doc) => (doc.platform !== 'dart' && doc.platform !== 'swift' && doc.platform !== 'kotlin') ||
-      (doc.target !== null && doc.target !== 'flutter'))) {
+    JSON.stringify(snapshotTargets(before)) !== JSON.stringify(snapshotTargets(after)) ||
+    all.some((doc) => !isCallerPlatform(doc.platform) && !isReceiverPlatform(doc.platform))) {
     throw new BridgeJoinValidationError(
-      'Diff requires the same project and matching Flutter Dart/native producer '
-      + 'inventories in both snapshots; rebuild both snapshots from one checkout.',
+      'Diff requires the same project, the same bridge targets, and matching '
+      + 'caller/native producer inventories in both snapshots; rebuild both '
+      + 'snapshots from one checkout.',
     );
   }
+}
+
+/**
+ * 스냅샷이 관찰한 브리지 target 집합을 정렬해 돌려준다.
+ *
+ * target 집합이 다른 두 시점을 비교하면 한쪽 target의 사실 전부가 삭제·추가로
+ * 보이므로 관찰 차이가 아니라 입력 구성 차이다. 사실이 없는 문서의 null target은
+ * 집합에 넣지 않는다.
+ */
+function snapshotTargets(docs: readonly BridgeFactsDocument[]): BridgeTarget[] {
+  return [...new Set(docs.flatMap((doc) => doc.target === null ? [] : [doc.target]))]
+    .sort(compareStrings);
 }
 
 /** 버전 변화는 출력하되 플랫폼·도구별 문서 개수 변화는 허용하지 않는다. */

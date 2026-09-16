@@ -462,6 +462,33 @@ DOT/Mermaid 주입, ReDoS, `JSON.parse` 프로토타입 오염, diff 인수 위�
   상황에 대한 기존 동작이고 이번 변경 범위 밖이다. `help <모르는 명령>`의
   exit 0 루트 도움말 응답도 의도다.
 
+## RN 지원 전 JS/TS 도구 지형 (2026-09-16)
+
+`extract-js` 착수 전 시장조사. 1차 출처는 각 저장소 README·설계 문서다.
+
+- **범용 JS/TS 의존 그래프는 포화**: dependency-cruiser(sverweij, MIT — 규칙 검증+그래프),
+  knip(webpro-nl, ISC — 미사용 파일/export/의존성, 플러그인 150개+), madge(pahen — 순환 의존).
+  전부 JS 모듈 경계 안에서만 동작하고 브리지 사실을 외부 계약으로보내지 않는다.
+  `extract-js`에 재사용할 출력물이 없어 흡수 대상이 아니다.
+- **RN 경계 조인의 직접 경쟁은 CodeGraph뿐**: `docs/design/mixed-ios-and-react-native-bridging.md`
+  (main)이 레거시 브리지(`NativeModules.X.m`→`RCT_EXPORT_METHOD`), TurboModules, Fabric 컴포넌트,
+  네이티브→JS 이벤트(`RCTEventEmitter`/`sendEvent`), Expo Modules(`AsyncFunction("name")`),
+  Swift↔ObjC 양방향을 resolver 패턴으로 설계하고 README가 기능으로 광고한다. 구현 수준은
+  미실측. 방식 차이: CodeGraph는 모놀리식 인덱서의 `references` 엣지(`provenance:'heuristic'`)로
+  에이전트 탐색을 잇는다 — 불일치 진단 목록·심각도 모델·retention 왕복은 제공하지 않는다.
+  우리 차별점(결정적 사실 교환·한계 보존·CI 게이트)은 유지되지만 "경계 조인 자체가 새롭다"는
+  주장은 Flutter와 RN 양쪽에서 성립하지 않는다.
+- **RN 생태계 주변 도구는 경계 조인이 아니다**: rn-bridge-to-turbo(`@ReactMethod`→TurboModule
+  스펙 생성 마이그레이션 도우미, Kotlin regex 파싱), rn-newarch-ready(New Arch 준비 감사 —
+  `codegenConfig` 유무 분류), ExpoPulse(Expo 프로젝트 규칙 분석), react-native-bundle-insights
+  (번들·JS 내 dead code), expo-doctor/expo-modules-autolinking(공식 모듈 해석).
+- **Expo Modules는 계약에 없는 추가 채널이다.** JS `requireNativeModule('X')` ↔ Swift
+  `Module`/`AsyncFunction("name")`. `target` 어휘가 닫혀 있어(`flutter|react-native|capacitor`)
+  지원하려면 계약 개정이 필요하다 — v1 RN 범위에 넣을지는 별도 결정.
+- **`NativeX.ts` 명명 확인**: codegen은 `Native` 접두사 spec 파일(TurboModule)과
+  `*NativeComponent` 접미사(Fabric)를 찾는다. 모듈명은 spec 파일명이 아니라
+  `TurboModuleRegistry.getEnforcing<Spec>('이름')`의 문자열이다.
+
 ## 출처
 
 - cartograph `CHANGELOG.md` 0.1.0 ~ 0.4.0 — `@objc` · IB · 셀렉터가 보존 규칙이 된 경위

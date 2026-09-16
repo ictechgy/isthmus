@@ -45,7 +45,11 @@ cartograph **0.15.1**, kartograph **0.10.0**, and dartograph **0.10.0** — see
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the public versions above.
-React Native and EventChannel extraction remain planned. Retention export currently targets
+React Native module/component facts (`module-import`↔`module-export`,
+`component-require`↔`component-export`) now join by name on main, and EventChannel v2
+transport is implemented across the sister repositories — but JS/TS extraction
+(`extract-js`) remains planned, so end-to-end RN joins are not yet reproducible.
+Retention export currently targets
 cartograph (Swift). Full application coverage and first-time external setup remain unverified.
 
 | Document | Contents |
@@ -281,7 +285,9 @@ When the same method exists on several channels, `query` returns candidates inst
 one; feed a returned `qualifiedName` back into the same subject position to disambiguate. A
 `qualifiedName` is `target:` followed by percent-escaped components — `%`, `#`, and `:` are
 escaped — so splitting on the first `:` and on `#` and decoding the parts always recovers the
-channel and method names. A `notFound` or `ambiguous` query exits 64 and prints a one-line
+channel and method names. Module and component subjects carry a `module:`/`component:` kind
+segment before the name so a channel, a module, and a component that share a name stay
+resolvable. A `notFound` or `ambiguous` query exits 64 and prints a one-line
 cause on stderr, so a script can tell a bad invocation from a missing name without parsing
 stdout.
 `graph` emits matched edges only and preserves the input `limitations` as a JSON field or as
@@ -425,9 +431,11 @@ analyzed". `resolvedIssues` likewise means a previous mismatch is no longer obse
 the limitations to see whether a dynamic transition or an extractor change caused it.
 `--strict` is recognized at any argument position and cannot be given more than once.
 
-`diff` accepts Flutter Dart plus either Swift or Kotlin documents. Keep one native language per comparison.
+`diff` accepts caller documents (Flutter Dart or React Native JS) plus either Swift or Kotlin
+receiver documents. Keep one native language per comparison.
 Both sender and receiver documents are required at
-each point in time, and the two snapshots must agree on `project` and on the per-platform,
+each point in time, and the two snapshots must agree on `project`, on the observed set of
+bridge targets, and on the per-platform,
 per-tool document counts. Build each revision from the same checkout path and keep the JSON.
 Do not compare a partial extraction against a full one; use the same analysis settings. Input
 files are capped at 256 total, and the text size limits match the rest of the CLI. Mixed

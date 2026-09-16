@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- React Native 모듈·컴포넌트 경계 조인: `module-import`↔`module-export`와
+  `component-require`↔`component-export`를 `(target, channel=이름)`으로 연결한다.
+  export 없는 호출 측 이름은 `module-import-without-export`·
+  `component-require-without-export` error, 짝 없는 수신 측 이름은
+  `module-export-without-import`·`component-export-without-require` warning이다.
+  수신 측의 동적 export 계수(`unjoined-dynamic-exports:`)는 미수출 진단을
+  `-unverified` warning으로 낮춘다. query의 `module`·`component` 주체, graph의
+  `module`·`component` 간선, diff의 added/removed 모듈·컴포넌트와 SARIF 규칙을
+  함께 제공한다. diff는 두 스냅샷의 target 집합이 다르면 코드 삭제로 오인하지
+  않고 입력 오류로 거부한다. JS/TS 추출(`extract-js`)은 별도로 남아 있다.
+
 ## [0.6.0] - 2026-09-16
 
 ### Added

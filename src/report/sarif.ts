@@ -65,6 +65,18 @@ const ruleDescriptions: Record<CheckIssueCode, string> = {
     'A receiver-side channel registration has no matching caller-side channel creation.',
   'handler-without-invocation':
     'A receiver-side bridge method handler has no matching caller-side invocation.',
+  'module-import-without-export':
+    'A caller-side native module import has no matching export on any receiver-side document.',
+  'module-import-without-export-unverified':
+    'A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it.',
+  'module-export-without-import':
+    'A receiver-side native module export has no matching caller-side import.',
+  'component-require-without-export':
+    'A caller-side native component require has no matching export on any receiver-side document.',
+  'component-require-without-export-unverified':
+    'A caller-side native component require has no matching export, and a receiver-side analysis gap may be hiding it.',
+  'component-export-without-require':
+    'A receiver-side native component export has no matching caller-side require.',
 };
 
 /** SARIF 2.1.0 로그 문서다. 결정적 정렬로 인코딩한다. */

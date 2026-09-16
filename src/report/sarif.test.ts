@@ -155,6 +155,8 @@ function reportFixture(): CheckReport {
       warnings: 1,
       matchedChannels: 0,
       matchedMethods: 0,
+      matchedModules: 0,
+      matchedComponents: 0,
       observedFacts: 3,
       observedLimitations: 0,
     },

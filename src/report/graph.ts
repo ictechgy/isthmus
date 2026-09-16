@@ -9,6 +9,7 @@ import type {
   BridgeEndpoint,
   BridgeJoinResult,
   JoinLimitation,
+  MatchedBoundaryName,
 } from '../join/join.ts';
 import { isBridgeJoinDeferred } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
@@ -27,7 +28,7 @@ export interface BridgeGraphNode {
 export interface BridgeGraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'channel' | 'method';
+  readonly kind: 'channel' | 'method' | 'module' | 'component';
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method?: string;
@@ -162,6 +163,8 @@ export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument
   const edges: BridgeGraphEdge[] = [];
   addChannelEdges(joined, nodes, edges);
   addMethodEdges(joined, nodes, edges);
+  addNameEdges(joined.matchedModules, 'module', nodes, edges);
+  addNameEdges(joined.matchedComponents, 'component', nodes, edges);
   return {
     format: 'isthmus-graph',
     version: 1,
@@ -180,6 +183,12 @@ export function assertBridgeGraphSize(joined: BridgeJoinResult): void {
     ),
     ...joined.matchedMethods.map(({ invocations, handlers }) =>
       [invocations.length, handlers.length] as const,
+    ),
+    ...joined.matchedModules.map(({ callers, receivers }) =>
+      [callers.length, receivers.length] as const,
+    ),
+    ...joined.matchedComponents.map(({ callers, receivers }) =>
+      [callers.length, receivers.length] as const,
     ),
   ];
   for (const [fromCount, toCount] of endpointCounts) {
@@ -234,6 +243,30 @@ function addMethodEdges(
           target: match.target,
           channel: match.channel,
           method: match.method,
+        });
+      }
+    }
+  }
+}
+
+/** 매치된 모듈·컴포넌트 이름의 호출→export 간선을 추가한다. */
+function addNameEdges(
+  matches: readonly MatchedBoundaryName[],
+  kind: 'module' | 'component',
+  nodes: Map<string, BridgeGraphNode>,
+  edges: BridgeGraphEdge[],
+): void {
+  for (const match of matches) {
+    for (const caller of match.callers) {
+      for (const receiver of match.receivers) {
+        const from = addNode(nodes, caller);
+        const to = addNode(nodes, receiver);
+        edges.push({
+          from,
+          to,
+          kind,
+          target: match.target,
+          channel: match.channel,
         });
       }
     }

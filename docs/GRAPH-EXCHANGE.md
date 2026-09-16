@@ -164,21 +164,26 @@ limitation에 파일 수를 실어 알린다. 이 라벨은 정보성이다 — 
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
 
-`module-*`과 `component-*`는 버전 1에 예약되어 있지만 isthmus 0.1에서는 아직 조인하지
-않는다. 0.1 소비자는 거짓 정상 결과를 막기 위해 이 네 종류를 입력 오류로 거부하며,
-실제 조인은 RN 지원과 함께 0.2에서 제공한다.
+`module-*`과 `component-*`는 이름 기반으로 조인된다. isthmus는 JS 호출 측과
+Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌트 이름) 키로
+연결한다. JS 측 추출기(`extract-js`)는 아직 없으므로 실제 end-to-end RN 조인은
+그 명령과 함께 완성된다.
 
 ## 조인 규칙 (isthmus 가 적용)
 
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - 생성 없는 `channel-register`는 호출 측 사용을 찾지 못한 경고로 보존한다
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
-- `module-import` ↔ `module-export`: 0.2에서 `channel`(모듈 이름)로 조인할 예정
+- `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같다.
+  export를 찾지 못한 import는 error, import를 찾지 못한 export는 warning이다
+- `component-require` ↔ `component-export`: 같은 규칙을 `(target, channel=컴포넌트
+  이름)`에 적용한다. export를 찾지 못한 require는 error, require를 찾지 못한
+  export는 warning이다
 - `dynamic: true`이거나 `channel: null`인 사실은 조인하지 않고 `limitations`로 센다. 조인할 수 없다는 이유로 불일치라고 판정하지 않는다.
   세는 주체는 소비자다. isthmus는 조인에서 제외한 dynamic 사실을 직접 세어 자신을 출처(`tool: "isthmus"`)로 밝힌 limitation으로 내보내며, 같은 위치의 중복 사실은 한 번만 센다. 생산자의 `dynamic-*` limitation은 원인을 설명하는 추가 정보이지 소비자가 신뢰의 근거로 삼는 값이 아니다. `channel: null` 핸들러도 같다. 생산자의 `unattributed-method-handles:` 신고가 없으면 문서를 거부하지만, 신고한 개수는 검증하지 않고 소비자가 실제 사실 수를 다시 센다
-- 수신 측이 스스로 신고한 분석 공백은 심각도에 반영한다. 소비자는 `objective-c-sources:`·`shadowed-flutter-method-channel:`(등록과 핸들러를 모두 가림), `opaque-handler-bodies:`(핸들러를 가림)를 수신 측 플랫폼 문서에서 발견하면 "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 판정 불가(`-unverified` 경고)로 보고한다. 소비자가 직접 센 `unjoined-dynamic-methods`·`unjoined-unattributed-handlers`는 핸들러를, `unjoined-dynamic-channels`는 등록을 가리는 공백으로 본다. 알려진 접두사만 인정한다. `unjoined-` 접두사는 isthmus가 직접 세고 `origin: "consumer"`를 붙인 한계에만 유효하다. 이 출처는 입력 문서에서 복사하지 않는다. 생산자가 tool 이름을 isthmus로 적거나 같은 접두사를 차용해도 자체 계수의 근거가 되지 않는다. 모르는 한계를 공백으로 넓게 해석하면 진짜 불일치가 경고로 묻힌다. 호출 측 플랫폼의 한계는 네이티브 코드를 가리지 않으므로 심각도를 바꾸지 않는다.
+- 수신 측이 스스로 신고한 분석 공백은 심각도에 반영한다. 소비자는 `objective-c-sources:`·`shadowed-flutter-method-channel:`(등록과 핸들러를 모두 가림), `opaque-handler-bodies:`(핸들러를 가림)를 수신 측 플랫폼 문서에서 발견하면 "핸들러 없는 호출"과 "등록 없는 채널 생성"을 error가 아니라 판정 불가(`-unverified` 경고)로 보고한다. 소비자가 직접 센 `unjoined-dynamic-methods`·`unjoined-unattributed-handlers`는 핸들러를, `unjoined-dynamic-channels`는 등록을, `unjoined-dynamic-exports`는 모듈·컴포넌트 export를 가리는 공백으로 본다 — 이 경우 "export 없는 import·require"도 error가 아니라 판정 불가(`-unverified` 경고)다. 알려진 접두사만 인정한다. `unjoined-` 접두사는 isthmus가 직접 세고 `origin: "consumer"`를 붙인 한계에만 유효하다. 이 출처는 입력 문서에서 복사하지 않는다. 생산자가 tool 이름을 isthmus로 적거나 같은 접두사를 차용해도 자체 계수의 근거가 되지 않는다. 모르는 한계를 공백으로 넓게 해석하면 진짜 불일치가 경고로 묻힌다. 호출 측 플랫폼의 한계는 네이티브 코드를 가리지 않으므로 심각도를 바꾸지 않는다.
   이 접두사들은 계약이다. 생산자는 문구를 바꿀 때 접두사를 유지하고, 새 공백 종류를 추가하면 소비자의 목록도 함께 갱신한다. 목록이 닫혀 있으므로 갱신 전까지는 그 공백이 error로 보고된다(안전한 방향).
-  완화 단위는 진단의 target이다. 사실은 target별로만 조인되므로 target을 가진 수신 문서가 신고한 공백은 그 target 진단의 심각도만 낮춘다. 사실이 없는(`target: null`) 수신 문서의 공백은 어느 target의 분석을 가리는지 귀속 근거가 없어 모든 target에 적용한다. 같은 target에 귀속된 수신 문서가 사실과 함께 공존해도 마찬가지다. 수신 문서 여러 개가 소스 트리를 나누어 가졌을 수 있어, 귀속 없는 문서가 본 소스가 해당 target의 핸들러를 가릴 가능성을 배제할 수 없기 때문이다. mixed-targets 문서의 한계도 선언한 target을 신뢰할 수 없어 귀속 없이 남긴다. 선택적 limitationScopes가 있으면 같은 target 안에서도 그 채널에만 적용한다. 범위가 없으면 기존 전체 적용을 유지한다. 같은 이유로 `objective-c-sources:`처럼 소비자가 직접 셀 수 없는 공백은 생산자의 신고를 그대로 믿는다. 과다 신고는 진짜 불일치를 경고로 묻고, 과소 신고는 거짓 error를 남긴다
+  완화 단위는 진단의 target이다. 사실은 target별로만 조인되므로 target을 가진 수신 문서가 신고한 공백은 그 target 진단의 심각도만 낮춘다. `unjoined-dynamic-exports`는 소비자 계수라 채널 범위를 갖지 않아 같은 target의 미수출 진단 전체를 완화한다 — "어떤 수신 문서에도 export가 없다"는 판정은 한 수신 플랫폼의 동적 export 사실 하나로도 반증될 수 있으므로 플랫폼을 가르지 않는 것이 맞다. 단 특정 플랫폼에서만 export가 빠진 경우와 "어디에도 없다"를 이 진단은 구분하지 못한다. 사실이 없는(`target: null`) 수신 문서의 공백은 어느 target의 분석을 가리는지 귀속 근거가 없어 모든 target에 적용한다. 같은 target에 귀속된 수신 문서가 사실과 함께 공존해도 마찬가지다. 수신 문서 여러 개가 소스 트리를 나누어 가졌을 수 있어, 귀속 없는 문서가 본 소스가 해당 target의 핸들러를 가릴 가능성을 배제할 수 없기 때문이다. mixed-targets 문서의 한계도 선언한 target을 신뢰할 수 없어 귀속 없이 남긴다. 선택적 limitationScopes가 있으면 같은 target 안에서도 그 채널에만 적용한다. 범위가 없으면 기존 전체 적용을 유지한다. 같은 이유로 `objective-c-sources:`처럼 소비자가 직접 셀 수 없는 공백은 생산자의 신고를 그대로 믿는다. 과다 신고는 진짜 불일치를 경고로 묻고, 과소 신고는 거짓 error를 남긴다
 - 위치는 증거이지 조인 키가 아니다. 같은 `(channel, method)` 사실이 여러 위치에 있어도 존재 여부는 키 집합으로 판단하고, 위치는 모두 증거로 보존한다
 - 한 번의 조인에 넣는 모든 문서는 정확히 같은 `project` 문자열을 가져야 한다. 다른 프로젝트의 같은 채널 이름을 연결하지 않기 위해 불일치는 입력 오류로 거부한다
 - 생산자는 `project`를 내보내기 전에 **POSIX realpath**(`realpath(3)`)로 정규화한다. 결과는 항상 symlink·`..`·중복 슬래시가 접힌 절대 경로다. 프로젝트 경로를 해결할 수 없거나 결과가 이 계약이 금지하는 제어 문자(NEL과 U+2028/U+2029 포함)를 포함하면 생산자는 문서를 내보내지 않고 실패한다 — 소비자에게 거부될 문서를 내보내지 않는다. 버전 1은 POSIX를 가정하며, Windows 정규화(드라이브 문자 대소문자, `\\?\` 접두사)는 Windows 지원 시 별도 합의한다. kartograph의 목표 기준은 JVM `Path.toRealPath()`다

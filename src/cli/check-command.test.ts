@@ -28,6 +28,8 @@ test('check가 실제 교환 파일을 읽어 JSON 보고서를 출력한다', a
     errors: 1,
     matchedChannels: 1,
     matchedMethods: 1,
+    matchedModules: 0,
+    matchedComponents: 0,
     observedFacts: 10,
     observedLimitations: 7,
     warnings: 2,
@@ -319,10 +321,6 @@ test('contract 위반 메시지는 어떤 검증 분기에서도 입력 값을 �
       'Fact kind is not valid for platform at index 0.',
     ],
     [
-      { ...base, facts: [{ ...markerFact, kind: 'module-import' }] },
-      'Fact kind is reserved but not supported by this isthmus version at index 0.',
-    ],
-    [
       { ...base, facts: [{ ...markerFact, method: 'MARKER-METHOD' }] },
       'Unexpected method at index 0.',
     ],
@@ -525,19 +523,20 @@ test('mixed-targets로 전체 조인이 보류되면 성공으로 보고하지 �
   });
 });
 
-test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한다', async () => {
-  const base = {
-    format: 'bridge-facts',
-    version: 1,
-    tool: { name: 'test-tool', version: '1.0.0' },
-    generatedAt: '2026-09-04T12:00:00Z',
-    target: 'react-native',
-    project: '/fixture',
-    limitations: [],
-  };
+const reactNativeBase = {
+  format: 'bridge-facts',
+  version: 1,
+  tool: { name: 'test-tool', version: '1.0.0' },
+  generatedAt: '2026-09-04T12:00:00Z',
+  target: 'react-native',
+  project: '/fixture',
+  limitations: [],
+};
+
+test('RN module·component fact는 호출·수신 측 이름으로 조인한다', async () => {
   const inputs = new Map([
     ['caller.json', JSON.stringify({
-      ...base,
+      ...reactNativeBase,
       platform: 'js',
       facts: [
         {
@@ -546,10 +545,16 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
           dynamic: false,
           location: { path: 'src/camera.ts', line: 1, column: 1 },
         },
+        {
+          kind: 'component-require',
+          channel: 'CameraView',
+          dynamic: false,
+          location: { path: 'src/Camera.tsx', line: 3, column: 10 },
+        },
       ],
     })],
     ['receiver.json', JSON.stringify({
-      ...base,
+      ...reactNativeBase,
       platform: 'swift',
       facts: [
         {
@@ -557,6 +562,12 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
           channel: 'CameraModule',
           dynamic: false,
           location: { path: 'ios/Camera.swift', line: 1, column: 1 },
+        },
+        {
+          kind: 'component-export',
+          channel: 'CameraView',
+          dynamic: false,
+          location: { path: 'ios/CameraViewManager.m', line: 5, column: 1 },
         },
       ],
     })],
@@ -567,33 +578,95 @@ test('예약된 RN fact 문서는 clean report 대신 입력 오류를 반환한
     async (path) => inputs.get(path) ?? '',
   );
 
-  assert.deepEqual(result, {
-    standardOutput: '',
-    standardError:
-      'Bridge facts input 1 violates the bridge-facts contract: '
-      + 'Fact kind is reserved but not supported by this isthmus version at index 0.\n',
-    exitCode: 2,
+  assert.equal(result.standardError, '');
+  assert.equal(result.exitCode, 0);
+  const report = JSON.parse(result.standardOutput);
+  assert.deepEqual(report.summary, {
+    errors: 0,
+    warnings: 0,
+    matchedChannels: 0,
+    matchedMethods: 0,
+    matchedModules: 1,
+    matchedComponents: 1,
+    observedFacts: 4,
+    observedLimitations: 0,
   });
+  assert.deepEqual(report.issues, []);
 });
 
-test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류로 거부한다', async () => {
+test('짝 없는 RN module·component는 호출 측 오류와 수신 측 경고로 보고한다', async () => {
+  const inputs = new Map([
+    ['caller.json', JSON.stringify({
+      ...reactNativeBase,
+      platform: 'js',
+      facts: [
+        {
+          kind: 'module-import',
+          channel: 'CameraModule',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        },
+        {
+          kind: 'component-require',
+          channel: 'CameraView',
+          dynamic: false,
+          location: { path: 'src/Camera.tsx', line: 3, column: 10 },
+        },
+      ],
+    })],
+    ['receiver.json', JSON.stringify({
+      ...reactNativeBase,
+      platform: 'swift',
+      facts: [
+        {
+          kind: 'module-export',
+          channel: 'BatteryModule',
+          dynamic: false,
+          location: { path: 'ios/Battery.swift', line: 1, column: 1 },
+        },
+        {
+          kind: 'component-export',
+          channel: 'MapView',
+          dynamic: false,
+          location: { path: 'ios/MapViewManager.m', line: 5, column: 1 },
+        },
+      ],
+    })],
+  ]);
+
+  const result = await runCheckCommand(
+    ['check', 'caller.json', 'receiver.json', '--strict'],
+    async (path) => inputs.get(path) ?? '',
+  );
+
+  assert.equal(result.standardError, '');
+  assert.equal(result.exitCode, 1);
+  const report = JSON.parse(result.standardOutput);
+  assert.equal(report.summary.errors, 2);
+  assert.equal(report.summary.warnings, 2);
+  assert.deepEqual(
+    report.issues.map(({ code, severity }: { code: string; severity: string }) => [code, severity]),
+    [
+      ['module-import-without-export', 'error'],
+      ['module-export-without-import', 'warning'],
+      ['component-require-without-export', 'error'],
+      ['component-export-without-require', 'warning'],
+    ],
+  );
+});
+
+test('두 번째 입력의 계약 위반도 기본 모드에서 입력 오류로 거부한다', async () => {
   const receiver = JSON.stringify({
-    format: 'bridge-facts',
-    version: 1,
-    tool: { name: 'test-tool', version: '1.0.0' },
-    generatedAt: '2026-09-04T12:00:00Z',
+    ...reactNativeBase,
     platform: 'swift',
-    target: 'react-native',
-    project: '/fixture',
     facts: [
       {
-        kind: 'module-export',
+        kind: 'module-import',
         channel: 'CameraModule',
         dynamic: false,
         location: { path: 'ios/Camera.swift', line: 1, column: 1 },
       },
     ],
-    limitations: [],
   });
 
   const result = await runCheckCommand(
@@ -608,7 +681,7 @@ test('두 번째 입력의 예약 RN fact도 기본 모드에서 입력 오류�
     standardOutput: '',
     standardError:
       'Bridge facts input 2 violates the bridge-facts contract: '
-      + 'Fact kind is reserved but not supported by this isthmus version at index 0.\n',
+      + 'Fact kind is not valid for platform at index 0.\n',
     exitCode: 2,
   });
 });
@@ -654,6 +727,8 @@ test('check --baseline은 맞은 이슈를 억제하되 사실과 증거를 보�
     staleBaselineEntries: 0,
     matchedChannels: 1,
     matchedMethods: 1,
+    matchedModules: 0,
+    matchedComponents: 0,
     observedFacts: 10,
     observedLimitations: 7,
   });

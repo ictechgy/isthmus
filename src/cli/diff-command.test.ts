@@ -44,8 +44,9 @@ test('줄 이동과 입력 순서 변화는 논리 연결 변경을 만들지 �
   const result = await compare(before, after, true);
   assert.equal(result.exitCode, 0);
   const report = JSON.parse(result.standardOutput);
-  assert.deepEqual(report.summary, { addedMethods: 0, removedMethods: 0, introducedErrors: 0,
-    introducedWarnings: 0, resolvedIssues: 0 });
+  assert.deepEqual(report.summary, { addedMethods: 0, removedMethods: 0,
+    addedModules: 0, removedModules: 0, addedComponents: 0, removedComponents: 0,
+    introducedErrors: 0, introducedWarnings: 0, resolvedIssues: 0 });
 });
 
 test('기존 오류는 strict를 실패시키지 않고 복구는 추가 연결과 resolved issue로 보고한다', async () => {
@@ -176,6 +177,56 @@ test('--strict은 마지막이 아닌 인자 위치에서도 새 오류를 실�
   assert.equal(result.exitCode, 1);
   assert.equal(JSON.parse(result.standardOutput).summary.introducedErrors, 1);
 });
+
+test('RN 모듈 export 삭제는 제거된 매치와 새 오류로 보고한다', async () => {
+  const before = [rnDocument('js'), rnDocument('swift')];
+  const after = [rnDocument('js'), rnDocument('swift', false)];
+  const contents = new Map(['old-dart', 'old-swift', 'new-dart', 'new-swift']
+    .map((path, index) => [path, JSON.stringify([...before, ...after][index])]));
+
+  const result = await runDiffCommand(
+    [...diffArgs, '--strict'],
+    async (path) => contents.get(path)!,
+  );
+
+  assert.equal(result.exitCode, 1);
+  const report = JSON.parse(result.standardOutput);
+  assert.equal(report.summary.removedModules, 1);
+  assert.equal(report.summary.addedModules, 0);
+  assert.equal(report.summary.removedComponents, 0);
+  assert.equal(report.removedModules[0].channel, 'CameraModule');
+  assert.equal(report.introducedIssues[0].code, 'module-import-without-export');
+});
+
+/** RN 호출 측(js)·수신 측(swift) 문서다. exported=false면 모듈 export가 빠진다. */
+function rnDocument(platform: 'js' | 'swift', exported = true) {
+  const shared = {
+    format: 'bridge-facts', version: 1, platform, target: 'react-native', project: '/fixture',
+    generatedAt: '2026-09-05T00:00:00.000Z', limitations: [] as string[],
+  };
+  if (platform === 'js') {
+    return {
+      ...shared,
+      tool: { name: 'isthmus-extract-js', version: '1.0.0' },
+      facts: [
+        { kind: 'module-import', channel: 'CameraModule', dynamic: false,
+          location: { path: 'src/camera.ts', line: 2, column: 30 } },
+        { kind: 'component-require', channel: 'CameraView', dynamic: false,
+          location: { path: 'src/Camera.tsx', line: 5, column: 22 } },
+      ],
+    };
+  }
+  return {
+    ...shared,
+    tool: { name: 'cartograph', version: '1.0.0' },
+    facts: [
+      ...(exported ? [{ kind: 'module-export', channel: 'CameraModule', dynamic: false,
+        location: { path: 'ios/CameraModule.m', line: 4, column: 1 } }] : []),
+      { kind: 'component-export', channel: 'CameraView', dynamic: false,
+        location: { path: 'ios/CameraViewManager.m', line: 9, column: 1 } },
+    ],
+  };
+}
 
 test('project 불일치는 diff 전용 구성 오류와 다른 원인 메시지를 낸다', async () => {
   const before = [document('dart'), document('swift')];

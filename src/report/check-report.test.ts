@@ -35,6 +35,8 @@ test('조인 결과의 오류·경고·정상 연결 수를 요약한다', () =>
     warnings: 2,
     matchedChannels: 1,
     matchedMethods: 1,
+    matchedModules: 0,
+    matchedComponents: 0,
     observedFacts: 10,
     observedLimitations: 7,
   });
@@ -681,6 +683,151 @@ test('알려지지 않은 수신 측 한계는 공백으로 넓게 해석하지 
   );
   assert.equal(report.summary.errors > 0, true);
 });
+
+test('짝 없는 RN 모듈·컴포넌트 이름은 오류와 경고로 나누어 보고한다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([jsReactNativeBoundary(), rnReceiverWithOtherNames()]),
+  );
+
+  assert.equal(report.summary.errors, 2);
+  assert.equal(report.summary.warnings, 2);
+  assert.equal(report.summary.matchedModules, 0);
+  assert.equal(report.summary.matchedComponents, 0);
+  assert.deepEqual(codesOf(report, 'module-import-without-export'), [
+    'module-import-without-export',
+  ]);
+  assert.deepEqual(codesOf(report, 'component-require-without-export'), [
+    'component-require-without-export',
+  ]);
+  assert.deepEqual(codesOf(report, 'module-export-without-import'), [
+    'module-export-without-import',
+  ]);
+  assert.deepEqual(codesOf(report, 'component-export-without-require'), [
+    'component-export-without-require',
+  ]);
+});
+
+test('수신 측의 동적 export 공백은 미수출 진단을 판정 불가로 낮춘다', () => {
+  const dynamicExportSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    target: 'react-native',
+    tool: { name: 'cartograph', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'module-export',
+        channel: 'CameraModule',
+        dynamic: true,
+        location: { path: 'ios/CameraModule.m', line: 4, column: 1 },
+      },
+    ],
+    limitations: [],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([jsReactNativeBoundary(), dynamicExportSwift]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'module-import-without-export'), [
+    'module-import-without-export-unverified',
+  ]);
+  assert.deepEqual(codesOf(report, 'component-require-without-export'), [
+    'component-require-without-export-unverified',
+  ]);
+});
+
+test('호출 측의 동적 import 공백은 수신 측 export를 가리지 않아 오류를 유지한다', () => {
+  const dynamicImportJs = parseBridgeFactsDocument({
+    ...jsReactNativeBoundary(),
+    facts: [
+      ...jsReactNativeBoundary().facts,
+      {
+        kind: 'module-import',
+        channel: 'dynamicName',
+        dynamic: true,
+        location: { path: 'src/dynamic.ts', line: 9, column: 40 },
+      },
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dynamicImportJs, rnReceiverWithOtherNames()]),
+  );
+
+  assert.deepEqual(codesOf(report, 'module-import-without-export'), [
+    'module-import-without-export',
+  ]);
+  assert.equal(report.summary.errors > 0, true);
+});
+
+test('계수 접두사를 차용한 생산자 문자열은 export 공백 근거가 되지 않는다', () => {
+  const spoofingSwift = parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    target: null,
+    facts: [],
+    limitations: [
+      'unjoined-dynamic-exports: 9 module or component export facts with a non-literal name were not joined',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([jsReactNativeBoundary(), spoofingSwift]),
+  );
+
+  assert.deepEqual(codesOf(report, 'module-import-without-export'), [
+    'module-import-without-export',
+  ]);
+  assert.equal(report.summary.errors > 0, true);
+});
+
+/** 수출 이름을 찾는 호출 측 RN js 문서다. */
+function jsReactNativeBoundary(): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'js',
+    target: 'react-native',
+    tool: { name: 'isthmus-extract-js', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'module-import',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'src/camera.ts', line: 2, column: 30 },
+      },
+      {
+        kind: 'component-require',
+        channel: 'CameraView',
+        dynamic: false,
+        location: { path: 'src/Camera.tsx', line: 5, column: 22 },
+      },
+    ],
+    limitations: [],
+  });
+}
+
+/** 다른 이름을 수출하는 RN 수신 측 문서다. */
+function rnReceiverWithOtherNames(): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    target: 'react-native',
+    tool: { name: 'cartograph', version: '0.1.0' },
+    facts: [
+      {
+        kind: 'module-export',
+        channel: 'BatteryModule',
+        dynamic: false,
+        location: { path: 'ios/BatteryModule.m', line: 3, column: 1 },
+      },
+      {
+        kind: 'component-export',
+        channel: 'MapView',
+        dynamic: false,
+        location: { path: 'ios/MapViewManager.m', line: 7, column: 1 },
+      },
+    ],
+    limitations: [],
+  });
+}
 
 /** 등록되지 않은 채널 생성을 하나 더 가진 호출 측 문서를 만든다. */
 function dartWithOrphanChannel(): BridgeFactsDocument {

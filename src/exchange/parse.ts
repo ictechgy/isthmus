@@ -240,9 +240,6 @@ function validateFact(value: unknown, index: number, platform: unknown,
   consumeScopeDependencies: (count: number) => void): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
-  if (!supportedBridgeFactKinds.has(value.kind)) {
-    fail(`Fact kind is reserved but not supported by this isthmus version at index ${index}.`);
-  }
   if (!isFactKindForPlatform(platform, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
   }
@@ -519,14 +516,6 @@ const bridgeFactKinds = new Set<unknown>([
   'module-import',
   'component-export',
   'component-require',
-]);
-
-/** 0.1 조인과 보고가 실제로 처리하는 사실 종류다. */
-const supportedBridgeFactKinds = new Set<unknown>([
-  'channel-create',
-  'channel-register',
-  'method-invoke',
-  'method-handle',
 ]);
 
 const callerFactKinds = new Set<unknown>([
