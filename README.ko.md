@@ -38,11 +38,28 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 npm 발행본은 **0.6.0**이다. 공개 호환 producer 세트는 cartograph **0.15.1**,
 kartograph **0.10.0**, dartograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
-[호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거보내기는
+[호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 보내기는
 cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
 왕복을 다시 확인했다.
-React Native·EventChannel 추출은 계획이고 보존 근거 내보내기는 현재 cartograph(Swift)를
-대상으로 한다. 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
+React Native 모듈·컴포넌트 사실(`module-import`↔`module-export`,
+`component-require`↔`component-export`)은 `react-native` target 안에서 이름으로
+조인된다. 선택적 `mechanism` 필드가 core와 Expo 해석 경로를 구분한다. Expo의
+`requireNativeModule` 계열 수입은 TurboModuleRegistry 폴백으로 core·Expo 양쪽
+수출에 닿지만, `requireNativeViewManager`는 mechanism이 일치해야 한다. 이름이 다른
+mechanism으로만 관찰되면 수출 부재 대신 `*-mechanism-mismatch` 경고로 보고된다.
+부재를 허용하는 조회(`requireOptionalNativeModule`,
+`TurboModuleRegistry.get`/`getNullable`)로 부른 수입은 `optional: true`를 싣고,
+부재 모듈의 호출자가 전부 부재를 허용하면 error 대신
+`module-import-without-export-optional` 경고가 나온다.
+`isthmus extract-js`가 JS/TS 소스에서 호출 측 사실을 추출하고(`NativeModules.*`,
+`TurboModuleRegistry.get*`, `requireNativeComponent`/`codegenNativeComponent`,
+`requireNativeModule` 계열 호출, 해석된 멤버 호출), cartograph와 kartograph는
+Expo Modules DSL(`Module`/`definition()`, `Name`, `Function`, `View`,
+`@ExpoModule`/`@JS`)을 스캔해 그 수출에 `mechanism: "expo"`를 표시한다 —
+`GRAPH-EXCHANGE.md`에 적힌 토큰 스캔 관찰 범위 안에서 end-to-end RN 조인이
+재현된다. EventChannel v2 전송은 자매 저장소 전반에 구현됐다.
+보존 근거 보내기는 현재 cartograph(Swift)를 대상으로 한다.
+앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
 | 문서 | 내용 |
 |---|---|
@@ -75,20 +92,20 @@ npm install --global isthmus-cli
 isthmus --help
 ```
 
-설치 없이 한 번 실행할 때는 package 이름을 명시한다.
+설치 없이 한 번 실행할 때는 패키지 이름을 명시한다.
 
 ```bash
 npx isthmus-cli --help
 ```
 
-`npx isthmus`는 이름이 같은 다른 package를 설치하므로 사용하면 안 된다.
+`npx isthmus`는 이름이 같은 다른 패키지를 설치하므로 사용하면 안 된다.
 
 ## 사용
 
 `impact --file`·`--symbol`·`--changes` 사전 점검과 정보 손실 없는 `--compact`, 분석
 공백도 실패시키는 `--strict`를 제공한다. 빌드·계약·현재 브리지 한정 범위는
 [변경 사전 점검](docs/IMPACT.md)을 참조한다.
-Android 개발 지원은 `selection.kotlin`과 Kartograph snapshot을 사용한다. Kotlin Method/Basic
+Android 개발 지원은 `selection.kotlin`과 kartograph snapshot을 사용한다. Kotlin Method/Basic
 사실을 Dart 소비자에 연결하고 Android 실행은 Kotlin 후보에만 대조한다.
 [Android 수집 설정](docs/PREFLIGHT.md#android-수집)과 [선택적 Kotlin 도구 구축](docs/TOOLCHAIN.md)을 참조한다.
 `verify-runtime --expectations`는 revision·시나리오·플랫폼·엔진 인스턴스별
@@ -103,7 +120,7 @@ Android 개발 지원은 `selection.kotlin`과 Kartograph snapshot을 사용한�
 실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
 runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
-전이 분석을 대조하고, native 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
+전이 분석을 대조하고, 네이티브 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
 
 `preflight <context.json> --summary --strict --compact`로 작은 개요를 읽고,
 `--explain <exact-producer-symbol-id>`로 한 심볼의 전체 원인 경로를 조회한다.
@@ -116,7 +133,7 @@ check·query·graph·diff·impact·preflight·retentions를 노출한다.
 [MCP 서버 계약](docs/MCP.md)을 본다.
 검증된 개발 조합을 재현하거나 도구를 직접 감사하려면 로컬 Git의 고정 commit에서
 구축하는 [도구 구축 절차](docs/TOOLCHAIN.md)를 쓴다. Dart AOT 실행 파일, impact와
-Basic을 함께 제공하는 Cartograph, 격리 설치된 isthmus 패키지를 준비한다.
+Basic을 함께 제공하는 cartograph, 격리 설치된 isthmus 패키지를 준비한다.
 
 isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 workflow는 설정에
 명시한 준비·producer 명령을 실행한다.
@@ -125,7 +142,7 @@ isthmus CLI는 각 도구가 만든 JSON 파일을 읽는다. 선택적 수집 w
 isthmus check dart-bridges.json swift-bridges.json
 ```
 
-전체 명령과 현재 package 버전은 다음과 같이 확인한다.
+전체 명령과 현재 패키지 버전은 다음과 같이 확인한다.
 
 ```bash
 isthmus --help
@@ -146,6 +163,20 @@ isthmus check dart-bridges.json swift-bridges.json --strict
 `-h`/`--help`는 어느 위치에 있든 도움말을 내고, `isthmus help <command>`로 명령의
 사용법을 볼 수 있으며, 모르는 명령은 루트 도움말을 출력한다.
 
+### React Native 호출 측 사실
+
+React Native 앱에서는 `isthmus extract-js`가 호출 측 문서를 직접 만든다 — JS/TS
+파일이나 디렉터리를 넘기고, 결과를 자매 도구가 낸 Swift·Kotlin 문서와 함께
+`check`에 넣는다:
+
+```bash
+isthmus extract-js src/ --project . > js-bridges.json
+isthmus check js-bridges.json ios-bridges.json android-bridges.json
+```
+
+출력은 자매 도구가 만드는 것과 같은 `bridge-facts` 버전 1 문서라 모든 소비
+명령이 그대로 받는다.
+
 ### SARIF 출력
 
 check 결과를 GitHub code scanning(또는 그 밖의 SARIF 2.1.0 소비자)에 올리려면
@@ -155,7 +186,7 @@ isthmus-check JSON 대신 SARIF를 요청한다.
 isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sarif
 ```
 
-기본값은 `--format json`으로 버전이 붙은 isthmus-check 문서를 유지한다. SARIF는 같은
+기본값인 `--format json`은 버전이 붙은 isthmus-check 문서를 유지한다. SARIF는 같은
 조인 결과의 additive·isthmus 소유 렌더링이다. 모든 이슈는 check 진단 코드를 규칙 id로
 하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 퍼센트 인코딩된
 저장소 상대 URI가 된다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
@@ -202,11 +233,11 @@ cartograph dead --external-retentions external-retentions.json
 ```
 
 `retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. 메서드를
-여러 위치에서 호출하면 근거가 전체 호출 위치를 `callers`로 실고(대표 `caller`는 옛
+여러 위치에서 호출하면 근거가 전체 호출 위치를 `callers`로 싣고(대표 `caller`는 옛
 소비자를 위해 유지), 근거당 100개 상한을 넘은 호출은 조용히 버리지 않고
 `callersOmitted`로 계수를 밝힌다. `mixed-targets` 문서는 v1에서 사실별 target을
 복원할 수 없어 모든 소비 명령이 종료 코드 2로 조인을 보류하며, 이때 몇 개의 문서에서
-관찰한 fact 몇 개가 조인되지 못했는지를 함께 알린다. 먼저 생산 단계에서
+관찰한 사실 몇 개가 조인되지 못했는지를 함께 알린다. 먼저 생산 단계에서
 target별 문서로 분리해야 한다.
 
 cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소
@@ -237,7 +268,7 @@ node scripts/verify-public-flutter-plugin.mjs \
 
 공개 플러그인 검증은 원본 `addMethodCallDelegate` 구현에서 나온 Swift USR과 원본
 Dart 호출 위치 세 곳을 확인하고, cartograph `--explain`이 해당 심볼의 대표 근거를
-읽는지 검증한다. 이미 public인 플러그인 handler의 dead 상태 전환을 억지로 만들지는
+읽는지 검증한다. 이미 public인 플러그인 핸들러의 dead 상태 전환을 억지로 만들지는
 않는다. 그 전환과 `setMethodCallHandler` 경로는
 `verify-cartograph-roundtrip.mjs`의 합성 코퍼스가 별도로 검증한다.
 
@@ -280,7 +311,21 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
   핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
 - `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
 
-`summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 fact
+React Native 이름 경계도 같은 방향으로 보고한다 — `require`/`import`에 맞는
+`export`가 없으면 error, `export`에 호출자가 없으면 warning이다.
+
+- `module-import-without-export` (error) / `-unverified` (warning)
+- `module-import-without-export-optional` (warning): 호출자가 전부 부재 허용
+  API를 썼으므로 수출 부재가 크래시가 아니라 기능 저하임
+- `module-export-without-import` (warning)
+- `component-require-without-export` (error) / `-unverified` (warning)
+- `component-export-without-require` (warning)
+- `module-import-mechanism-mismatch`, `module-export-mechanism-mismatch`,
+  `component-require-mechanism-mismatch`, `component-export-mechanism-mismatch`
+  (warning): 이름이 상대편에 있지만 호환되지 않는 core/Expo 해석 경로로만
+  관찰됨
+
+`summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 사실
 총수이고 `observedLimitations`는 보고된 분석 한계 수다. 이로써 브리지가 없는 프로젝트와
 아무것도 관찰하지 못한 실행이 같은 보고서를 내지 않는다 — `observedFacts`가 0이면
 생산자가 서술할 것을 아무것도 보지 못했다는 뜻이다.
@@ -303,7 +348,7 @@ target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 �
 보존된다. 생산자가 tool 이름을 isthmus로 적어도 자체 계수를 신뢰하지 않으며,
 `unjoined-*`는 소비자가 직접 붙인 `origin: "consumer"`가 있어야 완화 근거가 된다.
 
-선택적 fact 필드 `sourceLanguage: "objective-c"`는 `.m`/`.mm`의 ObjC 구현을 Swift
+선택적 사실 필드 `sourceLanguage: "objective-c"`는 `.m`/`.mm`의 ObjC 구현을 Swift
 그래프와 구분한다. 이 사실에는 symbol을 붙이지 않는다. 매치는 check/query/graph에
 남고 Swift 보존 목록에서는 제외되며, `omittedObjectiveCHandlers`가 제외 수를 알린다.
 표식 없는 Swift 핸들러가 호출자가 있는데 symbol 없이 매치되면 여전히 종료 코드 2로
@@ -311,7 +356,7 @@ target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 �
 버리고 넓게 완화하며 ObjC 보존 생성은 실패한다.
 
 모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
-handler 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와
+핸들러 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와
 함께 남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
 
 isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 호환 변경으로 다룬다.
@@ -336,8 +381,8 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 | `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
 
-저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크,
-제품 코드 90% 커버리지, clean build, 실제 CLI·package 계약을 함께 실행한다.
+저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크와 clean build를 실행하고 제품 코드 90% 커버리지를
+강제하며 실제 CLI·패키지 계약 검증을 함께 수행한다.
 
 ```bash
 npm run verify
@@ -387,16 +432,16 @@ JSON으로 출력한다. 연결에는 호출자와 핸들러 위치가 포함된
 
 `--strict`는 새로 관찰된 error가 있을 때만 1이다. 기존 오류·경고·분석 한계만 있으면
 0이므로 성공 코드가 삭제 안전성이나 완전한 분석을 뜻하지 않는다. `resolvedIssues`도
-이전 불일치가 더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지 한계를
+이전 불일치가 더 이상 관찰되지 않는다는 뜻이며, 동적 전환·추출기 변경 때문인지를 한계와
 함께 확인해야 한다. `--strict`은 인자 위치와 무관하게 인식하며 두 번 이상 줄 수 없다.
 
-`diff`는 Flutter Dart와 Swift 또는 Kotlin 문서를 받는다. 한 비교에는 native 언어
-하나만 사용하며 각 시점에 호출/수신 문서가 모두 필요하다.
+`diff`는 호출 문서(Flutter Dart 또는 React Native JS)와 수신 문서(Swift
+또는 Kotlin)를 받는다. 한 비교에는 네이티브 언어 하나만 사용하며 각 시점에 호출/수신 문서가 모두 필요하다.
 양 시점의 `project`와 플랫폼·도구별 문서 개수가 같아야 한다. 한 checkout의 같은
 경로에서 각 revision을 빌드해 JSON을 보관한다. 일부 파일만 추출한 결과와 전체 결과를
 비교하지 말고 같은 분석 설정을 사용한다. 입력 파일은 합계 256개, 텍스트 길이 제한은
 기존 CLI와 동일하다. 혼합 target이나 비교 불가능한 입력은 종료 코드 2로 거부한다.
-`generatedAt`은 fact 추출 시각이며 revision 순서가 아니다. 비교 방향은 `--before`와
+`generatedAt`은 사실 추출 시각이며 revision 순서가 아니다. 비교 방향은 `--before`와
 `--after` 인자로 결정되므로 사용자가 올바른 revision의 파일을 지정해야 한다.
 
 ## 코딩 에이전트 skill
