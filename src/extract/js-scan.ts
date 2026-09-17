@@ -164,6 +164,7 @@ interface ScanContext {
    * 판정한다.
    */
   readonly requireSpecifiers: Map<string, string>;
+  readonly unstableAliasNames: ReadonlySet<string>;
   defaultExport?: BoundName;
 }
 
@@ -195,6 +196,11 @@ export function scanJsSource(source: string): JsFileScan {
     paramShadows: collectParamShadows(tokens),
     localNames: new Set(),
     requireSpecifiers: new Map(),
+    unstableAliasNames: new Set(tokens.filter((token, index) =>
+      token.kind === 'identifier' && tokens[index - 1]?.text !== 'as' &&
+      (!['(', '<'].includes(tokens[index + 1]?.text ?? '') ||
+        ['function', '*'].includes(tokens[index - 1]?.text ?? '')))
+      .map((token) => token.text)),
   };
   collectBindings(context);
   collectCalls(context);
@@ -753,7 +759,14 @@ function readModuleExpression(
       ? undefined
       : { value: call.value, endIndex: call.endIndex };
   }
-  if (moduleImportCalls.has(token.text) || componentRequireCalls.has(token.text)) {
+  const isExpoModuleAlias = token.kind === 'identifier' &&
+    !isShadowed(context, token.text, start) &&
+    !context.unstableAliasNames.has(token.text) &&
+    context.imports.some((entry) => entry.localName === token.text &&
+      moduleImportCalls.has(entry.exportedName) &&
+      expoSpecifierPattern.test(entry.specifier));
+  if (moduleImportCalls.has(token.text) || componentRequireCalls.has(token.text) ||
+    isExpoModuleAlias) {
     const call = readNamedCall(context, start + 1);
     return call === undefined
       ? undefined

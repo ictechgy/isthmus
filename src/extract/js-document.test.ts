@@ -131,6 +131,60 @@ test('여러 파일의 사실 순서와 위치별 중복 보존이 결정적이�
   ]);
 });
 
+test('Expo 모듈 API 별칭 반환값의 호출과 optional 계약을 보존한다', () => {
+  for (const [api, specifier, optional] of [
+    ['requireNativeModule', 'expo', undefined],
+    ['requireOptionalNativeModule', 'expo-modules-core', true],
+  ] as const) {
+    const document = assemble({
+      'src/app.ts': `import { ${api} as loadModule } from '${specifier}';\nconst Camera = loadModule<Spec>('Camera');\nCamera.shoot();`,
+    });
+    const parsed = parseBridgeFactsDocument(JSON.parse(JSON.stringify(document)));
+    assert.equal(parsed.facts.length, 2);
+    assert.equal(parsed.facts[0]?.mechanism, 'expo');
+    assert.equal(parsed.facts[0]?.optional, optional);
+    assert.deepEqual(parsed.facts[1], {
+      kind: 'method-invoke', channel: 'Camera', method: 'shoot', dynamic: false,
+      location: { path: 'src/app.ts', line: 3, column: 8 },
+    });
+  }
+});
+
+test('Expo 별칭의 동적 반환값 호출과 상대 재수출을 보존한다', () => {
+  const document = assemble({
+    'src/module.ts': "import { requireNativeModule as loadModule } from 'expo';\nexport default loadModule('Camera');",
+    'src/app.ts': "import Camera from './module';\nCamera.shoot();",
+    'src/dynamic.ts': "import { requireNativeModule as loadModule } from 'expo';\nconst Camera = loadModule(name);\nCamera[key]();",
+  });
+  const calls = document.facts.filter((fact) => fact.kind === 'method-invoke');
+  assert.deepEqual(calls.map(({ channel, method, dynamic }) => ({ channel, method, dynamic })), [
+    { channel: 'Camera', method: 'shoot', dynamic: false },
+    { channel: 'name', method: 'key', dynamic: true },
+  ]);
+  assert.equal(parseBridgeFactsDocument(JSON.parse(JSON.stringify(document))).facts.length, 4);
+});
+
+test('불확실한 Expo 별칭 초기값은 메서드에 귀속하지 않는다', () => {
+  for (const source of [
+    "import { requireNativeModule as loadModule } from './helper'; const Camera = loadModule('Camera'); Camera.shoot();",
+    "import { requireNativeViewManager as loadModule } from 'expo'; const Camera = loadModule('Camera'); Camera.shoot();",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap(loadModule) { const Camera = loadModule('Camera'); Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; loadModule = factory; const Camera = loadModule('Camera'); Camera.shoot();",
+    "import { requireNativeModule as loadModule } from 'expo'; const Camera = loadModule('Camera'); loadModule = factory; Camera.shoot();",
+    "import { requireNativeModule as loadModule } from 'expo'; const Camera = loadModule('Camera').property; Camera.shoot();",
+    "import { requireNativeModule as loadModule } from 'expo'; const Camera = loadModule('Camera'); Camera = other; Camera.shoot();",
+    "import { requireNativeModule as loadModule } from 'expo'; const Camera = loadModule('Camera'); function wrap(Camera) { Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap() { const loadModule = factory; const Camera = loadModule('Camera'); Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap(helpers) { const { loadModule } = helpers; const Camera = loadModule('Camera'); Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap(helpers) { const { factory: loadModule } = helpers; const Camera = loadModule('Camera'); Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap(helpers) { const [loadModule] = helpers; const Camera = loadModule('Camera'); Camera.shoot(); }",
+    "import { requireNativeModule as loadModule } from 'expo'; function wrap(loadModule): void { const Camera = loadModule('Camera'); Camera.shoot(); }",
+  ]) {
+    const document = assemble({ 'src/app.ts': source });
+    assert.deepEqual(document.facts.filter((fact) => fact.kind === 'method-invoke'), [], source);
+  }
+});
+
 test('Expo mechanism이 조립된 문서 사실까지 보존된다', () => {
   const document = assemble({
     'src/app.ts': `
