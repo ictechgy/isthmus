@@ -635,23 +635,26 @@ test('optional 필드는 module-import에만 허용하고 정규화 뒤에도 �
     );
   }
 
-  // boolean이 아닌 값도 거부한다.
-  assert.throws(
-    () => parseBridgeFactsDocument({
-      ...emptyDocument,
-      platform: 'js',
-      target: 'react-native',
-      facts: [{
-        kind: 'module-import',
-        channel: 'CameraModule',
-        optional: 'yes',
-        dynamic: false,
-        location: { path: 'src/camera.ts', line: 1, column: 1 },
-      }],
-    }),
-    {
-      name: 'BridgeFactsValidationError',
-      message: 'Invalid fact optional flag at index 0.',
-    },
-  );
+  // `true`가 아닌 값은 전부 거부다 — 존재 자체가 증거인 표식이라
+  // `false`를 실은 사실은 부재 허용이 아니라 오선언이다.
+  for (const optional of [false, 'yes', 1]) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'js',
+        target: 'react-native',
+        facts: [{
+          kind: 'module-import',
+          channel: 'CameraModule',
+          optional,
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        }],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Invalid fact optional flag at index 0.',
+      },
+    );
+  }
 });

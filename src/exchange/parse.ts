@@ -294,8 +294,9 @@ function validateFact(value: unknown, index: number, platform: unknown,
     (!mechanismFactKinds.has(value.kind) || !bridgeMechanisms.has(value.mechanism))) {
     fail(`Invalid fact mechanism at index ${index}.`);
   }
+  // optional은 존재 자체가 증거인 표식이다 — `false`도 허용 값이 아니다.
   if (value.optional !== undefined &&
-    (value.kind !== 'module-import' || typeof value.optional !== 'boolean')) {
+    (value.kind !== 'module-import' || value.optional !== true)) {
     fail(`Invalid fact optional flag at index ${index}.`);
   }
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);

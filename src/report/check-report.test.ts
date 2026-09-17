@@ -1095,3 +1095,23 @@ test('던지는 호출자가 섞이면 부재 허용 호출이 있어도 미수�
     'module-import-without-export',
   ]);
 });
+
+test('optional 호출자에 mechanism 불일치 export가 관찰되면 불일치 진단이 우선이다', () => {
+  // 코어 Registry.get 호출은 부재를 허용하지만 같은 이름의 expo export가
+  // 관찰됐다면 "미검증"이 아니라 해석 경로 불일치가 정확한 진단이다.
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule', optional: true },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'module-import'), [
+    'module-import-mechanism-mismatch',
+  ]);
+});
