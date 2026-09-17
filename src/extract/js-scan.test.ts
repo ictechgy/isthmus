@@ -461,3 +461,49 @@ test('별칭이 매개변수에 가려지면 경계 호출로 읽지 않는다',
 
   assert.equal(facts.length, 0);
 });
+
+test('부재를 허용하는 모듈 조회만 optional로 표시한다', () => {
+  // requireOptionalNativeModule·Registry.get/getNullable은 부재 시 null을
+  // 돌려주지만 requireNativeModule·getEnforcing·NativeModules 접근은
+  // 부재를 감당한다는 의도가 없거나 던진다.
+  const facts = scanJsSource(`
+    requireOptionalNativeModule('Maybe');
+    requireNativeModule('Must');
+    TurboModuleRegistry.get('Nullable');
+    TurboModuleRegistry.getNullable('Old');
+    TurboModuleRegistry.getEnforcing('Required');
+    NativeModules.Direct;
+    requireNativeViewManager('Sheet');
+  `).facts.map((fact) => ({
+    kind: fact.kind,
+    channel: fact.channel,
+    optional: fact.optional,
+  }));
+
+  assert.deepEqual(facts, [
+    { kind: 'module-import', channel: 'Maybe', optional: true },
+    { kind: 'module-import', channel: 'Must', optional: undefined },
+    { kind: 'module-import', channel: 'Nullable', optional: true },
+    { kind: 'module-import', channel: 'Old', optional: true },
+    { kind: 'module-import', channel: 'Required', optional: undefined },
+    { kind: 'module-import', channel: 'Direct', optional: undefined },
+    { kind: 'component-require', channel: 'Sheet', optional: undefined },
+  ]);
+});
+
+test('별칭 import의 optional은 원본 export 이름으로 판정한다', () => {
+  const facts = scanJsSource(`
+    import { requireOptionalNativeModule as maybe } from 'expo-modules-core';
+    import { requireNativeModule as must } from 'expo-modules-core';
+    maybe('Opt');
+    must('Req');
+  `).facts.map((fact) => ({
+    channel: fact.channel,
+    optional: fact.optional,
+  }));
+
+  assert.deepEqual(facts, [
+    { channel: 'Opt', optional: true },
+    { channel: 'Req', optional: undefined },
+  ]);
+});

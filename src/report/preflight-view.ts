@@ -256,9 +256,11 @@ function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssueP
         ? `Native registration has no verified channel creation for ${route}.`
         : issue.code === 'module-import-without-export' || issue.code === 'module-import-without-export-unverified'
           ? `No native module export was verified for ${route}.`
-          : issue.code === 'module-import-mechanism-mismatch'
-            ? `Observed module exports for ${route} resolve through a different bridge mechanism.`
-            : issue.code === 'component-require-without-export' || issue.code === 'component-require-without-export-unverified'
+          : issue.code === 'module-import-without-export-optional'
+            ? `No native module export was verified for ${route}, but every caller tolerates absence.`
+            : issue.code === 'module-import-mechanism-mismatch'
+              ? `Observed module exports for ${route} resolve through a different bridge mechanism.`
+              : issue.code === 'component-require-without-export' || issue.code === 'component-require-without-export-unverified'
               // Expo require가 코어 export만 관찰된 경우 error 코드지만
               // 원인은 mechanism 불일치다 — 없다는 문구는 틀리다.
               ? issue.evidence.some(isReceiverEndpoint)

@@ -25,6 +25,13 @@
   `dynamic: true`에 원문 표현을 실어 보존하고, 스캔 집합을 벗어난 바인딩은
   `unattributed-js-*` limitations로 보고한다. 출력은 `bridge-facts` v1 문서라
   기존 check·query·graph·diff 파이프라인에 그대로 들어간다.
+- bridge-facts v1 확장 `optional`: 부재를 허용하는 모듈 조회 API
+  (`requireOptionalNativeModule`, `TurboModuleRegistry.get`·`getNullable`)로
+  관찰한 `module-import`가 `optional: true`를 싣는다. 미수출 그룹의 호출자가
+  전부 optional이면 `module-import-without-export` error 대신
+  `module-import-without-export-optional` warning으로 내린다 — 부재 시
+  크래시가 아니라 호출자에게 `null`이 반환되는 정상 경로다. 던지는 호출자가
+  섞이면 error를 유지한다.
 - bridge-facts v1 확장 `mechanism`: 이름 경계 사실 네 종류(`module-import`·
   `module-export`·`component-require`·`component-export`)가 `react-native`
   target 안에서 `"core" | "expo"` 해석 경로를 선택적으로 싣는다(생략=core).

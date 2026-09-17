@@ -79,6 +79,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "method": "takePhoto",               // method-* 에만
   "mechanism": "expo",                 // module-*/component-* 에만(method-*와
                                        // 상호 배타). 생략은 "core"
+  "optional": true,                    // module-import 에만 — 호출 API가
+                                       // 부재 시 null 반환을 허용한다는 증거
   "dynamic": false,
   "location": { "path": "lib/camera.dart", "line": 42, "column": 5 },
   "symbol": {                          // 이 사실을 담고 있는 선언 (있으면)
@@ -155,6 +157,21 @@ UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으
 - 옛 소비자는 모르는 추가 필드로 버린다 — 기존 `(target, 이름)` 조인은 유지되고
   mechanism 불일치 구분만 사라진다.
 
+### `module-import`의 선택적 `optional` 필드 (v1 확장)
+
+호출 측 API마다 모듈 부재 의미가 다르다. `requireOptionalNativeModule`·
+`TurboModuleRegistry.get`·`getNullable`은 부재 시 던지지 않고 `null`을
+돌려주지만, `requireNativeModule`·`getEnforcing`·`NativeModules.X` 접근은
+부재를 호출자가 감당한다는 신호가 아니거나 그대로 크래시다. 부재를 허용하는
+API로 관찰한 `module-import`에만 `optional: true`를 실을 수 있다.
+
+- 미수출 그룹의 호출자가 **전부** `optional`이면 `module-import-without-export`
+  error 대신 `module-import-without-export-optional` warning으로 내린다 —
+  부재가 호출자에게 관찰 가능한 정상 경로다. 던지는 호출자가 하나라도
+  섞이면 그 호출 지점은 부재 시 크래시하므로 error를 유지한다.
+- 다른 종류의 사실에는 실을 수 없고 `true`가 아닌 값은 문서 거부다.
+  옛 소비자는 모르는 필드로 버린다 — 미수출은 종전대로 error로 읽힌다.
+
 `channel: null`은 `method-handle`에서만 허용하며, "채널이 없다"가 아니라 생산자가
 핸들러를 어느 채널에 귀속할지 **모른다**는 뜻이다. 소비자는 이 사실을 조인하지 않고,
 호출 없는 핸들러 같은 불일치에도 포함하지 않는다. 생산자는 그 수와 원인을 정확히
@@ -202,7 +219,12 @@ specifier의 import·`import { api as alias }` 별칭·CJS
 없다. 반대로 같은 이름이 로컬에 선언됐거나(같은 파일 래퍼·쉼) Expo가 아닌
 specifier에서 가져온 동명 래퍼면 해석 경로를 알 수 없어 mechanism을
 생략하고, 같은 이름의 매개변수가 가리는 호출도 생략한다.
-`function NAME(...)` 선언부는 호출로 읽지 않는다. 스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
+`function NAME(...)` 선언부는 호출로 읽지 않는다. 부재를 허용하는 조회
+(`requireOptionalNativeModule`, `TurboModuleRegistry.get`·`getNullable`)로
+관찰한 `module-import`에는 `optional: true`를 싣고, 던지는 조회
+(`requireNativeModule`, `getEnforcing`)·`NativeModules.X` 접근·컴포넌트
+require에는 싣지 않는다.
+스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
 인스턴스 상태)은 `limitations`로만 보고한다 — 정적 이름을 추측해 연결하지
 않는다. 함수·메서드·`{…}` 본문을 가진 화살표의 매개변수는 그 본문 안에서
 파일 바인딩을 가리는 것으로 처리하지만, 식 본문 화살표(`M => M.x()`)·
@@ -219,7 +241,10 @@ specifier에서 가져온 동명 래퍼면 해석 경로를 알 수 없어 mecha
   mechanism이 도달 가능해야 한다. `mechanism: "expo"`인 import는
   TurboModuleRegistry 폴백이 있어 core·expo export 모두와 잇고,
   core(생략 포함) import는 core export만 만족시킨다. export를 찾지 못한
-  import는 error, import를 찾지 못한 export는 warning이다. 같은 이름의
+  import는 error, import를 찾지 못한 export는 warning이다. 다만 미수출
+  그룹의 호출자가 전부 `optional`이면(부재 시 `null`을 돌려주는 API로만
+  관찰) error 대신 `module-import-without-export-optional` warning이다.
+  같은 이름의
   export가 mechanism만 다르게 관찰된 호출은 error가 아니라
   `module-import-mechanism-mismatch` warning이다 — 코어 호출이 Expo export에
   실제로 도달하는지의 상호운용은 아직 미해결이다. 반대 방향도 같다 —

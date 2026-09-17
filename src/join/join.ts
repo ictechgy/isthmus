@@ -24,6 +24,11 @@ export interface BridgeEndpoint {
    * 생략은 `core`다. mechanism이 다른 호출·수신 쌍의 불일치 판정 근거다.
    */
   readonly mechanism?: BridgeMechanism;
+  /**
+   * 호출 API가 모듈 부재를 허용한다는 호출 측 증거다.
+   * `module-import`에만 온다 — 부재 시 크래시가 아니라 `null` 반환이다.
+   */
+  readonly optional?: boolean;
   /** method-handle 분기 근거다. v2 handler 사실과 같은 형태를 공유한다. */
   readonly handlerScope?: BridgeHandlerScope;
   readonly dependencies?: readonly BridgeHandlerDependency[];
@@ -861,6 +866,7 @@ function toEndpoint(
     platform, location: fact.location,
     ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
     ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+    ...(fact.optional === undefined ? {} : { optional: fact.optional }),
     ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
     ...(fact.handlerScope === undefined ? {} : { handlerScope: fact.handlerScope, dependencies: fact.dependencies! }),
   };
