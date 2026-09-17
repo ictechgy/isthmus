@@ -21,6 +21,10 @@ v2 transport로 세 저장소 main에 구현됐고 아직 발행본은 없다. R
 모듈·컴포넌트 이름 조인, 그리고 `isthmus extract-js`의 JS/TS 호출 측 추출이
 main에 갖춰졌다. 추출은 토큰 스캔 관찰 범위의 근거다 — 동적 이름·스캔 집합
 밖 바인딩은 limitations로만 보고하며 앱 전체 정확도를 주장하지 않는다.
+Expo Modules는 사실의 선택적 `mechanism` 필드(`core`·`expo`, 생략=core)로
+구분한다 — 계약과 isthmus 소비자·extract-js 마킹은 갖춰졌으나 Expo DSL
+수신 측 스캔(`mechanism: "expo"` export 생산)은 cartograph·kartograph
+후속 PR이고, mechanism을 싣는 발행본은 아직 없다.
 
 ## 실측으로 확인한 범위 (2026-09-16)
 

@@ -130,3 +130,29 @@ test('여러 파일의 사실 순서와 위치별 중복 보존이 결정적이�
     { kind: 'module-import', channel: 'B', method: undefined, dynamic: false, path: 'src/b.ts' },
   ]);
 });
+
+test('Expo mechanism이 조립된 문서 사실까지 보존된다', () => {
+  const document = assemble({
+    'src/app.ts': `
+      import { requireNativeModule, requireNativeViewManager } from 'expo-modules-core';
+      requireNativeModule('CameraModule');
+      requireNativeViewManager('PhotoView');
+      requireNativeComponent('CoreView');
+    `,
+  });
+
+  const mechanisms = document.facts.map((fact) => [
+    fact.kind,
+    fact.channel,
+    fact.mechanism ?? null,
+  ]);
+  assert.deepEqual(mechanisms, [
+    ['module-import', 'CameraModule', 'expo'],
+    ['component-require', 'PhotoView', 'expo'],
+    ['component-require', 'CoreView', null],
+  ]);
+
+  // 조립 산출물이 계약 파서를 그대로 통과한다.
+  const reparsed = parseBridgeFactsDocument(JSON.parse(JSON.stringify(document)));
+  assert.equal(reparsed.facts[0]?.mechanism, 'expo');
+});

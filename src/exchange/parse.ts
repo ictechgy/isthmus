@@ -4,6 +4,15 @@ export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js';
 /** 언어 경계를 잇는 메커니즘이다. */
 export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor';
 
+/**
+ * 같은 target 안에서 사실이 통과하는 구체적인 해석 경로다.
+ *
+ * `react-native` 문서 안에서 코어 RN 경로와 Expo Modules 경로가 공존한다.
+ * 생략된 사실은 `core`로 읽는다 — v1 이전 문서가 모두 코어 RN만 기술했기
+ * 때문이다. 이 필드는 이름 경계 사실 네 종류에만 허용된다.
+ */
+export type BridgeMechanism = 'core' | 'expo';
+
 /** Swift 플랫폼 문서에 실린 Objective-C 구현을 Swift 보존 대상과 구분한다. */
 export type BridgeSourceLanguage = 'objective-c';
 
@@ -69,6 +78,15 @@ export interface BridgeFact {
   readonly kind: BridgeFactKind;
   readonly channel: string | null;
   readonly method?: string;
+  /**
+   * `react-native` target의 이름 경계 사실이 속한 해석 경로다.
+   *
+   * 생략은 `core`다. Expo의 `requireNativeModule`은 TurboModule 폴백이
+   * 있어 호출 측 `expo`가 양쪽 mechanism의 export와 조인되지만,
+   * `requireNativeViewManager`에는 그런 폴백이 없다 — 조인 규칙은
+   * GRAPH-EXCHANGE.md가 정한다.
+   */
+  readonly mechanism?: BridgeMechanism;
   readonly dynamic: boolean;
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
@@ -154,6 +172,7 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
     kind: fact.kind,
     channel: fact.channel,
     ...(fact.method === undefined ? {} : { method: fact.method }),
+    ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
     dynamic: fact.dynamic,
     location: {
       path: fact.location.path,
@@ -193,6 +212,12 @@ function validateDocumentMetadata(
   );
   if ((document.target === null) !== (document.facts.length === 0)) {
     fail('Target must be set exactly when facts are present.');
+  }
+  const mechanismIndex = document.facts.findIndex(
+    (fact) => isJsonObject(fact) && fact.mechanism !== undefined,
+  );
+  if (document.target !== 'react-native' && mechanismIndex >= 0) {
+    fail(`Mechanism requires the react-native target at fact index ${mechanismIndex}.`);
   }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
   validateLimitationScopes(document.limitationScopes, document.limitations.length);
@@ -255,6 +280,10 @@ function validateFact(value: unknown, index: number, platform: unknown,
   }
   if (methodFactKinds.has(value.kind) && !isSafeNonEmptyString(value.method)) {
     fail(`Method fact at index ${index} requires a method name.`);
+  }
+  if (value.mechanism !== undefined &&
+    (!mechanismFactKinds.has(value.kind) || !bridgeMechanisms.has(value.mechanism))) {
+    fail(`Invalid fact mechanism at index ${index}.`);
   }
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
   validateLocation(value.location, index);
@@ -533,6 +562,17 @@ const receiverFactKinds = new Set<unknown>([
 
 /** method 필드가 필수인 사실 종류다. */
 const methodFactKinds = new Set<unknown>(['method-invoke', 'method-handle']);
+
+/** mechanism 필드가 허용되는 이름 경계 사실 종류다. */
+const mechanismFactKinds = new Set<unknown>([
+  'module-import',
+  'module-export',
+  'component-require',
+  'component-export',
+]);
+
+/** mechanism 필드의 허용 값이다. 생략은 `core`로 읽는다. */
+const bridgeMechanisms = new Set<unknown>(['core', 'expo']);
 
 const timestampPattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;

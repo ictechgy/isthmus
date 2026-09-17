@@ -4,6 +4,7 @@ import type {
   BridgeHandlerDependency,
   BridgeHandlerScope,
   BridgeLocation,
+  BridgeMechanism,
   BridgePlatform,
   BridgeSymbol,
   BridgeSourceLanguage,
@@ -18,6 +19,11 @@ export interface BridgeEndpoint {
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
+  /**
+   * 이름 경계 증거가 속한 해석 경로다. `react-native` 사실만 가질 수 있고
+   * 생략은 `core`다. mechanism이 다른 호출·수신 쌍의 불일치 판정 근거다.
+   */
+  readonly mechanism?: BridgeMechanism;
   /** method-handle 분기 근거다. v2 handler 사실과 같은 형태를 공유한다. */
   readonly handlerScope?: BridgeHandlerScope;
   readonly dependencies?: readonly BridgeHandlerDependency[];
@@ -83,18 +89,32 @@ export interface MatchedBoundaryName {
   readonly receivers: readonly BridgeEndpoint[];
 }
 
-/** 수신 측 export를 찾지 못한 논리 이름과 모든 호출 측 증거다. */
+/**
+ * 수신 측 export를 찾지 못한 논리 이름과 모든 호출 측 증거다.
+ *
+ * `incompatibleReceivers`는 같은 이름으로 관찰됐지만 mechanism이 달라
+ * 이 호출들에게 도달할 수 없는 수신 측 증거다. 이름이 아예 없는 경우와
+ * 구분해 보고 층이 불일치 경고로 내린다.
+ */
 export interface UnexportedBoundaryName {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly callers: readonly BridgeEndpoint[];
+  readonly incompatibleReceivers?: readonly BridgeEndpoint[];
 }
 
-/** 호출 측 import·require를 찾지 못한 논리 이름과 모든 수신 측 증거다. */
+/**
+ * 호출 측 import·require를 찾지 못한 논리 이름과 모든 수신 측 증거다.
+ *
+ * `incompatibleCallers`는 같은 이름으로 관찰됐지만 mechanism이 달라
+ * 이 수신들에게 도달할 수 없는 호출 측 증거다. 호출이 아예 없는 경우와
+ * 구분해 보고 층이 불일치 경고로 내린다.
+ */
 export interface UnrequiredBoundaryName {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly receivers: readonly BridgeEndpoint[];
+  readonly incompatibleCallers?: readonly BridgeEndpoint[];
 }
 
 /**
@@ -206,6 +226,8 @@ export function joinBridgeDocuments(
     .sort(compareMethodKeys);
   const moduleGroups = collectNameGroups(documents, 'module-import', 'module-export');
   const componentGroups = collectNameGroups(documents, 'component-require', 'component-export');
+  const moduleNames = classifyNameGroups(moduleGroups, 'module-import');
+  const componentNames = classifyNameGroups(componentGroups, 'component-require');
   return {
     deferred: false,
     observedFacts,
@@ -215,12 +237,12 @@ export function joinBridgeDocuments(
     matchedMethods,
     unhandledInvocations,
     handlersWithoutInvocations,
-    matchedModules: matchedNames(moduleGroups),
-    moduleImportsWithoutExports: unexportedNames(moduleGroups),
-    moduleExportsWithoutImports: unrequiredNames(moduleGroups),
-    matchedComponents: matchedNames(componentGroups),
-    componentRequiresWithoutExports: unexportedNames(componentGroups),
-    componentExportsWithoutRequires: unrequiredNames(componentGroups),
+    matchedModules: moduleNames.matched,
+    moduleImportsWithoutExports: moduleNames.unexported,
+    moduleExportsWithoutImports: moduleNames.unrequired,
+    matchedComponents: componentNames.matched,
+    componentRequiresWithoutExports: componentNames.unexported,
+    componentExportsWithoutRequires: componentNames.unrequired,
     limitations,
   };
 }
@@ -729,33 +751,105 @@ function collectNameGroups(
   return groups;
 }
 
-/** 양쪽 증거가 모인 이름 그룹을 매치 결과로 고정한다. */
-function matchedNames(
-  groups: Map<string, MutableNameGroup>,
-): MatchedBoundaryName[] {
-  return [...groups.values()]
-    .filter((group) => group.callers.length > 0 && group.receivers.length > 0)
-    .sort(compareChannels);
+/** 이름 그룹 하나의 mechanism-aware 분류 결과다. */
+interface NameClassification {
+  readonly matched: MatchedBoundaryName[];
+  readonly unexported: UnexportedBoundaryName[];
+  readonly unrequired: UnrequiredBoundaryName[];
 }
 
-/** 호출 측만 있는 이름 그룹을 미수출 진단 재료로 고정한다. */
-function unexportedNames(
+/**
+ * 이름 그룹을 mechanism 규칙으로 매치·미수출·미호출로 나눈다.
+ *
+ * 한 이름 아래 호출자·수신자가 mechanism이 섞여 있을 수 있으므로 그룹
+ * 전체가 아니라 증거 쌍 단위로 판정한다. 만족한 호출자·도달한 수신자만
+ * 매치로 고정하고, 나머지는 각각 미수출·미호출 증거로 남긴다 — 한 이름이
+ * 두 컬렉션에 동시에 나타날 수 있다.
+ */
+function classifyNameGroups(
   groups: Map<string, MutableNameGroup>,
-): UnexportedBoundaryName[] {
-  return [...groups.values()]
-    .filter((group) => group.callers.length > 0 && group.receivers.length === 0)
-    .map(({ target, channel, callers }) => ({ target, channel, callers }))
-    .sort(compareChannels);
+  callerKind: 'module-import' | 'component-require',
+): NameClassification {
+  const compatible = (caller: BridgeEndpoint, receiver: BridgeEndpoint) =>
+    boundaryCompatible(callerKind, caller, receiver);
+  const matched: MatchedBoundaryName[] = [];
+  const unexported: UnexportedBoundaryName[] = [];
+  const unrequired: UnrequiredBoundaryName[] = [];
+  for (const group of groups.values()) {
+    const satisfied = group.callers.filter((caller) =>
+      group.receivers.some((receiver) => compatible(caller, receiver)));
+    const unsatisfied = group.callers.filter((caller) =>
+      !group.receivers.some((receiver) => compatible(caller, receiver)));
+    const reached = group.receivers.filter((receiver) =>
+      group.callers.some((caller) => compatible(caller, receiver)));
+    const unreached = group.receivers.filter((receiver) =>
+      !group.callers.some((caller) => compatible(caller, receiver)));
+    // 만족한 호출자가 있으면 그와 호환되는 수신자가 존재하므로 도달한
+    // 수신자도 비어 있지 않다.
+    if (satisfied.length > 0) {
+      matched.push({
+        target: group.target,
+        channel: group.channel,
+        callers: satisfied,
+        receivers: reached,
+      });
+    }
+    if (unsatisfied.length > 0) {
+      // unsatisfied 호출자에게는 이 그룹의 수신자가 모두 도달 불가다 —
+      // 호환되는 수신자가 하나라도 있었다면 그 호출자는 만족했을 것이다.
+      // mechanism이 두 값뿐이라 미만족 호출자는 항상 한 mechanism으로
+      // 모인다(비어 있지 않은 수신자가 한 mechanism이면 그 mechanism의
+      // 호출자는 만족한다) — 호출자 mechanism 구성은 엔트리 증거에 남고
+      // 보고 층이 Expo의 폴백 없는 require(error)와 코어 require의 미해결
+      // 상호운용(warning)을 구분한다.
+      unexported.push({
+        target: group.target,
+        channel: group.channel,
+        callers: unsatisfied,
+        ...(group.receivers.length === 0
+          ? {}
+          : { incompatibleReceivers: group.receivers }),
+      });
+    }
+    if (unreached.length > 0) {
+      // 도달 못한 수신자에게는 모든 호출자가 비호환이다 — 호환 호출자가
+      // 있었다면 도달했을 것이다. 호출자가 있으면 mechanism 불일치 증거다.
+      unrequired.push({
+        target: group.target,
+        channel: group.channel,
+        receivers: unreached,
+        ...(group.callers.length === 0
+          ? {}
+          : { incompatibleCallers: group.callers }),
+      });
+    }
+  }
+  matched.sort(compareChannels);
+  unexported.sort(compareChannels);
+  unrequired.sort(compareChannels);
+  return { matched, unexported, unrequired };
 }
 
-/** 수신 측만 있는 이름 그룹을 미호출 경고 재료로 고정한다. */
-function unrequiredNames(
-  groups: Map<string, MutableNameGroup>,
-): UnrequiredBoundaryName[] {
-  return [...groups.values()]
-    .filter((group) => group.receivers.length > 0 && group.callers.length === 0)
-    .map(({ target, channel, receivers }) => ({ target, channel, receivers }))
-    .sort(compareChannels);
+/**
+ * mechanism이 다른 호출·수신 쌍이 실제로 연결되는지 판정한다.
+ *
+ * `module-import`: Expo의 `requireNativeModule`·`requireOptionalNativeModule`은
+ * `TurboModuleRegistry` 폴백이 있어 `expo` 호출자는 어느 mechanism의 export도
+ * 만족시킨다. 코어 호출자는 코어 export만 도달한다.
+ * `component-require`: `requireNativeViewManager`에는 그런 폴백이 없어
+ * 같은 mechanism끼리만 잇는다. 생략된 mechanism은 `core`로 읽는다.
+ */
+function boundaryCompatible(
+  callerKind: 'module-import' | 'component-require',
+  caller: BridgeEndpoint,
+  receiver: BridgeEndpoint,
+): boolean {
+  const callerMechanism = caller.mechanism ?? 'core';
+  const receiverMechanism = receiver.mechanism ?? 'core';
+  if (callerKind === 'module-import') {
+    return callerMechanism === 'expo' || receiverMechanism === 'core';
+  }
+  return callerMechanism === receiverMechanism;
 }
 
 /** 사실을 플랫폼이 포함된 증거 위치로 바꾼다. */
@@ -766,6 +860,7 @@ function toEndpoint(
   return {
     platform, location: fact.location,
     ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
+    ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
     ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
     ...(fact.handlerScope === undefined ? {} : { handlerScope: fact.handlerScope, dependencies: fact.dependencies! }),
   };

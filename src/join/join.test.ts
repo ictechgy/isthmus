@@ -1169,3 +1169,225 @@ async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> 
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   return parseBridgeFactsDocument(JSON.parse(text));
 }
+
+/** mechanism 실린 사실을 문서로 만드는 테스트 조립기다. */
+function mechanismDocument(
+  platform: 'js' | 'swift' | 'kotlin',
+  facts: ReadonlyArray<{
+    kind: 'module-import' | 'component-require' | 'module-export' | 'component-export';
+    channel: string;
+    mechanism?: 'core' | 'expo';
+    path?: string;
+  }>,
+): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform,
+    target: 'react-native',
+    project: '/fixture',
+    facts: facts.map((fact, index) => ({
+      kind: fact.kind,
+      channel: fact.channel,
+      ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+      dynamic: false,
+      location: { path: fact.path ?? 'src/boundary.ts', line: index + 1, column: 1 },
+    })),
+    limitations: [],
+  });
+}
+
+test('Expo module-import는 TurboModule 폴백이 있어 core·expo export 모두와 잇는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CoreModule', mechanism: 'expo' },
+    { kind: 'module-import', channel: 'ExpoModule', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'CoreModule' },
+    { kind: 'module-export', channel: 'ExpoModule', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(
+    result.matchedModules.map(({ channel }) => channel),
+    ['CoreModule', 'ExpoModule'],
+  );
+  assert.deepEqual(result.moduleImportsWithoutExports, []);
+  assert.deepEqual(result.moduleExportsWithoutImports, []);
+});
+
+test('core module-import는 expo export에 도달하지 못해 불일치 증거를 남긴다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CameraModule' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(result.matchedModules, []);
+  const unexported = result.moduleImportsWithoutExports;
+  assert.equal(unexported.length, 1);
+  assert.equal(unexported[0]?.channel, 'CameraModule');
+  // 같은 이름의 export가 mechanism만 다르게 관찰됐음이 증거에 남는다.
+  assert.equal(unexported[0]?.incompatibleReceivers?.length, 1);
+  assert.equal(unexported[0]?.incompatibleReceivers?.[0]?.mechanism, 'expo');
+  // 도달하지 못한 export도 미호출 경고 재료로 남는다.
+  assert.equal(result.moduleExportsWithoutImports.length, 1);
+});
+
+test('mechanism 생략은 core로 읽혀 기존 문서와 같은 조인을 만든다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CameraModule' },
+    { kind: 'component-require', channel: 'CameraView' },
+  ]);
+  const receiver = mechanismDocument('kotlin', [
+    { kind: 'module-export', channel: 'CameraModule', mechanism: 'core' },
+    { kind: 'component-export', channel: 'CameraView' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.equal(result.matchedModules.length, 1);
+  assert.equal(result.matchedComponents.length, 1);
+  assert.equal(result.matchedModules[0]?.callers[0]?.mechanism, undefined);
+  assert.equal(result.matchedModules[0]?.receivers[0]?.mechanism, 'core');
+});
+
+test('Expo component-require는 폴백이 없어 core export와 잇지 않는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'CameraView' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(result.matchedComponents, []);
+  assert.equal(result.componentRequiresWithoutExports.length, 1);
+  assert.equal(
+    result.componentRequiresWithoutExports[0]?.incompatibleReceivers?.length,
+    1,
+  );
+  assert.equal(result.componentExportsWithoutRequires.length, 1);
+});
+
+test('core component-require와 expo component-export는 어느 쪽도 만족하지 않는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'CameraView' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'CameraView', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.deepEqual(result.matchedComponents, []);
+  assert.equal(result.componentRequiresWithoutExports.length, 1);
+  assert.equal(result.componentExportsWithoutRequires.length, 1);
+});
+
+test('같은 이름에 섞인 mechanism 호출자는 만족한 쪽만 매치로 고정한다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CameraModule', mechanism: 'expo', path: 'src/expo.ts' },
+    { kind: 'module-import', channel: 'CameraModule', path: 'src/core.ts' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  // expo 호출자만 도달해 매치에 실리고, core 호출자는 불일치 미수출로 남는다.
+  assert.equal(result.matchedModules.length, 1);
+  assert.equal(result.matchedModules[0]?.callers.length, 1);
+  assert.equal(result.matchedModules[0]?.callers[0]?.mechanism, 'expo');
+  assert.equal(result.moduleImportsWithoutExports.length, 1);
+  assert.equal(
+    result.moduleImportsWithoutExports[0]?.callers[0]?.location.path,
+    'src/core.ts',
+  );
+  // export는 expo 호출자에게 도달했으므로 미호출 경고가 아니다.
+  assert.deepEqual(result.moduleExportsWithoutImports, []);
+});
+
+test('Expo component-require와 expo component-export는 같은 mechanism으로 잇는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'SheetView', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'SheetView', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.equal(result.matchedComponents.length, 1);
+  assert.deepEqual(result.componentRequiresWithoutExports, []);
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+});
+
+test('mechanism이 섞인 호출자는 만족한 쪽만 매치하고 나머지는 미수출로 남긴다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'component-require', channel: 'CameraView', mechanism: 'expo', path: 'src/expo.ts' },
+    { kind: 'component-require', channel: 'CameraView', path: 'src/core.ts' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'component-export', channel: 'CameraView' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  // core 호출자는 core export와 매치하고, expo 호출자는 불일치 미수출로 남는다 —
+  // 한 이름이 매치와 미수출 컬렉션에 동시에 나타난다.
+  assert.equal(result.matchedComponents.length, 1);
+  assert.equal(result.matchedComponents[0]?.callers[0]?.mechanism, undefined);
+  assert.equal(result.componentRequiresWithoutExports.length, 1);
+  assert.equal(
+    result.componentRequiresWithoutExports[0]?.callers[0]?.mechanism,
+    'expo',
+  );
+  assert.equal(
+    result.componentRequiresWithoutExports[0]?.incompatibleReceivers?.length,
+    1,
+  );
+  assert.deepEqual(result.componentExportsWithoutRequires, []);
+});
+
+test('수신 측 관찰이 아예 없으면 불일치 증거 없이 미수출로만 남는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'AnyModule', mechanism: 'expo' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'OtherModule' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  assert.equal(result.moduleImportsWithoutExports.length, 1);
+  assert.equal(
+    result.moduleImportsWithoutExports[0]?.incompatibleReceivers,
+    undefined,
+  );
+});
+
+test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는다', () => {
+  const caller = mechanismDocument('js', [
+    { kind: 'module-import', channel: 'CameraModule' },
+  ]);
+  const receiver = mechanismDocument('swift', [
+    { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, receiver]);
+
+  const unrequired = result.moduleExportsWithoutImports;
+  assert.equal(unrequired.length, 1);
+  // 호출이 아예 없는 게 아니라 mechanism만 다른 호출이 관찰됐음이 남는다.
+  assert.equal(unrequired[0]?.incompatibleCallers?.length, 1);
+  assert.equal(unrequired[0]?.incompatibleCallers?.[0]?.mechanism, undefined);
+});

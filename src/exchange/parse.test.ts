@@ -455,3 +455,140 @@ test('잘못된 사실을 필드별 검증 오류로 거부한다', () => {
     );
   }
 });
+
+test('mechanism 필드는 이름 경계 사실에만 허용하고 생략은 core로 읽는다', () => {
+  const boundaryKinds = [
+    { platform: 'js', kind: 'module-import' },
+    { platform: 'js', kind: 'component-require' },
+    { platform: 'swift', kind: 'module-export' },
+    { platform: 'kotlin', kind: 'component-export' },
+  ];
+
+  for (const { platform, kind } of boundaryKinds) {
+    const parsed = parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform,
+      target: 'react-native',
+      facts: [
+        {
+          kind,
+          channel: 'CameraModule',
+          mechanism: 'expo',
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        },
+      ],
+    });
+
+    assert.equal(parsed.facts[0]?.mechanism, 'expo');
+  }
+
+  // 생략된 사실은 필드를 만들지 않는다 — 소비자가 core로 읽는다.
+  const omitted = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'js',
+    target: 'react-native',
+    facts: [
+      {
+        kind: 'module-import',
+        channel: 'CameraModule',
+        dynamic: false,
+        location: { path: 'src/camera.ts', line: 1, column: 1 },
+      },
+    ],
+  });
+  assert.equal(omitted.facts[0]?.mechanism, undefined);
+});
+
+test('mechanism은 허용 값·허용 종류·react-native target 안에서만 유효하다', () => {
+  const boundaryFact = {
+    kind: 'module-import',
+    channel: 'CameraModule',
+    dynamic: false,
+    location: { path: 'src/camera.ts', line: 1, column: 1 },
+  };
+
+  // 허용 값 밖 mechanism은 거부한다.
+  for (const mechanism of ['hermes', 'EXPO', 1, true]) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'js',
+        target: 'react-native',
+        facts: [{ ...boundaryFact, mechanism }],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Invalid fact mechanism at index 0.',
+      },
+    );
+  }
+
+  // 이름 경계가 아닌 종류에는 mechanism을 실을 수 없다.
+  for (const kind of ['method-invoke', 'channel-create']) {
+    const fact = {
+      ...boundaryFact,
+      kind,
+      ...(kind === 'method-invoke' ? { method: 'takePhoto' } : {}),
+      mechanism: 'expo',
+    };
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'js',
+        target: 'react-native',
+        facts: [fact],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Invalid fact mechanism at index 0.',
+      },
+    );
+  }
+
+  // mechanism은 react-native 해석 경로 어휘다 — 다른 target 문서엔 못 실린다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'dart',
+      target: 'flutter',
+      facts: [{ ...boundaryFact, mechanism: 'expo' }],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Mechanism requires the react-native target at fact index 0.',
+    },
+  );
+
+  // capacitor 등 다른 target 문서에도 mechanism은 실을 수 없다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'js',
+      target: 'capacitor',
+      facts: [{ ...boundaryFact, mechanism: 'expo' }],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Mechanism requires the react-native target at fact index 0.',
+    },
+  );
+});
+
+test('mechanism은 dynamic 사실에도 실려 정규화 뒤에도 보존된다', () => {
+  const parsed = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'js',
+    target: 'react-native',
+    facts: [{
+      kind: 'module-import',
+      channel: 'nameExpr',
+      mechanism: 'expo',
+      dynamic: true,
+      location: { path: 'src/boundary.ts', line: 3, column: 1 },
+    }],
+  });
+
+  assert.equal(parsed.facts[0]?.mechanism, 'expo');
+  assert.equal(parsed.facts[0]?.dynamic, true);
+});

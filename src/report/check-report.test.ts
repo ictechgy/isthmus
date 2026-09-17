@@ -898,3 +898,159 @@ async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> 
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   return parseBridgeFactsDocument(JSON.parse(text));
 }
+
+/** mechanism이 실린 RN 경계 문서를 만드는 테스트 조립기다. */
+function rnBoundaryDocument(
+  platform: 'js' | 'swift' | 'kotlin',
+  facts: ReadonlyArray<{
+    kind: 'module-import' | 'component-require' | 'module-export' | 'component-export';
+    channel: string;
+    mechanism?: 'core' | 'expo';
+  }>,
+): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    ...fullyObservedSwiftDocument,
+    platform,
+    target: 'react-native',
+    tool: { name: 'fixture', version: '0.1.0' },
+    facts: facts.map((fact, index) => ({
+      kind: fact.kind,
+      channel: fact.channel,
+      ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+      dynamic: false,
+      location: { path: 'src/boundary.ts', line: index + 1, column: 1 },
+    })),
+    limitations: [],
+  });
+}
+
+test('같은 이름이 mechanism만 다르면 미수출 error가 아니라 불일치 warning이다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'module-export', channel: 'CameraModule', mechanism: 'expo' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'module-import'), [
+    'module-import-mechanism-mismatch',
+  ]);
+  // 도달하지 못한 expo export는 호출자가 있지만 mechanism이 달라
+  // 미호출이 아니라 불일치 warning이다.
+  assert.deepEqual(codesOf(report, 'module-export'), [
+    'module-export-mechanism-mismatch',
+  ]);
+});
+
+test('Expo component-require는 폴백이 없어 core export 관찰 시 확정 error다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 1);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-without-export',
+  ]);
+});
+
+test('core component-require가 expo export만 보면 상호운용 미해결 warning이다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-mechanism-mismatch',
+  ]);
+});
+
+test('Expo module-import는 폴백으로 core export에 도달해 이슈가 없다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'module-export', channel: 'CameraModule' },
+      ]),
+    ]),
+  );
+
+  assert.equal(report.summary.matchedModules, 1);
+  assert.equal(report.issues.length, 0);
+});
+
+test('mechanism 불일치 진단은 호출·수신 양쪽 증거 위치를 함께 실는다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  // Expo require에 코어 export만 보인 확정 error다 — 증거에는 관찰된 수신 측
+  // export 위치까지 실려 어느 export가 다른 경로로 해석되는지 보인다.
+  const issue = report.issues.find(
+    ({ code }) => code === 'component-require-without-export');
+  assert.deepEqual(
+    issue?.evidence.map(({ platform }) => platform).sort(),
+    ['js', 'swift'],
+  );
+  // 도달 못한 core export도 불일치 호출 증거와 함께 warning으로 남는다.
+  const exportIssue = report.issues.find(
+    ({ code }) => code === 'component-export-mechanism-mismatch');
+  assert.deepEqual(
+    exportIssue?.evidence.map(({ platform }) => platform).sort(),
+    ['js', 'swift'],
+  );
+});
+
+test('mechanism이 섞인 호출자는 만족한 쪽만 매치하고 미만족 쪽을 따로 진단한다', () => {
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'component-require', channel: 'CameraView' },
+        { kind: 'component-require', channel: 'CameraView', mechanism: 'expo' },
+      ]),
+      rnBoundaryDocument('swift', [
+        { kind: 'component-export', channel: 'CameraView' },
+      ]),
+    ]),
+  );
+
+  // core 호출은 core export와 매치되고, expo 호출은 폴백이 없어 확정 error다.
+  assert.equal(report.summary.matchedComponents, 1);
+  assert.equal(report.summary.errors, 1);
+  assert.deepEqual(codesOf(report, 'component-require'), [
+    'component-require-without-export',
+  ]);
+  const issue = report.issues.find(
+    ({ code }) => code === 'component-require-without-export');
+  assert.deepEqual(
+    issue?.evidence.map(({ mechanism }) => mechanism ?? 'core').sort(),
+    ['core', 'expo'],
+  );
+});

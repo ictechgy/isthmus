@@ -41,10 +41,14 @@ export const checkIssueCodes = [
   'handler-without-invocation',
   'module-import-without-export',
   'module-import-without-export-unverified',
+  'module-import-mechanism-mismatch',
   'module-export-without-import',
+  'module-export-mechanism-mismatch',
   'component-require-without-export',
   'component-require-without-export-unverified',
+  'component-require-mechanism-mismatch',
   'component-export-without-require',
+  'component-export-mechanism-mismatch',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -123,37 +127,68 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       method: item.method,
       evidence: item.handlers,
     })),
-    ...joined.moduleImportsWithoutExports.map<CheckIssue>((item) => ({
-      severity: gaps.hidesExports(item.target) ? 'warning' : 'error',
-      code: gaps.hidesExports(item.target)
-        ? 'module-import-without-export-unverified'
-        : 'module-import-without-export',
-      target: item.target,
-      channel: item.channel,
-      evidence: item.callers,
-    })),
+    ...joined.moduleImportsWithoutExports.map<CheckIssue>((item) => {
+      // 같은 이름의 export가 mechanism만 다르게 관찰됐다면 진짜 공백이 아니라
+      // 해석 경로 불일치다 — 코어 호출×Expo export의 상호운용 여부가 미해결이므로
+      // error가 아니라 별도 warning으로 내린다.
+      const mismatched = item.incompatibleReceivers !== undefined;
+      return {
+        severity: mismatched || gaps.hidesExports(item.target)
+          ? 'warning'
+          : 'error',
+        code: mismatched
+          ? 'module-import-mechanism-mismatch'
+          : gaps.hidesExports(item.target)
+            ? 'module-import-without-export-unverified'
+            : 'module-import-without-export',
+        target: item.target,
+        channel: item.channel,
+        // 불일치 수신 측 위치까지 실어야 어느 export가 다른 경로로
+        // 해석되는지 보고서에서 보인다.
+        evidence: [...item.callers, ...(item.incompatibleReceivers ?? [])],
+      };
+    }),
     ...joined.moduleExportsWithoutImports.map<CheckIssue>((item) => ({
       severity: 'warning',
-      code: 'module-export-without-import',
+      // 같은 이름의 호출이 mechanism만 다르게 관찰됐다면 미호출이 아니라
+      // 해석 경로 불일치다.
+      code: item.incompatibleCallers !== undefined
+        ? 'module-export-mechanism-mismatch'
+        : 'module-export-without-import',
       target: item.target,
       channel: item.channel,
-      evidence: item.receivers,
+      evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
-    ...joined.componentRequiresWithoutExports.map<CheckIssue>((item) => ({
-      severity: gaps.hidesExports(item.target) ? 'warning' : 'error',
-      code: gaps.hidesExports(item.target)
-        ? 'component-require-without-export-unverified'
-        : 'component-require-without-export',
-      target: item.target,
-      channel: item.channel,
-      evidence: item.callers,
-    })),
+    ...joined.componentRequiresWithoutExports.map<CheckIssue>((item) => {
+      const mismatched = item.incompatibleReceivers !== undefined;
+      // Expo 측 requireNativeViewManager에는 코어 폴백이 없어, 관찰된 export가
+      // 모두 코어라면 호출은 확정된 미수출 error다. 코어 호출×Expo export만은
+      // 상호운용이 미해결이므로 warning으로 내린다.
+      const allExpoCallers = item.callers.length > 0 &&
+        item.callers.every((caller) => caller.mechanism === 'expo');
+      const unresolved = mismatched && !allExpoCallers;
+      return {
+        severity: unresolved || gaps.hidesExports(item.target)
+          ? 'warning'
+          : 'error',
+        code: unresolved
+          ? 'component-require-mechanism-mismatch'
+          : gaps.hidesExports(item.target)
+            ? 'component-require-without-export-unverified'
+            : 'component-require-without-export',
+        target: item.target,
+        channel: item.channel,
+        evidence: [...item.callers, ...(item.incompatibleReceivers ?? [])],
+      };
+    }),
     ...joined.componentExportsWithoutRequires.map<CheckIssue>((item) => ({
       severity: 'warning',
-      code: 'component-export-without-require',
+      code: item.incompatibleCallers !== undefined
+        ? 'component-export-mechanism-mismatch'
+        : 'component-export-without-require',
       target: item.target,
       channel: item.channel,
-      evidence: item.receivers,
+      evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
   ];
   return {

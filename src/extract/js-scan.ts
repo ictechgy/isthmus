@@ -9,7 +9,7 @@
  * 인자는 `dynamic: true`에 원문 표현식을 실어 한계 계수에 맡긴다.
  */
 
-import type { BridgeFact } from '../exchange/parse.ts';
+import type { BridgeFact, BridgeMechanism } from '../exchange/parse.ts';
 import { isSafeNonEmptyString } from '../exchange/parse.ts';
 import type { JsToken } from './lexer.ts';
 import { tokenizeJsSource } from './lexer.ts';
@@ -29,6 +29,19 @@ const componentRequireCalls = new Set([
   'codegenNativeComponent',
   'requireNativeViewManager',
 ]);
+
+/**
+ * Expo SDK(`expo`·`expo-modules-core`)에만 있는 호출 측 API 이름이다.
+ * 코어 RN에는 같은 이름의 진입점이 없어 이름 자체가 Expo 증거다.
+ */
+const expoApiCalls = new Set([
+  'requireNativeModule',
+  'requireOptionalNativeModule',
+  'requireNativeViewManager',
+]);
+
+/** Expo API를 실어 나르는 패키지 specifier다. */
+const expoSpecifierPattern = /^expo(?:-modules-core)?(?:\/|$)/u;
 
 /** 스캔이 모은 한 파일의 결과다. */
 export interface JsFileScan {
@@ -63,6 +76,7 @@ export interface ScannedFact {
   readonly kind: BridgeFact['kind'];
   readonly channel: string;
   readonly method?: string;
+  readonly mechanism?: BridgeMechanism;
   readonly dynamic: boolean;
   readonly token: JsToken;
 }
@@ -130,6 +144,18 @@ interface ScanContext {
    * 바인딩을 적용하지 않는다.
    */
   readonly paramShadows: readonly ParamShadow[];
+  /**
+   * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등).
+   * Expo API와 동명인 이름이 로컬에 선언됐으면 그 호출은 Expo API가 아니므로
+   * mechanism 표시를 억제한다 — 스코프를 구분하지 않고 넓게 억제한다.
+   */
+  readonly localNames: Set<string>;
+  /**
+   * `const X = require('spec')`·`const {X} = require('spec')`의 이름별
+   * specifier다. CJS 구조 분해로 가져온 Expo API를 import와 같은 규칙으로
+   * 판정한다.
+   */
+  readonly requireSpecifiers: Map<string, string>;
   defaultExport?: BoundName;
 }
 
@@ -159,6 +185,8 @@ export function scanJsSource(source: string): JsFileScan {
       dynamicMethodNames: 0,
     },
     paramShadows: collectParamShadows(tokens),
+    localNames: new Set(),
+    requireSpecifiers: new Map(),
   };
   collectBindings(context);
   collectCalls(context);
@@ -202,6 +230,18 @@ function collectBindings(context: ScanContext): void {
       (token.text === 'const' || token.text === 'let' || token.text === 'var')
     ) {
       index = collectDeclaration(context, index);
+      continue;
+    }
+    // `function NAME`·`class NAME` 선언 — 본문도 계속 스캔한다.
+    if (token.kind === 'keyword' &&
+      (token.text === 'function' || token.text === 'class')) {
+      let cursor = index + 1;
+      if (tokens[cursor]?.text === '*') cursor++;
+      const name = tokens[cursor];
+      if (name !== undefined &&
+        (name.kind === 'identifier' || name.kind === 'keyword')) {
+        context.localNames.add(name.text);
+      }
       continue;
     }
     // 모듈 객체의 재대입은 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다.
@@ -440,12 +480,20 @@ function collectDeclaration(context: ScanContext, start: number): number {
     if (token.kind === 'identifier') {
       const declarator = index === start + 1 ||
         (depth === 0 && tokens[index - 1]?.text === ',');
+      // 바인딩이 풀리든 안 풀리든 선언된 이름이다 — Expo API와 동명인
+      // 로컬 선언이면 그 호출은 Expo API가 아니므로 mechanism 표시를 뺀다.
+      if (declarator) context.localNames.add(token.text);
       let cursor = index + 1;
       // `const M: TurboModule = …`의 타입 주석은 건너뛰고 `=`를 찾는다.
       if (declarator && tokens[cursor]?.text === ':') {
         cursor = skipTypeAnnotation(tokens, cursor + 1);
       }
       if (declarator && tokens[cursor]?.text === '=') {
+        // `const X = require('spec')…`의 specifier를 기록한다.
+        const required = readRequireSpecifier(tokens, cursor + 1);
+        if (required !== undefined) {
+          context.requireSpecifiers.set(token.text, required);
+        }
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
           context.bindings.set(token.text, bound.value);
@@ -473,7 +521,15 @@ function collectDeclaration(context: ScanContext, start: number): number {
         source?.kind === 'identifier' && source.text === 'NativeModules';
       if (isNativeModules) {
         collectDestructuredBindings(context, index, close);
+        index = close + 1;
+        continue;
       }
+      // 그 외 원천의 구조 분해도 로컬 이름을 선언한다 — `require('spec')`
+      // 원천이면 이름별 specifier까지 남겨 mechanism 판정에 쓴다.
+      const required = tokens[close + 1]?.text === '='
+        ? readRequireSpecifier(tokens, close + 2)
+        : undefined;
+      recordDestructuredLocals(context, index, close, required);
       index = close + 1;
       continue;
     }
@@ -585,7 +641,63 @@ function collectDestructuredBindings(
         token,
       });
       context.bindings.set(localName, { name });
+      context.localNames.add(localName);
     }
+  }
+}
+
+/**
+ * `require('spec')`의 specifier를 읽는다 — `require` 리터럴 호출만 본다.
+ * `require('spec').member`처럼 뒤에 멤버 접근이 붙어도 specifier는 같다.
+ */
+function readRequireSpecifier(
+  tokens: readonly JsToken[],
+  start: number,
+): string | undefined {
+  if (tokens[start]?.kind !== 'identifier' ||
+    tokens[start]!.text !== 'require' ||
+    tokens[start + 1]?.text !== '(') {
+    return undefined;
+  }
+  const specifier = tokens[start + 2];
+  if (specifier?.kind !== 'string' || specifier.value === undefined ||
+    tokens[start + 3]?.text !== ')') {
+    return undefined;
+  }
+  return specifier.value;
+}
+
+/**
+ * `const { A, B: alias, ...rest } = <expr>` 구조 분해의 로컬 이름을 기록한다.
+ * 원천이 `require('spec')`이면 이름별 specifier도 남긴다 — CJS로 가져온
+ * Expo API를 ES import와 같은 규칙으로 판정하기 위해서다.
+ */
+function recordDestructuredLocals(
+  context: ScanContext,
+  open: number,
+  close: number,
+  specifier: string | undefined,
+): void {
+  const { tokens } = context;
+  for (let index = open + 1; index < close; index++) {
+    const token = tokens[index]!;
+    if (token.kind !== 'identifier' && token.kind !== 'keyword') continue;
+    let localName = token.text;
+    // `A: alias`의 로컬 이름은 alias다 — 속성명은 선언되지 않는다.
+    if (tokens[index + 1]?.text === ':') {
+      const alias = tokens[index + 2];
+      if (alias?.kind === 'identifier' || alias?.kind === 'keyword') {
+        localName = alias.text;
+      }
+    }
+    context.localNames.add(localName);
+    if (specifier !== undefined) {
+      context.requireSpecifiers.set(localName, specifier);
+    }
+    // 기본값·중첩 패턴까지 포함해 다음 `,`까지 건너뛴다.
+    let cursor = index + 1;
+    while (cursor < close && tokens[cursor]!.text !== ',') cursor++;
+    index = cursor - 1;
   }
 }
 
@@ -789,12 +901,31 @@ function collectCalls(context: ScanContext): void {
       index = collectRegistryCall(context, index);
       continue;
     }
+    // `function NAME(...)`·`function* NAME(...)`의 선언부는 호출이 아니다 —
+    // 이름 기반 탐지가 선언 자리를 경계 호출로 오인하지 않게 뺀다.
+    const declarationSite = tokens[index - 1]?.text === 'function' ||
+      (tokens[index - 1]?.text === '*' &&
+        tokens[index - 2]?.text === 'function');
+    if (declarationSite) continue;
     if (moduleImportCalls.has(token.text)) {
-      index = collectBoundaryCall(context, index, 'module-import');
+      index = collectBoundaryCall(context, index, 'module-import', token.text);
       continue;
     }
     if (componentRequireCalls.has(token.text)) {
-      index = collectBoundaryCall(context, index, 'component-require');
+      index = collectBoundaryCall(context, index, 'component-require', token.text);
+      continue;
+    }
+    // `import { api as alias }`로 들어온 경계 API — 사실의 mechanism 판정은
+    // 로컬 별칭이 아니라 원본 export 이름을 기준으로 한다. 같은 이름의
+    // 매개변수가 가리는 구간에서는 import 바인딩이 적용되지 않는다.
+    const aliasedApi = isShadowed(context, token.text, index)
+      ? undefined
+      : boundaryAliasOf(context, token.text);
+    if (aliasedApi !== undefined && boundaryCallOpens(context, index)) {
+      index = collectBoundaryCall(
+        context, index,
+        moduleImportCalls.has(aliasedApi) ? 'module-import' : 'component-require',
+        aliasedApi);
       continue;
     }
     const next = tokens[index + 1];
@@ -898,11 +1029,42 @@ function collectRegistryCall(context: ScanContext, start: number): number {
   return collectChainedCall(context, bound, close) ?? close;
 }
 
+/**
+ * 식별자가 `import { api as local }`로 들어온 경계 API 별칭이면 원본 export
+ * 이름을 돌려준다 — 별칭 호출의 mechanism은 원본 이름 기준으로 판정한다.
+ */
+function boundaryAliasOf(
+  context: ScanContext,
+  localName: string,
+): string | undefined {
+  for (const entry of context.imports) {
+    if (entry.localName === localName &&
+      (moduleImportCalls.has(entry.exportedName) ||
+        componentRequireCalls.has(entry.exportedName))) {
+      return entry.exportedName;
+    }
+  }
+  return undefined;
+}
+
+/** 식별자 뒤가 호출(`(` 또는 타입 인수 뒤 `(`)인지 본다. */
+function boundaryCallOpens(context: ScanContext, start: number): boolean {
+  const { tokens } = context;
+  let open = start + 1;
+  if (tokens[open]?.text === '<') {
+    const close = skipTypeArguments(tokens, open);
+    if (close === undefined) return false;
+    open = close + 1;
+  }
+  return tokens[open]?.text === '(';
+}
+
 /** `requireNativeModule('N')` 등 단독 호출의 경계 사실과 메서드 호출을 처리한다. */
 function collectBoundaryCall(
   context: ScanContext,
   start: number,
   kind: 'module-import' | 'component-require',
+  apiName: string,
 ): number {
   const { tokens } = context;
   let open = start + 1;
@@ -922,9 +1084,11 @@ function collectBoundaryCall(
   const bound: BoundName = dynamic
     ? { dynamicExpression: arg.expression }
     : { name: arg.value! };
+  const mechanism = mechanismOf(context, apiName, tokens[start]!.text, start);
   context.facts.push({
     kind,
     channel: boundChannel(bound),
+    ...(mechanism === undefined ? {} : { mechanism }),
     dynamic,
     token: tokens[start]!,
   });
@@ -932,6 +1096,42 @@ function collectBoundaryCall(
   const close = findMatching(tokens, open, '(', ')');
   if (close === undefined) return arg.endIndex;
   return collectChainedCall(context, bound, close) ?? close;
+}
+
+/**
+ * 단독 호출의 해석 경로(mechanism)를 정한다.
+ *
+ * `requireNativeModule`·`requireOptionalNativeModule`·`requireNativeViewManager`는
+ * Expo SDK에만 있는 공개 API다 — Expo 패키지 import·CJS `require`로
+ * 확인되거나 어떤 가져오기·로컬 선언도 없이 호출되면 `expo`로 표시한다.
+ * 같은 이름이 로컬에 선언됐거나(같은 파일 래퍼·쉼) Expo가 아닌 specifier에서
+ * 가져온 동명 래퍼면 어느 경로로 해석되는지 알 수 없어 mechanism을 생략해
+ * 추측하지 않는다 — 틀린 `expo` 표시는 조인을 끊거나 거짓 매치를 만든다.
+ */
+function mechanismOf(
+  context: ScanContext,
+  apiName: string,
+  localName: string,
+  start: number,
+): 'expo' | undefined {
+  if (!expoApiCalls.has(apiName)) return undefined;
+  // 같은 이름의 매개변수가 가리는 구간에서는 import·require·선언 해석이
+  // 이 호출에 적용되지 않는다 — mechanism을 생략해 추측하지 않는다.
+  if (isShadowed(context, localName, start)) return undefined;
+  const specifiers = context.imports
+    .filter((entry) => entry.localName === localName)
+    .map((entry) => entry.specifier);
+  if (specifiers.length > 0) {
+    return specifiers.some((specifier) => expoSpecifierPattern.test(specifier))
+      ? 'expo'
+      : undefined;
+  }
+  const required = context.requireSpecifiers.get(localName);
+  if (required !== undefined) {
+    return expoSpecifierPattern.test(required) ? 'expo' : undefined;
+  }
+  if (context.localNames.has(localName)) return undefined;
+  return 'expo';
 }
 
 /**
