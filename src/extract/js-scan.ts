@@ -20,8 +20,14 @@ const moduleImportCalls = new Set([
   'requireOptionalNativeModule',
 ]);
 
+/** 모듈 부재를 허용하는 호출 측 API다 — 부재 시 던지지 않고 `null`을 돌려준다. */
+const optionalModuleCalls = new Set(['requireOptionalNativeModule']);
+
 /** TurboModuleRegistry의 이름 인자를 받는 조회 메서드다. */
 const turboRegistryMethods = new Set(['get', 'getEnforcing', 'getNullable']);
+
+/** 부재 시 `null`을 돌려주는 레지스트리 조회다 — `getEnforcing`만 던진다. */
+const optionalRegistryMethods = new Set(['get', 'getNullable']);
 
 /** 컴포넌트를 요구하는 호출 측 API 이름이다. */
 const componentRequireCalls = new Set([
@@ -77,6 +83,8 @@ export interface ScannedFact {
   readonly channel: string;
   readonly method?: string;
   readonly mechanism?: BridgeMechanism;
+  /** 호출 API가 모듈 부재를 허용한다(`null` 반환)는 module-import 증거다. */
+  readonly optional?: boolean;
   readonly dynamic: boolean;
   readonly token: JsToken;
 }
@@ -1021,6 +1029,7 @@ function collectRegistryCall(context: ScanContext, start: number): number {
   context.facts.push({
     kind: 'module-import',
     channel: boundChannel(bound),
+    ...(optionalRegistryMethods.has(method.text) ? { optional: true } : {}),
     dynamic,
     token: method,
   });
@@ -1089,6 +1098,7 @@ function collectBoundaryCall(
     kind,
     channel: boundChannel(bound),
     ...(mechanism === undefined ? {} : { mechanism }),
+    ...(optionalModuleCalls.has(apiName) ? { optional: true } : {}),
     dynamic,
     token: tokens[start]!,
   });

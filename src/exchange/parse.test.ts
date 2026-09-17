@@ -592,3 +592,66 @@ test('mechanism은 dynamic 사실에도 실려 정규화 뒤에도 보존된다'
   assert.equal(parsed.facts[0]?.mechanism, 'expo');
   assert.equal(parsed.facts[0]?.dynamic, true);
 });
+
+test('optional 필드는 module-import에만 허용하고 정규화 뒤에도 보존된다', () => {
+  const parsed = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'js',
+    target: 'react-native',
+    facts: [{
+      kind: 'module-import',
+      channel: 'CameraModule',
+      optional: true,
+      dynamic: false,
+      location: { path: 'src/camera.ts', line: 1, column: 1 },
+    }],
+  });
+  assert.equal(parsed.facts[0]?.optional, true);
+
+  // module-import가 아닌 종류에는 optional을 실을 수 없다 — 부재 허용은
+  // 모듈 조회 API에만 있는 의미다. 수신 측 종류는 네이티브 플랫폼에서도 거부다.
+  for (const { platform, kind } of [
+    { platform: 'js', kind: 'component-require' },
+    { platform: 'swift', kind: 'module-export' },
+    { platform: 'kotlin', kind: 'component-export' },
+  ]) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform,
+        target: 'react-native',
+        facts: [{
+          kind,
+          channel: 'CameraModule',
+          optional: true,
+          dynamic: false,
+          location: { path: 'src/camera.ts', line: 1, column: 1 },
+        }],
+      }),
+      {
+        name: 'BridgeFactsValidationError',
+        message: 'Invalid fact optional flag at index 0.',
+      },
+    );
+  }
+
+  // boolean이 아닌 값도 거부한다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'js',
+      target: 'react-native',
+      facts: [{
+        kind: 'module-import',
+        channel: 'CameraModule',
+        optional: 'yes',
+        dynamic: false,
+        location: { path: 'src/camera.ts', line: 1, column: 1 },
+      }],
+    }),
+    {
+      name: 'BridgeFactsValidationError',
+      message: 'Invalid fact optional flag at index 0.',
+    },
+  );
+});

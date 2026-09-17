@@ -69,6 +69,8 @@ const ruleDescriptions: Record<CheckIssueCode, string> = {
     'A caller-side native module import has no matching export on any receiver-side document.',
   'module-import-without-export-unverified':
     'A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it.',
+  'module-import-without-export-optional':
+    'A caller-side native module import has no matching export, but every observed caller tolerates absence by receiving null.',
   'module-import-mechanism-mismatch':
     'A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism.',
   'module-export-without-import':

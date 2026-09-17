@@ -87,6 +87,14 @@ export interface BridgeFact {
    * GRAPH-EXCHANGE.md가 정한다.
    */
   readonly mechanism?: BridgeMechanism;
+  /**
+   * 호출 측 API가 모듈 부재를 허용한다는 증거다.
+   *
+   * `requireOptionalNativeModule`·`TurboModuleRegistry.get` 계열은 부재 시
+   * 던지지 않고 `null`을 돌려주므로, 이 표시가 있는 `module-import`의 미수출은
+   * 크래시가 아니라 호출자가 감당하는 관찰이다. `module-import`에만 올 수 있다.
+   */
+  readonly optional?: boolean;
   readonly dynamic: boolean;
   readonly location: BridgeLocation;
   readonly symbol?: BridgeSymbol;
@@ -173,6 +181,7 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
     channel: fact.channel,
     ...(fact.method === undefined ? {} : { method: fact.method }),
     ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+    ...(fact.optional === undefined ? {} : { optional: fact.optional }),
     dynamic: fact.dynamic,
     location: {
       path: fact.location.path,
@@ -284,6 +293,10 @@ function validateFact(value: unknown, index: number, platform: unknown,
   if (value.mechanism !== undefined &&
     (!mechanismFactKinds.has(value.kind) || !bridgeMechanisms.has(value.mechanism))) {
     fail(`Invalid fact mechanism at index ${index}.`);
+  }
+  if (value.optional !== undefined &&
+    (value.kind !== 'module-import' || typeof value.optional !== 'boolean')) {
+    fail(`Invalid fact optional flag at index ${index}.`);
   }
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
   validateLocation(value.location, index);

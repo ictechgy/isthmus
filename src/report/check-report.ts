@@ -41,6 +41,7 @@ export const checkIssueCodes = [
   'handler-without-invocation',
   'module-import-without-export',
   'module-import-without-export-unverified',
+  'module-import-without-export-optional',
   'module-import-mechanism-mismatch',
   'module-export-without-import',
   'module-export-mechanism-mismatch',
@@ -128,19 +129,25 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       evidence: item.handlers,
     })),
     ...joined.moduleImportsWithoutExports.map<CheckIssue>((item) => {
+      // 호출자 전부가 부재 허용 API(requireOptionalNativeModule·Registry.get)를
+      // 썼다면 미수출은 크래시가 아니라 null 반환이다 — 호출자가 감당하므로
+      // warning으로 내린다. 하나라도 던지는 호출자가 있으면 error를 유지한다.
+      const allOptional = item.callers.every((caller) => caller.optional === true);
       // 같은 이름의 export가 mechanism만 다르게 관찰됐다면 진짜 공백이 아니라
       // 해석 경로 불일치다 — 코어 호출×Expo export의 상호운용 여부가 미해결이므로
       // error가 아니라 별도 warning으로 내린다.
       const mismatched = item.incompatibleReceivers !== undefined;
       return {
-        severity: mismatched || gaps.hidesExports(item.target)
+        severity: allOptional || mismatched || gaps.hidesExports(item.target)
           ? 'warning'
           : 'error',
-        code: mismatched
-          ? 'module-import-mechanism-mismatch'
-          : gaps.hidesExports(item.target)
-            ? 'module-import-without-export-unverified'
-            : 'module-import-without-export',
+        code: allOptional
+          ? 'module-import-without-export-optional'
+          : mismatched
+            ? 'module-import-mechanism-mismatch'
+            : gaps.hidesExports(item.target)
+              ? 'module-import-without-export-unverified'
+              : 'module-import-without-export',
         target: item.target,
         channel: item.channel,
         // 불일치 수신 측 위치까지 실어야 어느 export가 다른 경로로

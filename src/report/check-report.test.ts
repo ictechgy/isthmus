@@ -899,24 +899,27 @@ async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> 
   return parseBridgeFactsDocument(JSON.parse(text));
 }
 
-/** mechanism이 실린 RN 경계 문서를 만드는 테스트 조립기다. */
+/** mechanism·optional이 실린 RN 경계 문서를 만드는 테스트 조립기다. */
 function rnBoundaryDocument(
   platform: 'js' | 'swift' | 'kotlin',
   facts: ReadonlyArray<{
     kind: 'module-import' | 'component-require' | 'module-export' | 'component-export';
     channel: string;
     mechanism?: 'core' | 'expo';
+    optional?: boolean;
   }>,
 ): BridgeFactsDocument {
   return parseBridgeFactsDocument({
     ...fullyObservedSwiftDocument,
     platform,
-    target: 'react-native',
+    // 사실이 없는 완전 관찰 문서는 target을 비워야 계약을 만족한다.
+    target: facts.length === 0 ? null : 'react-native',
     tool: { name: 'fixture', version: '0.1.0' },
     facts: facts.map((fact, index) => ({
       kind: fact.kind,
       channel: fact.channel,
       ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
+      ...(fact.optional === undefined ? {} : { optional: fact.optional }),
       dynamic: false,
       location: { path: 'src/boundary.ts', line: index + 1, column: 1 },
     })),
@@ -1053,4 +1056,42 @@ test('mechanism이 섞인 호출자는 만족한 쪽만 매치하고 미만족 �
     issue?.evidence.map(({ mechanism }) => mechanism ?? 'core').sort(),
     ['core', 'expo'],
   );
+});
+
+test('호출자 전부가 부재 허용 API면 미수출은 error가 아니라 warning이다', () => {
+  // requireOptionalNativeModule·Registry.get 계열은 부재 시 null을 돌려준다 —
+  // 호출자가 부재를 감당하므로 미수출이 크래시를 뜻하지 않는다.
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'MaybeModule', optional: true },
+        { kind: 'module-import', channel: 'MaybeModule', optional: true },
+      ]),
+      rnBoundaryDocument('swift', []),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 0);
+  assert.deepEqual(codesOf(report, 'module-import'), [
+    'module-import-without-export-optional',
+  ]);
+});
+
+test('던지는 호출자가 섞이면 부재 허용 호출이 있어도 미수출은 error다', () => {
+  // 같은 이름을 requireNativeModule로도 부르는 호출 지점이 있으면 그 쪽은
+  // 부재 시 크래시하므로 error를 유지한다.
+  const report = createCheckReport(
+    joinBridgeDocuments([
+      rnBoundaryDocument('js', [
+        { kind: 'module-import', channel: 'CameraModule', optional: true },
+        { kind: 'module-import', channel: 'CameraModule' },
+      ]),
+      rnBoundaryDocument('swift', []),
+    ]),
+  );
+
+  assert.equal(report.summary.errors, 1);
+  assert.deepEqual(codesOf(report, 'module-import'), [
+    'module-import-without-export',
+  ]);
 });
