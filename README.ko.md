@@ -38,15 +38,15 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 npm 발행본은 **0.6.0**이다. 공개 호환 producer 세트는 cartograph **0.15.1**,
 kartograph **0.10.0**, dartograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
-[호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 보내기는
+[호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 왕복은
 cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
 왕복을 다시 확인했다.
 React Native 모듈·컴포넌트 사실(`module-import`↔`module-export`,
 `component-require`↔`component-export`)은 `react-native` target 안에서 이름으로
 조인된다. 선택적 `mechanism` 필드가 core와 Expo 해석 경로를 구분한다. Expo의
 `requireNativeModule` 계열 수입은 TurboModuleRegistry 폴백으로 core·Expo 양쪽
-수출에 닿지만, `requireNativeViewManager`는 mechanism이 일치해야 한다. 이름이 다른
-mechanism으로만 관찰되면 수출 부재 대신 `*-mechanism-mismatch` 경고로 보고된다.
+수출에 닿지만, `requireNativeViewManager`는 mechanism이 일치해야 한다. 같은 이름이
+다른 mechanism으로만 관찰되면 상대편 부재 대신 `*-mechanism-mismatch` 경고로 보고된다.
 부재를 허용하는 조회(`requireOptionalNativeModule`,
 `TurboModuleRegistry.get`/`getNullable`)로 부른 수입은 `optional: true`를 싣고,
 부재 모듈의 호출자가 전부 부재를 허용하면 error 대신
@@ -58,7 +58,7 @@ Expo Modules DSL(`Module`/`definition()`, `Name`, `Function`, `View`,
 `@ExpoModule`/`@JS`)을 스캔해 그 수출에 `mechanism: "expo"`를 표시한다 —
 `GRAPH-EXCHANGE.md`에 적힌 토큰 스캔 관찰 범위 안에서 end-to-end RN 조인이
 재현된다. EventChannel v2 전송은 자매 저장소 전반에 구현됐다.
-보존 근거 보내기는 현재 cartograph(Swift)를 대상으로 한다.
+보존 근거보내기는 현재 cartograph(Swift)를 대상으로 한다.
 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
 | 문서 | 내용 |
@@ -355,7 +355,7 @@ target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 �
 실패한다. 이 확장을 지원하는 소비자를 먼저 배포해야 한다. 옛 소비자는 스코프를
 버리고 넓게 완화하며 ObjC 보존 생성은 실패한다.
 
-모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 receiver나
+모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 수신자나
 핸들러 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와
 함께 남긴다. 이 도구는 삭제 가능 여부를 판정하지 않는다.
 

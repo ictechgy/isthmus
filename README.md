@@ -52,7 +52,7 @@ apart: Expo `requireNativeModule`-family imports reach core and Expo exports
 through the TurboModuleRegistry fallback, while `requireNativeViewManager`
 requires a mechanism match, and a name observed only through a different
 mechanism is reported as a `*-mechanism-mismatch` warning instead of a missing
-export. Imports made through absence-tolerant lookups
+counterpart. Imports made through absence-tolerant lookups
 (`requireOptionalNativeModule`, `TurboModuleRegistry.get`/`getNullable`) carry
 `optional: true`; when every caller of a missing module tolerates absence, the
 finding is the `module-import-without-export-optional` warning rather than an
@@ -340,12 +340,12 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
 - `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
   reason
 
-React Native name boundaries report in the same direction — a `require`/`import` with no
+React Native name boundaries follow the same pairing — a `require`/`import` with no
 matching `export` is an error, an `export` with no caller is a warning:
 
 - `module-import-without-export` (error) / `-unverified` (warning)
 - `module-import-without-export-optional` (warning): every caller used an absence-tolerant
-  API, so a missing export degrades rather than crashes
+  API, so the app degrades rather than crashes when the export is missing
 - `module-export-without-import` (warning)
 - `component-require-without-export` (error) / `-unverified` (warning)
 - `component-export-without-require` (warning)
