@@ -46,15 +46,27 @@ fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the public versions above.
 React Native module/component facts (`module-import`↔`module-export`,
-`component-require`↔`component-export`) join by name, and `isthmus extract-js`
-extracts caller-side facts from JS/TS sources (`NativeModules.*`,
-`TurboModuleRegistry.get*`, `requireNativeComponent`/`codegenNativeComponent`,
-`requireNativeModule`-family calls, and resolved member calls) — end-to-end RN
-joins are reproducible within the token-scan observation scope documented in
-`GRAPH-EXCHANGE.md`. EventChannel v2 transport is implemented across the
-sister repositories.
-Retention export currently targets
-cartograph (Swift). Full application coverage and first-time external setup remain unverified.
+`component-require`↔`component-export`) join by name inside the `react-native`
+target. An optional `mechanism` field keeps the core and Expo resolution paths
+apart: Expo `requireNativeModule`-family imports reach core and Expo exports
+through the TurboModuleRegistry fallback, while `requireNativeViewManager`
+requires a mechanism match, and a name observed only through a different
+mechanism is reported as a `*-mechanism-mismatch` warning instead of a missing
+counterpart. Imports made through absence-tolerant lookups
+(`requireOptionalNativeModule`, `TurboModuleRegistry.get`/`getNullable`) carry
+`optional: true`; when every caller of a missing module tolerates absence, the
+finding is the `module-import-without-export-optional` warning rather than an
+error. `isthmus extract-js` extracts caller-side facts from JS/TS sources
+(`NativeModules.*`, `TurboModuleRegistry.get*`,
+`requireNativeComponent`/`codegenNativeComponent`,
+`requireNativeModule`-family calls, and resolved member calls), and cartograph
+and kartograph scan the Expo Modules DSL (`Module`/`definition()`, `Name`,
+`Function`, `View`, `@ExpoModule`/`@JS`) and mark those exports
+`mechanism: "expo"` — end-to-end RN joins are reproducible within the
+token-scan observation scope documented in `GRAPH-EXCHANGE.md`.
+EventChannel v2 transport is implemented across the sister repositories.
+Retention export currently targets cartograph (Swift). Full application
+coverage and first-time external setup remain unverified.
 
 | Document | Contents |
 |---|---|
@@ -104,7 +116,7 @@ Change preflight is available with `impact --file`, `--symbol`, or `--changes`, 
 lossless `--compact` JSON and a gap-aware `--strict` gate. See
 [change preflight](docs/IMPACT.md) for the build command, contract, and current
 bridge-only scope.
-Android development support uses `selection.kotlin` and a Kartograph snapshot. It connects
+Android development support uses `selection.kotlin` and a kartograph snapshot. It connects
 Kotlin Method/Basic facts to Dart consumers and matches Android observations only to Kotlin
 candidates. See [Android capture](docs/PREFLIGHT.md#android-수집) and [toolchain builds](docs/TOOLCHAIN.md).
 `verify-runtime --expectations` checks recorded calls
@@ -137,7 +149,7 @@ See the [MCP server contract](docs/MCP.md).
 To reproduce a verified development combination or audit the toolchain, build the tools
 from pinned local Git commits with the
 [toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone
-Dart executable, a Cartograph executable with both impact and message support,
+Dart executable, a cartograph executable with both impact and message support,
 and an isolated installation of the isthmus package.
 
 The isthmus CLI reads JSON produced by the sister tools. The optional capture workflow
@@ -166,6 +178,20 @@ read as the next option, paths or names that begin with `-` go after a `--` sepa
 ends option parsing: `isthmus query -- -unusual-name dart-bridges.json swift-bridges.json`.
 `-h`/`--help` shows help from any position, `isthmus help <command>` names a command's usage,
 and an unknown command prints the root help.
+
+### React Native caller facts
+
+For a React Native app, `isthmus extract-js` produces the caller-side document
+itself — pass JS/TS files or directories, and feed the result to `check`
+alongside the Swift and Kotlin documents the sister tools emit:
+
+```bash
+isthmus extract-js src/ --project . > js-bridges.json
+isthmus check js-bridges.json ios-bridges.json android-bridges.json
+```
+
+The output is the same `bridge-facts` version 1 document the sister tools
+produce, so every consuming command accepts it unchanged.
 
 ### SARIF output
 
@@ -313,6 +339,20 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
   distinguished
 - `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
   reason
+
+React Native name boundaries follow the same pairing — a `require`/`import` with no
+matching `export` is an error, an `export` with no caller is a warning:
+
+- `module-import-without-export` (error) / `-unverified` (warning)
+- `module-import-without-export-optional` (warning): every caller used an absence-tolerant
+  API, so the app degrades rather than crashes when the export is missing
+- `module-export-without-import` (warning)
+- `component-require-without-export` (error) / `-unverified` (warning)
+- `component-export-without-require` (warning)
+- `module-import-mechanism-mismatch`, `module-export-mechanism-mismatch`,
+  `component-require-mechanism-mismatch`, `component-export-mechanism-mismatch` (warnings):
+  the name exists on the other side but only through an incompatible core/Expo
+  resolution path
 
 The `summary` carries the issue counts plus observation volume: `observedFacts` is the total
 number of facts across all input documents and `observedLimitations` counts the reported
