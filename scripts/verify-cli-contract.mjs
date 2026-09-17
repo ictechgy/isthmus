@@ -307,7 +307,7 @@ function verifyExtractJs() {
     const source = join(directory, 'src', 'app.ts');
     mkdirSync(join(directory, 'src'), { recursive: true });
     writeFileSync(source,
-      "const M = requireNativeModule('Cam');\nM.shoot();\nrequireNativeComponent('Grid');\n");
+      "import { requireNativeModule as loadModule } from 'expo-modules-core';\nconst M = loadModule('Cam');\nM.shoot();\nrequireNativeComponent('Grid');\n");
     const result = run(['extract-js', directory]);
     verify(result.status === 0, 'extract-js exit code');
     verify(result.stderr === '', 'extract-js stderr');
