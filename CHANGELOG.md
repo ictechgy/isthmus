@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `compatibility.json`: 공개 호환 버전 세트의 기계 판독 정본이다. `scripts/verify-compatibility.mjs`가
+  `package.json`의 isthmus 버전과 `docs/COMPATIBILITY.md`·`README`의 producer 버전 표기가
+  정본과 일치하는지 `npm run verify`에서 검사해 손으로 적은 표의 drift를 실패로 드러낸다.
+  정본은 npm 패키지에 포함된다.
+
 ## [0.7.0] - 2026-09-18
 
 ### Added

@@ -39,6 +39,7 @@
     "docs/BRIDGE-EVENTS.md",
     "docs/MCP.md",
     "docs/GRAPH-EXCHANGE.md",
+    "compatibility.json",
     "LICENSE",
     "README.md",
     "README.ko.md"
@@ -54,7 +55,7 @@
     "verify:build": "node scripts/verify-build-contract.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && node scripts/verify-compatibility.mjs && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

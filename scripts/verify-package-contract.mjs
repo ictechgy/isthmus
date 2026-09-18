@@ -48,6 +48,7 @@ for (const requiredPath of [
   'docs/BRIDGE-MESSAGES.md',
   'docs/IMPACT.md',
   'docs/GRAPH-EXCHANGE.md',
+  'compatibility.json',
   'package.json',
 ]) {
   verify(paths.has(requiredPath), `artifact file ${requiredPath}`);
