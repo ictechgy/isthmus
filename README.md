@@ -224,7 +224,9 @@ Every unsuppressed issue becomes one finding at its first evidence endpoint: `ch
 is `isthmus:` plus the issue code, `severity` maps errors to `major` and warnings to
 `minor`, and `fingerprint` reuses the same logical-issue hash as SARIF, so GitLab merges
 findings across runs. The format has no suppression concept, so baseline-accepted issues
-are left out rather than resurfaced as new findings.
+are left out rather than resurfaced as new findings — note that when the baseline is
+applied on merge request pipelines but not on the default branch, GitLab's comparison
+can present those accepted issues as "fixed" by the merge request.
 
 `--strict`, `--baseline`, and `--update-baseline` combine with any format and keep their
 documented exit-code behavior.

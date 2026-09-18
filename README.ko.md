@@ -206,7 +206,9 @@ isthmus check dart-bridges.json swift-bridges.json --format codequality > gl-cod
 진단 코드를 붙인 값이고, `severity`는 error를 `major`로·warning을 `minor`로 내리며,
 `fingerprint`는 SARIF와 같은 논리 이슈 해시를 재사용해 실행 사이의 병합 판정이 유지된다.
 이 형식에는 억제 개념이 없으므로 베이스라인이 받아들인 이슈는 새 발견으로 다시 뜨지
-않도록 목록에서 제외한다.
+않도록 목록에서 제외한다 — 베이스라인을 머지 요청 파이프라인에만 적용하고 기본
+브랜치에는 적용하지 않으면, GitLab 비교가 받아들인 이슈를 해당 머지 요청이 "고친"
+것으로 표시할 수 있다는 점에 유의한다.
 
 `--strict`·`--baseline`·`--update-baseline`은 모든 형식과 조합되고 문서화된 종료
 코드 동작을 유지한다.

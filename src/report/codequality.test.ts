@@ -20,9 +20,11 @@ test('check 보고서의 이슈를 Code Quality 발견으로 옮긴다', () => {
 
   assert.equal(first.check_name, 'isthmus:unhandled-invocation');
   assert.equal(first.severity, 'major');
+  // 형식에 규칙 표가 없으므로 description이 산문 설명과 맥락을 함께 담는다.
   assert.equal(
     first.description,
-    "unhandled-invocation on channel 'com.example/a' for method 'ping' (target: flutter)",
+    'A caller-side bridge method invocation has no matching handler on any '
+    + "receiver-side document. Channel 'com.example/a', method 'ping' (target: flutter)",
   );
   assert.deepEqual(first.location, {
     path: 'lib/a.dart',
@@ -41,6 +43,15 @@ test('check 보고서의 이슈를 Code Quality 발견으로 옮긴다', () => {
   assert.equal(second.location.path, 'src/A.swift');
 });
 
+test('발견 순서는 보고서의 이슈 순서를 그대로 따른다', () => {
+  const findings = createCodeQualityFindings(reportFixture(), logicalKeyFingerprint);
+
+  assert.deepEqual(
+    findings.map(({ check_name }) => check_name),
+    ['isthmus:unhandled-invocation', 'isthmus:registration-without-creation'],
+  );
+});
+
 test('이슈가 없으면 빈 발견 목록을 낸다', () => {
   const findings = createCodeQualityFindings(
     { ...reportFixture(), issues: [] },
@@ -52,12 +63,43 @@ test('이슈가 없으면 빈 발견 목록을 낸다', () => {
 });
 
 test('베이스라인 억제 이슈는 발견 목록에서 제외한다', () => {
-  const findings = createCodeQualityFindings({
+  const issues = reportFixture().issues;
+  const suppressedAll = createCodeQualityFindings({
     ...reportFixture(),
-    issues: reportFixture().issues.map((issue) => ({ ...issue, suppressed: true as const })),
+    issues: issues.map((issue) => ({ ...issue, suppressed: true as const })),
+  }, logicalKeyFingerprint);
+  const mixed = createCodeQualityFindings({
+    ...reportFixture(),
+    issues: issues.map((issue, index) =>
+      index === 0 ? { ...issue, suppressed: true as const } : issue),
   }, logicalKeyFingerprint);
 
-  assert.deepEqual(findings, []);
+  assert.deepEqual(suppressedAll, []);
+  assert.deepEqual(
+    mixed.map(({ check_name }) => check_name),
+    ['isthmus:registration-without-creation'],
+  );
+});
+
+test('증거 없는 이슈는 발견을 만들 수 없다', () => {
+  const report = {
+    ...reportFixture(),
+    issues: [
+      {
+        severity: 'error' as const,
+        code: 'unhandled-invocation' as const,
+        target: 'flutter' as const,
+        channel: 'com.example/a',
+        method: 'ping',
+        evidence: [],
+      },
+    ],
+  };
+
+  assert.throws(
+    () => createCodeQualityFindings(report, logicalKeyFingerprint),
+    /without evidence/u,
+  );
 });
 
 test('증거 위치가 첫 행보다 앞서면 만들 수 없다', () => {
@@ -83,6 +125,20 @@ test('증거 위치가 첫 행보다 앞서면 만들 수 없다', () => {
   assert.throws(
     () => createCodeQualityFindings(report, logicalKeyFingerprint),
     /Code Quality location/u,
+  );
+});
+
+test('같은 지문의 이슈가 두 개면 깨진 아티팩트 대신 실패한다', () => {
+  const [first] = reportFixture().issues;
+  assert.ok(first);
+  const report = {
+    ...reportFixture(),
+    issues: [first, first],
+  };
+
+  assert.throws(
+    () => createCodeQualityFindings(report, logicalKeyFingerprint),
+    /duplicate fingerprints/u,
   );
 });
 
