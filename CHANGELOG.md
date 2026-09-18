@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `check`가 bridge-facts v2 문서(BasicMessageChannel·EventChannel)를 직접 소비한다.
+  literal `message-send`에 대응 `message-handle`이 없으면 `unhandled-message-send`
+  error(수신 측 `unattributed-message-handles:` 공백이면 `-unverified` warning),
+  대응 send 없는 handler는 `message-handler-without-send` warning이다. EventChannel은
+  `unhandled-stream-listen`·`-unverified`·`stream-handler-without-listen`으로 대칭
+  보고한다. dynamic `channelPrefix`는 후보로만 다뤄 미대응을 error로 만들지 않고
+  `dynamic-*-address`·`unmatched-*-boundary` 소비자 한계로 남기며, literal 경계가
+  덮는 prefix 후보도 진단에서 제외한다. `summary`는 v2 입력이 있을 때만
+  `matchedMessages`·`matchedStreams`를 더하고, SARIF·Code Quality·baseline이 새
+  코드를 그대로 싣는다. `query`·`graph`·`diff`·`retentions`·`impact`는 v1 전용으로
+  남아 version 2를 명시적으로 거부한다.
+
 ## [0.7.0] - 2026-09-18
 
 ### Added

@@ -50,4 +50,16 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'A receiver-side native component export has no matching caller-side require.',
   'component-export-mechanism-mismatch':
     'A receiver-side native component export matches a require name, but the observed requires resolve through a different bridge mechanism.',
+  'unhandled-message-send':
+    'A Dart BasicMessageChannel send has no matching native message handler on any receiver-side document.',
+  'unhandled-message-send-unverified':
+    'A Dart BasicMessageChannel send has no matching native message handler, and a receiver-side analysis gap may be hiding it.',
+  'message-handler-without-send':
+    'A native BasicMessageChannel handler has no matching Dart send.',
+  'unhandled-stream-listen':
+    'A Dart EventChannel stream listener has no matching native stream handler on any receiver-side document.',
+  'unhandled-stream-listen-unverified':
+    'A Dart EventChannel stream listener has no matching native stream handler, and a receiver-side analysis gap may be hiding it.',
+  'stream-handler-without-listen':
+    'A native EventChannel stream handler has no matching Dart stream listener.',
 };

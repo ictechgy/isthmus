@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 
 import {
+  emptyBridgeJoinResult,
   isBridgeJoinDeferred,
   joinBridgeDocuments,
   MAX_DOCUMENTS_PER_JOIN,
 } from '../join/join.ts';
+import { joinMessageBridges } from '../join/messages.ts';
 import {
   applyBaseline,
   baselineEntryKey,
@@ -32,7 +34,7 @@ import {
   internalError,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
-  readBridgeDocuments,
+  readBridgeInputs,
   type Clock,
   type CommandResult,
   type ReadTextFile,
@@ -64,12 +66,20 @@ export async function runCheckCommand(
     return internalError();
   }
   try {
-    const documents = await readBridgeDocuments(inputPaths, readTextFile);
-    const joined = joinBridgeDocuments(documents);
+    const { bridges, messages } = await readBridgeInputs(inputPaths, readTextFile);
+    // v1 사실이 없어도 v2 전용 입력은 빈 결과 위에서 보고한다. project는
+    // 어느 쪽에 있든 하나여야 하며 joinMessageBridges가 일치를 검증한다.
+    const project = bridges[0]?.project ?? messages[0]!.project;
+    const joined = bridges.length > 0
+      ? joinBridgeDocuments(bridges)
+      : emptyBridgeJoinResult();
     if (isBridgeJoinDeferred(joined)) {
-      return bridgeJoinDeferredError(joined.observedFacts, documents.length);
+      return bridgeJoinDeferredError(joined.observedFacts, bridges.length);
     }
-    let report = createCheckReport(joined);
+    const messageJoin = messages.length > 0
+      ? joinMessageBridges(messages, project)
+      : undefined;
+    let report = createCheckReport(joined, messageJoin);
     if (baselinePath !== undefined) {
       const baseline = await readBaselineDocument(baselinePath, readTextFile);
       report = applyBaseline(report, baseline.entries);

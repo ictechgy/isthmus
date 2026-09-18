@@ -23,6 +23,7 @@ verifyInputError();
 verifyCompositionError();
 verifySuccessfulCheck();
 verifyStrictFindings();
+verifyMessageCheck();
 verifyBaselineRoundtrip();
 verifyRetentions();
 verifyQuery();
@@ -158,6 +159,42 @@ function verifyStrictFindings() {
   verify(result.status === 1, 'strict exit code');
   verify(result.stderr === '', 'strict stderr');
   verify(JSON.parse(result.stdout).summary.errors === 1, 'strict JSON');
+}
+
+/** check가 실빌드에서 bridge-facts v2를 transport 진단으로 소비하는지 검증한다. */
+function verifyMessageCheck() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-messages-'));
+  try {
+    const message = (platform, facts) => JSON.stringify({
+      format: 'bridge-facts', version: 2, transport: 'basic-message-channel',
+      platform, target: facts.length > 0 ? 'flutter' : null, project: '/app',
+      generatedAt: '2026-09-18T00:00:00Z',
+      tool: { name: platform === 'dart' ? 'dartograph' : 'cartograph', version: 'test' },
+      facts, limitations: [],
+    });
+    const messageDart = join(directory, 'dart.json');
+    const messageSwift = join(directory, 'swift.json');
+    writeFileSync(messageDart, message('dart', [{
+      kind: 'message-send', channel: 'example/basic', dynamic: false,
+      location: { path: 'lib/api.dart', line: 10, column: 1 },
+    }]));
+    writeFileSync(messageSwift, message('swift', []));
+
+    const missing = run(['check', messageDart, messageSwift, '--strict']);
+    verify(missing.status === 1, 'message strict exit code');
+    verify(JSON.parse(missing.stdout).issues[0].code === 'unhandled-message-send',
+      'message diagnostic code');
+
+    writeFileSync(messageSwift, message('swift', [{
+      kind: 'message-handle', channel: 'example/basic', dynamic: false,
+      location: { path: 'macos/Setup.swift', line: 5, column: 1 },
+    }]));
+    const matched = run(['check', messageDart, messageSwift]);
+    verify(matched.status === 0 && JSON.parse(matched.stdout).summary.matchedMessages === 1,
+      'message matched summary');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** 베이스라인 기록과 재입력이 발행 CLI에서도 종료 코드 계약을 지키는지 검증한다. */
