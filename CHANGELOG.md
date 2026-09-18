@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-18
+
 ### Added
 
 - React Native 모듈·컴포넌트 경계 조인: `module-import`↔`module-export`와

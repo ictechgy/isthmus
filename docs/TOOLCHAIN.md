@@ -17,8 +17,8 @@
 - 앱의 Swift 인덱스와 실제 Flutter 검증에는 해당 앱의 Flutter/Xcode 환경이 추가로 필요하다.
   도구 자체를 구축하는 과정은 Flutter SDK를 필수로 요구하지 않는다.
 
-공개 호환 버전 세트(isthmus 0.6.0 · cartograph 0.15.1 · kartograph 0.10.0 · dartograph
-0.10.0)는 이미 발행됐다 — [COMPATIBILITY.md](COMPATIBILITY.md)를 본다. 이 절차는
+공개 호환 버전 세트(isthmus 0.7.0 · cartograph 0.18.0 · kartograph 0.10.2 · dartograph
+0.14.0)는 이미 발행됐다 — [COMPATIBILITY.md](COMPATIBILITY.md)를 본다. 이 절차는
 발행본이 아니라 검증된 개발 commit을 그대로 재현할 때 쓴다. 소스 commit이 로컬 Git에
 있어야 하며 빌드 과정의 npm/pub/SwiftPM/Gradle 의존성 해석은 네트워크를 사용할 수 있다.
 

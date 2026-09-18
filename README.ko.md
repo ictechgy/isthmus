@@ -36,8 +36,8 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-npm 발행본은 **0.6.0**이다. 공개 호환 producer 세트는 cartograph **0.15.1**,
-kartograph **0.10.0**, dartograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
+npm 발행본은 **0.7.0**이다. 공개 호환 producer 세트는 cartograph **0.18.0**,
+kartograph **0.10.2**, dartograph **0.14.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 왕복은
 cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
 왕복을 다시 확인했다.

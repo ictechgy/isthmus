@@ -1,8 +1,8 @@
 # BasicMessageChannel 교환 계약 (bridge-facts v2)
 
 bridge-facts v1 MethodChannel 동작과 섞지 않고 opt-in `bridges --messages`가 아래
-v2 문서를 출력한다. 공개 호환 버전(cartograph 0.15.1·kartograph 0.10.0·dartograph
-0.10.0)에 포함됐으며 isthmus 0.6.0이 소비한다. producer/consumer 구현과 공개 source
+v2 문서를 출력한다. 공개 호환 버전(cartograph 0.18.0·kartograph 0.10.2·dartograph
+0.14.0)에 포함됐으며 isthmus 0.7.0이 소비한다. producer/consumer 구현과 공개 source
 연결을 검증했으며, 플랫폼별 실제 실행·모든 Pigeon 생성 형태의 해석은 별도 검증 범위다.
 통합/검증 이력은 [진행 기록](COMPETITIVENESS.md)에 남긴다.
 
