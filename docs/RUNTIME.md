@@ -1,6 +1,6 @@
 # 런타임 통신 검증 계약
 
-`verify-runtime`은 npm 0.6.0 발행본에 포함됐으며 명시한 시나리오에서 실제 관찰한
+`verify-runtime`은 npm 0.7.0 발행본에 포함됐으며 명시한 시나리오에서 실제 관찰한
 통신 결과를 검증한다. [Flutter 수집기](../packages/isthmus_runtime/README.md)는 앱의
 BinaryMessenger에 주입해 실제 outgoing 호출을 기록한다. 정적 후보 연결은
 [impact의 런타임 입력](IMPACT.md#런타임-관찰-연결)과
