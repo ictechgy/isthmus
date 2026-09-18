@@ -1,9 +1,12 @@
 # 공개 호환 버전 세트
 
-2026-09-18 실측 기준, 아래 공개 버전만으로 MethodChannel·BasicMessageChannel·
-EventChannel 조인, 변경 사전 점검, retention 왕복, React Native·Expo 모듈
-조인을 재현할 수 있다. 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은
-검증된 개발 commit 조합이 필요하거나 발행본을 신뢰할 수 없을 때의 대안이다.
+2026-09-18 기준 호환 버전 세트다. MethodChannel·BasicMessageChannel 조인,
+변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
+[실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
+근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
+이 세트에서의 조인 실측은 아래 목록에 없다 — 별도 검증 범위다.
+고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이
+필요하거나 발행본을 신뢰할 수 없을 때의 대안이다.
 
 ## 호환 버전 표
 
@@ -11,19 +14,19 @@ EventChannel 조인, 변경 사전 점검, retention 왕복, React Native·Expo 
 | --- | --- | --- | --- |
 | isthmus-cli | **0.7.0** | `npm install --global isthmus-cli` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
 | cartograph | **0.18.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
-| kartograph | **0.10.2** | GitHub Release 아카이브(`kartograph-0.10.2.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages`·`--events --graph-file`, Expo Modules DSL(`mechanism`) |
+| kartograph | **0.10.2** | GitHub Release 아카이브(`kartograph-0.10.2.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
 | dartograph | **0.14.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
-preflight 전이 경로, Kotlin 쪽 조인에는 위 표의 버전이 필요하다. EventChannel은
-v2 transport로 발행됐다 — dartograph 0.12.0의 `--events`(stream-listen),
-kartograph 0.10.1의 `--events`(stream-handle), cartograph 0.18.0의
-`--events`(stream-handler)가 각 문서를 생산한다. React Native는 수신 측 사실
-(cartograph `RCT_EXPORT_*`·kartograph `@ReactModule`), isthmus 0.7.0의
-모듈·컴포넌트 이름 조인, `isthmus extract-js`의 JS/TS 호출 측 추출이 갖춰졌다.
-추출은 토큰 스캔 관찰 범위의 근거다 — 동적 이름·스캔 집합 밖 바인딩은
-limitations로만 보고하며 앱 전체 정확도를 주장하지 않는다.
+preflight 전이 경로, Kotlin 쪽 조인에는 위 표의 버전이 필요하다. EventChannel
+v2 문서의 최소 버전은 dartograph 0.12.0(`--events`, stream-listen)·
+kartograph 0.10.1(`--events`, stream-handle)·cartograph 0.18.0(`--events`,
+stream-handler)이고, 이 세트 3방향 조인 실측은 아직 없다.
+React Native는 수신 측 사실(cartograph `RCT_EXPORT_*`·kartograph `@ReactModule`),
+isthmus 0.7.0의 모듈·컴포넌트 이름 조인, `isthmus extract-js`의 JS/TS 호출 측
+추출이 갖춰졌다. 추출은 토큰 스캔 관찰 범위의 근거다 — 동적 이름·스캔 집합
+밖 바인딩은 limitations로만 보고하며 앱 전체 정확도를 주장하지 않는다.
 Expo Modules는 사실의 선택적 `mechanism` 필드(`core`·`expo`, 생략=core)로
 구분한다. 수신 측 스캔은 cartograph 0.18.0(멤버 체인 호출 포함)과
 kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.` 한정 호출은
@@ -31,21 +34,26 @@ kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.
 
 ## 실측으로 확인한 범위 (2026-09-16, 2026-09-18 추가)
 
+2026-09-16 측정은 이전 세트(isthmus 0.6.0 · cartograph 0.15.1 · kartograph
+0.10.0 · dartograph 0.10.0)에서 했다 — 현재 세트는 그 상위집합이지만
+새 조합으로 같은 측정을 다시 돌리지는 않았다.
+
 - cartograph 0.15.1 `bridges` → isthmus 0.6.0 `retentions --for cartograph` →
   cartograph 0.15.1 `dead --external-retentions`의 억제와 `--explain` 근거 문장을
   공개 corpus(Flutter 스텁을 포함한 SwiftPM fixture)에서 확인했다.
   재현: `node scripts/verify-cartograph-roundtrip.mjs <cartograph> <dartograph> <fixture-root>`.
 - cartograph 0.15.1과 dartograph 0.10.0의 `bridges --messages`가 bridge-facts v2
   (`transport: basic-message-channel`) 문서를 출력함을 확인했다.
-- kartograph 0.10.0은 `bridges --messages --graph-file` 코드가 main에 있음을 확인했으나
-  이번 세션에서 Android 프로젝트로 실행하지는 않았다.
+- kartograph의 `bridges` 실행은 2026-09-18에 해소됐다(아래 항목) — 위에서
+  "0.10.0을 Android 프로젝트로 실행하지 않았다"는 제한은 더 이상 적용되지 않는다.
 - 2026-09-18: `expo-haptics@14.1.4`(npm tarball)에서 JS·Swift·Kotlin 3방향 조인을
-  확인했다. 설치된 cartograph 0.18.0이 `module-export`(ExpoHaptics,
+  확인했다. **발행 설치본** cartograph 0.18.0이 `module-export`(ExpoHaptics,
   `mechanism: "expo"`)와 멤버 체인이 붙은 `AsyncFunction`의 method-handle 3건을
-  생산했고, kartograph 0.10.2 준비본이 method-handle 4건(Android 전용
-  `performHapticsAsync` 포함)을 생산했다. `isthmus check`가 `errors: 0`으로
-  모듈 1·메서드 4를 조인했다 — iOS에 없는 Android 메서드의 플랫폼 비대칭이
-  추정이 아니라 실측으로 확인됐다.
+  생산했고, kartograph **0.10.2 준비본**(release-prep installDist)이 method-handle
+  4건(Android 전용 `performHapticsAsync` 포함)을 생산했다. isthmus **0.7.0
+  준비본**의 `check`가 `errors: 0`으로 모듈 1·메서드 4를 조인했다 — iOS에 없는
+  Android 메서드의 플랫폼 비대칭이 추정이 아니라 실측으로 확인됐다.
+  준비본 측정이므로 v0.10.2·0.7.0 발행 아티팩트의 재측정은 발행 후 별도다.
 
 아직 확인하지 않은 것: 전체 앱 정확도, iOS 실기기, 다른 Android API/ABI,
 release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로의 완전성을 보장하지

@@ -44,7 +44,8 @@ cartograph **0.18.0**, kartograph **0.10.2**, and dartograph **0.14.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
-public battery plugin — and the round trip was re-verified on the public versions above.
+public battery plugin — and the round trip was re-verified on the previous public
+set (cartograph 0.15.1, dartograph 0.10.0, isthmus 0.6.0).
 React Native module/component facts (`module-import`↔`module-export`,
 `component-require`↔`component-export`) join by name inside the `react-native`
 target. An optional `mechanism` field keeps the core and Expo resolution paths

@@ -39,8 +39,8 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 npm 발행본은 **0.7.0**이다. 공개 호환 producer 세트는 cartograph **0.18.0**,
 kartograph **0.10.2**, dartograph **0.14.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 왕복은
-cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 공개 버전 조합으로
-왕복을 다시 확인했다.
+cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 이전 공개 세트
+(cartograph 0.15.1·dartograph 0.10.0·isthmus 0.6.0)로 왕복을 다시 확인했다.
 React Native 모듈·컴포넌트 사실(`module-import`↔`module-export`,
 `component-require`↔`component-export`)은 `react-native` target 안에서 이름으로
 조인된다. 선택적 `mechanism` 필드가 core와 Expo 해석 경로를 구분한다. Expo의
