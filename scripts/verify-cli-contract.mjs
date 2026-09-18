@@ -34,6 +34,7 @@ verifyRuntime();
 verifyPreflight();
 verifyServe();
 verifyExtractJs();
+verifyDoctorInit();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -321,6 +322,32 @@ function verifyExtractJs() {
     verify(run(['extract-js']).status === 64, 'extract-js usage');
     verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
     verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** doctor·init이 설정 JSON 검증과 scaffold 쓰기를 실제 CLI에서 수행하는지 검증한다. */
+function verifyDoctorInit() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-doctor-'));
+  try {
+    const capturePath = join(directory, 'capture.json');
+    const init = run(['init', capturePath]);
+    verify(init.status === 0, 'init exit code');
+    verify(JSON.parse(init.stdout).format === 'isthmus-init', 'init JSON');
+    const scaffold = JSON.parse(readFileSync(capturePath, 'utf8'));
+    verify(scaffold.project.length > 0 && Array.isArray(scaffold.prepare), 'init scaffold');
+    verify(run(['init', capturePath]).status === 2, 'init existing config');
+    verify(run(['init', capturePath, '--force']).status === 0, 'init force overwrite');
+
+    const doctor = run(['doctor', capturePath]);
+    verify(doctor.status === 1, 'doctor incomplete exit code');
+    const report = JSON.parse(doctor.stdout);
+    verify(report.format === 'isthmus-doctor' && report.status === 'incomplete', 'doctor JSON');
+    verify(report.checks.some(({ status }) => status === 'missing'), 'doctor missing check');
+    verify(run(['doctor', join(directory, 'missing.json')]).status === 2, 'doctor missing input');
+    verify(run(['help', 'doctor']).stdout.startsWith('Usage: isthmus doctor'), 'doctor help');
+    verify(run(['help', 'init']).stdout.startsWith('Usage: isthmus init'), 'init help');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
