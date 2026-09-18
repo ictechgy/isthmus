@@ -44,6 +44,11 @@
   `incompatibleReceivers` 증거로 보존한다. extract-js는 Expo 전용 API 호출을
   `mechanism: "expo"`로 표시하고, Expo가 아닌 specifier의 동명 래퍼는
   생략한다. Expo DSL 수신 측 스캔은 cartograph·kartograph 후속이다.
+- `check --format codequality`: GitLab Code Quality 아티팩트 출력이다. 억제되지
+  않은 이슈 하나가 첫 증거 끝점의 발견 하나가 되고, `check_name`은
+  `isthmus:<진단 코드>`, `severity`는 error→`major`·warning→`minor`,
+  `fingerprint`는 SARIF와 같은 논리 이슈 해시다. 형식에 억제 개념이 없어
+  베이스라인이 받아들인 이슈는 목록에서 제외한다.
 
 ## [0.6.0] - 2026-09-16
 

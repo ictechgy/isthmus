@@ -18,6 +18,10 @@ import {
 import type { CheckIssue } from '../report/check-report.ts';
 import { createCheckReport, encodeCheckReport } from '../report/check-report.ts';
 import {
+  createCodeQualityFindings,
+  encodeCodeQualityReport,
+} from '../report/codequality.ts';
+import {
   createSarifLog,
   encodeSarifLog,
 } from '../report/sarif.ts';
@@ -38,8 +42,8 @@ import { parseCommandArguments } from './parse-arguments.ts';
 
 export type { Clock, CommandResult, ReadTextFile, WriteTextFile };
 
-/** check가 내는 보고서 형식이다. SARIF는 isthmus 소유의 additive 출력이다. */
-export type CheckOutputFormat = 'json' | 'sarif';
+/** check가 내는 보고서 형식이다. SARIF·Code Quality는 isthmus 소유의 additive 출력이다. */
+export type CheckOutputFormat = 'json' | 'sarif' | 'codequality';
 
 /** check 인자를 실행해 프로세스에 독립적인 결과를 반환한다. */
 export async function runCheckCommand(
@@ -72,7 +76,11 @@ export async function runCheckCommand(
     }
     const standardOutput = format === 'sarif'
       ? encodeSarifLog(createSarifLog(report, producerVersion, issueFingerprint))
-      : encodeCheckReport(report);
+      : format === 'codequality'
+        ? encodeCodeQualityReport(
+            createCodeQualityFindings(report, issueFingerprint),
+          )
+        : encodeCheckReport(report);
     if (updateBaselinePath !== undefined && writeTextFile !== undefined) {
       await writeBaselineDocument(
         updateBaselinePath,
@@ -109,7 +117,10 @@ function parseCheckOptions(
   );
   if (parsed === undefined) return undefined;
   const format = parsed.valueFlags.get('--format');
-  if (format !== undefined && format !== 'json' && format !== 'sarif') {
+  if (
+    format !== undefined && format !== 'json' && format !== 'sarif'
+    && format !== 'codequality'
+  ) {
     return undefined;
   }
   const baselinePath = parsed.valueFlags.get('--baseline');
@@ -270,7 +281,7 @@ function usageError(): CommandResult {
 /** check 명령의 한 줄 사용법이다. */
 export const checkUsage =
   'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-  + '[more...] [--strict] [--format json|sarif] '
+  + '[more...] [--strict] [--format json|sarif|codequality] '
   + '[--baseline <isthmus-baseline.json>] '
   + '[--update-baseline <isthmus-baseline.json>]';
 

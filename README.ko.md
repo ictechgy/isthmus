@@ -192,8 +192,24 @@ isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sari
 저장소 상대 URI가 된다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
 `external` suppression을 달고 나온다. 결과마다 논리 이슈 식별자(code·target·channel·
 method)의 `partialFingerprints` 해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인
-억제와 같은 기준으로 살아남는다. `--strict`·`--baseline`·`--update-baseline`은 두 형식
-모두와 조합되고 문서화된 종료 코드 동작을 유지한다.
+억제와 같은 기준으로 살아남는다.
+
+### GitLab Code Quality 출력
+
+check 결과를 GitLab 머지 요청 위젯에 표시하려면 Code Quality 아티팩트를 대신 낸다.
+
+```bash
+isthmus check dart-bridges.json swift-bridges.json --format codequality > gl-code-quality-report.json
+```
+
+억제되지 않은 모든 이슈가 첫 증거 끝점의 발견 하나가 된다. `check_name`은 `isthmus:`에
+진단 코드를 붙인 값이고, `severity`는 error를 `major`로·warning을 `minor`로 내리며,
+`fingerprint`는 SARIF와 같은 논리 이슈 해시를 재사용해 실행 사이의 병합 판정이 유지된다.
+이 형식에는 억제 개념이 없으므로 베이스라인이 받아들인 이슈는 새 발견으로 다시 뜨지
+않도록 목록에서 제외한다.
+
+`--strict`·`--baseline`·`--update-baseline`은 모든 형식과 조합되고 문서화된 종료
+코드 동작을 유지한다.
 
 ### 베이스라인
 
