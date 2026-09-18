@@ -54,7 +54,7 @@ test('하위 명령이 없으면 사용법과 종료 코드 64를 반환한다',
     standardOutput: '',
     standardError:
       'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-      + '[more...] [--strict] [--format json|sarif] '
+      + '[more...] [--strict] [--format json|sarif|codequality] '
       + '[--baseline <isthmus-baseline.json>] '
       + '[--update-baseline <isthmus-baseline.json>]\n',
     exitCode: 64,
@@ -182,6 +182,64 @@ test('check --format sarif는 베이스라인 억제를 suppression으로 전달
         { kind: 'external', status: 'accepted' },
       ]);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('check --format codequality는 GitLab Code Quality 발견 목록을 출력한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--format', 'codequality'],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.standardError, '');
+  const findings = JSON.parse(result.standardOutput);
+  assert.equal(Array.isArray(findings), true);
+  assert.equal(findings.length, 3);
+  const names = new Set(
+    findings.map((entry: { check_name: string }) => entry.check_name),
+  );
+  assert.equal(names.has('isthmus:unhandled-invocation'), true);
+  assert.equal(names.has('isthmus:handler-without-invocation'), true);
+  for (const finding of findings) {
+    assert.equal(typeof finding.description, 'string');
+    assert.equal(typeof finding.fingerprint, 'string');
+    assert.equal(/^[0-9a-f]{64}$/u.test(finding.fingerprint), true);
+    assert.equal(Number.isInteger(finding.location.lines.begin), true);
+    assert.equal(['major', 'minor'].includes(finding.severity), true);
+  }
+});
+
+test('check --format codequality는 strict 판정을 그대로 유지한다', async () => {
+  const result = await runCheckCommand(
+    ['check', dartPath, swiftPath, '--format', 'codequality', '--strict'],
+    (path) => readFile(path, 'utf8'),
+  );
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.standardOutput).length, 3);
+});
+
+test('check --format codequality는 베이스라인 억제 이슈를 발견에서 제외한다', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'isthmus-codequality-baseline-'));
+  try {
+    const baselinePath = join(root, 'isthmus-baseline.json');
+    const read = (path: string) => readFile(path, 'utf8');
+    await runCheckCommand(
+      ['check', dartPath, swiftPath, '--update-baseline', baselinePath],
+      read,
+      (path, text) => writeFile(path, text, 'utf8'),
+    );
+
+    const result = await runCheckCommand(
+      ['check', dartPath, swiftPath, '--format', 'codequality', '--baseline', baselinePath],
+      read,
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(JSON.parse(result.standardOutput), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

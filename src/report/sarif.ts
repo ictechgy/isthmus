@@ -4,15 +4,13 @@ import type {
   CheckReport,
 } from './check-report.ts';
 import { checkIssueCodes } from './check-report.ts';
+import {
+  checkIssueRuleDescriptions,
+  type IssueFingerprint,
+} from './rules.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
-/** 논리 이슈 키를 안정 지문으로 바꾸는 주입 경계다. 해싱은 cli 계층이 담당한다. */
-export type IssueFingerprint = (issue: {
-  readonly code: string;
-  readonly target: string;
-  readonly channel: string;
-  readonly method?: string;
-}) => string;
+export type { IssueFingerprint } from './rules.ts';
 
 /** GitHub code scanning이 받아들이는 SARIF 2.1.0 스키마 식별자다. */
 export const sarifSchema = 'https://json.schemastore.org/sarif-2.1.0.json';
@@ -51,44 +49,6 @@ interface SarifResult {
   readonly partialFingerprints: { readonly isthmusIssueV1: string };
 }
 
-/** check가 보고하는 진단 종류의 SARIF 규칙 문구다. */
-const ruleDescriptions: Record<CheckIssueCode, string> = {
-  'unhandled-invocation':
-    'A caller-side bridge method invocation has no matching handler on any receiver-side document.',
-  'unhandled-invocation-unverified':
-    'A caller-side bridge method invocation has no matching handler, and a receiver-side analysis gap may be hiding it.',
-  'unregistered-channel-creation':
-    'A caller-side bridge channel creation has no matching registration on any receiver-side document.',
-  'unregistered-channel-creation-unverified':
-    'A caller-side bridge channel creation has no matching registration, and a receiver-side analysis gap may be hiding it.',
-  'registration-without-creation':
-    'A receiver-side channel registration has no matching caller-side channel creation.',
-  'handler-without-invocation':
-    'A receiver-side bridge method handler has no matching caller-side invocation.',
-  'module-import-without-export':
-    'A caller-side native module import has no matching export on any receiver-side document.',
-  'module-import-without-export-unverified':
-    'A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it.',
-  'module-import-without-export-optional':
-    'A caller-side native module import has no matching export, but every observed caller tolerates absence by receiving null.',
-  'module-import-mechanism-mismatch':
-    'A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism.',
-  'module-export-without-import':
-    'A receiver-side native module export has no matching caller-side import.',
-  'module-export-mechanism-mismatch':
-    'A receiver-side native module export matches an import name, but the observed imports resolve through a different bridge mechanism.',
-  'component-require-without-export':
-    'A caller-side native component require has no matching export on any receiver-side document.',
-  'component-require-without-export-unverified':
-    'A caller-side native component require has no matching export, and a receiver-side analysis gap may be hiding it.',
-  'component-require-mechanism-mismatch':
-    'A caller-side native component require matches an export name, but the observed exports resolve through a different bridge mechanism.',
-  'component-export-without-require':
-    'A receiver-side native component export has no matching caller-side require.',
-  'component-export-mechanism-mismatch':
-    'A receiver-side native component export matches a require name, but the observed requires resolve through a different bridge mechanism.',
-};
-
 /** SARIF 2.1.0 로그 문서다. 결정적 정렬로 인코딩한다. */
 export interface SarifLog {
   readonly $schema: string;
@@ -117,7 +77,7 @@ export function createSarifLog(
 ): SarifLog {
   const rules = [...checkIssueCodes].sort().map((id) => ({
     id,
-    shortDescription: { text: ruleDescriptions[id] },
+    shortDescription: { text: checkIssueRuleDescriptions[id] },
   }));
   const ruleIndex = new Map(rules.map(({ id }, index) => [id, index]));
   return {
