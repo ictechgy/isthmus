@@ -1,6 +1,6 @@
 # React Native native → JS 이벤트 교환 계약
 
-개발 중인 `bridge-facts` v2 확장이다. 기존 v1과 Flutter v2 문서에 섞지 않는다.
+isthmus 0.8.0·cartograph 0.20.0·kartograph 0.11.0의 `bridge-facts` v2 확장이다. 기존 v1과 Flutter v2 문서에 섞지 않는다.
 생산 명령은 isthmus `extract-js --events`, cartograph/kartograph `bridges --rn-events`다.
 이 옵션은 이벤트 전용 문서를 선택한다. v1 사실도 필요하면 옵션 없는 명령을 별도로 실행한다.
 

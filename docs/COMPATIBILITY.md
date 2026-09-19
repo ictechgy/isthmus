@@ -1,10 +1,11 @@
 # 공개 호환 버전 세트
 
-2026-09-18 기준 호환 버전 세트다. MethodChannel·BasicMessageChannel 조인,
+2026-09-20 릴리스 대상 호환 버전 세트다. MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
 이 세트에서의 조인 실측은 아래 목록에 없다 — 별도 검증 범위다.
+새 브리지 기능의 개발 검증은 아래 2026-09-20 절에 구분했다.
 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이
 필요하거나 발행본을 신뢰할 수 없을 때의 대안이다.
 
@@ -15,12 +16,15 @@
 
 ## 호환 버전 표
 
+아래 설치 명령은 각 대상 버전이 발행된 뒤 사용한다. 준비 중에는 이전 발행본이 설치되거나
+새 아카이브 URL이 아직 없을 수 있으므로 설치 후 버전을 대조한다.
+
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.7.0** | `npm install --global isthmus-cli` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
-| cartograph | **0.18.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
-| kartograph | **0.10.2** | GitHub Release 아카이브(`kartograph-0.10.2.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
-| dartograph | **0.14.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
+| isthmus-cli | **0.8.0** | `npm install --global isthmus-cli` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
+| cartograph | **0.20.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
+| kartograph | **0.11.0** | GitHub Release 아카이브(`kartograph-0.11.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
+| dartograph | **0.15.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
@@ -36,6 +40,18 @@ Expo Modules는 사실의 선택적 `mechanism` 필드(`core`·`expo`, 생략=co
 구분한다. 수신 측 스캔은 cartograph 0.18.0(멤버 체인 호출 포함)과
 kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.` 한정 호출은
 0.10.2에서 스캔된다.
+
+## 새 브리지 기능과 검증 범위 (2026-09-20)
+
+isthmus 0.8.0은 `retentions --for kartograph`와 실제 Clang USR의 Objective-C 보존을
+지원한다. 대응 소비자는 kartograph 0.11.0·cartograph 0.20.0이다. 필요한 심볼 ID가 없는
+입력은 부분 보존 대신 실패한다. 코어 RN 이벤트는 `extract-js --events`와 두 native
+producer의 `bridges --rn-events`로 별도 v2 `react-native-event` 문서를 조인한다.
+Expo 이벤트·RN preflight·앱 전체 런타임 검증은 지원 범위가 아니다.
+
+개발 커밋에서 실제 Clang→ObjC 보존→explain, JS/Swift/Kotlin RN 이벤트 조인, 기존
+Dart/Swift 왕복과 고정 공개 battery 플러그인의 macOS 보존을 검증했다. 발행 아티팩트의
+설치·왕복 검증은 발행 후 별도로 실행하고 릴리스 기록에 남긴다.
 
 ## 실측으로 확인한 범위 (2026-09-16, 2026-09-18 추가)
 
@@ -78,7 +94,7 @@ node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/ma
 # producer까지 포함한 3방향 조인 검증 (macOS)
 brew install ictechgy/tap/cartograph
 dart pub global activate dartograph
-curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.10.2/kartograph-0.10.2.tar | tar -x
+curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.11.0/kartograph-0.11.0.tar | tar -x
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
   "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" <kartograph-경로>/bin/kartograph
 ```

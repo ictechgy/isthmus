@@ -36,8 +36,8 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-npm 발행본은 **0.7.0**이다. 공개 호환 producer 세트는 cartograph **0.18.0**,
-kartograph **0.10.2**, dartograph **0.14.0**이다 — 설치 명령·고정 예제·CI 예시는
+**0.8.0** 릴리스의 호환 producer 세트는 cartograph **0.20.0**,
+kartograph **0.11.0**, dartograph **0.15.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. MethodChannel 조인과 보존 근거 왕복은
 cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 이전 공개 세트
 (cartograph 0.15.1·dartograph 0.10.0·isthmus 0.6.0)로 왕복을 다시 확인했다.
@@ -59,7 +59,7 @@ Expo Modules DSL(`Module`/`definition()`, `Name`, `Function`, `View`,
 `GRAPH-EXCHANGE.md`에 적힌 토큰 스캔 관찰 범위 안에서 end-to-end RN 조인이
 재현된다. EventChannel v2 전송은 자매 저장소 전반에 구현됐고, `check`가 v2
 Bridge·Event 문서를 직접 소비해 transport별 진단을 낸다.
-보존 근거보내기는 현재 cartograph(Swift)를 대상으로 한다.
+보존 근거는 cartograph(Swift/Objective-C)와 kartograph(Kotlin/JVM)에 전달한다.
 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
 변경 예측은 고정된 공개 정밀도 코퍼스 — `battery_plus`·`shared_preferences_foundation`·
@@ -270,11 +270,11 @@ cartograph dead --external-retentions external-retentions.json
 관찰한 사실 몇 개가 조인되지 못했는지를 함께 알린다. 먼저 생산 단계에서
 target별 문서로 분리해야 한다.
 
-개발 브랜치의 `--for cartograph`는 Swift 플랫폼 문서를, `--for kartograph`는 Kotlin
+0.8.0의 `--for cartograph`는 Swift 플랫폼 문서를, `--for kartograph`는 Kotlin
 플랫폼 문서를 요구합니다. Kotlin에는 실제 JVM 식별자, ObjC 구현에는 실제 Clang `c:`
 USR이 필요합니다. 매치된 선언의 식별자가 없으면 부분 문서 대신 코드 2로 실패합니다.
-ObjC에는 Clang 선언을 그래프에 포함하는 cartograph, Kotlin에는 외부 보존 입력을 읽는
-kartograph 개발 빌드가 필요합니다. Kotlin 소비자는 그래프에 없는 식별자도 거부합니다.
+ObjC에는 Clang 선언을 그래프에 포함하는 cartograph 0.20.0 이상, Kotlin에는 외부 보존 입력을 읽는
+kartograph 0.11.0 이상이 필요합니다. Kotlin 소비자는 그래프에 없는 식별자도 거부합니다.
 
 ```bash
 isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.json
@@ -407,7 +407,7 @@ target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 �
 `unjoined-*`는 소비자가 직접 붙인 `origin: "consumer"`가 있어야 완화 근거가 된다.
 
 선택적 `sourceLanguage: "objective-c"` 필드는 `.m`/`.mm` 구현을 구분합니다.
-대응 개발 빌드에서는 실제 Clang USR을 보존 근거로 내보낼 수 있습니다. Clang USR이
+cartograph 0.20.0과 isthmus 0.8.0에서는 실제 Clang USR을 보존 근거로 내보낼 수 있습니다. Clang USR이
 없는 ObjC 매치는 코드 2로 실패합니다. 옛 문서의 `omittedObjectiveCHandlers`는 한계로
 계속 읽지만, 새 출력은 이러한 매치를 조용히 제외하지 않습니다. 심볼 자체가 없는
 Swift 선언도 실패합니다.
@@ -517,7 +517,7 @@ Codex는 이 checkout의 `.agents/skills/isthmus` 링크로 같은 원문을 발
 
 [MIT](LICENSE). 상업적 사용을 포함해 영구 무료다.
 
-## 개발 중인 RN 이벤트 경계
+## RN 이벤트 경계
 
 `extract-js --events`와 자매 도구의 `bridges --rn-events`는 코어 RN 전역 이벤트를
 별도 v2 transport로 만듭니다. `--events`는 이벤트 전용 출력을 선택하므로, 기존 v1
