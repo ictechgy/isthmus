@@ -8,6 +8,11 @@
 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이
 필요하거나 발행본을 신뢰할 수 없을 때의 대안이다.
 
+이 표의 기계 판독 정본은 저장소 루트의 `compatibility.json`(npm 패키지에 포함)이다.
+`npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
+버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
+드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
+
 ## 호환 버전 표
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
