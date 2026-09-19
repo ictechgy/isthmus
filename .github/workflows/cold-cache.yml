@@ -26,12 +26,16 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.18.0'
-      - run: npm install --global isthmus-cli
-      - run: isthmus --version
+      - name: Read compatible isthmus version
+        id: compatibility
+        run: echo "isthmus=$(node -p "require('./compatibility.json').isthmus")" >> "$GITHUB_OUTPUT"
+      - run: npm install --global isthmus-cli@${{ steps.compatibility.outputs.isthmus }}
+      - run: node scripts/verify-installed-compatibility.mjs isthmus="$(command -v isthmus)"
       - run: node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
 
   # 발행 producer 설치본이 fixtures/bridge-app을 스캔해 Dart↔Swift↔Kotlin
-  # 3방향 조인까지 재현한다. producer는 최신 발행본을 따라가며 버전을 기록한다.
+  # 3방향 조인까지 재현한다. isthmus와 producer를 compatibility.json 버전으로
+  # 고정하고 설치본의 --version을 정본과 대조한다.
   producers:
     runs-on: macos-latest
     timeout-minutes: 20
@@ -50,6 +54,7 @@ jobs:
       - name: Read compatible versions
         id: compatibility
         run: |
+          echo "isthmus=$(node -p "require('./compatibility.json').isthmus")" >> "$GITHUB_OUTPUT"
           echo "dartograph=$(node -p "require('./compatibility.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
           echo "kartograph=$(node -p "require('./compatibility.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
       - run: brew install ictechgy/tap/cartograph
@@ -61,16 +66,17 @@ jobs:
             -o "$RUNNER_TEMP/kartograph.tar"
           mkdir -p "$RUNNER_TEMP/kartograph"
           tar -xf "$RUNNER_TEMP/kartograph.tar" -C "$RUNNER_TEMP/kartograph"
-      - run: npm install --global isthmus-cli
+      - run: npm install --global isthmus-cli@${{ steps.compatibility.outputs.isthmus }}
       - name: Record installed versions
         run: |
           cartograph --version
           "$HOME/.pub-cache/bin/dartograph" --version
           find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' -exec {} --version \;
-      - name: Verify installed producer versions
+      - name: Verify installed versions
         run: |
           kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
           node scripts/verify-installed-compatibility.mjs \
+            isthmus="$(command -v isthmus)" \
             cartograph="$(brew --prefix)/bin/cartograph" \
             dartograph="$HOME/.pub-cache/bin/dartograph" \
             kartograph="$kartograph_bin"
