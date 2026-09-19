@@ -411,6 +411,7 @@ function verifyMessageViews() {
     writeFileSync(messageSwift, message('swift', [{
       kind: 'message-handle', channel: 'example/basic', dynamic: false,
       location: { path: 'macos/Setup.swift', line: 9, column: 1 },
+      symbol: { qualifiedName: 'Setup.register' },
     }]));
 
     const query = run(['query', 'example/basic', messageDart, messageSwift]);
@@ -419,6 +420,12 @@ function verifyMessageViews() {
     const graph = run(['graph', messageDart, messageSwift]);
     verify(graph.status === 0 && JSON.parse(graph.stdout).edges[0].kind === 'message',
       'graph message edge');
+    const retentions = run(['retentions', '--for', 'cartograph', messageDart, messageSwift]);
+    const retentionDocument = JSON.parse(retentions.stdout);
+    verify(retentions.status === 0 && retentionDocument.retentions.length === 1 &&
+      retentionDocument.retentions[0].evidence.method === undefined &&
+      retentionDocument.retentions[0].evidence.channel === 'example/basic',
+      'v2 retention evidence');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

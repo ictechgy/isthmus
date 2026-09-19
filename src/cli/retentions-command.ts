@@ -1,8 +1,10 @@
 import {
+  emptyBridgeJoinResult,
   isBridgeJoinDeferred,
   joinBridgeDocuments,
   MAX_DOCUMENTS_PER_JOIN,
 } from '../join/join.ts';
+import { joinMessageBridges } from '../join/messages.ts';
 import {
   createCartographRetentionsDocument,
   encodeCartographRetentionsDocument,
@@ -13,7 +15,7 @@ import {
   bridgeJoinDeferredError,
   inputFailureResult,
   internalError,
-  readBridgeDocuments,
+  readBridgeInputs,
   type Clock,
   type CommandResult,
   type ReadTextFile,
@@ -32,16 +34,23 @@ export async function runRetentionsCommand(
   const inputPaths = retentionInputPaths(arguments_);
   if (inputPaths === undefined) return retentionUsageError();
   try {
-    const documents = await readBridgeDocuments(inputPaths, readTextFile);
-    const joined = joinBridgeDocuments(documents);
+    const { bridges, messages } = await readBridgeInputs(inputPaths, readTextFile);
+    const project = bridges[0]?.project ?? messages[0]!.project;
+    const joined = bridges.length > 0
+      ? joinBridgeDocuments(bridges)
+      : emptyBridgeJoinResult();
     if (isBridgeJoinDeferred(joined)) {
-      return bridgeJoinDeferredError(joined.observedFacts, documents.length);
+      return bridgeJoinDeferredError(joined.observedFacts, bridges.length);
     }
-    validateCartographRetentionInputs(documents);
+    validateCartographRetentionInputs(bridges, messages);
+    const messageJoin = messages.length > 0
+      ? joinMessageBridges(messages, project)
+      : undefined;
     const retentions = createCartographRetentionsDocument(
       joined,
       now().toISOString(),
       producerVersion,
+      messageJoin,
     );
     return {
       standardOutput: encodeCartographRetentionsDocument(retentions),

@@ -10,8 +10,9 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
 `diff`는 literal v2 경계의 추가·삭제와 v2 진단의 introduced/resolved를 싣는다.
-`preflight`는 선택적 context.messages로 소비한다. `retentions`·`impact`는 v1 전용으로
-version 2를 명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
+`retentions`는 literal v2 경계의 Swift 핸들러를 method 없는 보존 근거로 다.
+`preflight`는 선택적 context.messages로 소비한다. `impact`는 v1 전용으로 version 2를
+명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
 
 cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
 
@@ -338,7 +339,12 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
   0이면 생략)로 밝힌다. `omittedObjectiveCHandlers` 와 같은 계수 공개 원칙이다.
 - 소비 도구는 모르는 필드를 무시한다(Swift `JSONDecoder` 의 기본 동작). 그래서
   이 확장은 생산자(isthmus)를 먼저 배포해도 안전하고, 소비 도구가 `callers` 를
-  문장으로 펼치는 것은 별도 구현 사항이다.
+  문장으로 치는 것은 별도 구현 사항이다.
+- v2 Basic·Event 경계의 보존 근거에는 메서드가 없다. literal로 확정된
+  `message-handle`·`stream-handle`의 Swift 심볼을 `evidence.channel`과 호출자만으로
+  싣고 `method`를 생략한다 — 자매 도구의 `Evidence.method`도 선택 필드다. dynamic
+  prefix 후보·ObjC v2 핸들러는 v1과 같은 규칙으로 제외하고, ObjC 수는
+  `omittedObjectiveCHandlers`에 함께 센다.
 
 cartograph의 보존 문서는 **Swift 그래프 선언**을 대상으로 완전해야 한다. 명시적
 `sourceLanguage: "objective-c"` 구현은 조인·진단·query의 증거로 남기지만 Swift 보존 대상은
