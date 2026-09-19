@@ -1,10 +1,10 @@
 # Handoff
 
-_Last updated: 2026-09-19 (main `d7bf3dd` · 이번 세션 후보 #2·#1·#3·#4·#5·#10 머지 완료 · 0순위 npm 발행만 잔여)_
+_Last updated: 2026-09-19 (main `2998f79` · 이번 세션 후보 #2·#1·#3·#4·#5·#10 + v2 retentions·RN 수신 코퍼스 머지 완료 · 0순위 npm 발행만 잔여)_
 
 ## 현재 재개 기준
 
-- `main`은 `d7bf3dd`로 origin/main과 동기화. 열린 PR 없음. 미커밋은
+- `main`은 `2998f79`로 origin/main과 동기화. 열린 PR 없음. 미커밋은
   `HANDOFF.md`·`docs/RESEARCH.md` 두 문서뿐이다(제품 코드 변경 없음).
 - **0순위 남은 작업은 npm 인증 갱신 후 isthmus 0.7.0 발행 하나**다 —
   `npm publish` → `git tag v0.7.0 <main>` + push → `gh release create v0.7.0`.
@@ -13,13 +13,20 @@ _Last updated: 2026-09-19 (main `d7bf3dd` · 이번 세션 후보 #2·#1·#3·#4
 - **이번 세션 머지(2026-09-19)**: #85 `compatibility.json`(`6f73ab8`) ·
   #84 `doctor`/`init`(`c32fdb9`) · #83 `check` v2 소비(`a1f3022`) ·
   #86 RN 호출 측 코퍼스(`b7a43fe`) · #87 cold-cache 버전 고정(`be7808a`) ·
-  #88 `query`/`graph`/`diff` v2 소비(`d7bf3dd`). 각 PR은 최신 main을 병합하고
-  충돌(`CHANGELOG.md`·`package.json`)을 해결한 뒤 CI SUCCESS로 squash 머지했고,
-  최종 `npm run verify`는 제품 606 / coverage line/branch/functions
-  97.37/91.34/95.49였다. 사용한 브랜치는 없다.
-- codegraph 대비 후보 잔여: #1의 `retentions` v2(보존 근거에 method가 없어 계약
-  확장 필요), #10 수신 측 코퍼스(cartograph `--target react-native` 빌드 필요),
-  #7/#8/#9(자매 저장소 계약 변경 동반), #11 이슈 승격(보류).
+  #88 `query`/`graph`/`diff` v2 소비(`d7bf3dd`) · #89 HANDOFF 갱신(`d2f4201`) ·
+  #90 RN 수신 측 Expo DSL 코퍼스(`dd8f437`) · #91 v2 Basic·Event 보존(`2998f79`).
+  각 PR은 최신 main을 병합하고 CI SUCCESS로 squash 머지했다. 최종 `npm run verify`는
+  제품 612 / coverage line/branch/functions 97.35/91.25/95.52다.
+- **남은 후보 조사 — 대부분 자매 저장소 의존**:
+  - #9 `--for kartograph`: kartograph main에 `externalRetentions` 코드 0건(GitHub
+    코드 검색). GRAPH-EXCHANGE 표의 `--external-retentions`는 kartograph 미구현이다.
+  - #7 RN native→JS 이벤트 경계: 교환 계약 변경 + 자매 저장소 동반.
+  - #8 ObjC retention: ObjC 선언이 cartograph 그래프에 없어 인덱스 USR만으로는 연결 불가.
+  - #12 증분·성능 서사: 코퍼스 기록이 전부 cache miss(1회 실행)라 hit/miss 비교 불가.
+  - #11 이슈 승격: 사용자 보류.
+- 이번 세션에 실제로 검증한 것: cartograph main을 codeload tarball로 `swift build`(100초)해
+  expo-haptics 수신 측을 스캔하고, `dead --external-retentions`로 v1·v2 보존 파일의
+  디코드·적용을 확인했다(빈 인덱스라 선언 매칭은 미확인).
 - GLM 리뷰는 `packet-review`가 `packet-ask exited 125`로 실패해 확보하지 못했다.
 - 아래 과거 절의 branch·OPEN·남은 것·버전 표는 당시 기록이며 현재 실행 지시가 아니다.
 - **PR #81 MERGED(스쿼시 `65edc97`)**: `check --format codequality` GitLab Code
