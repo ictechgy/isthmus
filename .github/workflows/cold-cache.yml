@@ -47,12 +47,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Read compatible versions
+        id: compatibility
+        run: |
+          echo "dartograph=$(node -p "require('./compatibility.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
+          echo "kartograph=$(node -p "require('./compatibility.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
       - run: brew install ictechgy/tap/cartograph
-      - run: dart pub global activate dartograph
+      - run: dart pub global activate dartograph ${{ steps.compatibility.outputs.dartograph }}
       - name: Install kartograph release
         run: |
           curl -fsSL --retry 3 \
-            https://github.com/ictechgy/kartograph/releases/download/v0.10.0/kartograph-0.10.0.tar \
+            https://github.com/ictechgy/kartograph/releases/download/v${{ steps.compatibility.outputs.kartograph }}/kartograph-${{ steps.compatibility.outputs.kartograph }}.tar \
             -o "$RUNNER_TEMP/kartograph.tar"
           mkdir -p "$RUNNER_TEMP/kartograph"
           tar -xf "$RUNNER_TEMP/kartograph.tar" -C "$RUNNER_TEMP/kartograph"
@@ -62,6 +67,13 @@ jobs:
           cartograph --version
           "$HOME/.pub-cache/bin/dartograph" --version
           find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' -exec {} --version \;
+      - name: Verify installed producer versions
+        run: |
+          kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
+          node scripts/verify-installed-compatibility.mjs \
+            cartograph="$(brew --prefix)/bin/cartograph" \
+            dartograph="$HOME/.pub-cache/bin/dartograph" \
+            kartograph="$kartograph_bin"
       - name: Cold-cache producer verification
         run: |
           kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
