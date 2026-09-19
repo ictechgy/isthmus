@@ -1,12 +1,14 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeHandlerDependency, BridgeHandlerScope, BridgeMessageDocument, BridgeMessageTransport } from '../exchange/messages.ts';
-import { validateMessageDocuments } from '../exchange/messages.ts';
+import { messageTarget, validateMessageDocuments } from '../exchange/messages.ts';
 import type { BridgeEndpoint, JoinLimitation } from './join.ts';
 import { BridgeJoinValidationError } from './join.ts';
 import { MessageAddressIndex } from './message-address.ts';
 
 /** 동적 접두사의 원래 표현식도 근거에 보존한다. */
 export interface MessageEndpoint extends BridgeEndpoint {
+  /** RN 이벤트 근거가 Flutter 미해석 주소 한계로 섞이지 않게 한다. */
+  readonly transport?: 'react-native-event';
   readonly channelExpression?: string;
   readonly handlerScope?: BridgeHandlerScope;
   readonly dependencies?: readonly BridgeHandlerDependency[];
@@ -32,7 +34,7 @@ export interface MessageBridgeJoin {
 
 /** 발신 측 사실 종류다. Dart 문서만 이 종류를 담는다. */
 function isSenderKind(kind: string): boolean {
-  return kind === 'message-send' || kind === 'stream-listen';
+  return kind === 'message-send' || kind === 'stream-listen' || kind === 'event-listen';
 }
 
 /** 서로 같은 project의 양쪽 v2 문서만 조인하며 transport와 MethodChannel 키 공간을 분리한다. */
@@ -46,9 +48,10 @@ export function joinMessageBridges(documents: readonly BridgeMessageDocument[], 
   const limitations: JoinLimitation[] = [];
   for (const document of documents) {
     for (const message of document.limitations) limitations.push({ platform: document.platform,
-      target: document.target, tool: document.tool.name, message });
+      target: messageTarget(document.transport), tool: document.tool.name, message });
     for (const fact of document.facts) {
       const endpoint: MessageEndpoint = { platform: document.platform, location: fact.location,
+        ...(document.transport === 'react-native-event' ? { transport: 'react-native-event' } : {}),
         ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
         ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
         ...(fact.handlerScope === undefined ? {} : { handlerScope: fact.handlerScope, dependencies: fact.dependencies! }),

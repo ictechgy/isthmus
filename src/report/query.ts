@@ -10,13 +10,14 @@ import type {
 } from '../join/join.ts';
 import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
+import { messageTarget } from '../exchange/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** query가 식별한 채널·메서드·모듈·컴포넌트·메시지·스트림 키다. */
 export interface BridgeQuerySubject {
   readonly name: string;
   readonly qualifiedName: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event';
 }
 
 /** 한 브리지 키에서 본 호출 측과 수신 측 증거다. */
@@ -127,11 +128,11 @@ function ambiguousQuery(
 /** v2 메시지·스트림 경계를 query result로 만든다. 양쪽 증거를 그대로 보존한다. */
 function messageResults(messages: MessageBridgeJoin): BridgeQueryResult[] {
   return messages.routes.map((route) => {
-    const kind = route.transport === 'event-channel' ? 'stream' : 'message';
+    const kind = route.transport === 'react-native-event' ? 'event' : route.transport === 'event-channel' ? 'stream' : 'message';
     return {
       subject: {
         name: route.channel,
-        qualifiedName: `flutter:${kind}:${encodeSubjectComponent(route.channel)}`,
+        qualifiedName: `${messageTarget(route.transport)}:${kind}:${encodeSubjectComponent(route.channel)}`,
         kind,
       },
       usedBy: route.senders,

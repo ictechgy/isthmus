@@ -8,11 +8,11 @@ import {
 } from '../exchange/parse.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
 import {
-  createCartographRetentionsDocument,
-  encodeCartographRetentionsDocument,
+  createRetentionsDocument,
+  encodeRetentionsDocument,
   MAX_RETENTION_CALLER_ENTRIES,
   MAX_RETENTION_CALLERS,
-  validateCartographRetentionInputs,
+  validateRetentionInputs,
 } from './retentions.ts';
 
 const dartDocument = await loadDocument(
@@ -36,7 +36,7 @@ test('매치된 Swift 심볼에 Dart 호출 근거를 붙여 보존 문서를 �
   });
   const joined = joinBridgeDocuments([dartDocument, swiftWithUSRs]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '1.2.3',
@@ -100,7 +100,7 @@ test('같은 심볼의 여러 핸들러 위치를 보존 근거 하나로 합친
   });
   const joined = joinBridgeDocuments([dartDocument, swiftWithDuplicate]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
@@ -133,7 +133,7 @@ test('USR과 qualifiedName dedup namespace가 충돌하지 않는다', () => {
   });
   const joined = joinBridgeDocuments([dartDocument, swiftWithCollidingSymbols]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
@@ -177,7 +177,7 @@ test('호출이 여럿이면 전체 호출 위치를 결정적 순서로 실는�
   });
   const joined = joinBridgeDocuments([dartWithMoreInvocations, swiftWithUSRs]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
@@ -222,7 +222,7 @@ test('호출 상한을 넘으면 잘린 목록과 계수를 실는다', () => {
   });
   const joined = joinBridgeDocuments([dartWithMany, swiftWithUSRs]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
@@ -284,27 +284,27 @@ test('문서 전체 호출자 예산을 넘으면 실패한다', () => {
   ]);
 
   assert.throws(
-    () => createCartographRetentionsDocument(joined, '2026-09-10T00:00:00Z', '0.0.0'),
+    () => createRetentionsDocument(joined, '2026-09-10T00:00:00Z', '0.0.0'),
     /caller entries/u,
   );
 });
 
 test('외부 보존 JSON 키를 재귀 정렬하고 마지막 개행을 붙인다', () => {
   const joined = joinBridgeDocuments([dartDocument, swiftDocument]);
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
   );
 
-  const encoded = encodeCartographRetentionsDocument(document);
+  const encoded = encodeRetentionsDocument(document);
 
   assert.ok(encoded.indexOf('"format"') < encoded.indexOf('"generatedAt"'));
   assert.ok(encoded.indexOf('"generatedAt"') < encoded.indexOf('"producedBy"'));
   assert.ok(encoded.indexOf('"producedBy"') < encoded.indexOf('"retentions"'));
   assert.ok(encoded.indexOf('"retentions"') < encoded.lastIndexOf('"version"'));
   assert.equal(encoded.endsWith('\n'), true);
-  assert.equal(encoded, encodeCartographRetentionsDocument(document));
+  assert.equal(encoded, encodeRetentionsDocument(document));
 });
 
 test('조인이 보류된 결과로 빈 보존 문서를 만들지 않는다', () => {
@@ -317,7 +317,7 @@ test('조인이 보류된 결과로 빈 보존 문서를 만들지 않는다', (
   ]);
 
   assert.throws(
-    () => createCartographRetentionsDocument(
+    () => createRetentionsDocument(
       joined,
       '2026-09-04T13:00:00Z',
       '0.0.0',
@@ -338,7 +338,7 @@ test('심볼 없는 매치 Swift 핸들러를 조용히 빼지 않는다', () =>
 
   assert.equal(joined.matchedMethods.length, 1);
   assert.throws(
-    () => createCartographRetentionsDocument(
+    () => createRetentionsDocument(
       joined,
       '2026-09-04T13:00:00Z',
       '0.0.0',
@@ -360,7 +360,7 @@ test('호출자 없는 핸들러는 심볼이 없어도 보존 실패로 보지 
   });
   const joined = joinBridgeDocuments([dartDocument, swiftWithoutSymbols]);
 
-  const document = createCartographRetentionsDocument(
+  const document = createRetentionsDocument(
     joined,
     '2026-09-04T13:00:00Z',
     '0.0.0',
@@ -381,11 +381,11 @@ test('cartograph 보존은 수신 측 Swift 문서를 요구한다', () => {
   });
 
   assert.throws(
-    () => validateCartographRetentionInputs([dartDocument, kotlinDocument]),
+    () => validateRetentionInputs([dartDocument, kotlinDocument]),
     /Retentions for cartograph require at least one swift bridge facts document; run a swift producer for the receiver side\./,
   );
   assert.equal(
-    validateCartographRetentionInputs([dartDocument, swiftDocument]),
+    validateRetentionInputs([dartDocument, swiftDocument]),
     undefined,
   );
 });

@@ -176,7 +176,7 @@ interface ParamShadow {
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
-export function scanJsSource(source: string): JsFileScan {
+function createBoundContext(source: string): ScanContext {
   const tokens = tokenizeJsSource(source);
   const context: ScanContext = {
     source,
@@ -203,6 +203,12 @@ export function scanJsSource(source: string): JsFileScan {
       .map((token) => token.text)),
   };
   collectBindings(context);
+  return context;
+}
+
+/** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
+export function scanJsSource(source: string): JsFileScan {
+  const context = createBoundContext(source);
   collectCalls(context);
   return {
     facts: context.facts,
@@ -219,6 +225,73 @@ export function scanJsSource(source: string): JsFileScan {
     },
     counts: context.counts,
   };
+}
+
+/** RN 전역 이벤트 구독의 이름과 실제 호출 토큰이다. */
+export interface ScannedJsEvent {
+  readonly channel: string;
+  readonly dynamic: boolean;
+  readonly token: JsToken;
+}
+
+/** 확인된 RN import와 직접 생성한 emitter에서만 구독을 읽는다. */
+export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsupported: number } {
+  const context = createBoundContext(source);
+  const { tokens } = context;
+  const imports = context.imports.filter(({ specifier, exportedName }) => specifier === 'react-native' &&
+    (exportedName === 'DeviceEventEmitter' || exportedName === 'NativeEventEmitter'));
+  const importPositions = new Set<number>();
+  for (let index = 0; index < tokens.length; index++) {
+    if (tokens[index]?.text !== 'import' || tokens[index + 1]?.text === '(') continue;
+    let end = index + 1;
+    while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+    for (let cursor = index; cursor <= end; cursor++) importPositions.add(cursor);
+    index = end;
+  }
+  // 선언·재대입·매개변수·다른 함수로 전달된 이름은 파일 범위에서 보수적으로 제외한다.
+  const stable = (name: string, declaration = -1) => tokens.every((token, index) => {
+    if (token.text !== name || importPositions.has(index) || index === declaration ||
+      ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) return true;
+    if (tokens[index - 1]?.text === 'new' && tokens[index + 1]?.text === '(') return true;
+    return ['.', '?.'].includes(tokens[index + 1]?.text ?? '') &&
+      tokens[index + 3]?.text === '(';
+  });
+  const constructors = new Set(imports.filter((entry) => entry.exportedName === 'NativeEventEmitter' &&
+    !context.localNames.has(entry.localName) && stable(entry.localName)).map(({ localName }) => localName));
+  const receivers = new Set(imports.filter((entry) => entry.exportedName === 'DeviceEventEmitter' &&
+    !context.localNames.has(entry.localName) && stable(entry.localName)).map(({ localName }) => localName));
+  let unsupported = imports.length - constructors.size - receivers.size;
+  for (let index = 0; index < tokens.length; index++) {
+    if (tokens[index]?.text !== 'const' || tokens[index + 2]?.text !== '=' || tokens[index + 3]?.text !== 'new' ||
+      !constructors.has(tokens[index + 4]?.text ?? '') || tokens[index + 5]?.text !== '(') continue;
+    const name = tokens[index + 1]!;
+    const end = findMatching(tokens, index + 5, '(', ')');
+    if (end === undefined || !endsExpression(tokens, end) || !stable(name.text, index + 1)) {
+      unsupported++; continue;
+    }
+    receivers.add(name.text);
+  }
+  const facts: ScannedJsEvent[] = [];
+  const add = (methodIndex: number) => {
+    const call = readNamedCall(context, methodIndex + 1);
+    if (call === undefined) { unsupported++; return; }
+    facts.push({ channel: boundChannel(call.value), dynamic: !('name' in call.value), token: tokens[methodIndex]! });
+  };
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (receivers.has(token.text) && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+      !isShadowed(context, token.text, index) &&
+      ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'addListener' &&
+      tokens[index + 3]?.text === '(') {
+      add(index + 2);
+    }
+    if (token.text === 'new' && constructors.has(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === '(') {
+      const end = findMatching(tokens, index + 2, '(', ')');
+      if (end !== undefined && tokens[end + 1]?.text === '.' && tokens[end + 2]?.text === 'addListener' &&
+        tokens[end + 3]?.text === '(') add(end + 2);
+    }
+  }
+  return { facts, unsupported };
 }
 
 /**

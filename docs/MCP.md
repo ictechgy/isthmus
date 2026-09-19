@@ -40,7 +40,7 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 | `diff` | `isthmus diff` | `before`/`after`(필수), `strict` |
 | `impact` | `isthmus impact` | `file`·`symbol`·`changes` 중 정확히 하나(필수), `runtime`, `revision`, `strict`, `compact` |
 | `preflight` | `isthmus preflight` | `context`(필수), `runtime[]`, `expectations`, `revision`, `summary`, `limit`, `explain`, `strict`, `compact` |
-| `retentions` | `isthmus retentions` | `producer`(필수, 현재 `cartograph`만) |
+| `retentions` | `isthmus retentions` | `producer`(필수, `cartograph` 또는 `kartograph`; Kotlin은 개발 빌드) |
 
 ## 응답 의미
 

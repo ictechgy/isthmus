@@ -1,0 +1,542 @@
+{
+  "format": "isthmus-cache-corpus-measurements",
+  "version": 1,
+  "measuredAt": "2026-09-19T12:12:24.093Z",
+  "scope": "One pair per case: bridge-app synthetic fixture plus three existing shared_preferences_foundation@2.5.4 public-corpus selections staged from the local pub cache.",
+  "consumerVersion": "0.7.0 development tree",
+  "consumerSourceSha256": "a13a3135420cd65e2bf70a3aa7ab3efb81e9e20d97a65088b1b0742e2be43a70",
+  "nativeBuilds": {
+    "cartograph": "installed 0.18.0 binary",
+    "dartograph": "local 0.14.0 AOT build",
+    "kartograph": "local 0.10.2 development sources compiled with Kotlin 2.4.0/JDK 21; only used in bridge-app"
+  },
+  "toolSha256": {
+    "cartograph": "13b5a62eec7feab6d20fc067574f28450131729d35198f9a081b42ecdc37da09",
+    "dartograph": "6110012bede271791bd3a63bb3394dc2b52425052cecb003ca96e09cc11584fb",
+    "kartograph.jar": "01c93b22cbc3edaade50597d1b3d7ccf65dc6773648e97ae1b36ac3500e0dde8"
+  },
+  "sourceIntegrity": {
+    "origin": "existing public pub cache; no archive re-download or source re-authentication",
+    "cachePackages": [
+      {
+        "package": "shared_preferences_foundation",
+        "version": "2.5.4",
+        "cachedArchiveHash": "6a52cfcdaeac77cad8c97b539ff688ccfc458c007b4db12be584fbe5c0e49e03",
+        "cacheMetadataMatchesManifest": true
+      },
+      {
+        "package": "shared_preferences_platform_interface",
+        "version": "2.4.1",
+        "cachedArchiveHash": "57cbf196c486bc2cf1f02b85784932c6094376284b3ad5779d1b1c6c6a816b80",
+        "cacheMetadataMatchesManifest": true
+      },
+      {
+        "package": "plugin_platform_interface",
+        "version": "2.1.8",
+        "cachedArchiveHash": "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02",
+        "cacheMetadataMatchesManifest": true
+      },
+      {
+        "package": "meta",
+        "version": "1.19.0",
+        "cachedArchiveHash": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
+        "cacheMetadataMatchesManifest": true
+      }
+    ],
+    "stagedTreeSha256": "5b9f5b6bd2c73adf7b9c2a2d355f8cab3a62cb43def57bddd21ece522c57b50e"
+  },
+  "limitations": [
+    "Single pair per case; no statistical performance estimate.",
+    "SDK, Swift build, JVM and producer caches were not cleared.",
+    "The complete 15-case public corpus was not rerun.",
+    "Public archives were not downloaded or re-authenticated for this run.",
+    "Swift uses the existing FlutterMacOS stub; Dart uses the existing Flutter stub and manual package_config.",
+    "Kotlin bridge-app coverage is a source scan. No Flutter engine, Android device or iOS app runtime was executed."
+  ],
+  "cases": [
+    {
+      "id": "bridge-app",
+      "format": "isthmus-cache-measurement",
+      "version": 1,
+      "generatedAt": "2026-09-19T12:12:19.754Z",
+      "note": "Two captures of unchanged declared inputs with an isolated isthmus cache. SDK, build and producer caches are not cleared. This does not measure full app builds or runtime accuracy.",
+      "tools": [
+        {
+          "name": "dartograph",
+          "version": "0.14.0"
+        },
+        {
+          "name": "cartograph",
+          "version": "0.18.0"
+        },
+        {
+          "name": "kartograph",
+          "version": "0.10.2"
+        }
+      ],
+      "uncached": {
+        "cached": false,
+        "milliseconds": 2089,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 27
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 21
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 226
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 1157
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 60
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 31
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 31
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 26
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 20
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 19
+          },
+          {
+            "step": "kotlin-bridges",
+            "milliseconds": 85
+          },
+          {
+            "step": "kotlin-messages",
+            "milliseconds": 81
+          },
+          {
+            "step": "kotlin-events",
+            "milliseconds": 79
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 16
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 16
+          }
+        ]
+      },
+      "reused": {
+        "cached": true,
+        "milliseconds": 170,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 13
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 42
+          }
+        ]
+      },
+      "identicalReports": true,
+      "summary": {
+        "selectedSymbols": 4,
+        "affectedSymbols": 1,
+        "bridgeBoundaries": 2,
+        "reviewFiles": 3,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 9
+      }
+    },
+    {
+      "id": "sp-file-plugin",
+      "format": "isthmus-cache-measurement",
+      "version": 1,
+      "generatedAt": "2026-09-19T12:12:21.331Z",
+      "note": "Two captures of unchanged declared inputs with an isolated isthmus cache. SDK, build and producer caches are not cleared. This does not measure full app builds or runtime accuracy.",
+      "tools": [
+        {
+          "name": "dartograph",
+          "version": "0.14.0"
+        },
+        {
+          "name": "cartograph",
+          "version": "0.18.0"
+        }
+      ],
+      "uncached": {
+        "cached": false,
+        "milliseconds": 1408,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 14
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 6
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 630
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 85
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 39
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 38
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 38
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 59
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 30
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 27
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          }
+        ]
+      },
+      "reused": {
+        "cached": true,
+        "milliseconds": 135,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 13
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 8
+          }
+        ]
+      },
+      "identicalReports": true,
+      "summary": {
+        "selectedSymbols": 23,
+        "affectedSymbols": 36,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 5,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 31
+      }
+    },
+    {
+      "id": "sp-file-generated",
+      "format": "isthmus-cache-measurement",
+      "version": 1,
+      "generatedAt": "2026-09-19T12:12:22.823Z",
+      "note": "Two captures of unchanged declared inputs with an isolated isthmus cache. SDK, build and producer caches are not cleared. This does not measure full app builds or runtime accuracy.",
+      "tools": [
+        {
+          "name": "dartograph",
+          "version": "0.14.0"
+        },
+        {
+          "name": "cartograph",
+          "version": "0.18.0"
+        }
+      ],
+      "uncached": {
+        "cached": false,
+        "milliseconds": 1320,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 14
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 6
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 573
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 46
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 38
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 38
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 32
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 62
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 32
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 28
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 22
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 20
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          }
+        ]
+      },
+      "reused": {
+        "cached": true,
+        "milliseconds": 138,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 13
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 6
+          }
+        ]
+      },
+      "identicalReports": true,
+      "summary": {
+        "selectedSymbols": 50,
+        "affectedSymbols": 55,
+        "bridgeBoundaries": 11,
+        "reviewFiles": 6,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 31
+      }
+    },
+    {
+      "id": "sp-symbol-legacy-remove",
+      "format": "isthmus-cache-measurement",
+      "version": 1,
+      "generatedAt": "2026-09-19T12:12:24.093Z",
+      "note": "Two captures of unchanged declared inputs with an isolated isthmus cache. SDK, build and producer caches are not cleared. This does not measure full app builds or runtime accuracy.",
+      "tools": [
+        {
+          "name": "dartograph",
+          "version": "0.14.0"
+        },
+        {
+          "name": "cartograph",
+          "version": "0.18.0"
+        }
+      ],
+      "uncached": {
+        "cached": false,
+        "milliseconds": 1106,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 14
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 576
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 47
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 39
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 38
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 32
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 60
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 31
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 27
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 21
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 21
+          }
+        ]
+      },
+      "reused": {
+        "cached": true,
+        "milliseconds": 132,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 13
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 6
+          }
+        ]
+      },
+      "identicalReports": true,
+      "summary": {
+        "selectedSymbols": 1,
+        "affectedSymbols": 5,
+        "bridgeBoundaries": 1,
+        "reviewFiles": 4,
+        "errors": 0,
+        "warnings": 0,
+        "evidenceGaps": 10
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import type { BridgeTarget } from '../exchange/parse.ts';
 import { isReceiverPlatform } from '../exchange/parse.ts';
 import type { BridgeMessageTransport } from '../exchange/messages.ts';
+import { messageTarget } from '../exchange/messages.ts';
 import type {
   BridgeEndpoint,
   BridgeJoinResult,
@@ -26,6 +27,8 @@ export interface CheckSummary {
   readonly matchedMessages?: number;
   /** v2 EventChannel 입력이 있을 때만 실리는, 양쪽이 관찰된 스트림 수다. */
   readonly matchedStreams?: number;
+  /** RN 전역 이벤트에서 구독과 방출이 모두 관찰된 이름 수다. */
+  readonly matchedEvents?: number;
   /** 입력 문서 전체가 관찰한 fact 수다. 0이면 아무것도 관찰하지 못한 실행이다. */
   readonly observedFacts: number;
   /** 이 실행에 보고된 분석 한계 수다. */
@@ -66,6 +69,9 @@ export const checkIssueCodes = [
   'unhandled-stream-listen',
   'unhandled-stream-listen-unverified',
   'stream-handler-without-listen',
+  'event-listen-without-emit',
+  'event-listen-without-emit-unverified',
+  'event-emit-without-listen',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -243,6 +249,9 @@ export function createCheckReport(
       ...(messages === undefined ? {} : {
         matchedMessages: matchedMessageRoutes(messages, 'basic-message-channel'),
         matchedStreams: matchedMessageRoutes(messages, 'event-channel'),
+        ...(messages.routes.some(({ transport }) => transport === 'react-native-event') ? {
+          matchedEvents: matchedMessageRoutes(messages, 'react-native-event'),
+        } : {}),
       }),
       observedFacts: joined.observedFacts + (messages?.observedFacts ?? 0),
       observedLimitations: limitations.length,
@@ -271,6 +280,15 @@ const messageTransportPolicies = {
     dynamic: 'dynamic-stream-address',
     unmatched: 'unmatched-stream-boundary',
     subject: 'stream',
+  },
+  'react-native-event': {
+    send: 'event-listen-without-emit',
+    sendUnverified: 'event-listen-without-emit-unverified',
+    handler: 'event-emit-without-listen',
+    gap: 'unattributed-event-emits:',
+    dynamic: 'dynamic-event-address',
+    unmatched: 'unmatched-event-boundary',
+    subject: 'event',
   },
 } as const satisfies Record<BridgeMessageTransport, {
   send: CheckIssueCode;
@@ -301,6 +319,7 @@ function createMessageIssues(
   const issues: CheckIssue[] = [];
   for (const route of messages.routes) {
     const policy = messageTransportPolicies[route.transport];
+    const target = messageTarget(route.transport);
     const hasSenders = route.senders.length > 0;
     const hasHandlers = route.handlers.length > 0;
     // 양쪽이 관찰됐거나 dynamic prefix 후보뿐이면 error/warning을 내지 않는다.
@@ -310,13 +329,15 @@ function createMessageIssues(
     if (hasSenders && coveredByPrefix(messages, route, 'handlers')) continue;
     if (hasHandlers && coveredByPrefix(messages, route, 'senders')) continue;
     if (hasSenders) {
-      const hidden = gaps.hidesHandlers('flutter', route.channel) ||
+      const hidden = gaps.hidesHandlers(target, route.channel) ||
         messages.limitations.some(({ platform, message }) =>
-          isReceiverPlatform(platform) && message.startsWith(policy.gap));
+          isReceiverPlatform(platform) && message.startsWith(policy.gap)) ||
+        (route.transport === 'react-native-event' && messages.unresolved.some((endpoint) =>
+          endpoint.transport === 'react-native-event' && isReceiverPlatform(endpoint.platform)));
       issues.push({
-        severity: hidden ? 'warning' : 'error',
+        severity: hidden || route.transport === 'react-native-event' ? 'warning' : 'error',
         code: hidden ? policy.sendUnverified : policy.send,
-        target: 'flutter',
+        target,
         channel: route.channel,
         evidence: route.senders,
       });
@@ -324,7 +345,7 @@ function createMessageIssues(
       issues.push({
         severity: 'warning',
         code: policy.handler,
-        target: 'flutter',
+        target,
         channel: route.channel,
         evidence: route.handlers,
       });
@@ -360,7 +381,7 @@ function messageConsumerLimitations(
     const policy = messageTransportPolicies[route.transport];
     limitations.push({
       platform: 'cross-platform',
-      target: 'flutter',
+      target: messageTarget(route.transport),
       tool: 'isthmus',
       origin: 'consumer',
       message: `${policy.dynamic}: ${policy.subject} channel prefix ${route.channel} `
@@ -370,7 +391,7 @@ function messageConsumerLimitations(
     if (route.senders.length > 0 && route.handlers.length > 0) continue;
     limitations.push({
       platform: 'cross-platform',
-      target: 'flutter',
+      target: messageTarget(route.transport),
       tool: 'isthmus',
       origin: 'consumer',
       message: `${policy.unmatched}: a related ${policy.subject} boundary has no observed `
@@ -378,14 +399,18 @@ function messageConsumerLimitations(
       channels: [route.channel],
     });
   }
-  if (messages.unresolved.length > 0) {
+  for (const target of ['flutter', 'react-native'] as const) {
+    const count = messages.unresolved.filter(({ transport }) =>
+      (transport === 'react-native-event' ? 'react-native' : 'flutter') === target).length;
+    if (count === 0) continue;
     limitations.push({
       platform: 'cross-platform',
-      target: 'flutter',
+      target,
       tool: 'isthmus',
       origin: 'consumer',
-      message: `unresolved-message-addresses: ${messages.unresolved.length} message facts `
-        + 'have no literal or proven prefix and were not joined',
+      message: target === 'react-native'
+        ? `unresolved-event-names: ${count} event facts have no literal name and were not joined`
+        : `unresolved-message-addresses: ${count} message facts have no literal or proven prefix and were not joined`,
     });
   }
   return limitations;

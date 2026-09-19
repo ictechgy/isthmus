@@ -62,4 +62,10 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'A Dart EventChannel stream listener has no matching native stream handler, and a receiver-side analysis gap may be hiding it.',
   'stream-handler-without-listen':
     'A native EventChannel stream handler has no matching Dart stream listener.',
+  'event-listen-without-emit':
+    'A JavaScript React Native event subscription has no observed native emission with the same global event name.',
+  'event-listen-without-emit-unverified':
+    'A JavaScript React Native event subscription has no observed native emission, and native analysis gaps may hide it.',
+  'event-emit-without-listen':
+    'A native React Native event emission has no observed JavaScript subscription with the same global event name.',
 };

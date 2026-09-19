@@ -37,6 +37,7 @@ verifyServe();
 verifyExtractJs();
 verifyDoctorInit();
 verifyMessageViews();
+verifyReactNativeEvents();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -426,6 +427,40 @@ function verifyMessageViews() {
       retentionDocument.retentions[0].evidence.method === undefined &&
       retentionDocument.retentions[0].evidence.channel === 'example/basic',
       'v2 retention evidence');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** 빌드된 CLI를 동기 실행해 세 스트림을 수집한다. */
+function verifyReactNativeEvents() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-rn-events-cli-'));
+  try {
+    const source = join(directory, 'events.ts');
+    const jsPath = join(directory, 'js.json');
+    const kotlinPath = join(directory, 'kotlin.json');
+    writeFileSync(source, "import { DeviceEventEmitter as E } from 'react-native'; E.addListener('ready', () => {});");
+    const extracted = run(['extract-js', source, '--project', directory, '--events']);
+    verify(extracted.status === 0, 'event extraction status');
+    const caller = JSON.parse(extracted.stdout);
+    verify(caller.transport === 'react-native-event' && caller.facts[0].kind === 'event-listen', 'event extraction');
+    writeFileSync(jsPath, extracted.stdout);
+    const native = { ...caller, platform: 'kotlin', tool: { name: 'kartograph', version: 'test' }, limitations: [],
+      facts: [{ kind: 'event-emit', channel: 'ready', dynamic: false,
+        location: { path: 'android/Events.kt', line: 8, column: 1 },
+        symbol: { usr: 'method:sample/Events#notify()V', qualifiedName: 'Events.notify' } }] };
+    writeFileSync(kotlinPath, JSON.stringify(native));
+    const checked = run(['check', jsPath, kotlinPath, '--strict']);
+    verify(checked.status === 0 && JSON.parse(checked.stdout).summary.matchedEvents === 1, 'event check join');
+    const query = run(['query', 'react-native:event:ready', jsPath, kotlinPath]);
+    verify(query.status === 0 && JSON.parse(query.stdout).result.subject.kind === 'event', 'event query');
+    const retained = run(['retentions', jsPath, kotlinPath, '--for', 'kartograph']);
+    verify(retained.status === 0 && JSON.parse(retained.stdout).retentions[0].symbol.usr === native.facts[0].symbol.usr,
+      'kartograph event retention');
+    writeFileSync(kotlinPath, JSON.stringify({ ...native, target: null, facts: [] }));
+    const missing = run(['check', jsPath, kotlinPath, '--strict']);
+    verify(missing.status === 0 && JSON.parse(missing.stdout).issues[0].code === 'event-listen-without-emit',
+      'unmatched event warning');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

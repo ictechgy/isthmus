@@ -13,6 +13,7 @@ import type {
 } from '../join/join.ts';
 import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
+import { messageTarget } from '../exchange/messages.ts';
 import { compareStrings } from '../compare.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
@@ -29,7 +30,7 @@ export interface BridgeGraphNode {
 export interface BridgeGraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event';
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method?: string;
@@ -201,8 +202,8 @@ function addMessageEdges(
         edges.push({
           from,
           to,
-          kind: route.transport === 'event-channel' ? 'stream' : 'message',
-          target: 'flutter',
+          kind: route.transport === 'react-native-event' ? 'event' : route.transport === 'event-channel' ? 'stream' : 'message',
+          target: messageTarget(route.transport),
           channel: route.channel,
         });
       }

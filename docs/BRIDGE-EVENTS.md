@@ -67,9 +67,9 @@ bridge-facts v1 MethodChannel·[v2 BasicMessageChannel](BRIDGE-MESSAGES.md) 동�
 ## Objective-C 스트림 핸들러
 
 `platform: "swift"` 문서에 실린 `.m`/`.mm`의 `setStreamHandler:` 사실은
-`sourceLanguage: "objective-c"`로 구분한다. ObjC 핸들러 본문은 Swift 그래프 밖이므로
-handler 근거를 싣지 않으며(계약이 금지), 언어 심볼 귀속 실패는 기존과 같이
-unbindable 증거로 남는다.
+`sourceLanguage: "objective-c"`로 구분한다. Clang 인덱스가 유일하게 확인한 USR은 보존 근거로 쓸 수 있다.
+본문 범위별 `handlerScope`·`dependencies`는 여전히 싣지 않으며, 그 근거를 Swift
+구문 분석으로 추측하지 않는다. 식별자가 없는 매치의 retentions 생성은 실패한다.
 
 ## 생산자별 범위
 
