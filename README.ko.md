@@ -375,7 +375,8 @@ dynamic `channelPrefix` 경로는 판정이 아니라 후보다 — 항상
 `summary`는 v2 입력이 있을 때만 `matchedMessages`·`matchedStreams`(literal 매치만)를
 더한다. `query`는 v2 경계를 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를
 `message`·`stream` 간선으로, `diff`는 literal v2 경계의 추가·삭제와 v2 진단을 생산한다.
-`retentions`·`impact`는 여전히 v1 입력만 받고 version 2를 거부한다.
+`retentions --for cartograph`는 literal v2 Swift 핸들러를 method 없는 근거로 보존하고,
+`impact`는 여전히 v1 입력만 받고 version 2를 거부한다.
 
 `summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 사실
 총수이고 `observedLimitations`는 보고된 분석 한계 수다. 이로써 브리지가 없는 프로젝트와

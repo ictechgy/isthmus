@@ -407,8 +407,9 @@ boundary whose missing side is covered by a prefix candidate is downgraded the s
 rather than reported as an error. The summary adds `matchedMessages`/`matchedStreams` (literal
 matches only) when v2 inputs are present. `query` resolves v2 boundaries as `message`/`stream`
 kind subjects, `graph` emits `message`/`stream` edges for literal matches, and `diff` reports
-added/removed literal v2 boundaries plus v2 diagnostics; `retentions` and `impact` still
-require v1 inputs and reject version 2.
+added/removed literal v2 boundaries plus v2 diagnostics. `retentions --for cartograph` keeps
+literal v2 Swift handlers with method-less evidence; `impact` still requires v1 inputs and
+rejects version 2.
 
 The `summary` carries the issue counts plus observation volume: `observedFacts` is the total
 number of facts across all input documents and `observedLimitations` counts the reported

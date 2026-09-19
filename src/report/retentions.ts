@@ -3,10 +3,12 @@ import type {
   BridgePlatform,
   BridgeSymbol,
 } from '../exchange/parse.ts';
+import type { BridgeMessageDocument } from '../exchange/messages.ts';
 import {
   isBridgeJoinDeferred,
   type BridgeJoinResult,
 } from '../join/join.ts';
+import type { MessageBridgeJoin, MessageEndpoint } from '../join/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** cartograph가 보존할 Swift 선언 식별자다. */
@@ -21,10 +23,15 @@ export interface RetentionCaller {
   readonly line: number;
 }
 
-/** 보존 판단을 설명할 채널·메서드·호출자 근거다. */
+/**
+ * 보존 판단을 설명할 채널·메서드·호출자 근거다.
+ *
+ * `method`는 MethodChannel 근거에만 있다. Basic·Event v2 경계는 메서드가 없으므로
+ * 생략하며, cartograph의 `ExternalRetention.Evidence.method`도 선택 필드다.
+ */
 export interface RetentionEvidence {
   readonly channel: string;
-  readonly method: string;
+  readonly method?: string;
   /** 대표 호출 위치다. 결정적 순서의 첫 호출이며 옛 소비자가 읽는 필드다. */
   readonly caller: RetentionCaller;
   /**
@@ -81,8 +88,10 @@ export class RetentionValidationError extends Error {
  */
 export function validateCartographRetentionInputs(
   documents: readonly BridgeFactsDocument[],
+  messageDocuments?: readonly BridgeMessageDocument[],
 ): void {
   if (documents.some(({ platform }) => platform === 'swift')) return;
+  if (messageDocuments?.some(({ platform }) => platform === 'swift')) return;
   throw new RetentionValidationError(
     'Retentions for cartograph require at least one swift bridge facts document; '
     + 'run a swift producer for the receiver side.',
@@ -96,37 +105,58 @@ export function encodeCartographRetentionsDocument(
   return encodeSortedJson(document);
 }
 
-/** 매치된 브리지 메서드를 cartograph 보존 근거로 바꾼다. */
+/**
+ * 매치된 브리지 메서드와 v2 Basic·Event 경계를 cartograph 보존 근거로 바꾼다.
+ *
+ * `messages`를 주면 literal로 확정된 v2 경계의 Swift 핸들러도 보존 근거로 싣는다.
+ * v2 근거에는 메서드가 없으므로 `method`를 생략하며, cartograph는 선택 필드로 읽는다.
+ */
 export function createCartographRetentionsDocument(
   joined: BridgeJoinResult,
   generatedAt: string,
   producerVersion: string,
+  messages?: MessageBridgeJoin,
 ): CartographRetentionsDocument {
   if (isBridgeJoinDeferred(joined)) {
     throw new RetentionValidationError(
       'Cannot create retentions from a deferred bridge join.',
     );
   }
-  rejectUnresolvedSwiftHandlers(joined);
-  const omittedObjectiveCHandlers = countObjectiveCHandlers(joined);
+  rejectUnresolvedSwiftHandlers(joined, messages);
+  const omittedObjectiveCHandlers = countObjectiveCHandlers(joined, messages);
   return {
     format: 'external-retentions',
     version: 0,
     producedBy: { name: 'isthmus', version: producerVersion },
     generatedAt,
-    retentions: collectCartographRetentions(joined),
+    retentions: [
+      ...collectCartographRetentions(joined),
+      ...(messages === undefined ? [] : collectMessageRetentions(messages)),
+    ],
     ...(omittedObjectiveCHandlers === 0 ? {} : { omittedObjectiveCHandlers }),
   };
 }
 
 /** 그래프 밖의 매치도 사라지지 않게 채널·메서드·위치별로 센다. */
-function countObjectiveCHandlers(joined: BridgeJoinResult): number {
+function countObjectiveCHandlers(
+  joined: BridgeJoinResult,
+  messages?: MessageBridgeJoin,
+): number {
   const keys = new Set<string>();
   for (const method of joined.matchedMethods) {
     for (const handler of method.handlers) {
       if (handler.sourceLanguage !== 'objective-c') continue;
       keys.add(JSON.stringify([method.target, method.channel, method.method,
         handler.location.path, handler.location.line, handler.location.column]));
+    }
+  }
+  if (messages !== undefined) {
+    for (const route of retainedMessageRoutes(messages)) {
+      for (const handler of route.handlers) {
+        if (handler.sourceLanguage !== 'objective-c') continue;
+        keys.add(JSON.stringify(['v2', route.transport, route.channel,
+          handler.location.path, handler.location.line, handler.location.column]));
+      }
     }
   }
   return keys.size;
@@ -140,13 +170,25 @@ function countObjectiveCHandlers(joined: BridgeJoinResult): number {
  * 핸들러를 조용히 빼면 cartograph는 그 핸들러를 계속 미사용으로 보고하고,
  * 소비자는 살아 있는 코드를 지운다. 부분 보존 문서 대신 실패를 돌려준다.
  */
-function rejectUnresolvedSwiftHandlers(joined: BridgeJoinResult): void {
+function rejectUnresolvedSwiftHandlers(
+  joined: BridgeJoinResult,
+  messages?: MessageBridgeJoin,
+): void {
   const unresolved = new Set<string>();
   for (const method of joined.matchedMethods) {
     for (const handler of method.handlers) {
       if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol !== undefined) continue;
       const { path, line, column } = handler.location;
       unresolved.add(`${path}\u0000${line}\u0000${column}`);
+    }
+  }
+  if (messages !== undefined) {
+    for (const route of retainedMessageRoutes(messages)) {
+      for (const handler of route.handlers) {
+        if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol !== undefined) continue;
+        const { path, line, column } = handler.location;
+        unresolved.add(`${path}\u0000${line}\u0000${column}`);
+      }
     }
   }
   if (unresolved.size === 0) return;
@@ -195,6 +237,57 @@ function collectCartographRetentions(
         evidence: {
           channel: method.channel,
           method: method.method,
+          caller: representative,
+          ...(callers.length > 1 ? { callers } : {}),
+          ...(callersOmitted > 0 ? { callersOmitted } : {}),
+        },
+      });
+    }
+  }
+  return retentions;
+}
+
+/** literal로 확정되고 호출자가 있는 v2 경계만 보존 후보로 돌려준다. */
+function retainedMessageRoutes(messages: MessageBridgeJoin) {
+  return messages.routes.filter((route) =>
+    route.matching === 'literal' && route.senders.length > 0);
+}
+
+/** 매치된 v2 경계의 송신자를 Swift 심볼 보존 근거로 결합한다. */
+function collectMessageRetentions(
+  messages: MessageBridgeJoin,
+): ExternalRetention[] {
+  const retentions: ExternalRetention[] = [];
+  const seen = new Set<string>();
+  let callerEntries = 0;
+  for (const route of retainedMessageRoutes(messages)) {
+    const callers = route.senders
+      .slice(0, MAX_RETENTION_CALLERS)
+      .map(toRetentionCaller);
+    const callersOmitted = route.senders.length - callers.length;
+    const representative = callers[0];
+    if (representative === undefined) continue;
+    for (const handler of route.handlers) {
+      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol === undefined) continue;
+      const symbolKey = handler.symbol.usr === undefined
+        ? `name:${handler.symbol.qualifiedName}`
+        : `usr:${handler.symbol.usr}`;
+      // transport까지 키에 넣어 같은 이름의 MethodChannel 보존과 섞이지 않게 한다.
+      const retentionKey = `${symbolKey}\u0000${route.transport}\u0000${route.channel}`;
+      if (seen.has(retentionKey)) continue;
+      seen.add(retentionKey);
+      callerEntries += callers.length;
+      if (callerEntries > MAX_RETENTION_CALLER_ENTRIES) {
+        throw new RetentionValidationError(
+          `Cannot produce retention evidence with more than `
+            + `${MAX_RETENTION_CALLER_ENTRIES} caller entries; narrow the join inputs.`,
+        );
+      }
+      retentions.push({
+        symbol: handler.symbol,
+        reason: 'bridge',
+        evidence: {
+          channel: route.channel,
           caller: representative,
           ...(callers.length > 1 ? { callers } : {}),
           ...(callersOmitted > 0 ? { callersOmitted } : {}),

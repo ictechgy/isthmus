@@ -6,12 +6,18 @@
 
 ### Added
 
+- `retentions --for cartograph`가 v2 Basic·Event 경계의 Swift 핸들러를 보존한다.
+  literal로 확정된 `message-handle`·`stream-handle`의 심볼을 `evidence.channel`과
+  호출자만으로 싣고 `method`를 생략한다 — cartograph의 `Evidence.method`도 선택
+  필드라 실제 발행 소비자로 디코드·적용을 확인했다. dynamic prefix 후보와 ObjC v2
+  핸들러는 v1과 같은 규칙으로 제외하고 ObjC 수는 `omittedObjectiveCHandlers`에
+  더한다.
 - `query`·`graph`·`diff`가 bridge-facts v2 경계를 소비한다. `query`는 Basic을
   `message`, Event를 `stream` kind 주체로 찾고(같은 이름의 v1 채널과도 kind로 구분),
   `graph`는 literal로 확정된 v2 경계를 `message`·`stream` 간선으로 낸다. `diff`는
   literal v2 경계의 추가·삭제와 v2 진단의 introduced/resolved를 보고하며, v2 입력은
   두 시점 모두에 있어야 하고 transport 집합이 같아야 한다. dynamic prefix 후보는
-  확정 매치가 아니므로 graph·diff의 경계가 아니다. `retentions`·`impact`는 v1 전용으로
+  확정 매치가 아니므로 graph·diff의 경계가 아니다. `impact`는 v1 전용으로
   남는다.
 - `check`가 bridge-facts v2 문서(BasicMessageChannel·EventChannel)를 직접 소비한다.
   literal `message-send`에 대응 `message-handle`이 없으면 `unhandled-message-send`
