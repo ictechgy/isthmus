@@ -37,8 +37,18 @@ v2 문서를 출력한다. 공개 호환 버전(cartograph 0.18.0·kartograph 0.
 - channelPrefix와 runtime 주소의 관계도 후보 근거다. 기존 MethodChannel과 동일한 주소를
   쓰더라도 transport를 구분한다. prefix 후보를 literal 조인이나 실제 native 실행 신원으로
   승격하지 않는다.
-- v1 전용 소비자는 version 2를 명시적으로 거부한다. 초기 소비 경계는 preflight context의
-  별도 message 문서 목록이며, 다른 명령이 모르는 facts를 무시하고 초록 결과를 내게 하지 않는다.
+- `check`는 v2 문서를 직접 입력으로 받아 Basic 경계를 진단한다. literal send에 대응
+  `message-handle`이 없으면 `unhandled-message-send` error(수신 공백이면
+  `-unverified` warning), 대응 send 없는 `message-handle`은
+  `message-handler-without-send` warning이다. dynamic prefix 후보는 항상
+  `dynamic-message-address` 소비자 한계로 실리고, 상대가 없으면
+  `unmatched-message-boundary`가 더해진다. prefix 없는 미해석 주소는
+  `unresolved-message-addresses` 한계로 남긴다. literal 경계도 상대편을 prefix
+  후보가 덮으면 error 대신 후보 한계로 내린다. `--format sarif`·`codequality`와
+  `--baseline`도 이 코드를 그대로 싣는다.
+- 그 밖의 v1 전용 명령(`query`·`graph`·`diff`·`retentions`·`impact`)은 version 2를
+  명시적으로 거부한다. `preflight`는 context의 별도 message 문서 목록으로 소비한다 —
+  다른 명령이 모르는 facts를 무시하고 초록 결과를 내게 하지 않는다.
 
 ## handler별 의존 근거 (개발 계약)
 

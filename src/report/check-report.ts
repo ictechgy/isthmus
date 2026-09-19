@@ -1,11 +1,13 @@
 import type { BridgeTarget } from '../exchange/parse.ts';
 import { isReceiverPlatform } from '../exchange/parse.ts';
+import type { BridgeMessageTransport } from '../exchange/messages.ts';
 import type {
   BridgeEndpoint,
   BridgeJoinResult,
   JoinLimitation,
 } from '../join/join.ts';
-import { isBridgeJoinDeferred } from '../join/join.ts';
+import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
+import type { MessageBridgeJoin } from '../join/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** check 결과 개수를 빠르게 판단할 요약이다. */
@@ -16,6 +18,14 @@ export interface CheckSummary {
   readonly matchedMethods: number;
   readonly matchedModules: number;
   readonly matchedComponents: number;
+  /**
+   * v2 BasicMessageChannel 입력이 있을 때만 실린다 — 양쪽이 관찰된 채널 수다.
+   *
+   * v1만 입력하면 필드 자체가 없어 기존 소비자의 요약 비교를 깨지 않는다.
+   */
+  readonly matchedMessages?: number;
+  /** v2 EventChannel 입력이 있을 때만 실리는, 양쪽이 관찰된 스트림 수다. */
+  readonly matchedStreams?: number;
   /** 입력 문서 전체가 관찰한 fact 수다. 0이면 아무것도 관찰하지 못한 실행이다. */
   readonly observedFacts: number;
   /** 이 실행에 보고된 분석 한계 수다. */
@@ -50,6 +60,12 @@ export const checkIssueCodes = [
   'component-require-mechanism-mismatch',
   'component-export-without-require',
   'component-export-mechanism-mismatch',
+  'unhandled-message-send',
+  'unhandled-message-send-unverified',
+  'message-handler-without-send',
+  'unhandled-stream-listen',
+  'unhandled-stream-listen-unverified',
+  'stream-handler-without-listen',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -87,12 +103,25 @@ export function encodeCheckReport(report: CheckReport): string {
   return encodeSortedJson(report);
 }
 
-/** 조인 결과를 정책 심각도가 포함된 check 문서로 바꾼다. */
-export function createCheckReport(joined: BridgeJoinResult): CheckReport {
+/**
+ * v1 조인 결과와 선택적 v2 메시지 조인을 정책 심각도가 포함된 check 문서로 바꾼다.
+ *
+ * `messages`를 주면 transport별 진단 코드와 수신 공백 완화를 함께 싣고,
+ * 요약에 `matchedMessages`/`matchedStreams`를 더한다. v1만 쓰는 호출자의
+ * 출력은 그대로 유지된다.
+ */
+export function createCheckReport(
+  joined: BridgeJoinResult,
+  messages?: MessageBridgeJoin,
+): CheckReport {
   if (isBridgeJoinDeferred(joined)) {
     throw new Error('Cannot create a check report from a deferred bridge join.');
   }
-  const gaps = receiverCoverageGaps(joined.limitations);
+  const limitations = messages === undefined
+    ? joined.limitations
+    : [...joined.limitations, ...messages.limitations,
+        ...messageConsumerLimitations(messages)].sort(compareLimitations);
+  const gaps = receiverCoverageGaps(limitations);
   const issues: CheckIssue[] = [
     ...joined.unhandledInvocations.map<CheckIssue>((item) => ({
       severity: gaps.hidesHandlers(item.target, item.channel) ? 'warning' : 'error',
@@ -199,6 +228,7 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       channel: item.channel,
       evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
+    ...(messages === undefined ? [] : createMessageIssues(messages, gaps)),
   ];
   return {
     format: 'isthmus-check',
@@ -210,12 +240,155 @@ export function createCheckReport(joined: BridgeJoinResult): CheckReport {
       matchedMethods: joined.matchedMethods.length,
       matchedModules: joined.matchedModules.length,
       matchedComponents: joined.matchedComponents.length,
-      observedFacts: joined.observedFacts,
-      observedLimitations: joined.limitations.length,
+      ...(messages === undefined ? {} : {
+        matchedMessages: matchedMessageRoutes(messages, 'basic-message-channel'),
+        matchedStreams: matchedMessageRoutes(messages, 'event-channel'),
+      }),
+      observedFacts: joined.observedFacts + (messages?.observedFacts ?? 0),
+      observedLimitations: limitations.length,
     },
     issues,
-    limitations: joined.limitations,
+    limitations,
   };
+}
+
+/** v2 transport별 check 진단 코드·수신 공백 접두사·미대응 한계 이름이다. */
+const messageTransportPolicies = {
+  'basic-message-channel': {
+    send: 'unhandled-message-send',
+    sendUnverified: 'unhandled-message-send-unverified',
+    handler: 'message-handler-without-send',
+    gap: 'unattributed-message-handles:',
+    dynamic: 'dynamic-message-address',
+    unmatched: 'unmatched-message-boundary',
+    subject: 'message',
+  },
+  'event-channel': {
+    send: 'unhandled-stream-listen',
+    sendUnverified: 'unhandled-stream-listen-unverified',
+    handler: 'stream-handler-without-listen',
+    gap: 'unattributed-stream-handles:',
+    dynamic: 'dynamic-stream-address',
+    unmatched: 'unmatched-stream-boundary',
+    subject: 'stream',
+  },
+} as const satisfies Record<BridgeMessageTransport, {
+  send: CheckIssueCode;
+  sendUnverified: CheckIssueCode;
+  handler: CheckIssueCode;
+  gap: string;
+  dynamic: string;
+  unmatched: string;
+  subject: string;
+}>;
+
+/** 같은 transport에서 literal channel을 덮는 prefix 후보를 찾는다. */
+function coveredByPrefix(
+  messages: MessageBridgeJoin,
+  route: { readonly channel: string; readonly transport: BridgeMessageTransport },
+  side: 'senders' | 'handlers',
+): boolean {
+  return messages.routes.some((candidate) =>
+    candidate.matching === 'prefix' && candidate.transport === route.transport &&
+    route.channel.startsWith(candidate.channel) && candidate[side].length > 0);
+}
+
+/** v1과 같은 짝 규칙으로 v2 메시지·스트림 경계 진단을 만든다. */
+function createMessageIssues(
+  messages: MessageBridgeJoin,
+  gaps: ReceiverCoverageGaps,
+): CheckIssue[] {
+  const issues: CheckIssue[] = [];
+  for (const route of messages.routes) {
+    const policy = messageTransportPolicies[route.transport];
+    const hasSenders = route.senders.length > 0;
+    const hasHandlers = route.handlers.length > 0;
+    // 양쪽이 관찰됐거나 dynamic prefix 후보뿐이면 error/warning을 내지 않는다.
+    // prefix 후보의 미대응은 아래 소비자 한계로 남긴다. literal 경계라도
+    // 그 prefix 후보가 빠진 쪽을 채우면 후보로 강등해 오탐을 만들지 않는다.
+    if ((hasSenders && hasHandlers) || route.matching === 'prefix') continue;
+    if (hasSenders && coveredByPrefix(messages, route, 'handlers')) continue;
+    if (hasHandlers && coveredByPrefix(messages, route, 'senders')) continue;
+    if (hasSenders) {
+      const hidden = gaps.hidesHandlers('flutter', route.channel) ||
+        messages.limitations.some(({ platform, message }) =>
+          isReceiverPlatform(platform) && message.startsWith(policy.gap));
+      issues.push({
+        severity: hidden ? 'warning' : 'error',
+        code: hidden ? policy.sendUnverified : policy.send,
+        target: 'flutter',
+        channel: route.channel,
+        evidence: route.senders,
+      });
+    } else {
+      issues.push({
+        severity: 'warning',
+        code: policy.handler,
+        target: 'flutter',
+        channel: route.channel,
+        evidence: route.handlers,
+      });
+    }
+  }
+  return issues;
+}
+
+/** 한 transport에서 literal로 발신·수신이 모두 관찰된 경계 수를 센다. */
+function matchedMessageRoutes(
+  messages: MessageBridgeJoin,
+  transport: BridgeMessageTransport,
+): number {
+  return messages.routes.filter((route) =>
+    route.transport === transport && route.matching === 'literal' &&
+    route.senders.length > 0 && route.handlers.length > 0,
+  ).length;
+}
+
+/**
+ * 이음매 없는 v2 입력에서 소비자가 직접 센 한계를 만든다.
+ *
+ * literal로 확정되지 않은 dynamic prefix 후보와, literal도 prefix도 없는
+ * 미해석 주소를 관찰량으로 남긴다. 이들은 error가 아니라 한계다 —
+ * 실제 suffix/instance가 맞는지는 정적 사실로 확정할 수 없다.
+ */
+function messageConsumerLimitations(
+  messages: MessageBridgeJoin,
+): JoinLimitation[] {
+  const limitations: JoinLimitation[] = [];
+  for (const route of messages.routes) {
+    if (route.matching !== 'prefix') continue;
+    const policy = messageTransportPolicies[route.transport];
+    limitations.push({
+      platform: 'cross-platform',
+      target: 'flutter',
+      tool: 'isthmus',
+      origin: 'consumer',
+      message: `${policy.dynamic}: ${policy.subject} channel prefix ${route.channel} `
+        + 'describes possible routes; suffix and instance wiring are not resolved',
+      channels: [route.channel],
+    });
+    if (route.senders.length > 0 && route.handlers.length > 0) continue;
+    limitations.push({
+      platform: 'cross-platform',
+      target: 'flutter',
+      tool: 'isthmus',
+      origin: 'consumer',
+      message: `${policy.unmatched}: a related ${policy.subject} boundary has no observed `
+        + `counterpart for the proven prefix ${route.channel}`,
+      channels: [route.channel],
+    });
+  }
+  if (messages.unresolved.length > 0) {
+    limitations.push({
+      platform: 'cross-platform',
+      target: 'flutter',
+      tool: 'isthmus',
+      origin: 'consumer',
+      message: `unresolved-message-addresses: ${messages.unresolved.length} message facts `
+        + 'have no literal or proven prefix and were not joined',
+    });
+  }
+  return limitations;
 }
 
 /** 수신 측이 스스로 알린 분석 공백이 target별로 무엇을 가리는지 나타낸다. */

@@ -42,14 +42,16 @@ HANDOFF의 최신 절·개발 소스·실제 검증 산출물과 공개 1차 자
 설명 경로는 `Swift launch → setUp → canLaunchUrl 채널 후보 → Dart canLaunchUrl → canLaunch`로
 나온다. 실제 생성 코드에서는 별도 closure가 각각 `api.launch`와 `api.canLaunch`를 호출한다.
 **등록 함수 수준의 보수적인 전파가 메서드별 영향보다 넓어질 수 있다는 근거**다.
-단일 메서드 변경의 정답과 비교한 오탐률은 아직 측정하지 않았다.
+이 위험은 공개 정밀도 코퍼스([experiments/real-corpus](../experiments/real-corpus/))로 측정했다.
+EventChannel 스트림 핸들러 파일 선택에서 등록 경계가 채널 전체로 확대된 FP 3건을 case 절
+근거로 좁힌 뒤, LocalSend를 포함한 최신 15건 실행은 **TP 83 / FN 0 / FP 0**이다.
 
 후속 구현에서는 이 문제를 실제 단일 USR 선택으로 재현한 뒤 handler별 compiler 참조와
 dispatch 후보를 연결해 수정했다. 공개 launch/canLaunch 각각의 독립 변경과 공통 setup
 변경을 대조해 필요한 영향은 유지하고 다른 메서드로의 전파를 제외했다. Method/Basic이
 같은 함수에 등록되는 경우도 보강했다. path_provider와 shared_preferences의 공개 source
 경로와 공개 Pigeon의 실제 macOS 정적/runtime 결합도 추가 검증했다. 최신 제품 검사 405개와
-세부 근거는 [진행 기록](COMPETITIVENESS.md)에 있다. 일반 앱의 오탐률·외부 사용자 효용은 별도다.
+세부 근거는 [진행 기록](COMPETITIVENESS.md)에 있다. 일반 앱 전체 정밀도·외부 사용자 효용은 별도다.
 
 기존 임시 근거(정리되면 없어질 수 있음): 공개 source는
 `/private/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/isthmus-pigeon-evidence-cgWzKF/`,
@@ -64,9 +66,10 @@ dispatch 후보를 연결해 수정했다. 공개 launch/canLaunch 각각의 독
 2. **Pigeon이 가치의 일부를 이미 제공한다.** 공식 코드 생성은 문자열·메시지 타입을
    양쪽에서 수동으로 맞추는 부담을 줄인다. 오타 탐지만으로 도입 이유가 충분하지 않을 수 있다.
    [공식 설명](https://docs.flutter.dev/platform-integration/platform-channels).
-3. **지원 범위가 사용자의 앱과 맞지 않을 수 있다.** Basic 정적 후보 연결은 개발 중이지만
-   Android/Kotlin·EventChannel과 모든 Pigeon 생성 형태의 지원 근거는 없다. 지원하는
-   채널만 분모로 삼으면 실제 유용성을 과대평가한다.
+3. **지원 범위가 사용자의 앱과 맞지 않을 수 있다.** Basic·Event는 정적 후보 연결이
+   구현돼 `check`가 v2 문서를 직접 진단하지만, Android/Kotlin의 모든 실행 형태와
+   모든 Pigeon 생성 형태의 지원 근거는 여전히 없다. 지원하는 채널만 분모로 삼으면
+   실제 유용성을 과대평가한다.
 4. **영향 후보가 너무 넓을 수 있다.** 위 공개 Pigeon의 공통 setUp 신원처럼 서로 다른
    handler가 합쳐지면 관련 없는 소비자까지 검토하게 할 수 있다. 경로 존재와 변경 영향의
    확정은 다르며 메서드별 정밀도 검증이 필요하다.

@@ -23,6 +23,7 @@ verifyInputError();
 verifyCompositionError();
 verifySuccessfulCheck();
 verifyStrictFindings();
+verifyMessageCheck();
 verifyBaselineRoundtrip();
 verifyRetentions();
 verifyQuery();
@@ -34,6 +35,7 @@ verifyRuntime();
 verifyPreflight();
 verifyServe();
 verifyExtractJs();
+verifyDoctorInit();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -158,6 +160,42 @@ function verifyStrictFindings() {
   verify(result.status === 1, 'strict exit code');
   verify(result.stderr === '', 'strict stderr');
   verify(JSON.parse(result.stdout).summary.errors === 1, 'strict JSON');
+}
+
+/** check가 실빌드에서 bridge-facts v2를 transport 진단으로 소비하는지 검증한다. */
+function verifyMessageCheck() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-messages-'));
+  try {
+    const message = (platform, facts) => JSON.stringify({
+      format: 'bridge-facts', version: 2, transport: 'basic-message-channel',
+      platform, target: facts.length > 0 ? 'flutter' : null, project: '/app',
+      generatedAt: '2026-09-18T00:00:00Z',
+      tool: { name: platform === 'dart' ? 'dartograph' : 'cartograph', version: 'test' },
+      facts, limitations: [],
+    });
+    const messageDart = join(directory, 'dart.json');
+    const messageSwift = join(directory, 'swift.json');
+    writeFileSync(messageDart, message('dart', [{
+      kind: 'message-send', channel: 'example/basic', dynamic: false,
+      location: { path: 'lib/api.dart', line: 10, column: 1 },
+    }]));
+    writeFileSync(messageSwift, message('swift', []));
+
+    const missing = run(['check', messageDart, messageSwift, '--strict']);
+    verify(missing.status === 1, 'message strict exit code');
+    verify(JSON.parse(missing.stdout).issues[0].code === 'unhandled-message-send',
+      'message diagnostic code');
+
+    writeFileSync(messageSwift, message('swift', [{
+      kind: 'message-handle', channel: 'example/basic', dynamic: false,
+      location: { path: 'macos/Setup.swift', line: 5, column: 1 },
+    }]));
+    const matched = run(['check', messageDart, messageSwift]);
+    verify(matched.status === 0 && JSON.parse(matched.stdout).summary.matchedMessages === 1,
+      'message matched summary');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** 베이스라인 기록과 재입력이 발행 CLI에서도 종료 코드 계약을 지키는지 검증한다. */
@@ -321,6 +359,32 @@ function verifyExtractJs() {
     verify(run(['extract-js']).status === 64, 'extract-js usage');
     verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
     verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** doctor·init이 설정 JSON 검증과 scaffold 쓰기를 실제 CLI에서 수행하는지 검증한다. */
+function verifyDoctorInit() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-doctor-'));
+  try {
+    const capturePath = join(directory, 'capture.json');
+    const init = run(['init', capturePath]);
+    verify(init.status === 0, 'init exit code');
+    verify(JSON.parse(init.stdout).format === 'isthmus-init', 'init JSON');
+    const scaffold = JSON.parse(readFileSync(capturePath, 'utf8'));
+    verify(scaffold.project.length > 0 && Array.isArray(scaffold.prepare), 'init scaffold');
+    verify(run(['init', capturePath]).status === 2, 'init existing config');
+    verify(run(['init', capturePath, '--force']).status === 0, 'init force overwrite');
+
+    const doctor = run(['doctor', capturePath]);
+    verify(doctor.status === 1, 'doctor incomplete exit code');
+    const report = JSON.parse(doctor.stdout);
+    verify(report.format === 'isthmus-doctor' && report.status === 'incomplete', 'doctor JSON');
+    verify(report.checks.some(({ status }) => status === 'missing'), 'doctor missing check');
+    verify(run(['doctor', join(directory, 'missing.json')]).status === 2, 'doctor missing input');
+    verify(run(['help', 'doctor']).stdout.startsWith('Usage: isthmus doctor'), 'doctor help');
+    verify(run(['help', 'init']).stdout.startsWith('Usage: isthmus init'), 'init help');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
