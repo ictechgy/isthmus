@@ -306,6 +306,31 @@ function limitationTarget(document: BridgeFactsDocument): BridgeTarget | null {
   return hasMixedTargets(document) ? null : document.target;
 }
 
+/**
+ * v1 사실이 없는 입력에서 v2 전용 보고를 만들 때 쓰는 빈 결과다.
+ *
+ * 조인을 보류하지 않는다 — 사실이 아예 없었을 뿐이므로 보류와 구분한다.
+ */
+export function emptyBridgeJoinResult(): BridgeJoinResult {
+  return {
+    deferred: false,
+    observedFacts: 0,
+    matchedChannels: [],
+    unregisteredChannelCreations: [],
+    registrationsWithoutCreations: [],
+    matchedMethods: [],
+    unhandledInvocations: [],
+    handlersWithoutInvocations: [],
+    matchedModules: [],
+    moduleImportsWithoutExports: [],
+    moduleExportsWithoutImports: [],
+    matchedComponents: [],
+    componentRequiresWithoutExports: [],
+    componentExportsWithoutRequires: [],
+    limitations: [],
+  };
+}
+
 /** 안전하게 조인을 보류하면서 입력 한계만 전달한다. 관찰량은 보존한다. */
 function emptyJoinResult(
   limitations: readonly JoinLimitation[],
@@ -548,7 +573,7 @@ function freshnessLimitation(
 }
 
 /** limitation을 플랫폼·target·도구·문장 순으로 고정한다. */
-function compareLimitations(left: JoinLimitation, right: JoinLimitation): number {
+export function compareLimitations(left: JoinLimitation, right: JoinLimitation): number {
   return (
     compareStrings(left.platform, right.platform) ||
     compareTargets(left.target, right.target) ||

@@ -354,6 +354,10 @@ test('contract 위반 메시지는 어떤 검증 분기에서도 입력 값을 �
     [{ ...base, format: 'other' }, 'Expected format "bridge-facts".'],
     [
       { ...base, version: 2 },
+      'Expected bridge-facts version 2 for a message transport.',
+    ],
+    [
+      { ...base, version: 3 },
       'Unsupported bridge-facts version; expected version 1.',
     ],
     [{ ...base, tool: { name: '', version: 'MARKER' } }, 'Invalid tool metadata.'],
@@ -1149,4 +1153,93 @@ test('항목 상한을 넘는 베이스라인은 쓰지 않고 실패한다', as
     + 'narrow the join inputs.\n',
   );
   assert.equal(didWrite, false);
+});
+
+/** v2 Basic/Event 문서를 check 입력으로 만든다. */
+function messageDocument(
+  transport: string,
+  platform: string,
+  facts: readonly Record<string, unknown>[],
+  limitations: readonly string[] = [],
+): string {
+  return JSON.stringify({
+    format: 'bridge-facts',
+    version: 2,
+    transport,
+    platform,
+    target: facts.length > 0 ? 'flutter' : null,
+    project: '/app',
+    generatedAt: '2026-09-18T00:00:00Z',
+    tool: { name: platform === 'dart' ? 'dartograph' : 'cartograph', version: 'test' },
+    facts,
+    limitations,
+  });
+}
+
+test('check가 v2 Basic 문서를 조인해 transport 진단과 요약을 낸다', async () => {
+  const inputs = new Map<string, string>([
+    ['dart.json', messageDocument('basic-message-channel', 'dart', [
+      { kind: 'message-send', channel: 'example/basic', dynamic: false,
+        location: { path: 'lib/api.dart', line: 10, column: 1 } },
+    ])],
+    ['swift.json', messageDocument('basic-message-channel', 'swift', [
+      { kind: 'message-handle', channel: 'example/basic', dynamic: false,
+        location: { path: 'macos/Setup.swift', line: 5, column: 1 } },
+    ])],
+  ]);
+  const read = async (path: string): Promise<string> => {
+    const text = inputs.get(path);
+    if (text === undefined) throw new Error('missing');
+    return text;
+  };
+
+  const result = await runCheckCommand(['check', 'dart.json', 'swift.json'], read);
+
+  assert.equal(result.exitCode, 0);
+  const report = JSON.parse(result.standardOutput);
+  assert.equal(report.format, 'isthmus-check');
+  assert.deepEqual(report.issues, []);
+  assert.equal(report.summary.matchedMessages, 1);
+  assert.equal(report.summary.matchedStreams, 0);
+  assert.equal(report.summary.observedFacts, 2);
+  assert.equal(report.summary.errors, 0);
+});
+
+test('check --strict는 v2 미대응 send를 error로 세어 종료 코드 1을 낸다', async () => {
+  const inputs = new Map<string, string>([
+    ['dart.json', messageDocument('basic-message-channel', 'dart', [
+      { kind: 'message-send', channel: 'example/basic', dynamic: false,
+        location: { path: 'lib/api.dart', line: 10, column: 1 } },
+    ])],
+    ['swift.json', messageDocument('basic-message-channel', 'swift', [])],
+  ]);
+  const result = await runCheckCommand(
+    ['check', 'dart.json', 'swift.json', '--strict'],
+    async (path) => inputs.get(path)!,
+  );
+
+  assert.equal(result.exitCode, 1);
+  const report = JSON.parse(result.standardOutput);
+  assert.deepEqual(report.issues.map((issue: { code: string }) => issue.code), [
+    'unhandled-message-send',
+  ]);
+  assert.equal(report.summary.errors, 1);
+});
+
+test('check --format sarif는 v2 Event 진단도 규칙과 함께 싣는다', async () => {
+  const inputs = new Map<string, string>([
+    ['dart.json', messageDocument('event-channel', 'dart', [
+      { kind: 'stream-listen', channel: 'dev.example/charging', dynamic: false,
+        location: { path: 'lib/battery.dart', line: 49, column: 1 } },
+    ])],
+    ['swift.json', messageDocument('event-channel', 'swift', [])],
+  ]);
+  const result = await runCheckCommand(
+    ['check', 'dart.json', 'swift.json', '--format', 'sarif'],
+    async (path) => inputs.get(path)!,
+  );
+
+  assert.equal(result.exitCode, 0);
+  const sarif = JSON.parse(result.standardOutput);
+  assert.equal(sarif.runs[0].results[0].ruleId, 'unhandled-stream-listen');
 });

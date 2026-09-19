@@ -1,8 +1,11 @@
 import type { BridgeFactsDocument } from '../exchange/parse.ts';
 import {
   BridgeFactsValidationError,
+  isJsonObject,
   parseBridgeFactsDocument,
 } from '../exchange/parse.ts';
+import type { BridgeMessageDocument } from '../exchange/messages.ts';
+import { parseMessageBridgeDocument } from '../exchange/messages.ts';
 import { BridgeJoinValidationError } from '../join/join.ts';
 
 /**
@@ -49,13 +52,19 @@ export const MAX_INPUT_TEXT_LENGTH = 16 * 1024 * 1024;
 /** 한 명령에서 허용하는 전체 UTF-16 입력 문자열 길이다. */
 export const MAX_TOTAL_INPUT_TEXT_LENGTH = 64 * 1024 * 1024;
 
-/** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 교환 문서로 파싱한다. */
-export async function readBridgeDocuments(
+/** 한 입력 파일의 JSON 값과 1부터 시작하는 순서를 보존한다. */
+interface ParsedInput {
+  readonly position: number;
+  readonly value: unknown;
+}
+
+/** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 JSON 값으로 만든다. */
+async function readJsonInputs(
   inputPaths: readonly string[],
   readTextFile: ReadTextFile,
-  initialTextLength = 0,
-): Promise<BridgeFactsDocument[]> {
-  const documents: BridgeFactsDocument[] = [];
+  initialTextLength: number,
+): Promise<ParsedInput[]> {
+  const inputs: ParsedInput[] = [];
   let totalTextLength = initialTextLength;
   for (const [index, path] of inputPaths.entries()) {
     const inputPosition = index + 1;
@@ -74,25 +83,72 @@ export async function readBridgeDocuments(
     }
     // JSON 구문 오류와 문서 검증 실패를 같은 try로 감싸면 검증기의 예외가
     // 구문 오류로 오분류된다. 파싱과 검증을 나눠 분류 경계를 지킨다.
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      inputs.push({ position: inputPosition, value: JSON.parse(text) });
     } catch (error) {
       if (isJsonParseFailure(error)) {
         throw new BridgeInputJsonError(inputPosition);
       }
       throw error;
     }
+  }
+  return inputs;
+}
+
+/** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 v1 교환 문서로 파싱한다. */
+export async function readBridgeDocuments(
+  inputPaths: readonly string[],
+  readTextFile: ReadTextFile,
+  initialTextLength = 0,
+): Promise<BridgeFactsDocument[]> {
+  const documents: BridgeFactsDocument[] = [];
+  for (const { position, value } of await readJsonInputs(
+    inputPaths,
+    readTextFile,
+    initialTextLength,
+  )) {
     try {
-      documents.push(parseBridgeFactsDocument(parsed));
+      documents.push(parseBridgeFactsDocument(value));
     } catch (error) {
       if (error instanceof BridgeFactsValidationError) {
-        throw new BridgeInputContractError(inputPosition, error.message);
+        throw new BridgeInputContractError(position, error.message);
       }
       throw error;
     }
   }
   return documents;
+}
+
+/** v1 MethodChannel과 v2 Basic/Event 문서를 한 번에 읽어 버전별로 나눈다. */
+export async function readBridgeInputs(
+  inputPaths: readonly string[],
+  readTextFile: ReadTextFile,
+  initialTextLength = 0,
+): Promise<{
+  bridges: BridgeFactsDocument[];
+  messages: BridgeMessageDocument[];
+}> {
+  const bridges: BridgeFactsDocument[] = [];
+  const messages: BridgeMessageDocument[] = [];
+  for (const { position, value } of await readJsonInputs(
+    inputPaths,
+    readTextFile,
+    initialTextLength,
+  )) {
+    try {
+      if (isJsonObject(value) && value.version === 2) {
+        messages.push(parseMessageBridgeDocument(value));
+      } else {
+        bridges.push(parseBridgeFactsDocument(value));
+      }
+    } catch (error) {
+      if (error instanceof BridgeFactsValidationError) {
+        throw new BridgeInputContractError(position, error.message);
+      }
+      throw error;
+    }
+  }
+  return { bridges, messages };
 }
 
 /**
