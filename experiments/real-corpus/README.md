@@ -89,10 +89,26 @@ node experiments/real-corpus/run-rn-js.mjs "$(pwd)/dist/cli/main.js"
 
 범위는 JS/TS `extract-js`가 생산하는 `module-import`·`method-invoke`뿐이다. expo-haptics
 14.1.4는 `ExpoHaptics` 모듈 수입(mechanism `expo`, optional) 1건과 메서드 호출 4건을
-기대하며, 2026-09-18 실행은 **TP 5 / FN 0 / FP 0**이었다. 수신 측(cartograph
-`bridges --target react-native`의 Expo DSL 스캔·kartograph Kotlin)은 이 케이스 범위
-밖이다 — 공개 조합의 수신 사실은 [호환 버전](../../docs/COMPATIBILITY.md)의 수동
-실측 기록을 본다.
+기대하며, 2026-09-18 실행은 **TP 5 / FN 0 / FP 0**이었다. 수신 측(cartograph Expo
+DSL 스캔)은 아래 `run-rn-receiver.mjs`가 다룬다 — kartograph Kotlin은 범위 밖이다.
+
+## React Native 수신 측 (cartograph Expo DSL)
+
+`run-rn-receiver.mjs`는 같은 tarball에서 extract-js(호출 측)와 cartograph
+`bridges --target react-native --allow-empty-index`(Expo DSL 수신 측)를 만들고
+`isthmus check`로 결합한다. cartograph 실행 파일이 필요하다.
+
+```bash
+npm run build
+node experiments/real-corpus/run-rn-receiver.mjs \
+  "$(pwd)/dist/cli/main.js" /path/to/cartograph [/path/to/empty-index-store]
+```
+
+결과: **matchedModules 1**(ExpoHaptics, `mechanism: "expo"`) ·
+**matchedMethods 3**(notificationAsync·impactAsync·selectionAsync). iOS만 쓰면
+Android 전용 `performHapticsAsync`가 미대응 invocation으로 남는다 — 이는 결함이
+아니라 플랫폼 비대칭이다. kartograph Android 수신 측을 더하면 4가 된다. 결과는
+`results/rn-receiver-results.json`에 남긴다.
 
 ## 결과 해석 (LocalSend 추가 실행 기준)
 

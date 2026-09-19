@@ -19,6 +19,17 @@
         "ExpoHaptics/impactAsync",
         "ExpoHaptics/selectionAsync",
         "ExpoHaptics/performHapticsAsync"
+      ],
+      "expectedModuleExports": [
+        { "channel": "ExpoHaptics", "mechanism": "expo" }
+      ],
+      "expectedMethodHandles": [
+        "ExpoHaptics/notificationAsync",
+        "ExpoHaptics/impactAsync",
+        "ExpoHaptics/selectionAsync"
+      ],
+      "expectedUnhandledMethods": [
+        "ExpoHaptics/performHapticsAsync"
       ]
     }
   },
