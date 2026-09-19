@@ -4,7 +4,7 @@ import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
   inputFailureResult,
   internalError,
-  readBridgeDocuments,
+  readBridgeInputs,
   type CommandResult,
   type ReadTextFile,
 } from './command-support.ts';
@@ -33,10 +33,13 @@ export async function runDiffCommand(
     return { standardOutput: '', standardError: `${diffUsage}\n`, exitCode: 64 };
   }
   try {
-    const documents = await readBridgeDocuments(paths, readTextFile);
+    const before = await readBridgeInputs(beforePaths, readTextFile);
+    const after = await readBridgeInputs(afterPaths, readTextFile);
     const report = createBridgeDiff(
-      documents.slice(0, beforePaths.length),
-      documents.slice(beforePaths.length),
+      before.bridges,
+      after.bridges,
+      before.messages.length > 0 ? before.messages : undefined,
+      after.messages.length > 0 ? after.messages : undefined,
     );
     return {
       standardOutput: encodeSortedJson(report),

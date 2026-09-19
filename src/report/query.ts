@@ -8,14 +8,15 @@ import type {
   UnexportedBoundaryName,
   UnrequiredBoundaryName,
 } from '../join/join.ts';
-import { isBridgeJoinDeferred } from '../join/join.ts';
+import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
+import type { MessageBridgeJoin } from '../join/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
-/** query가 식별한 채널·메서드·모듈·컴포넌트 키다. */
+/** query가 식별한 채널·메서드·모듈·컴포넌트·메시지·스트림 키다. */
 export interface BridgeQuerySubject {
   readonly name: string;
   readonly qualifiedName: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream';
 }
 
 /** 한 브리지 키에서 본 호출 측과 수신 측 증거다. */
@@ -42,14 +43,24 @@ export function encodeBridgeQuery(document: BridgeQueryDocument): string {
   return encodeSortedJson(document);
 }
 
-/** 조인된 브리지에서 채널 또는 메서드 문자열을 질의한다. */
+/**
+ * 조인된 브리지에서 채널 또는 메서드 문자열을 질의한다.
+ *
+ * `messages`를 주면 BasicMessageChannel·EventChannel 경계도 `message`·`stream`
+ * 주체로 질의할 수 있다. v1 채널과 이름이 같아도 qualifiedName의 kind 세그먼트로
+ * 구분된다.
+ */
 export function createBridgeQuery(
   joined: BridgeJoinResult,
   requested: string,
+  messages?: MessageBridgeJoin,
 ): BridgeQueryDocument {
   if (isBridgeJoinDeferred(joined)) {
     throw new Error('Cannot query a deferred bridge join.');
   }
+  const limitations = messages === undefined
+    ? joined.limitations
+    : [...joined.limitations, ...messages.limitations].sort(compareLimitations);
   const results = [
     ...channelResults(joined),
     ...methodResults(joined),
@@ -57,27 +68,28 @@ export function createBridgeQuery(
       joined.moduleExportsWithoutImports, 'module'),
     ...nameResults(joined.matchedComponents, joined.componentRequiresWithoutExports,
       joined.componentExportsWithoutRequires, 'component'),
+    ...(messages === undefined ? [] : messageResults(messages)),
   ];
   const exact = results.filter(
     ({ subject }) => subject.qualifiedName === requested,
   );
-  if (exact.length > 1) return ambiguousQuery(joined, requested, exact);
-  if (exact[0] !== undefined) return foundQuery(joined, requested, exact[0]);
+  if (exact.length > 1) return ambiguousQuery(limitations, requested, exact);
+  if (exact[0] !== undefined) return foundQuery(limitations, requested, exact[0]);
 
   const named = results.filter(({ subject }) => subject.name === requested);
-  if (named.length > 1) return ambiguousQuery(joined, requested, named);
-  if (named[0] !== undefined) return foundQuery(joined, requested, named[0]);
+  if (named.length > 1) return ambiguousQuery(limitations, requested, named);
+  if (named[0] !== undefined) return foundQuery(limitations, requested, named[0]);
   return {
     status: 'notFound',
     requested,
     level: 'bridge',
-    limitations: joined.limitations,
+    limitations,
   };
 }
 
 /** 유일하게 식별된 논리 키와 증거를 found 문서로 감싼다. */
 function foundQuery(
-  joined: BridgeJoinResult,
+  limitations: readonly JoinLimitation[],
   requested: string,
   result: BridgeQueryResult,
 ): BridgeQueryDocument {
@@ -85,14 +97,14 @@ function foundQuery(
     status: 'found',
     requested,
     level: 'bridge',
-    limitations: joined.limitations,
+    limitations,
     result,
   };
 }
 
 /** 여러 논리 키가 같은 요청과 맞을 때 선택 가능한 정규화 이름을 돌려준다. */
 function ambiguousQuery(
-  joined: BridgeJoinResult,
+  limitations: readonly JoinLimitation[],
   requested: string,
   results: readonly BridgeQueryResult[],
 ): BridgeQueryDocument {
@@ -100,7 +112,7 @@ function ambiguousQuery(
     status: 'ambiguous',
     requested,
     level: 'bridge',
-    limitations: joined.limitations,
+    limitations,
     candidates: [
       ...new Map(
         results.map(({ subject }) => [
@@ -110,6 +122,22 @@ function ambiguousQuery(
       ).values(),
     ].sort((left, right) => compareStrings(left.qualifiedName, right.qualifiedName)),
   };
+}
+
+/** v2 메시지·스트림 경계를 query result로 만든다. 양쪽 증거를 그대로 보존한다. */
+function messageResults(messages: MessageBridgeJoin): BridgeQueryResult[] {
+  return messages.routes.map((route) => {
+    const kind = route.transport === 'event-channel' ? 'stream' : 'message';
+    return {
+      subject: {
+        name: route.channel,
+        qualifiedName: `flutter:${kind}:${encodeSubjectComponent(route.channel)}`,
+        kind,
+      },
+      usedBy: route.senders,
+      dependsOn: route.handlers,
+    } satisfies BridgeQueryResult;
+  });
 }
 
 /** 요청 문자열과 정확히 같은 논리 메서드 결과를 만든다. */

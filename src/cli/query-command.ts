@@ -1,15 +1,17 @@
 import {
+  emptyBridgeJoinResult,
   isBridgeJoinDeferred,
   joinBridgeDocuments,
   MAX_DOCUMENTS_PER_JOIN,
 } from '../join/join.ts';
+import { joinMessageBridges } from '../join/messages.ts';
 import { createBridgeQuery, encodeBridgeQuery } from '../report/query.ts';
 import type { BridgeQueryDocument } from '../report/query.ts';
 import {
   bridgeJoinDeferredError,
   inputFailureResult,
   internalError,
-  readBridgeDocuments,
+  readBridgeInputs,
   type CommandResult,
   type ReadTextFile,
 } from './command-support.ts';
@@ -33,12 +35,18 @@ export async function runQueryCommand(
     return queryUsageError();
   }
   try {
-    const documents = await readBridgeDocuments(inputPaths, readTextFile);
-    const joined = joinBridgeDocuments(documents);
+    const { bridges, messages } = await readBridgeInputs(inputPaths, readTextFile);
+    const project = bridges[0]?.project ?? messages[0]!.project;
+    const joined = bridges.length > 0
+      ? joinBridgeDocuments(bridges)
+      : emptyBridgeJoinResult();
     if (isBridgeJoinDeferred(joined)) {
-      return bridgeJoinDeferredError(joined.observedFacts, documents.length);
+      return bridgeJoinDeferredError(joined.observedFacts, bridges.length);
     }
-    const query = createBridgeQuery(joined, requested);
+    const messageJoin = messages.length > 0
+      ? joinMessageBridges(messages, project)
+      : undefined;
+    const query = createBridgeQuery(joined, requested, messageJoin);
     return {
       standardOutput: encodeBridgeQuery(query),
       standardError: queryStatusHint(query),
