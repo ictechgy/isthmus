@@ -4,8 +4,8 @@ _Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완
 
 ## 현재 재개 기준
 
-저장소별 재개 정보: [cartograph](../cartograph/HANDOFF.md) ·
-[kartograph](../kartograph/HANDOFF.md) · [dartograph](../dartograph/HANDOFF.md).
+저장소별 재개 정보: [cartograph](https://github.com/ictechgy/cartograph/blob/main/HANDOFF.md) ·
+[kartograph](https://github.com/ictechgy/kartograph/blob/main/HANDOFF.md) · [dartograph](https://github.com/ictechgy/dartograph/blob/main/HANDOFF.md).
 제품 변경은 네 PR에 머지됐다. 이 문서는 그 인계 기록이며 재개 시 실제 Git 상태를 확인한다.
 
 ### 머지 완료 — 사용자 "다 머지 시켜줘" 승인
@@ -21,10 +21,10 @@ _Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완
   네 저장소 모두 머지 트리와 검토한 PR 트리가 같음을 확인했고 기존 사용자 변경을 보존했다.
 - 원격 PR의 `MERGED` 상태·머지 커밋과 로컬 main을 대조했다. 최종 PR CI 5개 실행이 모두
   성공했다: isthmus `35453711363`, cartograph `35453717002`, kartograph `35453722844`,
-  dartograph `35453724783` 및 impact `35453724771`. kartograph는 JDK 17/21·AGP 최소 조합과
+  dartograph CI `35453724783` 및 같은 저장소의 impact-precheck `35453724771`. kartograph는 JDK 17/21·AGP 최소 조합과
   전체 test 잡의 compiler/precision/Android/plugin/metadata 검증까지 통과했다.
-- GLM 반영/기각 기록과 동반 PR 링크를 각 PR의 코멘트에 남겼다. 새 코드 변경은 없으며
-  이미 완료한 GLM 리뷰를 재전송하지 않았다. 태그·패키지 발행은 수행하지 않았다.
+- GLM 반영/기각 기록과 동반 PR 링크를 각 PR의 코멘트에 남겼다. 머지 턴에서는 새 제품 코드 변경이 없었으며
+  앞선 구현 턴에서 완료한 GLM 리뷰를 재전송하지 않았다. 태그·패키지 발행은 수행하지 않았다.
 - `.git/sibling-bridge-merge/final-merge-record.json`에 커밋·PR·리뷰 코멘트·머지·로컬 동기화와
   최종 CI 대조 결과가 있다. 같은 폴더에 실제 변경 patch·PR 본문·checks·CI job 기록을 보존한다.
 
@@ -84,7 +84,8 @@ _Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완
   ObjC 매크로 형태를 대조했고, 출처는 RN 이벤트 계약 문서에 남겼다.
 - `packet-ask --provider glm` 실제 리뷰 완료: isthmus `eda1589ba30b`, cartograph
   `0d5b0f1cd8cc`, kartograph `42a71c2772aa`, dartograph `de643634a784`.
-  검증한 수정분의 후속 리뷰는 각각 `3e79c0bd84f7`, `125112deba78`, `3d7e8434c741`다.
+  검증한 수정분의 후속 리뷰는 isthmus `3e79c0bd84f7`, cartograph `125112deba78`,
+  kartograph `3d7e8434c741`다. dartograph는 문서 설명 보완만 있어 후속 재전송 없이 확인했다.
   모델의 추측은 코드·테스트로 판별했고, 판정은 작업 폴더 `glm-disposition.md`에 기록했다.
   초기 paste 패킷은 리뷰 응답이 아니다. review는 `--staged` 또는 `--files`를 사용하며
   `--include-files`는 지원하지 않는다. isthmus 전체 diff에는 `--max-files 64`가 필요하다.
