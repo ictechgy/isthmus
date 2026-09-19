@@ -15,6 +15,10 @@
   지정 경로에 실제로 있는지 확인한다. 제품은 producer를 실행하거나 버전을 조회하지 않는다.
   출력은 `isthmus-doctor` v1 JSON이며 정상 0, 미완성 1, 입력·계약 오류 2, 사용 오류 64다.
   capture 검증 규칙을 제품으로 이동해 `scripts/capture-preflight.mjs`와 단일 정본을 공유한다.
+- `compatibility.json`: 공개 호환 버전 세트의 기계 판독 정본이다. `scripts/verify-compatibility.mjs`가
+  `package.json`의 isthmus 버전과 `docs/COMPATIBILITY.md`·`README`의 producer 버전 표기가
+  정본과 일치하는지 `npm run verify`에서 검사해 손으로 적은 표의 drift를 실패로 드러낸다.
+  정본은 npm 패키지에 포함된다.
 
 ## [0.7.0] - 2026-09-18
 
