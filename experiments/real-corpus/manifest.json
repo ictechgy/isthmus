@@ -2,6 +2,26 @@
   "format": "isthmus-real-corpus",
   "version": 1,
   "description": "공개 Flutter 플러그인의 고정 pub.dev 아카이브와 수동 정답으로 impact/preflight 예측을 재는다. 모든 소스는 바이트 동일하게 스테이징하며 해시를 기록한다.",
+  "rn": {
+    "expo-haptics@14.1.4": {
+      "package": "expo-haptics",
+      "version": "14.1.4",
+      "archiveUrl": "https://registry.npmjs.org/expo-haptics/-/expo-haptics-14.1.4.tgz",
+      "sha256": "d721711e1315800035a7b8fbada612f9091ebed593529a2a0c08d48333acd130",
+      "license": "MIT",
+      "upstream": "https://github.com/expo/expo",
+      "source": "src",
+      "expectedModuleImports": [
+        { "channel": "ExpoHaptics", "mechanism": "expo", "optional": true }
+      ],
+      "expectedMethodInvokes": [
+        "ExpoHaptics/notificationAsync",
+        "ExpoHaptics/impactAsync",
+        "ExpoHaptics/selectionAsync",
+        "ExpoHaptics/performHapticsAsync"
+      ]
+    }
+  },
   "archives": {
     "battery_plus@6.2.2": {
       "package": "battery_plus",

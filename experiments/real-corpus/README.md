@@ -77,6 +77,23 @@ macOS 전용(스텁은 macOS SwiftPM만 둔다). 아카이브는 pub.dev·GitHub
 검증하고, diff 케이스는 프로젝트를 git 초기화해 기저를 커밋한 뒤 새 버전을 덮어쓴다.
 kartograph 인자가 있으면 `kotlin: true` 케이스의 Kotlin 브리지 문서를 조인한다.
 
+## React Native 호출 측 (extract-js)
+
+`manifest.json`의 `rn` 절은 npm tarball을 고정하고 `run-rn-js.mjs`로 호출 측 사실을
+계수한다. 이 경로는 producer 없이 isthmus CLI만으로 재현된다.
+
+```bash
+npm run build
+node experiments/real-corpus/run-rn-js.mjs "$(pwd)/dist/cli/main.js"
+```
+
+범위는 JS/TS `extract-js`가 생산하는 `module-import`·`method-invoke`뿐이다. expo-haptics
+14.1.4는 `ExpoHaptics` 모듈 수입(mechanism `expo`, optional) 1건과 메서드 호출 4건을
+기대하며, 2026-09-18 실행은 **TP 5 / FN 0 / FP 0**이었다. 수신 측(cartograph
+`bridges --target react-native`의 Expo DSL 스캔·kartograph Kotlin)은 이 케이스 범위
+밖이다 — 공개 조합의 수신 사실은 [호환 버전](../../docs/COMPATIBILITY.md)의 수동
+실측 기록을 본다.
+
 ## 결과 해석 (LocalSend 추가 실행 기준)
 
 `isthmus 0.6.0` + `cartograph 0.15.1` + `dartograph 0.11.0` + `kartograph 0.9.0` 조합:
