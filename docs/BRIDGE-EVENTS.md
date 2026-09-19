@@ -41,9 +41,16 @@ bridge-facts v1 MethodChannel·[v2 BasicMessageChannel](BRIDGE-MESSAGES.md) 동�
 - Native channel을 귀속할 수 없으면 channel=null이며 `unattributed-stream-handles:`
   limitation을 함께 낸다. 같은 transport의 같은 주소라도 MethodChannel/Basic과
   transport를 구분해 조인한다.
-- v1 전용 소비자는 version 2를 명시적으로 거부한다. 초기 소비 경계는 preflight context의
-  message 문서 목록이며 transport 필드로 구분한다. 다른 명령이 모르는 facts를 무시하고
-  초록 결과를 내게 하지 않는다.
+- `check`는 v2 문서를 직접 입력으로 받아 Event 경계를 진단한다. literal
+  `stream-listen`에 대응 `stream-handle`이 없으면 `unhandled-stream-listen` error
+  (수신 공백이면 `-unverified` warning), 대응 listener 없는 `stream-handle`은
+  `stream-handler-without-listen` warning이다. dynamic prefix 후보는 항상
+  `dynamic-stream-address` 소비자 한계로 실리고, 상대가 없으면
+  `unmatched-stream-boundary`가 더해진다. prefix 없는 미해석 주소는
+  `unresolved-message-addresses` 한계로 남긴다.
+- 그 밖의 v1 전용 명령은 version 2를 명시적으로 거부한다. `preflight`는 context의
+  message 문서 목록으로 소비하며 transport 필드로 구분한다 — 다른 명령이 모르는
+  facts를 무시하고 초록 결과를 내게 하지 않는다.
 
 ## handler별 의존 근거
 

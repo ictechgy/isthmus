@@ -65,9 +65,20 @@ and kartograph scan the Expo Modules DSL (`Module`/`definition()`, `Name`,
 `Function`, `View`, `@ExpoModule`/`@JS`) and mark those exports
 `mechanism: "expo"` — end-to-end RN joins are reproducible within the
 token-scan observation scope documented in `GRAPH-EXCHANGE.md`.
-EventChannel v2 transport is implemented across the sister repositories.
-Retention export currently targets cartograph (Swift). Full application
-coverage and first-time external setup remain unverified.
+EventChannel v2 transport is implemented across the sister repositories, and
+`check` now consumes the v2 Bridge/Event documents directly with
+transport-specific diagnostics. Retention export currently targets cartograph
+(Swift). Full application coverage and first-time external setup remain
+unverified.
+
+Change predictions are measured against a pinned public precision corpus —
+`battery_plus`, `shared_preferences_foundation`, `url_launcher_macos`, and the
+**LocalSend** app — over 15 file/symbol/version-diff cases. The latest run
+recorded **TP 83 / FN 0 / FP 0**, including the first app-level
+Dart↔Swift↔Kotlin join ([`experiments/real-corpus/`](experiments/real-corpus/)).
+These are static bridge-boundary numbers over stub-compiled Swift and
+source-scanned Kotlin; runtime execution and full-app precision are not
+measured.
 
 | Document | Contents |
 |---|---|
@@ -76,6 +87,7 @@ coverage and first-time external setup remain unverified.
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
+| [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
 
 Internal documents are maintained in Korean, the maintainer's working language.
@@ -133,6 +145,10 @@ producer impact paths across the bridge. A separate capture workflow caches decl
 input content and has passed a synthetic source test with real producers. See
 [cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
 real-application validation.
+`isthmus init [capture.json]` scaffolds that capture config — `--toolchain` fills real
+producer commands from a built `toolchain.json` — and `isthmus doctor <capture.json>`
+validates the config and checks that the referenced executables resolve on `PATH` or at
+the given path, without running them.
 To combine that context with recorded execution, pass runtime JSON files and
 `--expectations <checks.json>`. Preflight reports revision alignment, native candidates,
 and static boundaries missing observations or declared scenarios; existing static gaps remain visible.
@@ -372,6 +388,25 @@ matching `export` is an error, an `export` with no caller is a warning:
   `component-require-mechanism-mismatch`, `component-export-mechanism-mismatch` (warnings):
   the name exists on the other side but only through an incompatible core/Expo
   resolution path
+
+`check` also consumes BasicMessageChannel and EventChannel bridge-facts v2 documents and
+reports transport-specific diagnostics with the same pairing:
+
+- `unhandled-message-send` (error) / `-unverified` (warning): a Dart Basic send has no
+  native message handler
+- `message-handler-without-send` (warning): a native Basic handler has no Dart send
+- `unhandled-stream-listen` (error) / `-unverified` (warning): a Dart Event stream listener
+  has no native stream handler
+- `stream-handler-without-listen` (warning): a native Event handler has no Dart listener
+
+A dynamic `channelPrefix` route is a candidate, not a verdict — it is carried as the
+`dynamic-message-address`/`dynamic-stream-address` consumer limitation and, with no observed
+counterpart, additionally as `unmatched-message-boundary`/`unmatched-stream-boundary`; a
+dynamic address with no proven prefix is counted as `unresolved-message-addresses`. A literal
+boundary whose missing side is covered by a prefix candidate is downgraded the same way
+rather than reported as an error. The summary adds `matchedMessages`/`matchedStreams` (literal
+matches only) when v2 inputs are present. `query`, `graph`, `diff`, `retentions`, and `impact`
+still require v1 inputs and reject version 2.
 
 The `summary` carries the issue counts plus observation volume: `observedFacts` is the total
 number of facts across all input documents and `observedLimitations` counts the reported

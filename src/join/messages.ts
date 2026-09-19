@@ -26,6 +26,8 @@ export interface MessageBridgeJoin {
   readonly routes: readonly MessageBridgeRoute[];
   readonly unresolved: readonly MessageEndpoint[];
   readonly limitations: readonly JoinLimitation[];
+  /** 입력 v2 문서 전체가 관찰한 fact 수다. 조인 여부와 무관한 관찰량이다. */
+  readonly observedFacts: number;
 }
 
 /** 발신 측 사실 종류다. Dart 문서만 이 종류를 담는다. */
@@ -35,8 +37,9 @@ function isSenderKind(kind: string): boolean {
 
 /** 서로 같은 project의 양쪽 v2 문서만 조인하며 transport와 MethodChannel 키 공간을 분리한다. */
 export function joinMessageBridges(documents: readonly BridgeMessageDocument[], project: string): MessageBridgeJoin {
-  if (documents.length === 0) return { routes: [], unresolved: [], limitations: [] };
+  if (documents.length === 0) return { routes: [], unresolved: [], limitations: [], observedFacts: 0 };
   validateMessageDocuments(documents, project);
+  const observedFacts = documents.reduce((total, document) => total + document.facts.length, 0);
   const groups = new Map<string, { transport: BridgeMessageTransport; channel: string; matching: 'literal' | 'prefix';
     senders: Map<string, MessageEndpoint>; handlers: Map<string, MessageEndpoint> }>();
   const unresolved = new Map<string, MessageEndpoint>();
@@ -96,6 +99,6 @@ export function joinMessageBridges(documents: readonly BridgeMessageDocument[], 
     routes: [...groups.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, group]) => ({
       transport: group.transport, channel: group.channel, matching: group.matching,
       senders: endpoints(group.senders), handlers: endpoints(group.handlers),
-    })), unresolved: endpoints(unresolved), limitations,
+    })), unresolved: endpoints(unresolved), limitations, observedFacts,
   };
 }

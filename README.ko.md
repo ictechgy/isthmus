@@ -57,9 +57,17 @@ React Native 모듈·컴포넌트 사실(`module-import`↔`module-export`,
 Expo Modules DSL(`Module`/`definition()`, `Name`, `Function`, `View`,
 `@ExpoModule`/`@JS`)을 스캔해 그 수출에 `mechanism: "expo"`를 표시한다 —
 `GRAPH-EXCHANGE.md`에 적힌 토큰 스캔 관찰 범위 안에서 end-to-end RN 조인이
-재현된다. EventChannel v2 전송은 자매 저장소 전반에 구현됐다.
+재현된다. EventChannel v2 전송은 자매 저장소 전반에 구현됐고, `check`가 v2
+Bridge·Event 문서를 직접 소비해 transport별 진단을 낸다.
 보존 근거보내기는 현재 cartograph(Swift)를 대상으로 한다.
 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
+
+변경 예측은 고정된 공개 정밀도 코퍼스 — `battery_plus`·`shared_preferences_foundation`·
+`url_launcher_macos`와 **LocalSend** 앱, 파일/심볼/버전 diff 15케이스 — 로 측정한다.
+최근 실행은 **TP 83 / FN 0 / FP 0**을 기록했고, 최초의 앱 수준 Dart↔Swift↔Kotlin
+3방향 조인을 포함한다([`experiments/real-corpus/`](experiments/real-corpus/)).
+이 수치는 스텁 컴파일 Swift와 소스 스캔 Kotlin 위의 정적 브리지 경계이며,
+런타임 실행·앱 전체 정밀도는 측정하지 않았다.
 
 | 문서 | 내용 |
 |---|---|
@@ -68,6 +76,7 @@ Expo Modules DSL(`Module`/`definition()`, `Name`, `Function`, `View`,
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
+| [`experiments/real-corpus/`](experiments/real-corpus/) | 고정 공개 플러그인·앱 정밀도 코퍼스(TP/FN/FP 계수) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
 
 ## 의존 관계
@@ -119,6 +128,9 @@ Android 개발 지원은 `selection.kotlin`과 kartograph snapshot을 사용한�
 브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
 실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
+`isthmus init [capture.json]`은 그 capture 설정 scaffold를 쓰고(`--toolchain`을 주면
+구축한 `toolchain.json`의 실제 producer 명령을 채운다), `isthmus doctor <capture.json>`은
+설정을 검증하고 참조한 실행 파일이 `PATH`나 지정 경로에 있는지 확인만 한다 — 실행하지 않는다.
 runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
 전이 분석을 대조하고, 네이티브 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
 
@@ -342,6 +354,27 @@ React Native 이름 경계도 같은 방향으로 보고한다 — `require`/`im
   `component-require-mechanism-mismatch`, `component-export-mechanism-mismatch`
   (warning): 이름이 상대편에 있지만 호환되지 않는 core/Expo 해석 경로로만
   관찰됨
+
+`check`는 BasicMessageChannel·EventChannel bridge-facts v2 문서도 직접 소비해
+같은 짝 규칙으로 transport별 진단을 보고한다.
+
+- `unhandled-message-send` (error) / `-unverified` (warning): Dart Basic send에
+  대응 네이티브 메시지 핸들러가 없음
+- `message-handler-without-send` (warning): 네이티브 Basic 핸들러에 대응 Dart
+  send가 없음
+- `unhandled-stream-listen` (error) / `-unverified` (warning): Dart Event 스트림
+  listener에 대응 네이티브 스트림 핸들러가 없음
+- `stream-handler-without-listen` (warning): 네이티브 Event 핸들러에 대응 Dart
+  listener가 없음
+
+dynamic `channelPrefix` 경로는 판정이 아니라 후보다 — 항상
+`dynamic-message-address`·`dynamic-stream-address` 소비자 한계로 실리고, 관찰된
+상대가 없으면 `unmatched-message-boundary`·`unmatched-stream-boundary`가 더해지며,
+증명된 prefix가 없는 동적 주소는 `unresolved-message-addresses` 한계에 포함된다.
+빠진 쪽을 prefix 후보가 덮는 literal 경계도 error 대신 같은 후보 한계로 내린다.
+`summary`는 v2 입력이 있을 때만 `matchedMessages`·`matchedStreams`(literal 매치만)를
+더한다. `query`·`graph`·`diff`·`retentions`·`impact`는 여전히 v1 입력만 받고
+version 2를 거부한다.
 
 `summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 사실
 총수이고 `observedLimitations`는 보고된 분석 한계 수다. 이로써 브리지가 없는 프로젝트와

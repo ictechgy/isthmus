@@ -1,0 +1,50 @@
+{
+  "format": "isthmus-rn-js-corpus-results",
+  "version": 1,
+  "scope": "caller-side extract-js only; receiver Expo DSL scan is out of scope",
+  "tools": {
+    "isthmus": "0.7.0"
+  },
+  "totals": {
+    "tp": 5,
+    "fn": 0,
+    "fp": 0
+  },
+  "cases": [
+    {
+      "id": "expo-haptics@14.1.4",
+      "package": "expo-haptics",
+      "version": "14.1.4",
+      "sha256": "d721711e1315800035a7b8fbada612f9091ebed593529a2a0c08d48333acd130",
+      "license": "MIT",
+      "predicted": {
+        "moduleImports": [
+          "[\"ExpoHaptics\",\"expo\",true]"
+        ],
+        "methodInvokes": [
+          "ExpoHaptics/impactAsync",
+          "ExpoHaptics/notificationAsync",
+          "ExpoHaptics/performHapticsAsync",
+          "ExpoHaptics/selectionAsync"
+        ]
+      },
+      "expected": {
+        "moduleImports": [
+          "[\"ExpoHaptics\",\"expo\",true]"
+        ],
+        "methodInvokes": [
+          "ExpoHaptics/impactAsync",
+          "ExpoHaptics/notificationAsync",
+          "ExpoHaptics/performHapticsAsync",
+          "ExpoHaptics/selectionAsync"
+        ]
+      },
+      "truePositives": 5,
+      "falseNegatives": 0,
+      "falsePositives": 0,
+      "limitations": [
+        "js-binding-scope: member calls through bindings that leave the scan set (package imports, function results, instance state) are not attributed to a module name"
+      ]
+    }
+  ]
+}
