@@ -39,8 +39,8 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The published npm version is **0.7.0**. The compatible public producer set is
-cartograph **0.18.0**, kartograph **0.10.2**, and dartograph **0.14.0** — see
+The **0.8.0** release uses this compatible producer set:
+cartograph **0.20.0**, kartograph **0.11.0**, and dartograph **0.15.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
@@ -67,8 +67,7 @@ and kartograph scan the Expo Modules DSL (`Module`/`definition()`, `Name`,
 token-scan observation scope documented in `GRAPH-EXCHANGE.md`.
 EventChannel v2 transport is implemented across the sister repositories, and
 `check` now consumes the v2 Bridge/Event documents directly with
-transport-specific diagnostics. Retention export currently targets cartograph
-(Swift). Full application coverage and first-time external setup remain
+transport-specific diagnostics. Retention export targets cartograph (Swift/Objective-C) and kartograph (Kotlin/JVM). Full application coverage and first-time external setup remain
 unverified.
 
 Change predictions are measured against a pinned public precision corpus —
@@ -295,11 +294,10 @@ command defers the join with exit code 2, reporting how many observed facts acro
 documents could not be joined; split such a document per target at production time
 first.
 
-On the development branches, `--for cartograph` requires a Swift platform document and
+In 0.8.0, `--for cartograph` requires a Swift platform document and
 `--for kartograph` requires a Kotlin platform document. Kotlin needs an actual JVM node ID;
 Objective-C implementations need an actual Clang `c:` USR. Missing identities fail with code 2.
-Use matching development builds: cartograph must include Clang declarations in its graph,
-and kartograph must support external retentions. Kartograph also rejects IDs absent from its graph.
+Use cartograph 0.20.0+ for indexed Clang declarations and kartograph 0.11.0+ for external retentions. Kartograph also rejects IDs absent from its graph.
 
 ```bash
 isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.json
@@ -443,7 +441,7 @@ check/query/graph/diff. A producer's tool name alone never drives mitigation: `u
 counts mitigate only when they carry the consumer-attached `origin: "consumer"`.
 
 The optional `sourceLanguage: "objective-c"` field identifies implementations in `.m`/`.mm`
-files. Their actual Clang USRs can be exported as retentions on matching development builds.
+files. Their actual Clang USRs can be exported as retentions with cartograph 0.20.0+ and isthmus 0.8.0+.
 A matched Objective-C declaration without a Clang USR fails with code 2. The legacy
 `omittedObjectiveCHandlers` field remains a limitation in older documents; new exports do not
 silently omit these matches. Swift declarations without any symbol also fail.
@@ -560,7 +558,7 @@ and per-model tuning rationale are in the [agent audit record](docs/AGENT-AUDIT.
 
 [MIT](LICENSE). Free forever, including commercial use.
 
-## RN event boundaries in development
+## RN event boundaries
 
 `extract-js --events` and the sibling tools' `bridges --rn-events` produce a separate v2
 transport for core RN global events. `--events` selects an event-only document; run a separate

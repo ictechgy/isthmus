@@ -4,12 +4,16 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-20
+
+호환 릴리스 세트: cartograph 0.20.0 · kartograph 0.11.0 · dartograph 0.15.0.
+
 ### Added
 
 - `retentions --for kartograph`가 실제 Kotlin/JVM 식별자와 Dart/JS 호출 근거를 내보낸다.
   cartograph 대상도 실제 Clang USR이 있는 ObjC 선언을 포함하며, 식별자 누락은 부분 보존
   대신 실패한다. 이전에 ObjC 제외 계수와 함께 성공하던 name-only 입력도 이제 코드 2로
-  실패한다. 대응 자매 개발 빌드가 필요하다.
+  실패한다. cartograph 0.20.0·kartograph 0.11.0이 대응 소비자다.
 - 코어 RN 전역 이벤트를 `extract-js --events`의 `event-listen`과 네이티브
   `bridges --rn-events`의 `event-emit`으로 연결한다. 별도 v2 transport이며 check의
   미대응 진단은 warning, query/graph kind는 event다. Expo·preflight/runtime은 범위 밖이다.
