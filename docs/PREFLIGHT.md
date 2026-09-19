@@ -229,6 +229,14 @@ node node_modules/isthmus-cli/scripts/capture-preflight.mjs capture.json
 }
 ```
 
+`isthmus init [capture.json]`은 이 설정의 scaffold를 쓰고, `--toolchain <toolchain.json>`을
+주면 `scripts/build-preflight-toolchain.mjs`가 만든 `isthmus-built-toolchain`의 실제
+producer 명령을 채운다. 앱별로 다른 `prepare`는 자리표시자로 남고, 기존 파일은
+`--force` 없이는 덮어쓰지 않는다. `isthmus doctor <capture.json>`은 설정을 수집기와 같은
+정본 규칙(`src/exchange/capture-config.ts`)으로 검증하고 producer·prepare 첫 토큰이
+PATH나 지정 경로에 실제로 있는지만 확인한다 — 제품은 producer를 실행하지 않는다. 종료
+코드는 정상 0, 미완성 1, 입력·계약 오류 2, 사용 오류 64다.
+
 `since` 대신 `selection: {"swift":{"files":["ios/Runner/CameraPlugin.swift"],"symbols":[]}}`
 처럼 변경 전 대상을 명시할 수 있다. 둘을 함께 쓰지 않는다. CI에서는 checkout한 저장소의
 base commit SHA를 since에 넣고 해당 commit을 fetch해 둔다. Git의 rename 양쪽·삭제·변경

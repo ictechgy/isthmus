@@ -22,6 +22,20 @@ export type ReadTextFile = (path: string) => Promise<string>;
 /** 파일 경로에 UTF-8 텍스트를 쓰는 주입 경계다. */
 export type WriteTextFile = (path: string, text: string) => Promise<void>;
 
+/** 경로 종류다. 없는 경로를 빈 결과로 오인하지 않게 `missing`을 구분한다. */
+export type PathKind = 'file' | 'directory' | 'missing';
+
+/**
+ * doctor·init이 쓰는 최소 파일시스템 경계다.
+ *
+ * 제품은 producer를 실행하지 않는다. 이 경계는 설정 JSON의 경로 존재와
+ * project 정규화만 확인한다.
+ */
+export interface CaptureFileSystem {
+  statPath(path: string): Promise<PathKind>;
+  realPath(path: string): Promise<string>;
+}
+
 /** 생성 시각을 테스트 가능하게 주입하는 시계다. */
 export type Clock = () => Date;
 

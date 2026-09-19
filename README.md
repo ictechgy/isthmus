@@ -145,6 +145,10 @@ producer impact paths across the bridge. A separate capture workflow caches decl
 input content and has passed a synthetic source test with real producers. See
 [cross-language preflight](docs/PREFLIGHT.md) for the contract, CI setup, and remaining
 real-application validation.
+`isthmus init [capture.json]` scaffolds that capture config — `--toolchain` fills real
+producer commands from a built `toolchain.json` — and `isthmus doctor <capture.json>`
+validates the config and checks that the referenced executables resolve on `PATH` or at
+the given path, without running them.
 To combine that context with recorded execution, pass runtime JSON files and
 `--expectations <checks.json>`. Preflight reports revision alignment, native candidates,
 and static boundaries missing observations or declared scenarios; existing static gaps remain visible.
