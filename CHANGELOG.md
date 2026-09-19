@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-19
+
 ### Added
 
 - `retentions --for cartograph`가 v2 Basic·Event 경계의 Swift 핸들러를 보존한다.
@@ -44,10 +46,6 @@
   정본과 일치하는지 `npm run verify`에서 검사해 손으로 적은 표의 drift를 실패로 드러낸다.
   정본은 npm 패키지에 포함된다.
 
-## [0.7.0] - 2026-09-18
-
-### Added
-
 - React Native 모듈·컴포넌트 경계 조인: `module-import`↔`module-export`와
   `component-require`↔`component-export`를 `(target, channel=이름)`으로 연결한다.
   export 없는 호출 측 이름은 `module-import-without-export`·
@@ -85,7 +83,7 @@
   component-require×core export는 폴백 부재로 error 유지), 불일치 export는
   `incompatibleReceivers` 증거로 보존한다. extract-js는 Expo 전용 API 호출을
   `mechanism: "expo"`로 표시하고, Expo가 아닌 specifier의 동명 래퍼는
-  생략한다. Expo DSL 수신 측 스캔은 cartograph·kartograph 후속이다.
+  생략한다. Expo DSL 수신 측 스캔은 cartograph·kartograph에 포함됐다.
 - `check --format codequality`: GitLab Code Quality 아티팩트 출력이다. 억제되지
   않은 이슈 하나가 첫 증거 끝점의 발견 하나가 되고, `check_name`은
   `isthmus:<진단 코드>`, `severity`는 error→`major`·warning→`minor`,
