@@ -1,8 +1,111 @@
 # Handoff
 
-_Last updated: 2026-09-19 (isthmus 0.7.0 발행·태그·Release 완료 · #93·#94 후속 머지 · main `50642d0` · 다음은 자매 저장소 작업)_
+_Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완료 · 네 저장소 main 동기화 · 미발행)_
 
 ## 현재 재개 기준
+
+저장소별 재개 정보: [cartograph](../cartograph/HANDOFF.md) ·
+[kartograph](../kartograph/HANDOFF.md) · [dartograph](../dartograph/HANDOFF.md).
+제품 변경은 네 PR에 머지됐다. 이 문서는 그 인계 기록이며 재개 시 실제 Git 상태를 확인한다.
+
+### 머지 완료 — 사용자 "다 머지 시켜줘" 승인
+
+| 저장소 | PR | 상태 | 머지 커밋 |
+|---|---|---|---|
+| isthmus | [#96](https://github.com/ictechgy/isthmus/pull/96) | CI 통과·머지·로컬 main 동기화 | `ad7de61` |
+| cartograph | [#123](https://github.com/ictechgy/cartograph/pull/123) | CI 통과·머지·로컬 main 동기화 | `5c43c36` |
+| kartograph | [#82](https://github.com/ictechgy/kartograph/pull/82) | CI 통과·머지·로컬 main 동기화 | `37f0053` |
+| dartograph | [#127](https://github.com/ictechgy/dartograph/pull/127) | CI 통과·머지·로컬 main 동기화 | `3ecabfd` |
+
+- 최종 PR head를 대조하고 모든 check의 성공을 확인한 뒤 네 PR을 squash merge했다.
+  네 저장소 모두 머지 트리와 검토한 PR 트리가 같음을 확인했고 기존 사용자 변경을 보존했다.
+- 원격 PR의 `MERGED` 상태·머지 커밋과 로컬 main을 대조했다. 최종 PR CI 5개 실행이 모두
+  성공했다: isthmus `35453711363`, cartograph `35453717002`, kartograph `35453722844`,
+  dartograph `35453724783` 및 impact `35453724771`. kartograph는 JDK 17/21·AGP 최소 조합과
+  전체 test 잡의 compiler/precision/Android/plugin/metadata 검증까지 통과했다.
+- GLM 반영/기각 기록과 동반 PR 링크를 각 PR의 코멘트에 남겼다. 새 코드 변경은 없으며
+  이미 완료한 GLM 리뷰를 재전송하지 않았다. 태그·패키지 발행은 수행하지 않았다.
+- `.git/sibling-bridge-merge/final-merge-record.json`에 커밋·PR·리뷰 코멘트·머지·로컬 동기화와
+  최종 CI 대조 결과가 있다. 같은 폴더에 실제 변경 patch·PR 본문·checks·CI job 기록을 보존한다.
+
+### 이번 작업 — 자매 브리지 확장 (개발, 미발행)
+
+- 네 저장소의 구현 브랜치는 `feature/sibling-bridge-support`였다. 구현 기준 HEAD는 isthmus
+  `310481f`, cartograph `61abea5`, kartograph `6d0ce79`, dartograph `a6f0c7f`.
+  제품·사용법 변경 81파일은 네 PR에 커밋·push·머지했다.
+  현재 브랜치·머지 상태는 위 표를 따른다.
+  기존 isthmus `docs/RESEARCH.md`, kartograph `.claude/`·`HANDOFF.cartograph-notes.md`,
+  dartograph `HANDOFF-PROGRESS.md`·`editors/vscode/icon-drafts/`는 보존했다.
+- isthmus: `retentions --for kartograph`(실제 JVM ID 필요), 실제 Clang USR의 ObjC 보존,
+  코어 RN 전역 이벤트 v2(`extract-js --events`, event-listen↔event-emit), check 경고·
+  query/graph event kind·기존 diff/retention 연동. v1+v2 통합 호출 근거 예산도 검사한다.
+  [RN 이벤트 계약](docs/BRIDGE-RN-EVENTS.md)을 읽는다. Expo 이벤트·간접 emitter 추적·
+  RN 이벤트 preflight/runtime은 지원하지 않는다. module/component 이름 매치만으로는
+  보존 루트를 만들지 않는다.
+- kartograph: external-retentions v0 파싱·`dead --external-retentions`·EXTERNAL_BRIDGE
+  설명·소유 타입 보존·스냅샷 근거 왕복. 누락/잘못된 ID는 부분 적용 없이 실패한다.
+  `bridges --rn-events`는 명시적인 RCTDeviceEventEmitter 요청 뒤 emit을 관찰한다.
+  실제 심볼 부착에는 `snapshot --include-paths`와 유일한 소스 경로 해석이 필요하다.
+  JVM package와 소스 디렉터리가 다르면 기존 보수적 경로 해석은 미확정으로 남는다.
+- cartograph: `.m`/`.mm` Clang 선언·참조를 일반 그래프에도 포함한다. RN 구현 매크로에
+  sourceLanguage와 컴파일러 ID를 붙이고, 같은 줄의 보조 class method는 Clang의
+  instance-method 종류로 구분한다. 셀렉터 이름으로 추측 매칭하지 않는다.
+  `bridges --rn-events`는 직접 Swift RCTEventEmitter 하위 타입의 방출을 별도 v2로 낸다.
+  오탐 코퍼스 golden은 RNCalendar의 실제 class/method USR 2건과 해소된 옛 공백만 갱신했다.
+- dartograph는 `doc/GRAPH-EXCHANGE.md`의 역할·계약 안내만 갱신했다. Dart 생산 코드는 그대로다.
+- 최종 검증: isthmus `npm run verify` 통과(제품 629, Phase 0 15, workflow 22;
+  line/branch/functions 97.37/91.42/95.65%). cartograph 전체 테스트 1,647개와
+  CLI 하네스를 포함한 coverage 92.84%(32,184/34,666), 실제 compiler fixture·
+  dead/cycles/type-cycles/rules 자기 분석 모두 통과했다. 최종 바이너리로 기존
+  cartograph↔dartograph retention 왕복과 limitation-scopes 도그푸딩도 통과했다.
+- 추가 실행: 실제 Clang+JS→ObjC 보존→dead explain, JS+인덱싱한 Swift+Kotlin 소스 RN
+  이벤트 조인→Swift 보존 설명, 실제 Kotlin 컴파일→경로 포함 snapshot→bridges→isthmus→
+  kartograph dead 억제·explain을 확인했다. Kotlin snapshot의 missing-build-witness /
+  graph-file-freshness-unverified는 그대로 보존했다. Kotlin 잘못된 입력 14건과 RN 플래그
+  4조합, v1/v2 query snapshot의 외부 호출 근거 왕복도 확인했다.
+- Kotlin 정식 Gradle 검증 완료: 승인 후 Kotlin 2.4.20 의존성을 받아 JDK 21에서
+  `./gradlew --no-daemon test :koverVerify :gradle-plugin:validatePlugins :cli:installDist`
+  통과(760 tests, 실패·오류·skip 0). 실제 설치 배포의 CLI/agent 계약도 통과했다.
+  설치된 Android SDK를 `ANDROID_HOME`으로 지정해 compiler corpus 44 retained /
+  4 reportable을 확인했다. 자기 분석은 6개 생산 모듈·7,173 nodes, dead/private-dead/
+  cycles/rules 0건, 총 5.46초(예산 15초)였다. 이전 턴의 offline 실패는 해소됐다.
+- 캐시 측정: [기록](experiments/real-corpus/CACHE-MEASUREMENTS.md)과
+  [원시 JSON](experiments/real-corpus/results/cache-measurements.json). 합성 bridge-app 1개와
+  로컬 공개 pub 캐시의 shared_preferences_foundation 2.5.4 코퍼스 3케이스를 각각 두 번
+  수집했고 모두 miss→hit·보고서 동일성을 확인했다. 공개 3케이스는 1,106~1,408ms →
+  132~138ms였다. SDK·빌드·생산자 캐시는 유지했다. 전체 15케이스 재실행이나 원격
+  아카이브 재인증, 앱 런타임 검증은 아니다.
+- `dartograph --version`의 pub 설치 래퍼가 의존성 해석을 자동 실행했다. 이후에는 로컬
+  source에서 만든 0.14.0 AOT 실행 파일을 사용했다. 같은 래퍼를 무심코 재실행하지 않는다.
+- 후속 사용자 "승인"으로 의존성 다운로드·고정 공개 소스·GLM 외부 리뷰를 실행했다.
+  공개 battery 플러그인 `13e170479b3c66c890fa401f5fdb3af141faf67a`를 내려받아,
+  전체 ObjC 관찰의 ID 누락 거부와 명시적인 macOS include 범위의 보존 왕복을 검증했다.
+  최종 바이너리로 재실행해 통과했다. RN 공식 소스 v0.81.4도 고정해 전역 이벤트 버스와
+  ObjC 매크로 형태를 대조했고, 출처는 RN 이벤트 계약 문서에 남겼다.
+- `packet-ask --provider glm` 실제 리뷰 완료: isthmus `eda1589ba30b`, cartograph
+  `0d5b0f1cd8cc`, kartograph `42a71c2772aa`, dartograph `de643634a784`.
+  검증한 수정분의 후속 리뷰는 각각 `3e79c0bd84f7`, `125112deba78`, `3d7e8434c741`다.
+  모델의 추측은 코드·테스트로 판별했고, 판정은 작업 폴더 `glm-disposition.md`에 기록했다.
+  초기 paste 패킷은 리뷰 응답이 아니다. review는 `--staged` 또는 `--files`를 사용하며
+  `--include-files`는 지원하지 않는다. isthmus 전체 diff에는 `--max-files 64`가 필요하다.
+- 리뷰 반영: JS 동명 객체 속성의 가짜 이벤트 구독을 차단하고 공통 lexer의 열을 UTF-8로
+  맞췄다. Swift 조건부 import/본문·extension·가림으로 제외된 범위를 계수·보고한다.
+  Kotlin은 빈 JVM ID 거부·snapshot ID 소속 검증·정렬·호출 근거 보존·소유 타입 탐색 재사용,
+  완전 수식 RN 이름과 잘못 닫힌 인자 처리를 보강했다. 각 동작은 회귀 검사로 확인했다.
+  문서의 transport 구분·실패 조건·관찰 범위도 맞췄다.
+- 요청한 구현·검증·리뷰와 후속 네 저장소 머지는 완료했다. 발행은 수행하지 않았다.
+  RN 지원은 문서에 적은 정적 추출 범위이며 앱 전체 빌드·엔진 실행 검증은 아니다.
+- 이전 `$TMPDIR/isthmus-kotlin-local-7j461rfx/`와 `/tmp/isthmus-*.log`는 이번 머지 턴 시작 시
+  디스크에 없었다. 과거 원본·GLM 응답·receipt·`final-validation-summary.json`이 현재도
+  존재한다고 가정하지 않는다. 앞선 실행 결과는 이 기록과 세션 대화에, GLM 판정 요약은
+  새 PR 코멘트에 남겼다. 새 원격 CI 결과와 머지 근거는 상단 PR 및 `.git/sibling-bridge-merge/`를 따른다.
+  변경 문서의 로컬 링크 152개와 네 저장소의 `git diff --check HEAD`는 이전 검증에서 통과했다.
+- 이전 검증 턴에서는 당시 임시 폴더의 `cache-fixture/.build`·`cached-shared-prefs/.build`만
+  정리하고 원본·실행 근거를 남겼다. 현재 그 임시 폴더는 없으며, 저장소의 원시 캐시 측정
+  JSON과 이번 머지의 `.git/sibling-bridge-merge/` 기록은 보존돼 있다.
+
+아래 내용은 이번 작업 전 상태를 보존한 기록이다. 현재 작업은 위 항목을 우선한다.
+
 
 - `main`은 `50642d0`로 origin/main과 동기화. 열린 PR 없음. 작업 트리 변경은
   `docs/RESEARCH.md` 하나다(제품 코드 변경 없음).
