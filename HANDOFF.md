@@ -1,8 +1,28 @@
 # Handoff
 
-_Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완료 · 네 저장소 main 동기화 · 미발행)_
+_Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완료 · 자매 발행 완료 · npm 인증 갱신 대기)_
 
 ## 현재 재개 기준
+
+### 호환 릴리스 후속 — 2026-09-20
+
+- 0.8.0 준비 PR [#98](https://github.com/ictechgy/isthmus/pull/98)이 머지됐다(`5825329`).
+  npm verify·두 OS CI·GLM 검토를 통과했고 동일 아카이브를 보존했다.
+- npm 점검 중 PUT 503, 점검 종료 후 PUT 404·whoami 401로 발행이 차단됐다.
+  0.8.0 버전 GET도 404였다. 이 세션에서 사람 사용자에게 로컬 터미널의 npm login 갱신을
+  요청했다. whoami 성공과 발행 권한을 재확인한 뒤 같은 아카이브로 재시도한다. 재시도 전 정확한
+  버전의 등록 여부를 다시 조회하고, 이미 등록됐으면 integrity부터
+  대조해 중복 발행을 피한다. 인증 파일이나 토큰을 직접 읽지 않는다.
+- 자매 발행본: cartograph 0.20.0(GitHub·Homebrew), kartograph 0.11.0(GitHub·Plugin Portal),
+  dartograph 0.15.0(pub.dev·GitHub). 설치 CLI 버전과 native archive/Portal JAR 해시를 대조했다.
+- 이 세 발행본과 0.8.0 후보 아카이브로 ObjC·RN·Dart/Swift·고정 공개 battery·limitation-scopes
+  왕복을 통과했다. 별도 Kotlin 컴파일+지원되는 when(call.method) handler로 snapshot→bridges→
+  retention→dead/explain도 확인했다. Flutter API는 합성 stub이며 앱 런타임 검증은 아니다.
+  npm 발행본 검증으로 표현하지 않고, 발행 후 registry integrity와 독립 설치를 추가 확인한다.
+- 판정·원시 로그·아카이브 및 진행 기록은 `.git/release-p1-20260920/`에 있다. 설치/소스 캐시를
+  정리하기 전 활성 입력인지 확인하고, 과거 임시 디렉터리의 존재를 가정하지 않는다.
+- kartograph P1.1-2는 별도 후속 개발이며 0.11.0 발행본에 포함되지 않는다.
+- 아래 날짜별 과거 발행·설치 상태는 이 최상단 상태로 대체해 읽는다.
 
 저장소별 재개 정보: [cartograph](https://github.com/ictechgy/cartograph/blob/main/HANDOFF.md) ·
 [kartograph](https://github.com/ictechgy/kartograph/blob/main/HANDOFF.md) · [dartograph](https://github.com/ictechgy/dartograph/blob/main/HANDOFF.md).
@@ -106,7 +126,6 @@ _Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완
   JSON과 이번 머지의 `.git/sibling-bridge-merge/` 기록은 보존돼 있다.
 
 아래 내용은 이번 작업 전 상태를 보존한 기록이다. 현재 작업은 위 항목을 우선한다.
-
 
 - `main`은 `50642d0`로 origin/main과 동기화. 열린 PR 없음. 작업 트리 변경은
   `docs/RESEARCH.md` 하나다(제품 코드 변경 없음).
