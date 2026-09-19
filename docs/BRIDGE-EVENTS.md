@@ -48,9 +48,11 @@ bridge-facts v1 MethodChannel·[v2 BasicMessageChannel](BRIDGE-MESSAGES.md) 동�
   `dynamic-stream-address` 소비자 한계로 실리고, 상대가 없으면
   `unmatched-stream-boundary`가 더해진다. prefix 없는 미해석 주소는
   `unresolved-message-addresses` 한계로 남긴다.
-- 그 밖의 v1 전용 명령은 version 2를 명시적으로 거부한다. `preflight`는 context의
-  message 문서 목록으로 소비하며 transport 필드로 구분한다 — 다른 명령이 모르는
-  facts를 무시하고 초록 결과를 내게 하지 않는다.
+- `query`는 `stream` kind 주체로, `graph`는 literal Event 경계를 `stream` 간선으로,
+  `diff`는 그 추가·삭제를 낸다. dynamic prefix 후보는 확정 경계가 아니다.
+- 그 밖의 v1 전용 명령(`retentions`·`impact`)은 version 2를 명시적으로 거부한다.
+  `preflight`는 context의 message 문서 목록으로 소비하며 transport 필드로 구분한다 —
+  다른 명령이 모르는 facts를 무시하고 초록 결과를 내게 하지 않는다.
 
 ## handler별 의존 근거
 

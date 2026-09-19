@@ -7,10 +7,11 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 
 개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)와
 [EventChannel v2](BRIDGE-EVENTS.md)는 별도 transport 문서다.
-`check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고하며, `preflight`는
-선택적 context.messages로 소비한다. 그 밖의 v1 전용 명령(`query`·`graph`·`diff`·
-`retentions`·`impact`)은 version 2를 명시적으로 거부한다 — 모르는 facts를 무시하고
-초록 결과를 내지 않는다.
+`check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
+`message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
+`diff`는 literal v2 경계의 추가·삭제와 v2 진단의 introduced/resolved를 싣는다.
+`preflight`는 선택적 context.messages로 소비한다. `retentions`·`impact`는 v1 전용으로
+version 2를 명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
 
 cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
 

@@ -373,8 +373,9 @@ dynamic `channelPrefix` 경로는 판정이 아니라 후보다 — 항상
 증명된 prefix가 없는 동적 주소는 `unresolved-message-addresses` 한계에 포함된다.
 빠진 쪽을 prefix 후보가 덮는 literal 경계도 error 대신 같은 후보 한계로 내린다.
 `summary`는 v2 입력이 있을 때만 `matchedMessages`·`matchedStreams`(literal 매치만)를
-더한다. `query`·`graph`·`diff`·`retentions`·`impact`는 여전히 v1 입력만 받고
-version 2를 거부한다.
+더한다. `query`는 v2 경계를 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를
+`message`·`stream` 간선으로, `diff`는 literal v2 경계의 추가·삭제와 v2 진단을 생산한다.
+`retentions`·`impact`는 여전히 v1 입력만 받고 version 2를 거부한다.
 
 `summary`는 이슈 계수와 함께 관찰량을 싣는다. `observedFacts`는 입력 문서 전체의 사실
 총수이고 `observedLimitations`는 보고된 분석 한계 수다. 이로써 브리지가 없는 프로젝트와

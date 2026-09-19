@@ -46,9 +46,13 @@ v2 문서를 출력한다. 공개 호환 버전(cartograph 0.18.0·kartograph 0.
   `unresolved-message-addresses` 한계로 남긴다. literal 경계도 상대편을 prefix
   후보가 덮으면 error 대신 후보 한계로 내린다. `--format sarif`·`codequality`와
   `--baseline`도 이 코드를 그대로 싣는다.
-- 그 밖의 v1 전용 명령(`query`·`graph`·`diff`·`retentions`·`impact`)은 version 2를
-  명시적으로 거부한다. `preflight`는 context의 별도 message 문서 목록으로 소비한다 —
-  다른 명령이 모르는 facts를 무시하고 초록 결과를 내게 하지 않는다.
+- `query`는 v2 경계를 `message` kind 주체(EventChannel은 `stream`)로, `graph`는
+  literal v2 경계를 `message`·`stream` 간선으로, `diff`는 literal v2 경계의 추가·삭제와
+  v2 진단의 introduced/resolved를 낸다. dynamic prefix 후보는 graph·diff의 확정
+  경계가 아니다.
+- 그 밖의 v1 전용 명령(`retentions`·`impact`)은 version 2를 명시적으로 거부한다.
+  `preflight`는 context의 별도 message 문서 목록으로 소비한다 — 다른 명령이 모르는
+  facts를 무시하고 초록 결과를 내게 하지 않는다.
 
 ## handler별 의존 근거 (개발 계약)
 

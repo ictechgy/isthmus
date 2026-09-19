@@ -11,7 +11,8 @@ import type {
   JoinLimitation,
   MatchedBoundaryName,
 } from '../join/join.ts';
-import { isBridgeJoinDeferred } from '../join/join.ts';
+import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
+import type { MessageBridgeJoin } from '../join/messages.ts';
 import { compareStrings } from '../compare.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
@@ -28,7 +29,7 @@ export interface BridgeGraphNode {
 export interface BridgeGraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream';
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method?: string;
@@ -153,29 +154,67 @@ function edgeLabel(edge: BridgeGraphEdge): string {
   return `${edge.kind} ${key}`;
 }
 
-/** 조인 결과의 매치만 경계 그래프로 바꾼다. */
-export function createBridgeGraph(joined: BridgeJoinResult): BridgeGraphDocument {
+/**
+ * 조인 결과의 매치만 경계 그래프로 만든다.
+ *
+ * `messages`를 주면 literal로 확정된 Basic·Event 경계가 `message`·`stream`
+ * 간선으로 더해진다. dynamic prefix 후보는 확정 매치가 아니므로 담지 않는다.
+ */
+export function createBridgeGraph(
+  joined: BridgeJoinResult,
+  messages?: MessageBridgeJoin,
+): BridgeGraphDocument {
   if (isBridgeJoinDeferred(joined)) {
     throw new Error('Cannot create a graph from a deferred bridge join.');
   }
-  assertBridgeGraphSize(joined);
+  assertBridgeGraphSize(joined, messages);
   const nodes = new Map<string, BridgeGraphNode>();
   const edges: BridgeGraphEdge[] = [];
   addChannelEdges(joined, nodes, edges);
   addMethodEdges(joined, nodes, edges);
   addNameEdges(joined.matchedModules, 'module', nodes, edges);
   addNameEdges(joined.matchedComponents, 'component', nodes, edges);
+  if (messages !== undefined) addMessageEdges(messages, nodes, edges);
   return {
     format: 'isthmus-graph',
     version: 1,
     nodes: [...nodes.values()].sort((left, right) => compareStrings(left.id, right.id)),
     edges: edges.sort(compareEdges),
-    limitations: joined.limitations,
+    limitations: messages === undefined
+      ? joined.limitations
+      : [...joined.limitations, ...messages.limitations].sort(compareLimitations),
   };
 }
 
+/** literal로 확정된 Basic·Event 경계의 발신→수신 간선을 추가한다. */
+function addMessageEdges(
+  messages: MessageBridgeJoin,
+  nodes: Map<string, BridgeGraphNode>,
+  edges: BridgeGraphEdge[],
+): void {
+  for (const route of messages.routes) {
+    if (route.matching !== 'literal') continue;
+    for (const sender of route.senders) {
+      for (const handler of route.handlers) {
+        const from = addNode(nodes, sender);
+        const to = addNode(nodes, handler);
+        edges.push({
+          from,
+          to,
+          kind: route.transport === 'event-channel' ? 'stream' : 'message',
+          target: 'flutter',
+          channel: route.channel,
+        });
+      }
+    }
+  }
+}
+
 /** 모든 Cartesian 간선 수를 할당 전에 계산해 메모리 폭증을 막는다. */
-export function assertBridgeGraphSize(joined: BridgeJoinResult): void {
+export function assertBridgeGraphSize(
+  joined: BridgeJoinResult,
+  messages?: MessageBridgeJoin,
+): void {
   let edgeCount = 0;
   const endpointCounts = [
     ...joined.matchedChannels.map(({ creations, registrations }) =>
@@ -190,6 +229,11 @@ export function assertBridgeGraphSize(joined: BridgeJoinResult): void {
     ...joined.matchedComponents.map(({ callers, receivers }) =>
       [callers.length, receivers.length] as const,
     ),
+    ...(messages?.routes ?? [])
+      .filter((route) => route.matching === 'literal')
+      .map(({ senders, handlers }) =>
+        [senders.length, handlers.length] as const,
+      ),
   ];
   for (const [fromCount, toCount] of endpointCounts) {
     if (

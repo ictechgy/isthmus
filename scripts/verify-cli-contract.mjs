@@ -36,6 +36,7 @@ verifyPreflight();
 verifyServe();
 verifyExtractJs();
 verifyDoctorInit();
+verifyMessageViews();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
@@ -385,6 +386,39 @@ function verifyDoctorInit() {
     verify(run(['doctor', join(directory, 'missing.json')]).status === 2, 'doctor missing input');
     verify(run(['help', 'doctor']).stdout.startsWith('Usage: isthmus doctor'), 'doctor help');
     verify(run(['help', 'init']).stdout.startsWith('Usage: isthmus init'), 'init help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** 빌드된 CLI가 v2 입력으로 query·graph를 처리하는지 검증한다. */
+function verifyMessageViews() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-msg-views-'));
+  try {
+    const message = (platform, facts) => JSON.stringify({
+      format: 'bridge-facts', version: 2, transport: 'basic-message-channel',
+      platform, target: facts.length > 0 ? 'flutter' : null, project: '/app',
+      generatedAt: '2026-09-18T00:00:00Z',
+      tool: { name: platform === 'dart' ? 'dartograph' : 'cartograph', version: 'test' },
+      facts, limitations: [],
+    });
+    const messageDart = join(directory, 'dart.json');
+    const messageSwift = join(directory, 'swift.json');
+    writeFileSync(messageDart, message('dart', [{
+      kind: 'message-send', channel: 'example/basic', dynamic: false,
+      location: { path: 'lib/api.dart', line: 5, column: 1 },
+    }]));
+    writeFileSync(messageSwift, message('swift', [{
+      kind: 'message-handle', channel: 'example/basic', dynamic: false,
+      location: { path: 'macos/Setup.swift', line: 9, column: 1 },
+    }]));
+
+    const query = run(['query', 'example/basic', messageDart, messageSwift]);
+    verify(query.status === 0 && JSON.parse(query.stdout).result.subject.kind === 'message',
+      'query message boundary');
+    const graph = run(['graph', messageDart, messageSwift]);
+    verify(graph.status === 0 && JSON.parse(graph.stdout).edges[0].kind === 'message',
+      'graph message edge');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

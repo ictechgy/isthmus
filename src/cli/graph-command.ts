@@ -1,8 +1,10 @@
 import {
+  emptyBridgeJoinResult,
   isBridgeJoinDeferred,
   joinBridgeDocuments,
   MAX_DOCUMENTS_PER_JOIN,
 } from '../join/join.ts';
+import { joinMessageBridges } from '../join/messages.ts';
 import {
   BridgeGraphLimitError,
   BridgeGraphValidationError,
@@ -13,7 +15,7 @@ import {
   bridgeJoinDeferredError,
   inputFailureResult,
   internalError,
-  readBridgeDocuments,
+  readBridgeInputs,
   type CommandResult,
   type ReadTextFile,
 } from './command-support.ts';
@@ -27,12 +29,18 @@ export async function runGraphCommand(
   const options = parseGraphArguments(arguments_);
   if (options === undefined) return graphUsageError();
   try {
-    const documents = await readBridgeDocuments(options.inputPaths, readTextFile);
-    const joined = joinBridgeDocuments(documents);
+    const { bridges, messages } = await readBridgeInputs(options.inputPaths, readTextFile);
+    const project = bridges[0]?.project ?? messages[0]!.project;
+    const joined = bridges.length > 0
+      ? joinBridgeDocuments(bridges)
+      : emptyBridgeJoinResult();
     if (isBridgeJoinDeferred(joined)) {
-      return bridgeJoinDeferredError(joined.observedFacts, documents.length);
+      return bridgeJoinDeferredError(joined.observedFacts, bridges.length);
     }
-    const graph = createBridgeGraph(joined);
+    const messageJoin = messages.length > 0
+      ? joinMessageBridges(messages, project)
+      : undefined;
+    const graph = createBridgeGraph(joined, messageJoin);
     return {
       standardOutput: renderBridgeGraph(graph, options.format),
       standardError: '',
