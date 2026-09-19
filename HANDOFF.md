@@ -1,6 +1,193 @@
 # Handoff
 
-_Last updated: 2026-09-17 KST by Devin (PR 3건 머지 완료 · cold-cache 첫 원격 실행 SUCCESS)_
+_Last updated: 2026-09-19 (main `d7bf3dd` · 이번 세션 후보 #2·#1·#3·#4·#5·#10 머지 완료 · 0순위 npm 발행만 잔여)_
+
+## 현재 재개 기준
+
+- `main`은 `d7bf3dd`로 origin/main과 동기화. 열린 PR 없음. 미커밋은
+  `HANDOFF.md`·`docs/RESEARCH.md` 두 문서뿐이다(제품 코드 변경 없음).
+- **0순위 남은 작업은 npm 인증 갱신 후 isthmus 0.7.0 발행 하나**다 —
+  `npm publish` → `git tag v0.7.0 <main>` + push → `gh release create v0.7.0`.
+  `compatibility.json`의 isthmus 0.7.0과 `cold-cache.yml`이 맞물려 있으므로,
+  발행이 끝나면 cold-cache의 isthmus 버전 대조를 켜면 된다.
+- **이번 세션 머지(2026-09-19)**: #85 `compatibility.json`(`6f73ab8`) ·
+  #84 `doctor`/`init`(`c32fdb9`) · #83 `check` v2 소비(`a1f3022`) ·
+  #86 RN 호출 측 코퍼스(`b7a43fe`) · #87 cold-cache 버전 고정(`be7808a`) ·
+  #88 `query`/`graph`/`diff` v2 소비(`d7bf3dd`). 각 PR은 최신 main을 병합하고
+  충돌(`CHANGELOG.md`·`package.json`)을 해결한 뒤 CI SUCCESS로 squash 머지했고,
+  최종 `npm run verify`는 제품 606 / coverage line/branch/functions
+  97.37/91.34/95.49였다. 사용한 브랜치는 없다.
+- codegraph 대비 후보 잔여: #1의 `retentions` v2(보존 근거에 method가 없어 계약
+  확장 필요), #10 수신 측 코퍼스(cartograph `--target react-native` 빌드 필요),
+  #7/#8/#9(자매 저장소 계약 변경 동반), #11 이슈 승격(보류).
+- GLM 리뷰는 `packet-review`가 `packet-ask exited 125`로 실패해 확보하지 못했다.
+- 아래 과거 절의 branch·OPEN·남은 것·버전 표는 당시 기록이며 현재 실행 지시가 아니다.
+- **PR #81 MERGED(스쿼시 `65edc97`)**: `check --format codequality` GitLab Code
+  Quality 발견 목록 출력. 억제 이슈 제외·지문 중복 가드·severity 명시 분기·
+  `report/rules.ts` 중립 모듈 분리. GLM(패킷 `f2cb3d0dc19c`) 지적 반영 —
+  `Set.add` 반환값 오독 결함을 신규 테스트가 잡아 수정. CI run `35301004099`
+  macOS·Ubuntu SUCCESS 후 머지.
+- **호환 버전 세트 발행 — kartograph 완료, isthmus는 npm 인증 대기**:
+  - **kartograph v0.10.2 발행 완료**: PR #74 머지(스쿼시 `ecaa2be`, #73
+    unmatched-keep-rule이 병합돼 Added+Fixed로 기록) → `v0.10.2` 태그 →
+    release run `35307609887` SUCCESS. GitHub release 아티팩트(tar/zip/plugin jar/
+    SBOM/SHA256SUMS)와 Gradle Plugin Portal `0.10.2` 발행 확인. 발행 tarball을
+    받아 `--version`·`expo-haptics` 스캔(5 facts·method 4) 재검증 완료.
+  - **isthmus PR #82 MERGED(스쿼시 `b039bbf`)**: package.json 0.7.0·호환 세트 문서.
+    `npm publish`는 verify·패킹까지 성공 후 PUT에서 **E404(토큰 만료/권한 부족,
+    whoami도 401)**로 차단 — `~/.npmrc`의 `_authToken`이 죽어 있다.
+    **남은 발행 단계(인증 갱신 후)**: `npm publish` → `git tag v0.7.0 b039bbf` →
+    `git push origin v0.7.0` → `gh release create v0.7.0`(이전 릴리스는 vX.Y.Z 태그).
+  - cartograph 0.18.0은 발행 완료(brew formula·설치본·`fb7a2ca` 포함 확인).
+  - dartograph 0.14.0은 pub.dev 발행 확인, 미발행 커밋 없음.
+  - 배포 세트 실측: 발행 cartograph 0.18.0 + **발행** kartograph 0.10.2 +
+    isthmus 0.7.0 dist로 `expo-haptics@14.1.4` 조인 `errors: 0`·모듈 1·메서드 4.
+    (JAVA_HOME=/opt/homebrew/opt/openjdk@17, kartograph는 `--target` 없이 실행)
+- isthmus #72~#80은 로컬 Git 이력에서 머지를 확인했다. Expo optional은 #78로 해결됐다.
+  자매 Expo DSL 스캔은 기존 인계 기록상 cartograph #97·kartograph #67 머지 완료다.
+  자매 저장소·도구 registry 최신 버전은 재조회하지 않았다. 설치 cartograph 버전과
+  expo-haptics 고정 버전의 npm 메타데이터만 추가 확인했다.
+- **#80 머지 완료**: 커밋 `829c3e7` → squash `8983c89`.
+  https://github.com/ictechgy/isthmus/pull/80
+  `packet-ask` GLM 리뷰 PASS(패킷 digest `1824f0858130`), macOS·Ubuntu CI SUCCESS
+  (run `35227842479`). 코드·테스트 3파일만 머지했고 기존 문서 변경은 제외했다.
+- 머지된 수정: `src/extract/js-scan.ts`가 Expo named import 별칭의 모듈 반환값을 추적한다.
+  required/optional·제네릭·동적 이름·상대 export를 검증하고, 재대입·구조 분해·매개변수
+  가림 등 불확실한 별칭은 파일 단위로 보수적으로 제외한다. 일반 함수 반환 추적은 아니다.
+- 회귀: `src/extract/js-document.test.ts`에 3개 테스트, 빌드 CLI의
+  `scripts/verify-cli-contract.mjs`에도 별칭 반환값 호출 검사를 반영했다.
+  별칭 지원을 잠시 제거하면 양성 회귀 2개가 실패하고 복원 후 관련 46개가 통과했다.
+- 최종 코드의 `npm run verify` 통과: 제품 558 / Phase 0 15 / workflow 21,
+  line/branch/functions 97.58/91.28/95.71%, clean build·CLI/package 계약 통과.
+  별도 lint 스크립트는 없으며 typecheck는 verify에 포함된다.
+- 독립 리뷰에서 발견한 구조 분해·반환 타입 매개변수 오탐을 회귀로 반영했다.
+  초기값마다 전체 토큰을 검색하던 중간 구현은 폐기하고 제외 이름을 한 번만 수집한다.
+- **공개 소스 부분 검증(이번 세션, 중단 지점)**: `expo-haptics@14.1.4`를
+  `npm pack --ignore-scripts`로 받아(sha256 `d721711e1315800035a7b8fbada612f9091ebed593529a2a0c08d48333acd130`,
+  MIT) 임시 경로에서 검증했다. isthmus extract-js는 `src/ExpoHaptics.ts`의
+  `requireOptionalNativeModule('ExpoHaptics')`를 `module-import` + `mechanism: "expo"`
+  + `optional: true`로, `src/Haptics.ts`의 메서드 호출 4개
+  (notificationAsync·impactAsync·selectionAsync·performHapticsAsync)를 귀속했다.
+  임시 루트는 `/var/folders/lw/r6rd_zlj3ps7pb_h2sdtcr3w0000gn/T/opencode/`다.
+  그 아래 `expo-haptics-14.1.4.tgz`, `expo-haptics/package/`(공개 소스),
+  `expo-haptics/empty-index/`가 있다. 다음 세션에서 실재 여부를 먼저 확인한다.
+  배포 URL: https://registry.npmjs.org/expo-haptics/-/expo-haptics-14.1.4.tgz
+  npm metadata의 license는 MIT다. 소스 재배포 시 라이선스 원문도 별도로 확인해야 한다.
+- **막힌 지점 해소 — 원인은 설치본 버전(2026-09-18 세션 실측)**: 설치 cartograph
+  0.17.0에는 Expo DSL 스캔이 없다. `513cbef`(PR #97)는 어떤 태그에도 없고
+  원격 최신 태그도 0.17.0이다 — main에 머지됐지만 **미발행**이다.
+  `git show 0.17.0:…/BridgeFactScanner.swift`에 ExpoModulesCore 언급 0건.
+- **소스 수집 조건 확인**: `bridges`는 인덱스 파일 목록이 아니라 디스크를 걷는다
+  (`bridgeSourceFiles()` — `.swift`+`.m`/`.mm`, pathFilter·빌드산출물 가지치기).
+  인덱스는 USR 부착에만 쓰이고, 빈 인덱스 + `--allow-empty-index`로 동작한다.
+  Package.swift/podspec 불요. Expo 관문은 파일 단위 `import ExpoModulesCore` +
+  `class X: Module`/`@ExpoModule`/`extension X: Module`.
+- **재검증 — 모듈 조인 성공**: `../cartograph`의 `origin/main`(`aeba97d`)을
+  `/tmp/cartograph-expo-dsl` 워크트리로 빼서 `swift build`(35초) 후 동일 명령 실행.
+  `module-export` channel=ExpoHaptics·mechanism=expo·symbol=HapticsModule 생산.
+  로컬 빌드 isthmus(main `8983c89`, dist)의 extract-js 산출과 `check` 조인 시
+  `module-import`×`module-export` 조인 성공(미수출 import 오류 없음).
+  산출물: `…/opencode/expo-haptics/{js-facts.json,swift-facts.json}`.
+- **DSL 멤버 체인 공백 — cartograph PR #103 머지 완료(`fb7a2ca`, 스쿼시)**:
+  `AsyncFunction("x") {…}.runOnQueue(.main)`처럼 결과 빌더 문장이 멤버 체인의
+  베이스면 `ExpoDefinitionCollector.isDSLStatement`가 내부 호출을 거부해
+  `method-handle`이 안 나오던 공백. `fix/expo-dsl-member-chain` 브랜치로
+  `57510d8`(수정: 부모 호출의 `calledExpression` 자리면 통과) + `39854fe`
+  (GLM 권고 인접 경계 테스트 2건)를 푸시했다. 신규 테스트의 red를 stash 복귀로
+  확인, coverage 93.01%·cli-contract·fixtures·도그푸딩 4종 전부 통과.
+  수정 후 실제 패키지 재실행: method-handle 3개 방출, isthmus check에서
+  `matchedModules: 1 · matchedMethods: 3`, 남은 error는 Android 전용
+  `performHapticsAsync` 1건뿐(정상). GLM 리뷰 수용 판정(패킷 `56d28c7dc4c5`).
+  CI run `35253521054` 두 잡 전부 SUCCESS(자기분석 8m46s · coverage 게이트 11m16s).
+- **정상인 비대칭 — kartograph 로컬 빌드로 실증 완료**: `performHapticsAsync`는
+  JS가 `Platform.OS !== 'android'`로 보호하고 `android/…/HapticsModule.kt`에만
+  존재한다고 추정했던 것을 Android 수신 측 사실로 확인했다.
+  `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew :cli:installDist`로 빌드한
+  kartograph 0.10.0의 `bridges --project <package>`가 `module-export`
+  (ExpoHaptics·mechanism=expo) + method-handle 4개(notificationAsync·
+  selectionAsync·impactAsync·performHapticsAsync) + `missing-handler-usrs`
+  limitation을 생산했다(산출: `/tmp/karto-facts.json`). 3문서 `isthmus check`는
+  `errors: 0 · matchedModules: 1 · matchedMethods: 4`로 완결 — iOS/Android
+  양쪽 수신 측이 전부 실증됐다. 참고: method-handle에는 mechanism이 없는 것이
+  kartograph의 의도된 형태(테스트명 "mechanism on name boundaries and methods
+  without it"), generatedAt은 소스 최신 mtime 스냅샷이라 npm tarball의 정규화
+  시각(1985-10-26)이 실리고 isthmus의 input-freshness 메모는 정확한 관측이다.
+- **kartograph 체인/래퍼 공백 소스 확인 + 수정 — PR #72 머지 완료(`81cb6eb`, 스쿼시)**:
+  Kotlin 스캐너(`index/BridgeFactScanner.kt`)는 토큰+괄호 수집기 구조라 부모를
+  안 걷는다 — 호출의 `)`에서 바로 완결되므로 `.runOnQueue`/`.let{}` 꼬리가 사실
+  생성을 막지 않는다(합성 검증: `Function("withChain"){}.let{}` 방출됨).
+  중첩 람다·정의 블록 밖 거부는 기존 테스트가 커버한다. 다만 합성 입력
+  (`/tmp/karto-gap-probe`)으로 같은 "조용한 누락" 류의 인접 공백 3건을 실증했다:
+  ① 중첩 제네릭 `AsyncFunction<List<String>>` — 토큰 정규식 `<[^>]*>`가 첫
+  `>`에서 끊겨 호출 전체가 투명해짐(메서드 누락·limitation 없음, 실제 패키지의
+  `AsyncFunction<Unit>`는 단일 인자라 동작함) ② FQN
+  `expo.modules.kotlin.modules.ModuleDefinition {}` — lookbehind `(?<![\w.])`가
+  `.` 앞을 거부해 정의 블록이 안 보임(dynamic=true 클래스명 폴백 + 메서드 전부
+  누락, `dynamic-expo-names` limitation은 정직하게 울림) ③ `this.AsyncFunction`
+  수신자 한정 — 같은 lookbehind로 투명. ④ 인자 위치 DSL 호출(`print(AsyncFunction…)`)
+  은 방출됨 — Kotlin DSL은 빌더 수신자 메서드라 람다 안 어디서든 등록되므로
+  Swift 결과빌더 의미와 달리 방출이 의미상 맞다(결함이 아니라 교차도구 발산).
+  수정: `fix/expo-dsl-scan-gaps` 브랜치 — `0b08441`(정규식 3공백 + 테스트 5건,
+  red 확인) + `2995735`(GLM 지적 반영: 제네릭 절 `<[^{}]*>` → lazy `<[^{}]*?>`
+  — 인자 안 `y > (z)`에 앵커 끌림 차단, `View` 제네릭 허용, 경계 테스트 6건 추가,
+  제네릭 개행 미지원 주석 명시). GLM 리뷰 수용(패킷 `cdbbd9d90c64`), 보류 항목은
+  PR 코멘트에 사유 기록. `:index:test` 84/84, 전체 게이트
+  `test :koverVerify :cli:installDist` 통과, 실제 패키지 재스캔 회귀 없음.
+  CI run `35293813833` 네 잡 전부 SUCCESS(test 25m50s·compatibility 17/21·
+  agp-minimum). 배포판 kartograph는 0.10.0이라 이 수정은 미포함.
+- **다음 세션 후보**:
+  1. ~~cartograph PR #103의 CI·머지 판단~~ — 완료: CI SUCCESS 후 사용자 승인으로
+     스쿼시 머지(`fb7a2ca`, 2026-09-18). 브랜치·`/tmp/cartograph-expo-dsl`
+     워크트리 정리됨. 단 배포판(0.17.0)에는 아직 없다 — 다음 cartograph 릴리스까지
+     수신 측 Expo 사실은 main 빌드가 필요하다.
+  2. ~~kartograph PR #72의 CI·머지 판단~~ — 완료: CI 네 잡 SUCCESS 후 사용자
+     승인으로 스쿼시 머지(`81cb6eb`, 2026-09-18). 브랜치·`/tmp/kartograph-expo-gaps`
+     워크트리 정리됨, 본 저장소 main은 `81cb6eb`. 배포판 0.10.x에는 미포함 —
+     다음 kartograph 릴리스까지 로컬 빌드 필요
+     (`JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew :cli:installDist`).
+  3. 코퍼스 확장 후 신규 기능(별칭 추적·mechanism·optional)의 공개 호환
+     버전 세트 발행과 RN 모듈·컴포넌트 retention 계약 확장을 이어간다.
+     `experiments/real-corpus`는 Flutter 전용이므로 RN 적용 경계를 설계해야 한다.
+     코퍼스·JSON 근거 파일·재현 스크립트는 아직 추가하지 않았다.
+     → 버전 세트 발행은 위 "호환 버전 세트 발행" 절 상태로 진행됨
+     (kartograph 0.10.2 발행 완료, isthmus 0.7.0은 npm 인증 대기).
+- #80 머지 이후 하지 않은 것: 실제 앱 빌드·runtime 실행, 발행, retention 계약 변경,
+  cartograph 저장소 변경, 전체 코퍼스 실행기 확장, 추가 커밋.
+  사용자 요청으로 남은 구현은 중단했고 HANDOFF만 갱신했다. RESEARCH의 기존 변경은 보존했다.
+
+## 과거 작업 이력
+
+아래는 기존 세션의 근거를 보존한 기록이다. 현재 작업과 잔여 검증은 위 절을 우선한다.
+
+## 완료 — README 영·한 퇴고 (PR #79 머지, squash `ea4cb95`)
+
+- 브랜치 `docs/readme-rn-update`: 양쪽 README의 RN 절을 머지된 구현(mechanism 구분·
+  Expo DSL 스캔·optional 부재 허용·extract-js)에 맞추고, check 진단 코드 목록에
+  RN 경계 코드를 추가. `extract-js` 사용 절·`diff`의 RN JS 입력 반영.
+- 한글본은 Claude(sonnet) 리뷰로 조사·용어 불일치 교정(싣고 오탈자, 사실/핸들러/
+  패키지/네이티브 통일). GLM 리뷰 반영: 보존 근거 "왕복"↔"보내기" 구분 복원,
+  영어 "missing export degrades" 주어 수정, "same pairing" 명확화.
+- 검증: 링크·앵커·진단 코드·버전 주장을 소스와 대조. 문서 전용이라 npm verify 불요.
+- **후속 정리 완료**: Expo 작업용 워크트리 `cartograph-expo`·`kartograph-expo`와
+  양쪽 `feat/expo-mechanism` 로컬·원격 브랜치 삭제. 남은 워크트리는 다른 세션 것
+  (`cartograph-p1`, kartograph `perf-fingerprint-parallel`, build/reports 평가 잔여 2개).
+
+## 완료 — `module-import` optional 필드 (PR #78 머지, squash `9127222`)
+
+- Expo `requireOptionalNativeModule`·`TurboModuleRegistry.get`/`getNullable`은 부재 시
+  `null` 반환(호출자가 부재를 감당) — `requireNativeModule`·`getEnforcing`·
+  `NativeModules.X`는 던지거나 부재 허용 신호가 아니다(RN·Expo 소스 확인).
+- 계약: `module-import`에만 `optional?: boolean` 허용(그 외 종류·비boolean은 거부).
+- extract-js가 부재 허용 조회로 관찰한 import에 `optional: true`를 싣는다(별칭 포함).
+- 미수출 그룹 호출자가 전부 optional이면 error 대신
+  `module-import-without-export-optional` warning. 하나라도 던지는 호출자가 섞이면 error 유지.
+- 검증: npm test 554개·`npm run verify` 통과. end-to-end 확인: optional 두 호출은
+  warning, `requireNativeModule`은 error.
+- GLM 리뷰 반영 완료(`579345c`): `optional: false` 검증 구멍 폐쇄, mechanism-mismatch가
+  optional보다 우선 진단(export 관찰 시 "미검증" 문구는 틀림), 빈 callers 방어.
+  F3(`requireOptionalNativeViewManager`)는 expo에 존재하지 않아 기각.
+- **PR #78 머지 완료** — squash `9127222`, 브랜치 삭제. main이 `9127222`다.
+- 머지됨: cartograph PR #97(`513cbef`)·kartograph PR #67(`96a1aab`) Expo DSL 스캔.
 
 ## Goal
 
@@ -11,9 +198,11 @@ CI에서 빠른 갱신**을 MIT·영구 무료 도구로 제공하는 것이다.
 
 ## Current Status
 
-- 로컬 `/Users/jinhongan/Desktop/isthmus`: `feature/mcp-serve` branch에 있다(머지 완료된
-  브랜치 — origin/main은 `57a0bf0`). 기존 미커밋 문서 변경(HANDOFF·FEASIBILITY·PRD·RESEARCH)과
-  미추적 파일(HANDOFF.cartograph-notes.md·default.profraw)은 보존했다.
+- 로컬 `/Users/jinhongan/Desktop/isthmus`: `main`에 있다(origin/main = `ea4cb95`).
+  기존 미커밋 문서 변경(HANDOFF·FEASIBILITY·PRD·RESEARCH)과 미추적 파일
+  (HANDOFF.cartograph-notes.md·default.profraw)은 보존했다.
+- 자매 저장소: cartograph `refactor/agent-guidance-0.14.0` 브랜치(미머지 작업),
+  kartograph `feat/event-channel-ffi` 브랜치(미머지 작업), dartograph·isthmus는 main.
 - 아래 PR은 **MERGED**다. 이번 갱신에서 GitHub 실측으로 재확인했다.
 
 | 저장소 / PR | 내용 | merge commit |
@@ -238,7 +427,85 @@ Dart 격리 설치는 100개 이상의 wrapper 호출을 포함한다. CI의 3�
 - CLI exit0만으로 실행을 입증하지 않는다. AOT 자기 실행은 실제 witness로 발견했다.
 - 사라진 /tmp source/SDK를 있다고 가정하거나 옛 Swift 통합 tree로 공개 0.13.0을 되돌리지 않는다.
 
+## 경쟁 조사 — codegraph 대비 개선점 (2026-09-18)
+
+조사 대상: [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) v1.6.0 (스타 71,337, 240파일 113,748줄 vs
+isthmus 10,669줄). README "Mixed iOS / React Native / Expo bridging" 절이 직접 경쟁 지점. 자매 저장소
+(cartograph·kartograph·dartograph)에도 같은 날짜의 동일 섹션이 있다. "경쟁력 확보 우선순위(2026-09-16)"와
+Next Steps는 그대로 두고, 아래는 끼워 넣을 **후보**다.
+
+### codegraph 소스 실측 — README 주장과 코드의 차이
+- **"모든 브리지가 `provenance:'heuristic'`"(README L379)은 사실이 아님.** 그 태그는 synthesizer 4종에만
+  붙는다: `rn-event-channel`(`src/resolution/callback-synthesizer.ts:1638`), `fabric-native-impl`(:1841),
+  `expo-cross-platform`(:1710), `rn-cross-platform`(:1790). Swift↔ObjC·RN legacy·TurboModule·Expo는
+  resolver 경로라 `provenance`가 비고 `metadata.resolvedBy:'framework'`+`confidence`만(swift-objc 0.6,
+  `frameworks/swift-objc.ts:198,239`; react-native 0.95/0.6, `frameworks/react-native.ts:622,634`).
+  README 예시 `expo-module-extract`는 repo에 존재하지 않음. 브리지 전용 edge kind 없이 전부 `kind:'calls'`
+  (`src/types.ts:57-71`), provenance 필터 CLI 플래그 없음.
+- **오탐 실측 기록**: react-native-firebase에서 엣지 78→18, 즉 FP 60건을 blocklist로 제거
+  (`docs/design/mixed-ios-and-react-native-bridging.md` §8b). 사용자 출력이 아니라 설계 문서에만 있다.
+- **검증 방식**: 실 저장소 12개 실행은 §8의 1회성 수동 기록, 메트릭은 엣지 개수+샘플 육안, precision/recall
+  없음. `.github/workflows/`는 deploy-site·release 2개뿐 — **브리징 검증이 CI에 없다.** 자동화는 합성
+  fixture 6파일(1,436줄). isthmus는 sha256 고정 아카이브 15케이스 + LocalSend 3방향 조인 **TP 83 / FN 0 / FP 0**
+  + 재현 스크립트(`experiments/real-corpus/run.mjs`). → "codegraph=실 저장소 / isthmus=fixture"가 아니라
+  **양쪽 다 CI는 합성인데 isthmus만 계수·재현을 갖췄다.**
+- **codegraph에 없는 것**: `MethodChannel`·`EventChannel`·`BasicMessageChannel`·`Pigeon` 각 0 hits(Flutter
+  채널 경계 전체 무경쟁), SARIF·LSIF/SCIP 0, 런타임 검증 0, 타 툴로의 retention 피드백 0(dead-code 자체
+  소비만), `requireNativeComponent`는 주석만, MCP 기본 노출 `explore` 1개(`src/mcp/tools.ts:1457`),
+  텔레메트리 기본 ON(isthmus 없음). 명시적 anti-goal: JSI, `NativeModules[변수]`, bridging header, `performSelector:`.
+- **codegraph가 다루고 isthmus가 못 다루는 경계**: Swift↔ObjC 셀렉터(isthmus는 ObjC를 `sourceLanguage`
+  표식뿐, `src/exchange/parse.ts:17`, retention 제외 `src/report/retentions.ts:147`), RN native→JS 이벤트,
+  Fabric/Paper **prop** 노드(`frameworks/fabric.ts:200`; isthmus는 컴포넌트 이름만), iOS↔Android impl 상호 링크,
+  단일 명령 설치·인덱싱.
+
+### 운영 부담·원클릭 판단
+병목은 버전 매트릭스보다 **native 인덱스 `prepare`**다. 조립 기계는 이미 있다: `scripts/capture-preflight.mjs`가
+prepare→producer 3종→내용 해시 캐시까지 수행, `build-preflight-toolchain.mjs`가 `toolchain.json`에
+`commands.*`를 기록, `.github/workflows/cold-cache.yml`이 brew+pub+curl+npm 후 단일 스크립트로 3방향
+조인을 주 1회 재현. **원클릭 레시피가 CI에만 있고 사용자용으로 포장되지 않았다.** 막는 것:
+① `capture-preflight.mjs:363-366`이 producer 경로와 비어 있지 않은 `prepare`를 필수 요구, PATH 탐색 전무
+② `isthmus --help`·`docs/MCP.md`에 `capture` 없음 ③ `AGENTS.md` 불변 조건 "제품은 JSON만 읽고 쓴다"
+④ `docs/PREFLIGHT.md` "신뢰하지 않는 저장소의 명령 설정을 그대로 실행하지 않는다".
+**결론: 완전 자동은 불가(xcodebuild/Gradle 인자가 앱마다 다름), "탐지+검증+스캐폴드"는 불변 조건을 안 깨고 가능.**
+
+### 우선순위 개선점
+| # | 부족한 점 | 근거 | 제안 | 난이도 |
+|---|---|---|---|---|
+| 1 | **[신규]** Pigeon/Basic·EventChannel이 **CI 게이트 밖**. `check`·`query`·`graph`·`diff`·`retentions`·SARIF·codequality·baseline이 bridge-facts v2 거부 → Flutter 공식 권장 경로가 진단으로 안 나옴. codegraph에 SARIF도 CI 검증도 없는 이상 이 표면이 최대 해자인데 비어 있음 | `src/exchange/parse.ts:139` `version !== 1`; `docs/BRIDGE-MESSAGES.md:40`·`BRIDGE-EVENTS.md` "초기 소비 경계는 preflight"(계약상 계획은 있음) | `check`에 v2 입력 허용 + transport별 진단 코드 | 대 |
+| 2 | **[신규]** 최강 증거 비가시 — `real-corpus`(TP83/FN0/FP0, LocalSend)가 README·README.ko·docs 전체 **0회** 인용, HANDOFF에만 2회. `docs/FEASIBILITY.md` "오탐률은 아직 측정하지 않았다"는 stale | `grep -c real-corpus`, `experiments/real-corpus/results/results.json` | README Status·문서 표에 수치·링크, FEASIBILITY 갱신 | 소 |
+| 3 | **[신규 근거]** 원클릭 부재(위 판단) | `capture-preflight.mjs:363-366`, `isthmus --help`, `docs/MCP.md` | `isthmus doctor`(producer 탐지·버전 검증) + `isthmus init`(capture.json 스캐폴드) | 중 |
+| 4 | **[신규]** 버전 매트릭스가 9개 문서+`Skills/isthmus/SKILL.md`에 수기 중복, `parse.ts:153`은 `tool.version`을 읽되 호환성 검증 안 함 → 구 producer가 불명확한 실패로 나타남 | 위 grep, `parse.ts:153` | 기계 판독 `compatibility.json` 단일 정본 + 문서 생성 + 런타임 경고 | 중 |
+| 5 | ~~매트릭스 stale: COMPATIBILITY는 cartograph 0.15.1, HANDOFF(09-18)는 발행본 0.17.0~~ **해소됨(09-18)** — PR #82가 COMPATIBILITY를 cartograph 0.18.0·kartograph 0.10.2·dartograph 0.14.0·isthmus 0.7.0으로 갱신. **잔여**: `cold-cache.yml`은 brew/pub **버전 미고정** | 두 파일 대조 | 워크플로에서 설치 버전을 매트릭스와 대조해 실패시키기 | 소 |
+| 6 | ~~README(영·한)가 Expo DSL end-to-end를 "reproducible"로 서술하나 해당 코드는 어느 발행본에도 없음~~ **해소됨(09-18)** — cartograph `fb7a2ca`는 0.18.0(brew), kartograph `81cb6eb`는 0.10.2(GitHub·Gradle Portal) 발행 완료. COMPATIBILITY도 발행본 기준으로 갱신됨 | README Status vs `docs/COMPATIBILITY.md` | 잔여는 isthmus 0.7.0 npm 발행(인증 대기)뿐 | 소 |
+| 7 | **[계획됨]** RN native→JS 이벤트 경계 부재 | `docs/RESEARCH.md:618` 우선순위 3; codegraph `callback-synthesizer.ts:1638` | 리터럴 이벤트명 한정 `event-emit`↔`event-listen` 종류(EventChannel v2와 구조 동형) | 중 |
+| 8 | **[계획됨]** ObjC 핸들러 retention 제외 → Periphery류가 ObjC 전용 핸들러를 지우는 걸 못 막음 | `retentions.ts:147`; `RESEARCH.md:164` "ObjC USR은 인덱스 스토어에 존재" | 인덱스 스토어 ObjC USR로 retention 확장. **셀렉터 휴리스틱 도입 금지** | 중 |
+| 9 | **[계획됨]** RN 모듈·컴포넌트 retention 왕복 없음, `--for kartograph` 없음 | README "Retention export currently targets cartograph"; HANDOFF 다음 후보 3 | 대상 producer 확장 | 중 |
+| 10 | **[신규]** RN 정밀도 코퍼스 부재 — real-corpus는 Flutter 전용 | `experiments/real-corpus/README.md` | 이미 수동 검증된 `expo-haptics@14.1.4`(sha256 기록 존재)를 코퍼스 케이스로 고정 | 중 |
+| 11 | **[신규]** 이슈 0건 → 외부 기여자에게 로드맵 비가시 | `gh issue list` 공집합 | HANDOFF "남은 것"을 이슈로 승격 | 소 |
+| 12 | **[계획됨]** 증분·성능 서사 부재(소비자 5초 게이트만) | `RESEARCH.md:618` 우선순위 6, FEASIBILITY 판정실험 4 | capture 캐시 hit/miss 시간을 README에 공개 | 중 |
+
+### codegraph에서 배울 것
+1. 마찰 제거를 제품으로 취급(`npx` 하나가 9개 에이전트 배선). isthmus 동등물은 CI YAML에 갇혀 있다(#3·#5).
+2. 커버리지를 표로 광고(README:354-367 경계별 "JS 측/네이티브 측/매칭 방식"). isthmus는 산문으로 흩어 놓았다.
+3. 코퍼스를 전면에. codegraph는 수치 없이 저장소 이름만으로 신뢰를 얻는다. isthmus는 더 나은 증거를 갖고도 숨겼다(#2).
+
+### 지킬 것 (따라가면 안 되는 것)
+1. **휴리스틱 이름 매칭을 조인 규칙으로 승격하지 않는다.** 대가가 실측돼 있다(FP 60건). error 심각도와
+   CI 게이트를 거는 isthmus가 추측 간선을 섞으면 삭제 안전성 판단 전체가 무너진다. #7도 리터럴 이름 한정.
+2. **언어·경계 확장 경주 금지.** `RESEARCH.md:639`가 옳다. Flutter 채널은 71k★ 경쟁자에게 소스 0건인
+   진짜 무경쟁 영역이므로 자원은 #1에 집중. 자동 수정·삭제(`knip --fix`, `dcm fix`)도 금지 유지.
+
+### 권장 착수 순서
+#2·#11(소, 문서) → #1(대, 최대 해자) → #3(중) → #4(중) → #10 → #7·#8·#9.
+(#5·#6은 09-18 호환 세트 발행으로 해소 — 잔여는 cold-cache 버전 고정·npm 발행뿐)
+
 ## Next Steps
+
+0순위(2026-09-18 갱신): 호환 버전 세트 발행은 **kartograph v0.10.2까지 완료**됐고
+(cartograph 0.18.0·dartograph 0.14.0은 기존 발행본), **isthmus 0.7.0은 npm 인증 갱신을
+기다린다**(`npm publish` → `git tag v0.7.0 b039bbf` + push → `gh release create v0.7.0`).
+이후 착수는 위 "경쟁 조사 — codegraph 대비 개선점"의 권장 순서를 따른다.
+아래 0순위(2026-09-16)는 당시 기록이다.
 
 0순위(2026-09-16): 공개 호환 버전 세트는 **완성**됐고(isthmus 0.6.0 · cartograph 0.15.1 ·
 kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료**(squash `08d30a2`).
@@ -331,13 +598,21 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
   주 1회 스케줄(cron `17 3 * * 1`)이 유효함을 확인했다.
 - GLM 기각 지적과 근거는 각 PR 본문에 기록했다.
 
-## 진행 중 — RN 소비자 조인 (2026-09-17, `feature/rn-join`)
+## 완료 — RN 소비자 조인 + Expo 평가 (2026-09-17)
 
-코어 RN 지원의 첫 번째 PR(소비자 측)이 `feature/rn-join` 브랜치에 **미커밋**으로 있다.
-`npm test` 466개·`npm run verify` 전체 통과. 남은 것은 커밋 → PR → GLM 리뷰다.
+- **PR #75 MERGED**(squash `946393e`). 코어 RN 소비자 조인: `b3421e7`(본체) +
+  `86c4fb2`(GLM 반영: query qualifiedName에 `module:`/`component:` kind 세그먼트로
+  동명 모호성 해소). `npm test` 466개·`npm run verify` 통과. 기각 지적과 근거는
+  PR 본문에 기록. origin/main = `946393e`.
+- **Expo Modules 평가 완료** — `docs/RESEARCH.md` "Expo Modules 지원 평가" 절.
+  결론: 조인 가능성이 코어 RN보다 높고, `target: "expo"` 추가보다 사실의 선택
+  필드 `mechanism`(생략=core)이 정확하다 — `requireNativeModule`이 TurboModule
+  폴백을 하기 때문(expo 소스 실측). 뷰는 폴백 없는 비대칭. 3단계 분리 권고와
+  미해결 사항(`Name` 추론 규칙·SDK별 뷰 폴백 차이)을 기록했다.
 
-- **범위 합의**: 코어 RN만. Expo Modules(`requireNativeModule`)는 추후 재평가 —
-  닫힌 `target` 어휘 개정이 필요하다. `extract-js`(JS/TS 호출 측 추출)는 별도 PR 2.
+- **범위 합의**: 코어 RN만. Expo Modules(`requireNativeModule`)는 평가 완료 —
+  `mechanism` 필드 방식 권고(RESEARCH.md 참조), 착수는 별도 결정.
+  `extract-js`(JS/TS 호출 측 추출)는 별도 PR 2.
 - **변경 요약**: `parse.ts`가 예약 4종(`module-import`/`module-export`/
   `component-require`/`component-export`)을 수용 — 8종 전부 지원돼 reserved 분기는
   제거됨. `join.ts`에 (target, channel=이름) 조인 그룹·`MatchedBoundaryName` 등
@@ -356,12 +631,78 @@ kartograph v0.10.0 · dartograph 0.11.0), 문서화는 **PR #72로 머지 완료
   RESEARCH.md 시장조사 참고 — CodeGraph가 RN 브리지 조인을 이미 광고하므로
   "경계 조인 자체가 새롭다"는 주장 금지, 차별점은 진단·심각도·retention·CI 게이트.
 
+## 완료 — extract-js (PR #76, squash `08700b6`, 2026-09-17)
+
+- **브랜치 `feature/extract-js`**(origin/main `946393e` 기준),
+  **PR #76 발행** · GLM 리뷰 완료·반영 푸시됨. 커밋: `5133782`(본체) →
+  `d619ef2`(js-tokens→lexer 개명 — 스크러버가 파일명 "tokens"를 시크릿으로
+  추정해 패킷 거부됨) → `623468f`(GLM 지적 8건 수정).
+- **구현**: `src/extract/` 3파일(`lexer.ts`·`js-scan.ts`·`js-document.ts`) +
+  `src/cli/extract-js-command.ts` + `main.ts` 라우팅.
+  `isthmus extract-js <file-or-dir> [more...] [--project <dir>]`.
+  상대 import·배럴 재수출(4홉) 해석, 멤버 호출 `method-invoke` 귀속,
+  `dynamic-*`·`unattributed-js-*`·`js-binding-scope` limitations.
+- **GLM 리뷰 반영 8건**(전부 코드 대조·회귀 테스트):
+  비안전 static channel/method(빈 값·제어 문자) → `isSafeNonEmptyString`으로
+  동적 강등 / ASI 뒤 문장 대입의 선언자 오인(바인딩 누수) → 선언자 위치·
+  식 끝 경계 검사 / `const M: T =` 타입 주석·연결 초기값 절단·
+  `f('A').x` 속성 오인 endIndex / `===` 분할의 바인딩 삭제 → 복합 구두점
+  확장+속성 대입 제외 / 매개변수 섀도잉 구간(`{` 본문 함수·메서드·화살표)
+  바인딩 미적용 / 워크 상한 조기 종료 / POSIX `\` 파일명은 구분자 아님 /
+  `++` 뒤 `/` 나눗셈. 정보성 지적(`export *`·식 본문 화살표·for/catch 바인딩
+  미추적)은 GRAPH-EXCHANGE 관찰 범위에 명시.
+- **검증**: 신규 테스트 43 + 리뷰 회귀 10 = 전체 `npm test` 518개,
+  `npm run verify` 통과. end-to-end: `/tmp/e2e-rn`에서 extract-js →
+  합성 kotlin 문서와 `check` 조인 — 미수출 모듈만 error로 분리.
+- **후속 완료**: #76 머지 후 Expo 1단계도 #77로 머지됐다.
+
+## 완료 — Expo 1단계 mechanism (PR #77, 2026-09-17)
+
+- **PR #77 MERGED**(squash `e898cb6`, feature/expo-mechanism → main).
+  isthmus 측 Expo 1단계 — mechanism 계약 + 소비자 조인 + extract-js 마킹.
+  cartograph/kartograph의 Expo DSL 스캔(수신 측 `mechanism: "expo"` 생산)은
+  자매 repo 후속 PR로 분리.
+- **계약**(`parse.ts`): `BridgeMechanism = 'core' | 'expo'`. 네 경계 종류
+  (`module-import`·`module-export`·`component-require`·`component-export`)에만
+  허용, `react-native` target 필수, 생략=core. `normalizeFact`가 보존한다.
+- **조인**(`join.ts`): 그룹 단위가 아니라 증거 쌍 단위 판정 —
+  `boundaryCompatible`: expo `module-import`는 모든 export와(TurboModule
+  폴백), core `module-import`는 core export만, `component-require`는
+  mechanism 일치만. `UnexportedBoundaryName.incompatibleReceivers`·
+  `UnrequiredBoundaryName.incompatibleCallers`에 이름은 같은 도달 불가
+  증거를 싣는다. 미만족 호출자는 mechanism이 두 값뿐이라 항상 한
+  mechanism으로 모인다(분할 불필요). query는 (target, 이름)별로 컬렉션을
+  합쳐 같은 qualifiedName의 영구 모호를 막는다.
+- **check-report**: 신규 코드 `module-import-mechanism-mismatch`·
+  `component-require-mechanism-mismatch`·`module-export-mechanism-mismatch`·
+  `component-export-mechanism-mismatch`(warning — 상호운용 미해결).
+  불일치 이슈는 호출·수신 양쪽 증거를 싣는다. expo `component-require`×
+  core export는 폴백 부재로 `component-require-without-export` error
+  유지(preflight는 수신 증거가 실린 이 error에 불일치 문구를 쓴다).
+  sarif·preflight 반영.
+- **extract-js**: Expo 전용 API는 expo specifier의 import·별칭 import·
+  CJS `require` 바인딩 확인 또는 bare 호출이면 `mechanism: "expo"`.
+  로컬 선언(래퍼·쉼)·비-expo specifier 래퍼·매개변수 섀도 호출은 생략.
+  `function NAME(` 선언부는 호출로 오인하지 않는다.
+- **검증**: 전체 `npm test` 548개·`npm run verify` 통과. end-to-end:
+  `/tmp/expo-e2e`에서 extract-js → 합성 expo 수신 문서와 `check` —
+  expo×expo 매치, 양방향 mismatch warning(양쪽 증거 포함).
+- **GLM 리뷰 반영(PR #77)**: F1 expo 오표시 경로 수정(로컬 선언·CJS
+  specifier·별칭·섀도) / F2 기각(requireOptionalNativeModule이 폴백 체인의
+  실구현 — expo 소스로 확인) / F3 불일치 이슈에 수신 증거 포함 / F4 export
+  측 불일치 코드 2종 / F6 미만족 호출자 분할 제거(죽은 일반성) / F7 문구
+  정정 / F8 예시 상호배타 명시 / F9 거부 명시+오류에 fact index / F10 query
+  키 주석.
+- **후속 완료**: 선택적 부재 의미는 isthmus #78로 반영됐다. 기존 인계 기록상
+  Expo 수신 DSL 스캔도 cartograph #97·kartograph #67로 머지됐다.
+  RESEARCH의 미완료 표현은 당시 평가 기록이며 현행 지원 상태가 아니다.
+
 ## Resume Prompt
 
-`/Users/jinhongan/Desktop/isthmus`에서 HANDOFF.md와 적용되는 AGENTS.md를 읽고 현재 Git 상태를 확인해줘.
-공개 호환 버전 세트는 완성됐어(isthmus 0.6.0 · cartograph 0.15.1 · kartograph v0.10.0 · dartograph 0.11.0).
-**PR 3건 전부 머지됐어**(isthmus #74 → `57a0bf0`, dartograph #103 → `eb43f1b` — format 커밋 `46b4a81` 포함,
-kartograph #60 → `e0974c3`). `cold-cache.yml` 첫 원격 실행도 SUCCESS(두 잡).
-**진행 중**: `feature/rn-join` 브랜치에 RN 소비자 조인(코어 RN: 모듈·컴포넌트 이름 조인, 미커밋)이 있다 —
-위 "진행 중" 섹션의 변경 요약·남은 단계(커밋→PR→GLM 리뷰→`extract-js` PR 2)를 따른다.
-완료한 PR·발행·타당성 조사를 반복하지 마.
+`/Users/jinhongan/Desktop/isthmus`에서 AGENTS.md와 이 문서의 **현재 재개 기준**을 먼저 읽고
+branch/status를 확인한다. Expo 별칭 추적 수정은 #80으로 머지됐고 main은 `8983c89`다.
+미커밋 HANDOFF·RESEARCH를 보존한다. 공개 expo-haptics JS 추출은 확인했지만
+cartograph 0.17.0 수신 측은 인덱스 부재/빈 출력에서 막혔다. 다음에는 소스 수집 조건부터
+확인하되 현재 사용자의 요청 범위만 진행한다. 발행·자매 저장소 변경 권한은 별도 확인한다.
+#76·#77·#78·#80 및 자매 Expo DSL 스캔을 미완료로 오해해 재작업하지 않는다.
+공개 버전 표는 과거 호환 세트 기록이지 이후 RN/Expo 기능의 발행 증명이 아니다.
