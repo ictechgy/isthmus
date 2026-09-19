@@ -1,28 +1,37 @@
 # Handoff
 
-_Last updated: 2026-09-19 (isthmus-cli 0.7.0 npm 발행 · v0.7.0 태그 · GitHub Release 완료 · main `9ca9870`)_
+_Last updated: 2026-09-19 (isthmus 0.7.0 발행·태그·Release 완료 · #93·#94 후속 머지 · main `50642d0` · 다음은 자매 저장소 작업)_
 
 ## 현재 재개 기준
 
-- `main`은 `9ca9870`로 origin/main과 동기화. 열린 PR 없음. 작업 트리 변경은
+- `main`은 `50642d0`로 origin/main과 동기화. 열린 PR 없음. 작업 트리 변경은
   `docs/RESEARCH.md` 하나다(제품 코드 변경 없음).
-- **0순위 발행 완료**: npm `isthmus-cli@0.7.0` 발행(tarball sha512 `2DkZSQNV…`,
-  발행본 `--version` 0.7.0, `compatibility.json` 포함, registry latest 0.7.0).
-  annotated tag `v0.7.0`(9ca9870) → GitHub Release `isthmus-cli 0.7.0`(공개).
-  릴리스 노트는 `[Unreleased]`와 `[0.7.0]`를 합쳐 실제 발행 내용을 담았고,
-  CHANGELOG도 두 절을 `[0.7.0] - 2026-09-19`로 합쳤다.
-- **이번 세션 머지(2026-09-19)**: #85부터 #92까지 10건. 최종 `npm run verify`는
-  제품 612 / coverage line/branch/functions 97.35/91.25/95.52였다.
-- **남은 후보 — 자매 저장소 의존**:
-  - #9 `--for kartograph`: kartograph에 `externalRetentions` 코드 0건.
-  - #7 RN native→JS 이벤트 경계: 교환 계약 변경 + 자매 저장소.
-  - #8 ObjC retention: ObjC 선언이 cartograph 그래프에 없음.
-  - #12 증분·성능 서사: cache hit/miss 측정에 Flutter producer 필요.
+- **0순위 발행 완료**: npm `isthmus-cli@0.7.0`(tarball sha512 `2DkZSQNV…`, 발행본
+  `--version` 0.7.0, `compatibility.json` 포함) · annotated tag `v0.7.0`(9ca9870) ·
+  GitHub Release `isthmus-cli 0.7.0`. CHANGELOG는 `[Unreleased]`를 `[0.7.0]
+  - 2026-09-19`로 합쳐 발행 내용과 일치시켰다(#93). cold-cache도 isthmus를
+  compatibility.json 버전으로 고정·대조하도록 켰다(#94).
+- **이번 세션 머지(2026-09-19)**: #85~#94 12건. 최종 `npm run verify`는 제품 612 /
+  coverage line/branch/functions 97.35/91.25/95.52.
+- **다음 수 — 자매 저장소 작업(우선순위 순)**:
+  1. **kartograph external retention(#9 짝)**: `dead`에 `--external-retentions <path>`를
+     추가해 isthmus `external-retentions` v0를 파싱하고 `reason:"bridge"`를 외부 브리지
+     사유로 매핑한다. kartograph `DeadCommand`는 내부 `RetentionEvidence`/`RetentionReason`
+     만 있고 외부 입력이 없다(GitHub 코드 검색 `externalRetentions` 0건). 동반 isthmus
+     작업은 `retentions --for kartograph`(Kotlin 수신 보존 대상)다.
+  2. **RN native→JS 이벤트 경계(#7)**: GRAPH-EXCHANGE에 새 fact 종류(event-emit↔event-listen)
+     ·조인·심각도 추가. cartograph·kartograph가 네이티브 방출을 emit하고 isthmus
+     `extract-js`가 JS 구독을 listen으로 낸다. EventChannel v2와 구조 동형이며 4저장소
+     동시 계약 변경이다(RESEARCH 우선순위 3 / CodeGraph `callback-synthesizer.ts:1638`).
+  3. **ObjC retention(#8)**: cartograph가 Objective-C 선언을 그래프 노드로 포함해야
+     external retention이 매칭할 수 있다(README L1288: "that fact scan does not make
+     Objective-C declarations graph nodes"). 그 뒤 isthmus의 ObjC 보존 제외를 푼다.
+  4. **#12 증분·성능**: 코드 변경이 아니라 dartograph(+kartograph) 실행 파일을 확보해
+     Flutter 코퍼스를 두 번 돌려 cache hit/miss를 재는 환경 작업이다.
   - #11 이슈 승격: 보류.
-- **cold-cache 후속**: 발행 완료로 `cold-cache.yml`의 isthmus 버전 대조를 켤 수 있다.
 - 이번 세션 검증: cartograph main 빌드로 expo-haptics 수신 측을 스캔하고, `dead
-  --external-retentions`로 v1·v2 보존 파일의 디코드·적용을 확인했다(빈 인덱스라 매칭 미확인).
-- GLM 리뷰는 `packet-review`가 `packet-ask exited 125`로 실패해 확보하지 못했다.
+  --external-retentions`로 v1·v2 보존 파일의 디코드·적용을 확인했다(인덱스에 선언이 없어 매칭은 미확인).
+- GLM 검토는 `packet-review`가 `packet-ask exited 125`로 실패해 확보하지 못했다.
 - 아래 과거 절의 branch·OPEN·남은 것·버전 표는 당시 기록이며 현재 실행 지시가 아니다.
 - **PR #81 MERGED(스쿼시 `65edc97`)**: `check --format codequality` GitLab Code
   Quality 발견 목록 출력. 억제 이슈 제외·지문 중복 가드·severity 명시 분기·
