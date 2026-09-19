@@ -4,7 +4,9 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
-import type { CommandResult } from './command-support.ts';
+import type { CaptureFileSystem, CommandResult } from './command-support.ts';
+import { doctorUsage, runDoctorCommand } from './doctor-command.ts';
+import { initUsage, runInitCommand } from './init-command.ts';
 import {
   extractJsUsage,
   type ExtractJsFileSystem,
@@ -36,6 +38,8 @@ const commandUsages = new Map([
   ['retentions', retentionUsage],
   ['serve', serveUsage],
   ['extract-js', extractJsUsage],
+  ['doctor', doctorUsage],
+  ['init', initUsage],
 ]);
 
 const rootHelp = `Usage: isthmus <command> [options]
@@ -50,6 +54,8 @@ Commands:
   diff         Compare bridge observations before and after a change
   retentions   Produce external retention evidence
   extract-js   Extract React Native caller-side bridge facts from JS/TS
+  doctor       Validate a capture config and its executable paths
+  init         Write a capture config scaffold
   serve        Speak MCP over stdio for agent clients
   help         Show command help
 
@@ -79,6 +85,18 @@ const extractJsFileSystem: ExtractJsFileSystem = {
       isFile: entry.isFile(),
       isDirectory: entry.isDirectory(),
     })),
+  realPath: (path) => realpath(path),
+};
+/** doctor·init이 쓰는 실제 파일시스템이다. producer는 실행하지 않는다. */
+const captureFileSystem: CaptureFileSystem = {
+  statPath: async (path) => {
+    try {
+      const entry = await stat(path);
+      return entry.isDirectory() ? 'directory' : 'file';
+    } catch {
+      return 'missing';
+    }
+  },
   realPath: (path) => realpath(path),
 };
 const informationalResult = await runInformationalCommand(arguments_);
@@ -160,6 +178,22 @@ async function dispatchCommand(
         readTextFile,
         () => new Date(),
         await readPackageVersion(),
+      );
+    case 'doctor':
+      return runDoctorCommand(
+        commandArguments,
+        readTextFile,
+        captureFileSystem,
+        process.cwd(),
+        process.env.PATH ?? '',
+      );
+    case 'init':
+      return runInitCommand(
+        commandArguments,
+        readTextFile,
+        writeTextFile,
+        captureFileSystem,
+        process.cwd(),
       );
     case 'serve':
       return runServeCommand(

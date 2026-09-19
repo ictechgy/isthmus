@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CaptureConfigValidationError, validateCaptureConfig } from '../dist/exchange/capture-config.js';
 import { parseImpactSelection } from '../dist/exchange/impact-selection.js';
 import { isProjectRelativePath, isSafeNonEmptyString, parseBridgeFactsDocument } from '../dist/exchange/parse.js';
 import { parsePreflightContext } from '../dist/exchange/preflight-context.js';
@@ -22,7 +23,12 @@ class CaptureError extends Error {}
 export async function capturePreflight(config, { execute = runChild } = {}) {
   const started = performance.now();
   const project = await realpath(config.project);
-  validateConfig(config, project);
+  // 검증 정본은 제품(`isthmus doctor`)과 공유한다. 계약 위반은 워크플로 오류로 감싼다.
+  try { validateCaptureConfig(config, project); }
+  catch (error) {
+    if (error instanceof CaptureConfigValidationError) throw new CaptureError(error.message);
+    throw error;
+  }
   const natives = [['swift', 'cartograph'], ['kotlin', 'kartograph']].filter(([, name]) => config[name] !== undefined);
   const producerNames = ['dartograph', ...natives.map(([, name]) => name)];
   const output = resolve(project, config.output);
@@ -357,55 +363,7 @@ async function publish(path, value) {
   await writeTextAtomically(path, encodeSortedJson(value, true));
 }
 
-/** 입력 범위와 실행할 명령은 사용자가 작성한 workflow 설정에서 명시한다. */
-function validateConfig(config, project) {
-  const command = (value) => Array.isArray(value) && value.length > 0 && value.every(isSafeNonEmptyString);
-  if (!command(config.dartograph) || (config.cartograph === undefined && config.kartograph === undefined) ||
-    (config.cartograph !== undefined && !command(config.cartograph)) ||
-    (config.kartograph !== undefined && !command(config.kartograph)) || !Array.isArray(config.prepare) ||
-    config.prepare.length === 0 || !config.prepare.every(command)) throw new CaptureError('Configure producer commands and a native index preparation command.');
-  if (config.messages !== undefined && config.messages !== true && (config.messages === null || typeof config.messages !== 'object' ||
-    Array.isArray(config.messages) || Object.entries(config.messages).some(([name, value]) =>
-      !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
-    throw new CaptureError('Invalid message producer configuration.');
-  }
-  if (config.events !== undefined && config.events !== true && (config.events === null || typeof config.events !== 'object' ||
-    Array.isArray(config.events) || Object.entries(config.events).some(([name, value]) =>
-      !['dartograph', 'cartograph', 'kartograph'].includes(name) || config[name] === undefined || !command(value)))) {
-    throw new CaptureError('Invalid event producer configuration.');
-  }
-  // Kotlin 소스 스캔은 스냅샷 없이 채널·핸들러 사실을 낸다. 스냅샷은 Kotlin
-  // 변경 분석(impact)에만 필요하므로 selection.kotlin이 있을 때만 요구한다.
-  const kotlinSelection = config.selection !== undefined && typeof config.selection === 'object'
-    && config.selection !== null && !Array.isArray(config.selection)
-    && config.selection.kotlin !== undefined;
-  if (kotlinSelection && config.kartograph === undefined) {
-    throw new CaptureError('A Kotlin selection requires its Kartograph producer.');
-  }
-  if (kotlinSelection && !isSafeNonEmptyString(config.kartographSnapshot)) {
-    throw new CaptureError('Configure a Kartograph snapshot produced by the preparation command.');
-  }
-  if (config.kartograph === undefined && config.kartographSnapshot !== undefined) throw new CaptureError('A Kartograph snapshot requires its producer.');
-  if (!Array.isArray(config.inputs) || config.inputs.length === 0 || !config.inputs.every(isProjectRelativePath) ||
-    !Array.isArray(config.toolInputs) || config.toolInputs.length === 0 || !config.toolInputs.every(isSafeNonEmptyString)) {
-    throw new CaptureError('Declare source/config inputs and producer implementation files for fingerprinting.');
-  }
-  const explicit = config.selection !== undefined;
-  const since = config.since !== undefined;
-  if (explicit === since || (explicit && (!config.selection || typeof config.selection !== 'object' || Array.isArray(config.selection))) ||
-    (since && !isSafeNonEmptyString(config.since)) || !isSafeNonEmptyString(config.output) || !isSafeNonEmptyString(config.cache)) {
-    throw new CaptureError('Configure exactly one selection or since revision, plus output and cache paths.');
-  }
-  for (const output of [config.output, `${config.output}.sources.json`, config.cache]) {
-    const target = resolve(project, output);
-    for (const input of [...config.inputs, ...config.toolInputs,
-      ...(config.kartographSnapshot === undefined ? [] : [config.kartographSnapshot])]) {
-      const part = relative(resolve(project, input), target);
-      if (part === '' || (!part.startsWith('..') && !isAbsolute(part))) throw new CaptureError('Keep output and cache outside fingerprint input trees.');
-    }
-  }
-  if (resolve(project, config.output) === resolve(project, config.cache)) throw new CaptureError('Output and cache paths must differ.');
-}
+
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {

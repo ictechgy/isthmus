@@ -119,6 +119,9 @@ Android 개발 지원은 `selection.kotlin`과 kartograph snapshot을 사용한�
 브리지를 연결한다. 별도 수집 workflow는 명시된 입력의 내용 해시로 캐시를 재사용하며,
 실제 producer를 사용한 합성 소스 검증을 통과했다. 사용법·지원 경계·CI 설정은
 [언어 간 변경 사전 점검](docs/PREFLIGHT.md)을 참조한다. 실제 앱 전체 검증은 남아 있다.
+`isthmus init [capture.json]`은 그 capture 설정 scaffold를 쓰고(`--toolchain`을 주면
+구축한 `toolchain.json`의 실제 producer 명령을 채운다), `isthmus doctor <capture.json>`은
+설정을 검증하고 참조한 실행 파일이 `PATH`나 지정 경로에 있는지 확인만 한다 — 실행하지 않는다.
 runtime JSON과 `--expectations <checks.json>`를 함께 주면 같은 revision의 실행과
 전이 분석을 대조하고, 네이티브 후보·미관찰 경계·시나리오 누락을 기존 정적 공백과 함께 보고한다.
 
