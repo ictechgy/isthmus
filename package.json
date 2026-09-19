@@ -37,6 +37,7 @@
     "docs/IMPACT.md",
     "docs/BRIDGE-MESSAGES.md",
     "docs/BRIDGE-EVENTS.md",
+    "docs/BRIDGE-RN-EVENTS.md",
     "docs/MCP.md",
     "docs/GRAPH-EXCHANGE.md",
     "compatibility.json",

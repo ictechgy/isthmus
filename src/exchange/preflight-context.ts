@@ -105,6 +105,9 @@ export function parsePreflightContext(input: unknown): PreflightContext {
 function parseMessages(input: unknown, project: string): readonly BridgeMessageDocument[] {
   try {
     const documents = array(input, 256, 'Invalid preflight message documents.').map(parseMessageBridgeDocument);
+    if (documents.some(({ transport }) => transport === 'react-native-event')) {
+      fail('Preflight does not yet support React Native event documents; use check or query.');
+    }
     validateMessageDocuments(documents, project);
     return documents;
   } catch (error) {

@@ -262,7 +262,7 @@ isthmus retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions`는 핸들러의 USR을 우선 사용하고 없으면 `qualifiedName`을 남긴다. 메서드를
+`retentions`는 컴파일러 식별자를 사용하며 Swift 선언에만 `qualifiedName` 폴백을 허용한다. 메서드를
 여러 위치에서 호출하면 근거가 전체 호출 위치를 `callers`로 싣고(대표 `caller`는 옛
 소비자를 위해 유지), 근거당 100개 상한을 넘은 호출은 조용히 버리지 않고
 `callersOmitted`로 계수를 밝힌다. `mixed-targets` 문서는 v1에서 사실별 target을
@@ -270,13 +270,18 @@ cartograph dead --external-retentions external-retentions.json
 관찰한 사실 몇 개가 조인되지 못했는지를 함께 알린다. 먼저 생산 단계에서
 target별 문서로 분리해야 한다.
 
-cartograph는 Swift 심볼만 보존하므로 `--for cartograph`는 수신 측 Swift 문서를 최소
-하나 요구하고, 없으면 빈 보존 문서 대신 종료 코드 2로 거부한다. 호출자가 있는데도
-`symbol`이 없어 보존 근거로 바꿀 수 없는 Swift 핸들러가 있으면 부분 문서를 만들지
-않고 같은 코드로 실패한다. 근거가 빠진 보존 파일은 소비자에게 살아 있는 핸들러를
-미사용으로 보이게 하기 때문이다.
+개발 브랜치의 `--for cartograph`는 Swift 플랫폼 문서를, `--for kartograph`는 Kotlin
+플랫폼 문서를 요구합니다. Kotlin에는 실제 JVM 식별자, ObjC 구현에는 실제 Clang `c:`
+USR이 필요합니다. 매치된 선언의 식별자가 없으면 부분 문서 대신 코드 2로 실패합니다.
+ObjC에는 Clang 선언을 그래프에 포함하는 cartograph, Kotlin에는 외부 보존 입력을 읽는
+kartograph 개발 빌드가 필요합니다. Kotlin 소비자는 그래프에 없는 식별자도 거부합니다.
 
-모든 소비 명령은 호출 측(dart)과 수신 측(swift) 플랫폼 문서를 최소 하나씩 요구한다.
+```bash
+isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.json
+# 평소 kartograph dead 인자에 --external-retentions kotlin-retentions.json을 추가합니다.
+```
+
+모든 소비 명령은 호출 측(dart/js)과 수신 측(swift/kotlin) 플랫폼 문서를 최소 하나씩 요구한다.
 한쪽만 있으면 한쪽 관찰을 경계 불일치로 오독하지 않고 종료 코드 2로 거부한다. 입력
 실패 메시지는 원인(읽기 실패, JSON 오류, 교환 계약 위반, project 불일치, 플랫폼 구성
 누락, 크기 상한)과 입력 순서, 해결 방향을 구분해 전달하며 입력 본문과 경로는 노출하지
@@ -401,12 +406,11 @@ target에 적용한다. 호출 측 한계는 네이티브 코드를 가리지 �
 보존된다. 생산자가 tool 이름을 isthmus로 적어도 자체 계수를 신뢰하지 않으며,
 `unjoined-*`는 소비자가 직접 붙인 `origin: "consumer"`가 있어야 완화 근거가 된다.
 
-선택적 사실 필드 `sourceLanguage: "objective-c"`는 `.m`/`.mm`의 ObjC 구현을 Swift
-그래프와 구분한다. 이 사실에는 symbol을 붙이지 않는다. 매치는 check/query/graph에
-남고 Swift 보존 목록에서는 제외되며, `omittedObjectiveCHandlers`가 제외 수를 알린다.
-표식 없는 Swift 핸들러가 호출자가 있는데 symbol 없이 매치되면 여전히 종료 코드 2로
-실패한다. 이 확장을 지원하는 소비자를 먼저 배포해야 한다. 옛 소비자는 스코프를
-버리고 넓게 완화하며 ObjC 보존 생성은 실패한다.
+선택적 `sourceLanguage: "objective-c"` 필드는 `.m`/`.mm` 구현을 구분합니다.
+대응 개발 빌드에서는 실제 Clang USR을 보존 근거로 내보낼 수 있습니다. Clang USR이
+없는 ObjC 매치는 코드 2로 실패합니다. 옛 문서의 `omittedObjectiveCHandlers`는 한계로
+계속 읽지만, 새 출력은 이러한 매치를 조용히 제외하지 않습니다. 심볼 자체가 없는
+Swift 선언도 실패합니다.
 
 모든 이슈는 관찰된 위치를 `evidence`로 제공한다. 동적 이름, 해석하지 못한 수신자나
 핸들러 본문, USR 누락, 입력 생성 시각 차이, 혼합 target은 `limitations`에 출처와
@@ -512,3 +516,11 @@ Codex는 이 checkout의 `.agents/skills/isthmus` 링크로 같은 원문을 발
 ## 라이선스
 
 [MIT](LICENSE). 상업적 사용을 포함해 영구 무료다.
+
+## 개발 중인 RN 이벤트 경계
+
+`extract-js --events`와 자매 도구의 `bridges --rn-events`는 코어 RN 전역 이벤트를
+별도 v2 transport로 만듭니다. `--events`는 이벤트 전용 출력을 선택하므로, 기존 v1
+모듈·컴포넌트·메서드 사실은 해당 플래그 없이 별도 실행으로 수집합니다. `check`·`query`·`graph`·`diff`가 리터럴 이름으로 연결하고,
+미대응 구독·방출은 warning입니다. Expo의 모듈별 이벤트와 preflight/runtime 대조는
+지원하지 않습니다. [계약과 관찰 범위](docs/BRIDGE-RN-EVENTS.md)를 참고하세요.

@@ -128,3 +128,9 @@ Android 전용 `performHapticsAsync`가 미대응 invocation으로 남는다 —
   ObjC fact에서 3 method 경계를 보고한다.
 - 이 수치는 **정적 브리지 경계**의 정밀도다. Kotlin은 소스 스캔이며 런타임
   실행·실제 Flutter 앱 빌드는 측정하지 않았다.
+
+## 수집 캐시 측정
+
+[캐시 측정 기록](CACHE-MEASUREMENTS.md)은 공개 캐시 소스 3케이스와 합성 1케이스에서
+첫 수집·재사용·보고서 동등성을 확인한다. SDK와 생산자 캐시는 유지하며, 전체 코퍼스
+정밀도나 앱 런타임 성능 측정과 구분한다.

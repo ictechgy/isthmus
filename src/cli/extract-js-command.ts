@@ -22,6 +22,7 @@ import {
   type ReadTextFile,
 } from './command-support.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
+import { createJsEventFactsDocument } from '../extract/js-events.ts';
 
 /** 디렉터리 항목 — 워커가 경로 종류를 다시 질의하지 않게 타입을 함께 준다. */
 export interface JsDirectoryEntry {
@@ -68,7 +69,7 @@ export async function runExtractJsCommand(
   version?: string,
 ): Promise<CommandResult> {
   if (arguments_[0] !== 'extract-js') return usageError();
-  const options = parseCommandArguments(arguments_.slice(1), ['--project'], []);
+  const options = parseCommandArguments(arguments_.slice(1), ['--project'], ['--events']);
   if (options === undefined) return usageError();
   const { positionals, valueFlags } = options;
   if (positionals.length === 0 || positionals.length > MAX_INPUT_PATHS) {
@@ -183,7 +184,7 @@ export async function runExtractJsCommand(
       exitCode: 2,
     };
   }
-  const document = createJsFactsDocument(
+  const document = (options.booleanFlags.has('--events') ? createJsEventFactsDocument : createJsFactsDocument)(
     ordered, version, now().toISOString(), projectRoot,
   );
   return { standardOutput: encodeSortedJson(document), standardError: '', exitCode: 0 };
@@ -305,4 +306,4 @@ function usageError(): CommandResult {
 
 /** extract-js 명령의 한 줄 사용법이다. */
 export const extractJsUsage =
-  'Usage: isthmus extract-js <file-or-dir> [more...] [--project <dir>]';
+  'Usage: isthmus extract-js <file-or-dir> [more...] [--project <dir>] [--events]';

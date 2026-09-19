@@ -61,6 +61,7 @@ const checkoutRoot = join(dogfoodDirectory, 'plus_plugins');
 const harnessRoot = join(checkoutRoot, '.isthmus-dogfood');
 const emptyGitTemplate = join(dogfoodDirectory, 'empty-git-template');
 const swiftFactsPath = join(dogfoodDirectory, 'swift-facts.json');
+const allNativeFactsPath = join(dogfoodDirectory, 'all-native-facts.json');
 const dartFactsPath = join(dogfoodDirectory, 'dart-facts.json');
 const retentionsPath = join(dogfoodDirectory, 'retentions.json');
 for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
@@ -100,10 +101,35 @@ try {
   verifyBatteryFacts(swiftDocument, 'method-handle', swiftSourcePath);
   verifyBatteryFacts(dartDocument, 'method-invoke', dartSourcePath);
 
+  // 전체 관찰은 보존한다. 이 하네스는 macOS Swift만 컴파일하므로 iOS ObjC의
+  // 정체성이 비면 부분 보존을 거부하는지 먼저 확인하고, macOS 범위를 명시해 왕복한다.
+  const objectiveCHandlers = swiftDocument.facts.filter((fact) =>
+    fact.kind === 'method-handle' && fact.channel === batteryChannel && fact.sourceLanguage === 'objective-c',
+  );
+  if (swiftDocument.facts.some((fact) => fact.sourceLanguage === 'objective-c')) {
+    verify(objectiveCHandlers.length === batteryMethods.length, 'complete supported Objective-C battery methods');
+  }
+  const scopedSwiftFacts = run(cartographBinary, [
+    'bridges', '--format', 'json', '--target', 'flutter', '--project', checkoutRoot,
+    '--include', swiftSourcePath,
+  ]);
+  verify(scopedSwiftFacts.status === 0, 'explicit macOS bridge scope');
+  const scopedDocument = parseDocument(scopedSwiftFacts.stdout, 'macOS bridge facts JSON');
+  verifyProducerDocument(scopedDocument, 'swift');
+  verifyBatteryFacts(scopedDocument, 'method-handle', swiftSourcePath);
+  verify(scopedDocument.facts.every((fact) => fact.location.path === swiftSourcePath), 'macOS source scope');
+
   await Promise.all([
-    writePrivateFile(swiftFactsPath, swiftFacts.stdout),
+    writePrivateFile(allNativeFactsPath, swiftFacts.stdout),
+    writePrivateFile(swiftFactsPath, scopedSwiftFacts.stdout),
     writePrivateFile(dartFactsPath, dartFacts.stdout),
   ]);
+  if (objectiveCHandlers.some((fact) => fact.symbol?.usr === undefined)) {
+    const incomplete = run(process.execPath, [
+      isthmusBinary, 'retentions', dartFactsPath, allNativeFactsPath, '--for', 'cartograph',
+    ]);
+    verify(incomplete.status === 2 && incomplete.stdout === '', 'unindexed Objective-C retention refusal');
+  }
   const retentionResult = run(process.execPath, [
     isthmusBinary,
     'retentions',
@@ -118,31 +144,22 @@ try {
     'isthmus retentions JSON',
   );
   const retentions = verifyBatteryRetentions(retentionDocument);
-  const objectiveCHandlers = swiftDocument.facts.filter((fact) =>
-    fact.kind === 'method-handle' && fact.channel === batteryChannel && fact.sourceLanguage === 'objective-c',
-  ).length;
-  if (swiftDocument.facts.some((fact) => fact.sourceLanguage === 'objective-c')) {
-    verify(objectiveCHandlers === batteryMethods.length, 'complete supported Objective-C battery methods');
-  }
-  verify((retentionDocument.omittedObjectiveCHandlers ?? 0) === objectiveCHandlers, 'Objective-C omission count');
+  verify(retentionDocument.omittedObjectiveCHandlers === undefined, 'scoped retention completeness');
   await writePrivateFile(retentionsPath, retentionResult.stdout);
 
   const consumerResult = run(cartographBinary, [
     'dead',
     '--project',
     checkoutRoot,
+    '--include',
+    swiftSourcePath,
     '--external-retentions',
     retentionsPath,
     '--report-format',
     'json',
   ]);
   verify(consumerResult.status === 0, 'cartograph retention consumer');
-  const consumed = parseDocument(consumerResult.stdout, 'cartograph dead JSON');
-  if (objectiveCHandlers > 0) {
-    verify(consumed.limitations?.some((message) =>
-      message.startsWith(`external-retentions-objective-c: ${objectiveCHandlers} `)),
-    'cartograph Objective-C omission visibility');
-  }
+  parseDocument(consumerResult.stdout, 'cartograph dead JSON');
 
   const retainedSymbol = retentions.get(batteryMethods[0]).symbol;
   const subject = retainedSymbol.usr ?? retainedSymbol.qualifiedName;
@@ -150,6 +167,8 @@ try {
     'dead',
     '--project',
     checkoutRoot,
+    '--include',
+    swiftSourcePath,
     '--external-retentions',
     retentionsPath,
     '--explain',
@@ -164,7 +183,7 @@ try {
   );
 
   process.stdout.write(
-    `Public Flutter plugin dogfood verified at ${repositoryRevision} `
+    `Public Flutter plugin macOS retention and full-scope identity checks verified at ${repositoryRevision} `
       + `(cartograph ${cartographVersion}, dartograph ${dartographVersion}, `
       + `isthmus ${isthmusVersion}).\n`,
   );

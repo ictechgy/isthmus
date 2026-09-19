@@ -210,6 +210,15 @@ test('tools/call의 명령 실패는 문서 없이 isError로 표시한다', asy
   assert.equal(response.result.content.length >= 1, true);
 });
 
+test('MCP의 kartograph 선택은 Swift 대상에 고정되지 않고 Kotlin 입력을 요구한다', async () => {
+  const response = JSON.parse((await session.handleLine(request(112, 'tools/call', {
+    name: 'retentions', arguments: { documents: [dartPath, swiftPath], producer: 'kartograph' },
+  })))!);
+  assert.equal(response.error, undefined);
+  assert.equal(response.result.isError, true);
+  assert.match(response.result.content[0].text, /require at least one kotlin/u);
+});
+
 const preflightContextPath = fileURLToPath(
   new URL('../../fixtures/preflight/context.json', import.meta.url),
 );

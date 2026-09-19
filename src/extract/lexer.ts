@@ -81,7 +81,8 @@ export function tokenizeJsSource(source: string): JsToken[] {
   const tokens: JsToken[] = [];
   let index = 0;
   let line = 1;
-  let lineStart = 0;
+  let columnOffset = 0;
+  let byteColumn = 1;
   const push = (kind: JsTokenKind, start: number, startLine: number,
     startColumn: number, value?: string): void => {
     tokens.push({
@@ -97,15 +98,20 @@ export function tokenizeJsSource(source: string): JsToken[] {
     while (index < end) {
       if (source[index] === '\n') {
         line++;
-        lineStart = index + 1;
       }
       index++;
     }
   };
   while (index < source.length) {
+    // 어휘 분기가 index를 한 번에 옮겨도, 위치 계산은 원문을 한 번만 훑는다.
+    while (columnOffset < index) {
+      const point = source.codePointAt(columnOffset)!;
+      byteColumn = point === 10 ? 1 : byteColumn + (point > 0xffff ? 4 : point >= 0x800 ? 3 : point >= 0x80 ? 2 : 1);
+      columnOffset += point > 0xffff ? 2 : 1;
+    }
     const start = index;
     const startLine = line;
-    const startColumn = index - lineStart + 1;
+    const startColumn = byteColumn;
     const char = source[index]!;
     if (char === ' ' || char === '\t' || char === '\r' || char === '\n') {
       advance(index + 1);

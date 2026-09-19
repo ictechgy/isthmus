@@ -3,7 +3,7 @@ import test from 'node:test';
 import { parseBridgeFactsDocument, MAX_LIMITATION_SCOPES, MAX_SCOPED_CHANNELS } from './parse.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
 import { createCheckReport } from '../report/check-report.ts';
-import { createCartographRetentionsDocument } from '../report/retentions.ts';
+import { createRetentionsDocument } from '../report/retentions.ts';
 import { createBridgeGraph, renderBridgeGraph } from '../report/graph.ts';
 import { createBridgeQuery } from '../report/query.ts';
 import { createBridgeDiff } from '../report/diff.ts';
@@ -86,7 +86,7 @@ test('범위만 달라져도 diff에서 한계 변화를 보존한다', () => {
   assert.equal(diff.limitations.removed.length, 1);
 });
 
-test('ObjC 구현은 매치 증거로 남지만 Swift 보존 목록을 막지 않는다', () => {
+test('ObjC 구현은 매치 증거로 남지만 식별자 없는 부분 보존은 거부한다', () => {
   const receiver = parseBridgeFactsDocument({ ...input(), facts: [fact('channel-register', 'A'), {
     ...fact('method-handle', 'A', 'run'), sourceLanguage: 'objective-c',
     location: { ...location, path: 'ios/Plugin.m' },
@@ -94,16 +94,14 @@ test('ObjC 구현은 매치 증거로 남지만 Swift 보존 목록을 막지 �
   const joined = joinBridgeDocuments([caller(), receiver]);
   assert.equal(joined.matchedMethods.length, 1);
   assert.equal(joined.matchedMethods[0]?.handlers[0]?.sourceLanguage, 'objective-c');
-  const retentions = createCartographRetentionsDocument(joined, '2026-09-08T00:00:00Z', '1');
-  assert.deepEqual(retentions.retentions, []);
-  assert.equal(retentions.omittedObjectiveCHandlers, 1);
+  assert.throws(() => createRetentionsDocument(joined, '2026-09-08T00:00:00Z', '1'), /Clang USR/u);
   assert.equal(createBridgeQuery(joined, 'flutter:A#run').result?.dependsOn[0]?.sourceLanguage, 'objective-c');
   const graph = createBridgeGraph(joined);
   assert.ok(graph.nodes.some((node) => node.sourceLanguage === 'objective-c'));
   assert.ok(renderBridgeGraph(graph, 'dot').includes('objective-c'));
   assert.ok(renderBridgeGraph(graph, 'mermaid').includes('objective-c'));
   const unknown = parseBridgeFactsDocument({ ...receiver, facts: receiver.facts.map(({ sourceLanguage: _, ...rest }) => rest) });
-  assert.throws(() => createCartographRetentionsDocument(joinBridgeDocuments([caller(), unknown]), '2026-09-08T00:00:00Z', '1'), /without a symbol/u);
+  assert.throws(() => createRetentionsDocument(joinBridgeDocuments([caller(), unknown]), '2026-09-08T00:00:00Z', '1'), /without a symbol/u);
 });
 
 for (const invalid of [
@@ -141,13 +139,7 @@ test('ObjC 구현은 인덱스가 없어도 구문 이름 신원을 유지한다
   assert.equal(handler?.symbol?.usr, undefined);
   const query = createBridgeQuery(joined, 'flutter:A#run');
   assert.equal(query.result?.dependsOn[0]?.symbol?.qualifiedName, 'Plugin.handle');
-  const document = createCartographRetentionsDocument(joined, '2026-09-10T00:00:00Z', '1');
-  assert.equal(
-    document.retentions.some((retention) =>
-      retention.symbol.qualifiedName === 'Plugin.handle'),
-    false,
-  );
-  assert.equal(document.omittedObjectiveCHandlers, 1);
+  assert.throws(() => createRetentionsDocument(joined, '2026-09-10T00:00:00Z', '1'), /Clang USR/u);
 });
 
 test('tool 이름과 추가 origin 필드로 소비자 자체 계수를 사칭할 수 없다', () => {
@@ -219,7 +211,7 @@ test('실제 Clang USR도 Objective-C 범위 표식을 보존한다', () => {
     location: { ...location, path: 'Plugin.m' }, symbol: { usr: 'c:objc(cs)Plugin(im)handle:', qualifiedName: 'Plugin.handle:' },
   }] });
   assert.equal(document.facts[0]?.symbol?.usr, 'c:objc(cs)Plugin(im)handle:');
-  const report = createCartographRetentionsDocument(joinBridgeDocuments([caller(), document]), '2026-09-08T00:00:00Z', '1');
-  assert.equal(report.omittedObjectiveCHandlers, 1);
-  assert.deepEqual(report.retentions, []);
+  const report = createRetentionsDocument(joinBridgeDocuments([caller(), document]), '2026-09-08T00:00:00Z', '1');
+  assert.equal(report.omittedObjectiveCHandlers, undefined);
+  assert.equal(report.retentions[0]?.symbol.usr, 'c:objc(cs)Plugin(im)handle:');
 });

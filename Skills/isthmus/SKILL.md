@@ -136,7 +136,8 @@ If inputs are missing, identify the required files and proceed with independent 
   `isthmus retentions <dart.json> <swift.json> --for cartograph`.
   Save stdout to a new private temporary file, check successful output, then pass its path to
   `cartograph dead --external-retentions <path>`. Clean up only artifacts created for this run.
-  This command targets Swift; it does not emit Kotlin retention rules.
+  Development builds also accept `--for kartograph` with a Kotlin document and actual JVM identities.
+  Use matching native development builds for Kotlin and indexed Objective-C retentions; missing identities fail.
 
 ## Interpret and finish
 

@@ -6,10 +6,11 @@ import {
 } from '../join/join.ts';
 import { joinMessageBridges } from '../join/messages.ts';
 import {
-  createCartographRetentionsDocument,
-  encodeCartographRetentionsDocument,
+  createRetentionsDocument,
+  encodeRetentionsDocument,
   RetentionValidationError,
-  validateCartographRetentionInputs,
+  validateRetentionInputs,
+  type RetentionTarget,
 } from '../report/retentions.ts';
 import {
   bridgeJoinDeferredError,
@@ -31,8 +32,9 @@ export async function runRetentionsCommand(
   now: Clock,
   producerVersion: string,
 ): Promise<CommandResult> {
-  const inputPaths = retentionInputPaths(arguments_);
-  if (inputPaths === undefined) return retentionUsageError();
+  const options = retentionOptions(arguments_);
+  if (options === undefined) return retentionUsageError();
+  const { inputPaths, target } = options;
   try {
     const { bridges, messages } = await readBridgeInputs(inputPaths, readTextFile);
     const project = bridges[0]?.project ?? messages[0]!.project;
@@ -42,18 +44,19 @@ export async function runRetentionsCommand(
     if (isBridgeJoinDeferred(joined)) {
       return bridgeJoinDeferredError(joined.observedFacts, bridges.length);
     }
-    validateCartographRetentionInputs(bridges, messages);
+    validateRetentionInputs(bridges, messages, target);
     const messageJoin = messages.length > 0
       ? joinMessageBridges(messages, project)
       : undefined;
-    const retentions = createCartographRetentionsDocument(
+    const retentions = createRetentionsDocument(
       joined,
       now().toISOString(),
       producerVersion,
       messageJoin,
+      target,
     );
     return {
-      standardOutput: encodeCartographRetentionsDocument(retentions),
+      standardOutput: encodeRetentionsDocument(retentions),
       standardError: '',
       exitCode: 0,
     };
@@ -70,15 +73,18 @@ export async function runRetentionsCommand(
 }
 
 /** 지원 대상과 최소 입력 수를 검증해 파일 경로만 돌려준다. */
-function retentionInputPaths(arguments_: readonly string[]): string[] | undefined {
+function retentionOptions(arguments_: readonly string[]): {
+  inputPaths: string[]; target: RetentionTarget;
+} | undefined {
   if (arguments_[0] !== 'retentions') return undefined;
   const parsed = parseCommandArguments(arguments_.slice(1), ['--for'], []);
   if (parsed === undefined) return undefined;
-  if (parsed.valueFlags.get('--for') !== 'cartograph') return undefined;
+  const target = parsed.valueFlags.get('--for');
+  if (target !== 'cartograph' && target !== 'kartograph') return undefined;
   const paths = [...parsed.positionals];
   return paths.length < 2 || paths.length > MAX_DOCUMENTS_PER_JOIN
     ? undefined
-    : paths;
+    : { inputPaths: paths, target };
 }
 
 /** 잘못된 retentions 호출을 사용법과 코드 64로 바꾼다. */
@@ -93,4 +99,4 @@ function retentionUsageError(): CommandResult {
 /** retentions 명령의 한 줄 사용법이다. */
 export const retentionUsage =
   'Usage: isthmus retentions <bridge-facts.json> <bridge-facts.json> '
-  + '[more...] --for cartograph';
+  + '[more...] --for cartograph|kartograph';

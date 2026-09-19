@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- `retentions --for kartograph`가 실제 Kotlin/JVM 식별자와 Dart/JS 호출 근거를 내보낸다.
+  cartograph 대상도 실제 Clang USR이 있는 ObjC 선언을 포함하며, 식별자 누락은 부분 보존
+  대신 실패한다. 이전에 ObjC 제외 계수와 함께 성공하던 name-only 입력도 이제 코드 2로
+  실패한다. 대응 자매 개발 빌드가 필요하다.
+- 코어 RN 전역 이벤트를 `extract-js --events`의 `event-listen`과 네이티브
+  `bridges --rn-events`의 `event-emit`으로 연결한다. 별도 v2 transport이며 check의
+  미대응 진단은 warning, query/graph kind는 event다. Expo·preflight/runtime은 범위 밖이다.
+- `scripts/measure-preflight-cache.mjs`가 격리한 빈 캐시와 재사용 수집의 시간·문서 동등성을
+  검사한다. 사용자 캐시·SDK·빌드 캐시는 지우지 않는다.
+
+### Fixed
+
+- JS 이벤트의 동명 객체 속성을 import된 emitter로 오인하지 않는다. v1·v2 JS 위치의 열은
+  공통 어휘 단계에서 UTF-8 바이트로 계산한다.
+
+- v1·v2를 함께 내보낼 때에도 보존 문서 전체의 호출 근거 상한을 적용한다.
+
 ## [0.7.0] - 2026-09-19
 
 ### Added

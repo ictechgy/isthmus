@@ -48,7 +48,7 @@ test('retentions는 --for를 입력 앞에 두어도 읽는다', async () => {
 test('지원하지 않는 retention 대상은 I/O 전에 종료 코드 64로 거부한다', async () => {
   let didReadFile = false;
   const result = await runRetentionsCommand(
-    ['retentions', 'dart.json', 'swift.json', '--for', 'kartograph'],
+    ['retentions', 'dart.json', 'swift.json', '--for', 'unknown'],
     async () => {
       didReadFile = true;
       return '';
@@ -62,7 +62,7 @@ test('지원하지 않는 retention 대상은 I/O 전에 종료 코드 64로 거
   assert.equal(
     result.standardError,
     'Usage: isthmus retentions <bridge-facts.json> <bridge-facts.json> '
-      + '[more...] --for cartograph\n',
+      + '[more...] --for cartograph|kartograph\n',
   );
 });
 

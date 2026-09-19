@@ -181,15 +181,15 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
     name: 'retentions',
     description:
       'Produce external retention evidence for a native analyzer. Pass the '
-      + 'result to cartograph dead --external-retentions.',
+      + 'result to the selected analyzer dead --external-retentions.',
     inputSchema: {
       type: 'object',
       properties: {
         documents: DOCUMENTS_PROPERTY,
         producer: {
           type: 'string',
-          enum: ['cartograph'],
-          description: 'Only cartograph is supported today.',
+          enum: ['cartograph', 'kartograph'],
+          description: 'Select the Swift or Kotlin receiver analyzer.',
         },
       },
       required: ['documents', 'producer'],
@@ -518,11 +518,12 @@ function buildToolArgv(
       return argv;
     }
     case 'retentions':
-      if (args.producer !== 'cartograph') return undefined;
+      if (args.producer !== 'cartograph' && args.producer !== 'kartograph') return undefined;
+      const retentionTarget = args.producer;
       return withDocuments('retentions', args, (documents) => [
         ...documents,
         '--for',
-        'cartograph',
+        retentionTarget,
       ]);
     default:
       return undefined;

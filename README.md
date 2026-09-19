@@ -286,7 +286,7 @@ isthmus retentions \
 cartograph dead --external-retentions external-retentions.json
 ```
 
-`retentions` prefers each handler's USR and falls back to its `qualifiedName`. When a method is
+`retentions` uses compiler identities; Swift declarations may fall back to `qualifiedName`. When a method is
 invoked from several caller locations, the evidence carries all of them in `callers` (the
 representative first `caller` stays for older consumers) and counts any entries beyond the
 100-per-retention cap in `callersOmitted` instead of dropping them silently. A
@@ -295,14 +295,18 @@ command defers the join with exit code 2, reporting how many observed facts acro
 documents could not be joined; split such a document per target at production time
 first.
 
-cartograph retains Swift symbols only, so `--for cartograph` requires at least one
-receiver-side Swift document and refuses with exit code 2 instead of emitting an empty
-retention document. If a matched Swift handler has callers but no `symbol`, and therefore
-cannot become evidence, the command fails with the same code rather than producing a partial
-document: a retention file with missing evidence makes live handlers look unused to the
-consumer.
+On the development branches, `--for cartograph` requires a Swift platform document and
+`--for kartograph` requires a Kotlin platform document. Kotlin needs an actual JVM node ID;
+Objective-C implementations need an actual Clang `c:` USR. Missing identities fail with code 2.
+Use matching development builds: cartograph must include Clang declarations in its graph,
+and kartograph must support external retentions. Kartograph also rejects IDs absent from its graph.
 
-Every consuming command requires at least one caller-side (dart) and one receiver-side (swift)
+```bash
+isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.json
+# Add --external-retentions kotlin-retentions.json to your normal kartograph dead arguments.
+```
+
+Every consuming command requires at least one caller-side (dart/js) and one receiver-side (swift/kotlin)
 platform document. Given only one side, it refuses with exit code 2 rather than misreading a
 one-sided observation as a boundary mismatch. Input failure messages state the cause (read
 failure, JSON error, exchange contract violation, project mismatch, missing platform
@@ -438,13 +442,11 @@ invalid index is an input error. Scopes are preserved as `channels` through
 check/query/graph/diff. A producer's tool name alone never drives mitigation: `unjoined-*`
 counts mitigate only when they carry the consumer-attached `origin: "consumer"`.
 
-The optional fact field `sourceLanguage: "objective-c"` distinguishes ObjC implementations in
-`.m`/`.mm` files from the Swift graph. These facts carry no symbol. Their matches stay in
-check/query/graph but are excluded from the Swift retention list, and
-`omittedObjectiveCHandlers` reports how many were excluded. A matched Swift handler that has
-callers but no `symbol` and no `sourceLanguage` marker still fails with exit code 2.
-Consumers supporting this extension must ship before producers: old consumers drop scopes
-(mitigating broadly) and fail to produce ObjC retentions.
+The optional `sourceLanguage: "objective-c"` field identifies implementations in `.m`/`.mm`
+files. Their actual Clang USRs can be exported as retentions on matching development builds.
+A matched Objective-C declaration without a Clang USR fails with code 2. The legacy
+`omittedObjectiveCHandlers` field remains a limitation in older documents; new exports do not
+silently omit these matches. Swift declarations without any symbol also fail.
 
 Every issue carries its observed locations as `evidence`. Dynamic names, unresolved receivers
 or handler bodies, missing USRs, input generation-time differences, and mixed targets stay in
@@ -557,3 +559,11 @@ and per-model tuning rationale are in the [agent audit record](docs/AGENT-AUDIT.
 ## License
 
 [MIT](LICENSE). Free forever, including commercial use.
+
+## RN event boundaries in development
+
+`extract-js --events` and the sibling tools' `bridges --rn-events` produce a separate v2
+transport for core RN global events. `--events` selects an event-only document; run a separate
+`extract-js` command without that flag for v1 module/component/method facts. `check`, `query`, `graph`, and `diff` join literal names;
+unmatched subscriptions/emissions are warnings. Expo module events and preflight/runtime
+comparison are outside this scope. See the [contract and scan scope](docs/BRIDGE-RN-EVENTS.md).

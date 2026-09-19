@@ -2,6 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { tokenizeJsSource } from './lexer.ts';
 
+test('토큰 열은 UTF-8 바이트이고 원문 offset은 UTF-16을 유지한다', () => {
+  const prefix = "'한글😀'; ";
+  const source = prefix + 'NativeModules.Camera.open();\n/*é*/ emitter();\n😀 receiver';
+  const tokens = tokenizeJsSource(source);
+  const module = tokens.find(({ text }) => text === 'NativeModules')!;
+  assert.equal(module.column, Buffer.byteLength(prefix) + 1);
+  assert.equal(module.offset, prefix.length);
+  assert.equal(tokens.find(({ text }) => text === 'emitter')?.column, Buffer.byteLength('/*é*/ ') + 1);
+  assert.equal(tokens.find(({ text }) => text === 'receiver')?.column, Buffer.byteLength('😀 ') + 1);
+  assert.equal(tokens.find(({ text }) => text === 'receiver')?.line, 3);
+});
+
 test('식별자·키워드·문자열을 위치와 함께 토큰화한다', () => {
   const tokens = tokenizeJsSource(
     "const name = requireNativeComponent('X');\nimport { NativeModules } from 'react-native';",

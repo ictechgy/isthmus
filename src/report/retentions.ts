@@ -11,7 +11,10 @@ import {
 import type { MessageBridgeJoin, MessageEndpoint } from '../join/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
-/** cartograph가 보존할 Swift 선언 식별자다. */
+/** 외부 보존 문서를 소비하는 자매 도구다. */
+export type RetentionTarget = 'cartograph' | 'kartograph';
+
+/** 자매 도구가 보존할 선언 식별자다. */
 export interface RetentionSymbol extends BridgeSymbol {
   readonly usr?: string;
 }
@@ -43,15 +46,15 @@ export interface RetentionEvidence {
   readonly callersOmitted?: number;
 }
 
-/** cartograph 외부 보존 근거 하나다. */
+/** 대상 네이티브 선언의 외부 보존 근거 하나다. */
 export interface ExternalRetention {
   readonly symbol: RetentionSymbol;
   readonly reason: 'bridge';
   readonly evidence: RetentionEvidence;
 }
 
-/** cartograph가 읽는 external-retentions 버전 0 문서다. */
-export interface CartographRetentionsDocument {
+/** 자매 네이티브 도구가 읽는 external-retentions 버전 0 문서다. */
+export interface RetentionsDocument {
   readonly format: 'external-retentions';
   readonly version: 0;
   readonly producedBy: Readonly<{ name: 'isthmus'; version: string }>;
@@ -86,21 +89,23 @@ export class RetentionValidationError extends Error {
  * 성공하므로, 검증하지 않으면 보존할 근거가 없다는 사실이 빈 목록과 코드 0으로
  * 사라진다. 사실이 없는 Swift 문서도 그 플랫폼을 분석했다는 근거로 인정한다.
  */
-export function validateCartographRetentionInputs(
+export function validateRetentionInputs(
   documents: readonly BridgeFactsDocument[],
   messageDocuments?: readonly BridgeMessageDocument[],
+  target: RetentionTarget = 'cartograph',
 ): void {
-  if (documents.some(({ platform }) => platform === 'swift')) return;
-  if (messageDocuments?.some(({ platform }) => platform === 'swift')) return;
+  const receiver = target === 'cartograph' ? 'swift' : 'kotlin';
+  if (documents.some(({ platform }) => platform === receiver)) return;
+  if (messageDocuments?.some(({ platform }) => platform === receiver)) return;
   throw new RetentionValidationError(
-    'Retentions for cartograph require at least one swift bridge facts document; '
-    + 'run a swift producer for the receiver side.',
+    `Retentions for ${target} require at least one ${receiver} bridge facts document; `
+    + `run a ${receiver} producer for the receiver side.`,
   );
 }
 
-/** cartograph 보존 문서를 결정적인 JSON으로 인코딩한다. */
-export function encodeCartographRetentionsDocument(
-  document: CartographRetentionsDocument,
+/** 보존 문서를 결정적인 JSON으로 인코딩한다. */
+export function encodeRetentionsDocument(
+  document: RetentionsDocument,
 ): string {
   return encodeSortedJson(document);
 }
@@ -111,97 +116,88 @@ export function encodeCartographRetentionsDocument(
  * `messages`를 주면 literal로 확정된 v2 경계의 Swift 핸들러도 보존 근거로 싣는다.
  * v2 근거에는 메서드가 없으므로 `method`를 생략하며, cartograph는 선택 필드로 읽는다.
  */
-export function createCartographRetentionsDocument(
+export function createRetentionsDocument(
   joined: BridgeJoinResult,
   generatedAt: string,
   producerVersion: string,
   messages?: MessageBridgeJoin,
-): CartographRetentionsDocument {
+  target: RetentionTarget = 'cartograph',
+): RetentionsDocument {
   if (isBridgeJoinDeferred(joined)) {
     throw new RetentionValidationError(
       'Cannot create retentions from a deferred bridge join.',
     );
   }
-  rejectUnresolvedSwiftHandlers(joined, messages);
-  const omittedObjectiveCHandlers = countObjectiveCHandlers(joined, messages);
+  const platform = target === 'cartograph' ? 'swift' : 'kotlin';
+  rejectUnresolvedHandlers(joined, messages, platform);
+  const retentions = [
+    ...collectRetentions(joined, platform),
+    ...(messages === undefined ? [] : collectMessageRetentions(messages, platform)),
+  ];
+  if (retentions.reduce((count, item) => count + (item.evidence.callers?.length ?? 1), 0) > MAX_RETENTION_CALLER_ENTRIES) {
+    throw new RetentionValidationError(
+      `Cannot produce retention evidence with more than ${MAX_RETENTION_CALLER_ENTRIES} caller entries; narrow the join inputs.`,
+    );
+  }
   return {
     format: 'external-retentions',
     version: 0,
     producedBy: { name: 'isthmus', version: producerVersion },
     generatedAt,
-    retentions: [
-      ...collectCartographRetentions(joined),
-      ...(messages === undefined ? [] : collectMessageRetentions(messages)),
-    ],
-    ...(omittedObjectiveCHandlers === 0 ? {} : { omittedObjectiveCHandlers }),
+    retentions,
   };
 }
 
-/** 그래프 밖의 매치도 사라지지 않게 채널·메서드·위치별로 센다. */
-function countObjectiveCHandlers(
-  joined: BridgeJoinResult,
-  messages?: MessageBridgeJoin,
-): number {
-  const keys = new Set<string>();
-  for (const method of joined.matchedMethods) {
-    for (const handler of method.handlers) {
-      if (handler.sourceLanguage !== 'objective-c') continue;
-      keys.add(JSON.stringify([method.target, method.channel, method.method,
-        handler.location.path, handler.location.line, handler.location.column]));
-    }
-  }
-  if (messages !== undefined) {
-    for (const route of retainedMessageRoutes(messages)) {
-      for (const handler of route.handlers) {
-        if (handler.sourceLanguage !== 'objective-c') continue;
-        keys.add(JSON.stringify(['v2', route.transport, route.channel,
-          handler.location.path, handler.location.line, handler.location.column]));
-      }
-    }
-  }
-  return keys.size;
-}
-
 /**
- * 심볼이 없어 보존 근거로 바꿀 수 없는 매치 Swift 핸들러를 거부한다.
- * sourceLanguage로 확인된 Objective-C 구현은 Swift 그래프의 보존 대상이 아니다.
+ * 심볼이 없어 보존 근거로 바꿀 수 없는 매치 핸들러를 거부한다.
+ * Kotlin과 Objective-C는 실제 컴파일러 식별자를 요구하고 이름으로 대체하지 않는다.
  *
  * 교환 계약에서 `symbol`은 선택 필드다. 호출자가 있는데도 근거를 만들지 못한
  * 핸들러를 조용히 빼면 cartograph는 그 핸들러를 계속 미사용으로 보고하고,
  * 소비자는 살아 있는 코드를 지운다. 부분 보존 문서 대신 실패를 돌려준다.
  */
-function rejectUnresolvedSwiftHandlers(
+function rejectUnresolvedHandlers(
   joined: BridgeJoinResult,
-  messages?: MessageBridgeJoin,
+  messages: MessageBridgeJoin | undefined,
+  platform: 'swift' | 'kotlin',
 ): void {
   const unresolved = new Set<string>();
+  let unresolvedObjectiveC = false;
   for (const method of joined.matchedMethods) {
     for (const handler of method.handlers) {
-      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol !== undefined) continue;
+      if (handler.platform !== platform) continue;
+      if (handler.symbol !== undefined &&
+        (platform === 'swift' && handler.sourceLanguage !== 'objective-c' || handler.symbol.usr !== undefined)) continue;
       const { path, line, column } = handler.location;
       unresolved.add(`${path}\u0000${line}\u0000${column}`);
+      unresolvedObjectiveC ||= handler.sourceLanguage === 'objective-c';
     }
   }
   if (messages !== undefined) {
     for (const route of retainedMessageRoutes(messages)) {
       for (const handler of route.handlers) {
-        if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol !== undefined) continue;
+        if (handler.platform !== platform) continue;
+        if (handler.symbol !== undefined &&
+          (platform === 'swift' && handler.sourceLanguage !== 'objective-c' || handler.symbol.usr !== undefined)) continue;
         const { path, line, column } = handler.location;
         unresolved.add(`${path}\u0000${line}\u0000${column}`);
+        unresolvedObjectiveC ||= handler.sourceLanguage === 'objective-c';
       }
     }
   }
   if (unresolved.size === 0) return;
   throw new RetentionValidationError(
-    `Cannot produce retention evidence for ${unresolved.size} matched swift `
-    + 'handlers without a symbol; regenerate the swift document with a producer '
-    + 'that attaches handler symbols.',
+    `Cannot produce retention evidence for ${unresolved.size} matched ${platform} `
+    + `handlers without a ${platform === 'kotlin' ? 'JVM identifier' : unresolvedObjectiveC ? 'required compiler identity' : 'symbol'}; regenerate the ${platform} document with a producer `
+    + 'that attaches handler symbols.'
+    + (unresolvedObjectiveC ? ' Objective-C handlers require a Clang USR.' : ''),
   );
 }
 
 /** 매치별 Dart 호출자와 Swift 심볼을 cartograph 근거로 결합한다. */
-function collectCartographRetentions(
+function collectRetentions(
   joined: BridgeJoinResult,
+  platform: 'swift' | 'kotlin',
 ): ExternalRetention[] {
   const retentions: ExternalRetention[] = [];
   const seen = new Set<string>();
@@ -217,7 +213,7 @@ function collectCartographRetentions(
     const representative = callers[0];
     if (representative === undefined) continue;
     for (const handler of method.handlers) {
-      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol === undefined) continue;
+      if (handler.platform !== platform || handler.symbol === undefined) continue;
       const symbolKey = handler.symbol.usr === undefined
         ? `name:${handler.symbol.qualifiedName}`
         : `usr:${handler.symbol.usr}`;
@@ -256,6 +252,7 @@ function retainedMessageRoutes(messages: MessageBridgeJoin) {
 /** 매치된 v2 경계의 송신자를 Swift 심볼 보존 근거로 결합한다. */
 function collectMessageRetentions(
   messages: MessageBridgeJoin,
+  platform: 'swift' | 'kotlin',
 ): ExternalRetention[] {
   const retentions: ExternalRetention[] = [];
   const seen = new Set<string>();
@@ -268,7 +265,7 @@ function collectMessageRetentions(
     const representative = callers[0];
     if (representative === undefined) continue;
     for (const handler of route.handlers) {
-      if (handler.platform !== 'swift' || handler.sourceLanguage === 'objective-c' || handler.symbol === undefined) continue;
+      if (handler.platform !== platform || handler.symbol === undefined) continue;
       const symbolKey = handler.symbol.usr === undefined
         ? `name:${handler.symbol.qualifiedName}`
         : `usr:${handler.symbol.usr}`;

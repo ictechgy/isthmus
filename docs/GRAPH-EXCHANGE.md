@@ -7,10 +7,12 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 
 개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)와
 [EventChannel v2](BRIDGE-EVENTS.md)는 별도 transport 문서다.
+개발 중인 [React Native 이벤트 v2](BRIDGE-RN-EVENTS.md)는 코어 RN 전역 이벤트의
+`event-emit`↔`event-listen`을 다루며 Flutter transport와 섞지 않는다.
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
 `diff`는 literal v2 경계의 추가·삭제와 v2 진단의 introduced/resolved를 싣는다.
-`retentions`는 literal v2 경계의 Swift 핸들러를 method 없는 보존 근거로 다.
+`retentions`는 literal v2 경계의 네이티브 선언을 method 없는 보존 근거로 낸다.
 `preflight`는 선택적 context.messages로 소비한다. `impact`는 v1 전용으로 version 2를
 명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
 
@@ -103,7 +105,9 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 `usr`가 있는데 `c:`로 시작하지 않으면 입력 오류다.
 그 외 값·플랫폼·확장자 조합은 입력 오류다.
 필드가 없으면 기존 플랫폼 의미를 유지한다. 위치 확장자만으로 Objective-C라고 추측하지 않는다.
-`sourceLanguage`는 Swift 분석 그래프 밖의 Objective-C 구현을 선언하는 생산자의 자가 선언 필드이며, 소비자는 이를 신뢰한다(생산자 신뢰 전제). 생산자가 이 라벨을 오선언해 Swift 보존 fail-closed를 우회하는 것은 소비자의 정적 분석 범위 밖이다.
+`sourceLanguage`는 Swift 플랫폼 문서 안의 Objective-C 구현을 구분하는 생산자의 자가 선언 필드다.
+보존 근거로 내보내려면 실제 Clang `c:` USR이 필요하다. 언어 표식을 붙여도 식별자가
+없는 매치 선언을 부분 보존 목록에서 조용히 제외하지 않는다.
 
 `method-handle`의 `symbol`은 문자열 `case` 자체가 아니라 그것을 감싸는 타입·함수 선언이다. Swift 클로저에는 USR이 없으므로 `qualifiedName`은 `CameraPlugin.register`처럼 감싸는 선언을 가리키고, `location`은 실제 `case` 문자열을 가리킨다. cartograph의 생산 구현은 인덱스와 결합해 `usr`까지 채워야 한다. 구문 실험처럼 `usr`을 채우지 못하면 `missing-handler-usrs`를 `limitations`에 싣는다.
 
@@ -328,36 +332,39 @@ isthmus `retentions --for <tool>` 의 출력. 자매 도구의 `--external-reten
 }
 ```
 
-자매 도구는 이것을 `RetentionReason.externalBridge` 로 매핑하고, `--explain` 에서 `evidence` 를 그대로 문장으로 만든다.
+cartograph는 `RetentionReason.externalBridge`, kartograph는 `EXTERNAL_BRIDGE`로 매핑하고,
+`--explain`에서 채널·메서드·원본 Dart/JS 호출 근거를 보여 준다. `--for cartograph`는
+Swift 플랫폼 문서, `--for kartograph`는 Kotlin 플랫폼 문서를 최소 하나 요구한다.
+이 확장은 개발 브랜치에 있으며 새 소비 도구와 함께 검증·발행해야 한다.
 
 - `caller` 은 대표 호출 위치다. 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이며
   v0 초안부터 있던 필드라 옛 소비자가 계속 읽는다.
 - 선택 `callers` 는 이 근거의 **전체** 호출 위치(대표 포함)를 같은 결정적 순서로
   실는다. 호출이 둘 이상일 때만 두어, 호출이 하나인 근거는 기존 문서와 바이트가
-  같다. 근거당 상한은 100개이며, 문서 전체의 호출 위치 총상한은 1,000,000개다.
+  같다. 근거당 상한은 100개이며, 문서에 실제로 실은 호출 위치 총상한은 1,000,000개다. `callersOmitted` 계수는 저장 위치 수가 아니다.
 - 상한을 넘은 호출은 조용히 버리지 않고 선택 `callersOmitted` (비음수 정수,
   0이면 생략)로 밝힌다. `omittedObjectiveCHandlers` 와 같은 계수 공개 원칙이다.
 - 소비 도구는 모르는 필드를 무시한다(Swift `JSONDecoder` 의 기본 동작). 그래서
   이 확장은 생산자(isthmus)를 먼저 배포해도 안전하고, 소비 도구가 `callers` 를
   문장으로 치는 것은 별도 구현 사항이다.
-- v2 Basic·Event 경계의 보존 근거에는 메서드가 없다. literal로 확정된
-  `message-handle`·`stream-handle`의 Swift 심볼을 `evidence.channel`과 호출자만으로
-  싣고 `method`를 생략한다 — 자매 도구의 `Evidence.method`도 선택 필드다. dynamic
-  prefix 후보·ObjC v2 핸들러는 v1과 같은 규칙으로 제외하고, ObjC 수는
-  `omittedObjectiveCHandlers`에 함께 센다.
+- v2 경계의 보존 근거에는 메서드가 없다. literal로 확정된 `message-handle`·
+  `stream-handle`·`event-emit`의 대상 플랫폼 심볼을 `evidence.channel`과 호출자/구독자만으로
+  싣고 `method`를 생략한다. dynamic prefix 후보는 보존하지 않는다.
 
-cartograph의 보존 문서는 **Swift 그래프 선언**을 대상으로 완전해야 한다. 명시적
-`sourceLanguage: "objective-c"` 구현은 조인·진단·query의 증거로 남기지만 Swift 보존 대상은
-아니므로 그 목록에 넣지 않는다. Kotlin 핸들러를 cartograph 보존에서 제외하는 것과 같은
-범위 구분이며, symbol 없는 Swift 핸들러를 조용히 버리는 예외가 아니다. ObjC가 Swift로
-위임하는 관계는 별도 증거가 필요하고, ObjC 핸들러 이름으로 Swift USR을 만들지 않는다.
-`omittedObjectiveCHandlers`(선택적 비음수 정수)에 목록에서 제외한 매치 ObjC 핸들러 수를
-(target, channel, method, source location)별로 센다. 0이면 키를 생략한다. cartograph는
-이 수를 외부 보존 근거의 한계로 알려 빈 목록을 Swift와 ObjC 전체의 보존 결과로 오인하지 않게 한다.
-이 필드를 모르는 옛 isthmus는 ObjC 매치도 심볼 없는 Swift로 보아 retentions에서 실패한다.
-따라서 ObjC 사실을 내는 생산자보다 이 확장을 지원하는 소비자를 먼저 배포한다.
+cartograph 보존에는 Swift 선언과 실제 Clang USR을 가진 Objective-C 구현을 포함한다.
+Clang 구현 파일을 그래프에 포함하는 cartograph 빌드가 선행해야 한다. ObjC 이름으로
+Swift USR이나 셀렉터 기반 추측 간선을 만들지 않는다. `omittedObjectiveCHandlers`는
+옛 생산 문서의 한계를 읽기 위한 필드로 남지만, 새 isthmus는 식별자 없는 ObjC 매치가
+있으면 종료 코드 2로 실패한다.
 
-이 문서는 대상 범위 안에서 부분적으로 만들지 않는다. 소비 도구가 읽을 수 있는 수신 측 문서가 입력에 없거나, 호출자가 있는데도 `symbol`이 없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 isthmus는 일부만 담은 목록 대신 도구 실패(종료 코드 2)로 끝낸다. 근거가 빠진 목록은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다. 문서 전체 호출 위치 총상한(1,000,000개)을 초과한 경우에도 부분 근거를 내지 않고 입력을 좁히도록 안내하며 종료 코드 2로 실패한다.
+kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻은 정점 식별자를
+요구한다. `qualifiedName` 폴백은 하지 않는다. 소비자는 이 식별자가 현재 그래프에
+정확히 존재해야 적용하며, 하나라도 없으면 오래되거나 다른 빌드의 부분 근거로 보아
+문서 전체를 거부한다. 외부에서 호출되는 멤버의 소유 타입과 바깥 소유 타입도 MEMBER 관계로 보존하며,
+형제 멤버 전체를 보존하지 않는다. module/component 이름 매치만으로는 아직 보존 근거를
+생성하지 않는다.
+
+이 문서는 대상 범위 안에서 부분적으로 만들지 않는다. 소비 도구가 읽을 수 있는 수신 측 문서가 입력에 없거나, 호출자가 있는데도 `symbol`이 없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 isthmus는 일부만 담은 목록 대신 도구 실패(종료 코드 2)로 끝낸다. 근거가 빠진 목록은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다. 문서에 실제로 실은 호출 위치 총상한(1,000,000개)을 초과한 경우에도 부분 근거를 내지 않고 입력을 좁히도록 안내하며 종료 코드 2로 실패한다.
 
 ## 자매 도구가 해야 할 일 (선행 작업)
 
