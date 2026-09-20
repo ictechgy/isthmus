@@ -32,6 +32,10 @@ _Last updated: 2026-09-20_
 - 원시 로그·실행 실패/복구·검증 기록은 로컬 `.git/remaining-all-20260920/`에 있다.
   앞선 발행본 15케이스 TP83/FN0과 캐시 검증은 `.git/release-corpus-docs-20260920/` 원장을 재사용한다.
   다른 checkout에서 이 로컬 경로가 존재한다고 가정하지 않는다.
+- 작업 소유 캐시 7개를 휴지통으로 옮겼고 원본·아카이브·compiled class·snapshot 등
+  76개 보존 파일의 해시가 같음을 확인했다. SDK와 검증 로그는 유지했다. 복원은 로컬
+  `.git/remaining-all-20260920/cleanup-final.json`의 from/to 경로를 따른다.
+  1,187,371 logical bytes의 휴지통 이동을 디스크 공간 회수로 해석하지 않는다.
 - `docs/RESEARCH.md`, kartograph `.claude/`·`HANDOFF.cartograph-notes.md`, dartograph
   `HANDOFF-PROGRESS.md`·`editors/vscode/icon-drafts/`는 기존 사용자 변경으로 보존한다.
 

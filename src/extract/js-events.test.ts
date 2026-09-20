@@ -112,9 +112,22 @@ test('var 초기화 전이나 조건부·함수 내부 초기화를 파일 전�
     `if (enabled) work(); else var e = new N(); e.addListener('wrong', cb);`,
     `do var e = new N(); while (enabled); e.addListener('wrong', cb);`,
     `if (enabled) label: var e = new N(); e.addListener('wrong', cb);`,
-  ]) assert.deepEqual(scan(`import { NativeEventEmitter as N } from 'react-native'; ${body}`).facts, []);
+  ]) {
+    const document = scan(`import { NativeEventEmitter as N } from 'react-native'; ${body}`);
+    assert.deepEqual(document.facts, []);
+    assert.ok(document.limitations.some((item) => item.startsWith('unresolved-js-event-emitters:')));
+  }
   assert.deepEqual(scan(`var e = new RN.NativeEventEmitter(); var RN = require('react-native');
 e.addListener('wrong', cb);`).facts, []);
+});
+
+test('예약어 이름의 메서드 호출 뒤 ASI 선언은 조건문 본문으로 오인하지 않는다', () => {
+  for (const call of ['obj.if(enabled)', 'obj.while(enabled)', 'obj?.for(enabled)']) {
+    const document = scan(`import { NativeEventEmitter as N } from 'react-native';
+${call}
+var e = new N(); e.addListener('ready', cb);`);
+    assert.deepEqual(document.facts.map(({ channel }) => channel), ['ready']);
+  }
 });
 
 test('직접 초기화 범위 밖의 알려진 constructor와 초기화 전 구독은 미해석 한계로 남긴다', () => {

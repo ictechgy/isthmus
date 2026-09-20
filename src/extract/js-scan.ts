@@ -375,7 +375,8 @@ function eventDeclarations(tokens: readonly JsToken[]) {
     else if (token.text === '(') parentheses.push(index);
     else if (token.text === ')') {
       const open = parentheses.pop();
-      if (open !== undefined && (['if', 'for', 'while', 'with'].includes(tokens[open - 1]?.text ?? '') ||
+      if (open !== undefined && !['.', '?.'].includes(tokens[open - 2]?.text ?? '') &&
+        (['if', 'for', 'while', 'with'].includes(tokens[open - 1]?.text ?? '') ||
         (tokens[open - 1]?.text === 'await' && tokens[open - 2]?.text === 'for'))) controlEnds.add(index);
     }
   });
