@@ -171,14 +171,18 @@ RN 엔진을 실행하지 않으며 JVM ID가 없어 보존 요청이 거부되�
 
 ```bash
 node experiments/real-corpus/run-rn-compiled.mjs /path/to/isthmus/dist/cli/main.js \
-  /path/to/kartograph /path/to/gradle /path/to/android-35/android.jar /path/to/result.json
+  /path/to/kartograph /path/to/gradle /path/to/android-35/android.jar \
+  /path/to/kartograph-gradle-plugin.jar /path/to/result.json
 ```
 
 [컴파일된 원본 결과](results/rn-compiled-development-results.json)는 react-native-sound0.13.0의
 원본 `Sound.kt`를 Kotlin2.4.20/JVM21로 컴파일한다. Android SDK와 명시적인 RN API 스텁을
 사용하고 원본 JS/Kotlin·라이선스 바이트를 확인한다. `Sound.setOnPlay(ZD)V`의 실제 JVM ID로
 retention을 만들고 dead 후보 억제와 `src/index.ts:127` caller explain을 확인했다.
-스텁을 RN 엔진 실행으로 해석하지 않으며, 이 fixture에는 Gradle build witness를 붙이지 않았다.
+기존 결과는 witness 없는 초기 기록이다. [witness 추가 결과](results/rn-witness-development-results.json)는
+동일 공개 원본의 실제 Gradle 성공 기록과 외부 compiler/SDK 입력을 연결해 `matched`를 확인한다.
+소스 변경·class 변경·잘못된 scope·실패한 컴파일은 `stale`로 거부하고 복구 빌드도 다시 검사한다.
+스텁 기반 retention 근거를 RN 엔진 실행으로 해석하지 않는다.
 
 [런타임 결과](results/runtime-development-results.json)는 Flutter3.47.2의 실제 macOS 앱과
 소유한 Android API36 arm64 에뮬레이터 앱에서 MethodChannel·BasicMessageChannel 및 고정
@@ -227,3 +231,26 @@ Kotlin/Java 소스 스캔의 한계를 유지하며, 앱 엔진이나 기기를 
 
 [캐시 측정 기록](CACHE-MEASUREMENTS.md)은 최신 발행 조합의 전체 15케이스와 이전
 4케이스를 조건별로 구분한다. SDK와 생산자 캐시는 유지하며 앱 런타임 성능 측정과 구분한다.
+
+
+## 실기기·iOS·release·React Native 엔진 확장 (개발 하네스)
+
+```bash
+node scripts/verify-flutter-android-runtime.mjs /path/to/flutter /path/to/adb --physical-device --mode release
+node scripts/verify-flutter-ios-runtime.mjs /path/to/flutter
+node scripts/verify-rn-android-runtime.mjs /path/to/adb
+```
+
+[확장 실행 결과](results/runtime-expansion-development-results.json)는 Android 실기기 release의
+Flutter Method/Basic 및 shared_preferences_android2.4.1 Pigeon, iOS27 시뮬레이터 debug의
+Swift Method/Basic, 실기기 RN0.81.4/Hermes release의 공개 Sound 이벤트를 각각 확인한다.
+Android 선택에는 정확히 한 대의 연결된 실기기가 필요하며 식별자는 로그/결과에 기록하지 않는다.
+release 기록은 테스트 앱 소유 외부 디렉터리에서 읽고 앱 제거로 정리한다. iOS는 직접 만든
+시뮬레이터만 부팅·삭제한다. 실제 iPhone이나 iOS release 실행을 의미하지 않는다.
+
+RN 하네스는 원본 `src/index.ts`와 `Sound.kt`를 바꾸지 않는다. 준비 callback을 제공하는
+fixture native module을 통해 실제 `Sound.setOnPlay`가 실제 RN event emitter로 전달되고,
+원본 구독이 상태를 바꾸는지 확인한다. 다른 player·구독 해제 대조를 포함한다. 미디어 재생,
+TurboModules/Fabric, RN iOS, 모든 lifecycle 경로를 검증한 것은 아니다. RN 결과는 Flutter
+`bridge-runtime`/`verify-runtime` 형식과 별개이며 정적 조인 완전성 주장에 사용하지 않는다.
+템플릿·공개 원본은 고정 아카이브 해시를 검사하고 선택된 npm 의존성의 lockfile도 로컬에 보존한다.

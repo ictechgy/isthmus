@@ -13,17 +13,21 @@ import { stopDetachedProcess } from './stop-detached-process.mjs';
 // This is an Android counterpart to verify-flutter-runtime.mjs. It deliberately
 // owns a disposable fixture app and observes only explicitly configured routes.
 const parsedArguments = parseArguments(process.argv.slice(2));
-const [flutterBinary, adbBinary, isthmusOverride, requestedDevice] = parsedArguments.positionals;
+const [flutterArgument, adbArgument, isthmusOverride, requestedDevice] = parsedArguments.positionals;
 const kartographArgument = parsedArguments.options.kartograph;
 const dartographArgument = parsedArguments.options.dartograph;
 const newEmulator = parsedArguments.options.newEmulator === true;
-if (flutterBinary === undefined || adbBinary === undefined || parsedArguments.invalid ||
-  (newEmulator && requestedDevice !== undefined) ||
+const physicalDevice = parsedArguments.options.physicalDevice === true;
+const buildMode = parsedArguments.options.mode ?? 'debug';
+if (flutterArgument === undefined || adbArgument === undefined || parsedArguments.invalid ||
+  (newEmulator && (requestedDevice !== undefined || physicalDevice)) ||
+  (physicalDevice && requestedDevice !== undefined) || !['debug', 'release'].includes(buildMode) ||
   (kartographArgument !== undefined) !== (dartographArgument !== undefined)) {
   process.stderr.write('Usage (Android): verify-flutter-android-runtime.mjs <flutter-bin> <adb> [isthmus-js] [device-id] '
-    + '[--new-emulator] [--kartograph <bin> --dartograph <AOT>]\n');
+    + '[--new-emulator | --physical-device] [--mode debug|release] [--kartograph <bin> --dartograph <AOT>]\n');
   process.exit(64);
 }
+const [flutterBinary, adbBinary] = await Promise.all([flutterArgument, adbArgument].map((path) => realpath(path)));
 const kartographBinary = kartographArgument === undefined ? undefined : await realpath(kartographArgument);
 const dartographBinary = dartographArgument === undefined ? undefined : await realpath(dartographArgument);
 
@@ -33,13 +37,14 @@ function parseArguments(arguments_) {
   let invalid = false;
   for (let index = 0; index < arguments_.length; index++) {
     const value = arguments_[index];
-    if (value === '--new-emulator') {
-      if (options.newEmulator) invalid = true;
-      options.newEmulator = true;
+    if (value === '--new-emulator' || value === '--physical-device') {
+      const key = value === '--new-emulator' ? 'newEmulator' : 'physicalDevice';
+      if (options[key]) invalid = true;
+      options[key] = true;
       continue;
     }
     if (!value.startsWith('--')) { positionals.push(value); continue; }
-    const key = value === '--kartograph' ? 'kartograph' : value === '--dartograph' ? 'dartograph' : undefined;
+    const key = value === '--kartograph' ? 'kartograph' : value === '--dartograph' ? 'dartograph' : value === '--mode' ? 'mode' : undefined;
     if (key === undefined || options[key] !== undefined || index + 1 >= arguments_.length || arguments_[index + 1].startsWith('-')) {
       invalid = true;
       continue;
@@ -57,6 +62,8 @@ const publicPluginSource = process.env.ISTHMUS_SHARED_PREFERENCES_ANDROID ??
 const isthmus = isthmusOverride ?? join(repository, 'dist/cli/main.js');
 const packageName = 'com.example.isthmus_runtime_probe';
 const activity = `${packageName}/.MainActivity`;
+const deviceFiles = `/sdcard/Android/data/${packageName}/files`;
+const knownDeviceIds = new Set(requestedDevice === undefined ? [] : [requestedDevice]);
 const basicName = 'dev.flutter.pigeon.runtime_probe.Api.echo';
 const methodName = 'example/native-runtime';
 const publicPigeonChannel = 'dev.flutter.pigeon.shared_preferences_android.SharedPreferencesAsyncApi.getBool.data_store';
@@ -89,11 +96,13 @@ function step(command, args, label, cwd = repository, timeout = 180_000) {
   const begin = performance.now();
   const result = runChild(command, args, { cwd, timeout, env: commandEnvironment, maxBuffer: 32 * 1024 * 1024 });
   const elapsedMs = Math.round(performance.now() - begin);
-  steps.push({ name: label, executable: command, arguments: [...args], elapsedMs, exitCode: result.status });
+  steps.push({ name: label, executable: command, arguments: args.map((value, index) => args[index - 1] === '-s' ? '[selected-device]' : value), elapsedMs, exitCode: result.status });
   writeDiagnostic(join(artifacts, 'steps.json'), JSON.stringify(steps, null, 2));
   process.stderr.write(`Android verification: ${label} (${elapsedMs} ms)\n`);
   if (result.status !== 0 || result.error !== undefined) {
-    const diagnostic = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.replace(/https?:\/\/[^\s]+/gu, '[URL omitted]');
+    let diagnostic = command === adbBinary && args.includes('devices') ? 'ADB discovery failed; device listing omitted.'
+      : `${result.stdout ?? ''}\n${result.stderr ?? ''}`.replace(/https?:\/\/[^\s]+/gu, '[URL omitted]');
+    for (const id of knownDeviceIds) diagnostic = diagnostic.replaceAll(id, '[selected-device]');
     writeDiagnostic(join(artifacts, `${safeName(label)}.log`), diagnostic);
     throw new Error(`${label} failed (exit ${result.status ?? 'unavailable'}). Evidence: ${artifacts}`);
   }
@@ -120,10 +129,12 @@ function adbRaw(args, label, timeout = 60_000) {
 
 function availableDevices() {
   const result = step(adbBinary, ['devices'], 'ADB device discovery');
-  return result.stdout.split(/\r?\n/u).slice(1)
+  const devices = result.stdout.split(/\r?\n/u).slice(1)
     .map((line) => line.trim().split(/\s+/u))
     .filter((parts) => parts.length >= 2 && parts[1] === 'device')
     .map(([id]) => id);
+  for (const id of devices) knownDeviceIds.add(id);
+  return devices;
 }
 
 async function waitFor(predicate, label, timeout = 180_000) {
@@ -187,11 +198,15 @@ async function selectDevice() {
   const devices = availableDevices();
   if (requestedDevice !== undefined) {
     if (!devices.includes(requestedDevice)) {
-      const listed = step(adbBinary, ['devices'], 'Requested Android device check').stdout.trim();
-      throw new Error(`Requested Android device is unavailable: ${requestedDevice}. ${listed}`);
+      throw new Error('Requested Android device is unavailable.');
     }
     emulatorId = requestedDevice;
+  } else if (physicalDevice) {
+    const physical = devices.filter((id) => !id.startsWith('emulator-'));
+    assert.equal(physical.length, 1, 'Physical device mode requires exactly one available Android device.');
+    emulatorId = physical[0];
   } else if (!newEmulator && devices.length > 0) {
+    assert.equal(devices.length, 1, 'Select a device explicitly when several are available.');
     emulatorId = devices[0];
   } else {
     await createAndStartEmulator();
@@ -215,9 +230,10 @@ async function selectDevice() {
     }
     ownedEmulator = true;
   }
-  const profile = adb(['shell', 'getprop'], 'Android device profile').stdout;
-  const property = (name) => profile.match(new RegExp(`^\\[${name}\\]: \\[(.*?)\\]$`, 'mu'))?.[1] ?? 'unknown';
-  deviceProfile = { apiLevel: property('ro.build.version.sdk'), release: property('ro.build.version.release'), abi: property('ro.product.cpu.abi') };
+  const property = (name) => adb(['shell', 'getprop', name], 'Android profile ' + name).stdout.trim();
+  deviceProfile = { apiLevel: property('ro.build.version.sdk'), release: property('ro.build.version.release'), abi: property('ro.product.cpu.abi'),
+    kind: property('ro.kernel.qemu') === '1' ? 'emulator' : 'physical' };
+  if (physicalDevice) assert.equal(deviceProfile.kind, 'physical');
 }
 
 const dartTemplate = String.raw`
@@ -307,6 +323,8 @@ Future<void> main() async {
     final pending = recorder('pending');
     final unfinished = MethodChannel(methodName, const StandardMethodCodec(), pending.binaryMessenger);
     unawaited(unfinished.invokeMethod<void>('never'));
+    final modeFile = File(const String.fromEnvironment('ISTHMUS_OUTPUT') + '/build-mode.json');
+    await modeFile.writeAsString(jsonEncode({'release': const bool.fromEnvironment('dart.vm.product')}), flush: true);
     await save('pending', pending);
     exit(0);
   } catch (_) {
@@ -334,7 +352,7 @@ class MainActivity : FlutterActivity() {
   private val basicName = "${basicName}"
 
   private fun mark(name: String) {
-    File(applicationContext.filesDir, "kotlin-handler-evidence.txt")
+    File(requireNotNull(applicationContext.getExternalFilesDir(null)), "kotlin-handler-evidence.txt")
       .appendText("kotlin-handler-v1|$name\\n")
   }
 
@@ -374,7 +392,7 @@ function locateCallers(template) {
 }
 
 async function pullJson(name) {
-  const result = adb(['exec-out', 'run-as', packageName, 'cat', `files/isthmus-runtime/${name}.json`], `Read ${name} runtime evidence`);
+  const result = adb(['exec-out', 'cat', `${deviceFiles}/isthmus-runtime/${name}.json`], `Read ${name} runtime evidence`);
   const value = JSON.parse(result.stdout);
   await writeFile(join(artifacts, `${name}.json`), JSON.stringify(value, null, 2), { mode: 0o600 });
   return value;
@@ -387,7 +405,7 @@ async function preserveAvailableRuntime() {
   for (const name of ['success', 'failure', 'timeout', 'pending']) {
     const path = join(artifacts, `${name}.json`);
     try { await access(path); continue; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const result = runChild(adbBinary, ['-s', emulatorId, 'exec-out', 'run-as', packageName, 'cat', `files/isthmus-runtime/${name}.json`],
+    const result = runChild(adbBinary, ['-s', emulatorId, 'exec-out', 'cat', `${deviceFiles}/isthmus-runtime/${name}.json`],
       { env: commandEnvironment, cwd: repository, timeout: 10_000, maxBuffer: 16 * 1024 * 1024 });
     if (result.status !== 0 || result.error) { recordings.push({ name, status: 'unavailable' }); continue; }
     try {
@@ -425,13 +443,13 @@ function isPublicPluginNonProductionPath(path) {
 async function findClassRoots(appRoot, includePublicPlugin) {
   const roots = [];
   const candidates = [
-    join(appRoot, 'build/app/tmp/kotlin-classes/debug'),
-    join(appRoot, 'build/app/intermediates/javac/debug/classes'),
+    join(appRoot, `build/app/tmp/kotlin-classes/${buildMode}`),
+    join(appRoot, `build/app/intermediates/javac/${buildMode}/classes`),
   ];
   if (includePublicPlugin) candidates.push(
-    join(appRoot, 'build/shared_preferences_android/tmp/kotlin-classes/debug'),
-    join(appRoot, 'build/shared_preferences_android/intermediates/javac/debug/classes'),
-    join(appRoot, 'build/shared_preferences_android/intermediates/classes/debug'),
+    join(appRoot, `build/shared_preferences_android/tmp/kotlin-classes/${buildMode}`),
+    join(appRoot, `build/shared_preferences_android/intermediates/javac/${buildMode}/classes`),
+    join(appRoot, `build/shared_preferences_android/intermediates/classes/${buildMode}`),
   );
   for (const candidate of candidates) {
     try { await access(candidate); roots.push(candidate); }
@@ -521,7 +539,7 @@ void main() {
   let cacheReuse;
   let captureConfig;
   const nativeFile = 'android/app/src/main/kotlin/com/example/isthmus_runtime_probe/MainActivity.kt';
-  step(flutterBinary, ['build', 'apk', '--debug', '--no-pub'], 'Android preflight APK build', appRoot, 600_000);
+  step(flutterBinary, ['build', 'apk', `--${buildMode}`, '--no-pub'], 'Android preflight APK build', appRoot, 600_000);
   const classRoots = await findClassRoots(appRoot, true);
   if (kartographBinary !== undefined) {
     const snapshotRelative = 'preflight/kartograph-snapshot.json';
@@ -562,9 +580,8 @@ void main() {
     revision = capture.context.revision;
     assert.equal(capture.context.project, project);
   }
-  // Use the app-private files directory so `run-as` can retrieve evidence without
-  // requesting storage permissions or depending on scoped-storage behavior.
-  const buildArgs = ['build', 'apk', '--debug', '--no-pub', `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`, `--dart-define=ISTHMUS_OUTPUT=/data/user/0/${packageName}/files/isthmus-runtime`];
+  // 앱 소유 외부 디렉터리는 release에서도 권한 요청 없이 쓸 수 있고 앱 제거 시 정리된다.
+  const buildArgs = ['build', 'apk', `--${buildMode}`, '--no-pub', `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`, `--dart-define=ISTHMUS_OUTPUT=${deviceFiles}/isthmus-runtime`];
   step(flutterBinary, buildArgs, 'Android Flutter APK build', appRoot, 600_000);
   step(flutterBinary, buildArgs, 'Android Flutter repeat build', appRoot, 600_000);
   if (captureConfig !== undefined) {
@@ -573,21 +590,23 @@ void main() {
     assert.equal(confirmed.cached, true, 'The final APK build must not change the captured native inputs.');
     assert.equal(confirmed.context.revision, revision);
   }
-  const apk = join(appRoot, 'build/app/outputs/flutter-apk/app-debug.apk');
+  const apk = join(appRoot, `build/app/outputs/flutter-apk/app-${buildMode}.apk`);
   await access(apk);
   step(adbBinary, ['-s', emulatorId, 'install', '-r', apk], 'Android APK install', repository, 180_000);
   installedByHarness = true;
   adb(['shell', 'pm', 'clear', packageName], 'Clear disposable Android app data');
   step(adbBinary, ['-s', emulatorId, 'shell', 'am', 'start', '-n', activity], 'Android runtime probe launch');
   await waitFor(async () => {
-    const result = runChild(adbBinary, ['-s', emulatorId, 'shell', 'run-as', packageName, 'test', '-f', 'files/isthmus-runtime/pending.json'], { env: commandEnvironment, cwd: repository, timeout: 10_000 });
+    const result = runChild(adbBinary, ['-s', emulatorId, 'shell', 'test', '-f', `${deviceFiles}/isthmus-runtime/pending.json`], { env: commandEnvironment, cwd: repository, timeout: 10_000 });
     return result.status === 0;
   }, 'Android runtime evidence', 180_000);
   const success = await pullJson('success');
   const failure = await pullJson('failure');
   const timeout = await pullJson('timeout');
   const pending = await pullJson('pending');
-  const evidenceResult = adb(['exec-out', 'run-as', packageName, 'cat', 'files/kotlin-handler-evidence.txt'], 'Read Kotlin execution evidence');
+  const modeEvidence = await pullJson('build-mode');
+  assert.equal(modeEvidence.release, buildMode === 'release', 'Observed Dart product mode must match the requested build.');
+  const evidenceResult = adb(['exec-out', 'cat', `${deviceFiles}/kotlin-handler-evidence.txt`], 'Read Kotlin execution evidence');
   await writeFile(join(artifacts, 'kotlin-handler-evidence.txt'), evidenceResult.stdout, { mode: 0o600 });
   for (const name of ['echo', 'basic', 'failure', 'slow', 'never']) assert.match(evidenceResult.stdout, new RegExp(`kotlin-handler-v1\\|${name}\\n`, 'u'));
   assert.equal(success.run.platform, 'android');
@@ -669,7 +688,7 @@ void main() {
       captureMs: selected.milliseconds, generatedDartCaller: true, transitiveAppCaller: true,
       summary: selected.report.summary };
   }
-  const summary = { scope: 'real-flutter-android-native-channels', flutter: flutterVersion.frameworkVersion, device: emulatorId,
+  const summary = { scope: 'real-flutter-android-native-channels', flutter: flutterVersion.frameworkVersion, buildMode,
     deviceProfile,
     publicPlugin: publicPluginManifest,
     ...(publicPreflight === undefined ? {} : { publicPreflight }),
@@ -678,7 +697,7 @@ void main() {
     runtime: { success: JSON.parse(positive.stdout).summary, allowedNegative: JSON.parse(allowed.stdout).summary, pendingStatus: pending.run.status,
       ...(preflight === undefined ? {} : { preflight: { aligned: preflight.runtime?.aligned, verification: preflight.runtime?.verification?.status,
         report: preflight.summary, captureMs: capture.milliseconds, cachedMs: cacheReuse.milliseconds, cacheReused: cacheReuse.cached } }) },
-    limitations: ['The harness verifies declared Flutter channel scenarios and Kotlin handler execution markers; it does not discover undeclared runtime dependencies.', 'One Android emulator profile was exercised; device, API, lifecycle, and release variants remain untested.', 'The public Pigeon fixture uses shared_preferences_android 2.4.1 and its generated SharedPreferencesAsyncApi codec; message suffixes are preserved as observed addresses.'] };
+    limitations: ['The harness verifies declared Flutter channel scenarios and Kotlin handler execution markers; it does not discover undeclared runtime dependencies.', `One ${deviceProfile.kind} Android profile in ${buildMode} mode was exercised; other API and lifecycle variants remain untested.`, 'The public Pigeon fixture uses shared_preferences_android 2.4.1 and its generated SharedPreferencesAsyncApi codec; message suffixes are preserved as observed addresses.'] };
   const preservedFixture = join(artifacts, 'android-fixture');
   await cp(appRoot, preservedFixture, { recursive: true, filter: (source) =>
     !relative(appRoot, source).split(/[\\/]/u).some((part) => ['build', '.dart_tool', '.gradle', '.git'].includes(part)) });

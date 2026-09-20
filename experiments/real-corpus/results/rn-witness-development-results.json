@@ -1,0 +1,45 @@
+{
+  "format": "isthmus-public-rn-compiled-results",
+  "version": 1,
+  "package": "react-native-sound@0.13.0",
+  "archiveSha256": "0e5e4909cd7a3836d9fecce25144b1b1fcdf4e143ae0fde86888db9a1b26bc62",
+  "sourceHashes": {
+    "src/index.ts": "bf4c3183073566c10f52e4643b40578fcbe0e1957bf85c54007ce2357895633c",
+    "android/src/main/java/com/zmxv/RNSound/Sound.kt": "67ff790be69e12c10e6ef300f5281dc0881dd958d4b5973edab0fb5bc2249f58",
+    "LICENSE": "823d42c1bbc14423de518c2d91f0f02056b98768f0c005ec8d2b0f6d0be19996"
+  },
+  "androidJarSha256": "d9eb9da824d9e247a352f570f01e1169e725b2954bca9e283a71786c59b59f9a",
+  "compiler": "Kotlin 2.4.20 / JVM 21",
+  "buildWitness": {
+    "status": "matched",
+    "scope": "public-rn:main",
+    "compiler": "kotlin",
+    "externalInputs": 23,
+    "controls": {
+      "wrongScope": "stale",
+      "changedSource": "stale",
+      "changedClass": "stale",
+      "failedBuild": "stale"
+    }
+  },
+  "tools": {
+    "isthmus": "0.9.0",
+    "kartograph": "kartograph 0.13.0"
+  },
+  "observed": {
+    "matchedEvents": 1,
+    "nativeJvmId": "method:com/zmxv/RNSound/Sound#setOnPlay(ZD)V",
+    "beforeUnreachable": true,
+    "afterRetained": true,
+    "unrelatedMethodRemainsUnreachable": true,
+    "callerExplanation": "src/index.ts:127"
+  },
+  "limitations": [
+    "Original Sound.kt compiled against Android SDK and explicit RN API stubs; no React Native engine or Android app execution.",
+    "One Kotlin emission and JS subscription pair; this does not prove all RN code or platform variants are covered.",
+    "The completed Gradle witness binds this fixture’s compiler inputs and class outputs; it does not authenticate a producer or prove runtime coverage.",
+    "graph-file-freshness-unverified: missing-external-input",
+    "index-freshness-unknown: 6 of 7 source file(s) have uncertain compiled-source matching or timestamp precision",
+    "rn-event-scan-scope: only getJSModule(RCTDeviceEventEmitter).emit calls are scanned; Expo, codegen, wrappers and emitter variables are not resolved"
+  ]
+}

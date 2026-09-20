@@ -1,0 +1,254 @@
+{
+  "format": "isthmus-runtime-expansion-results",
+  "version": 1,
+  "checkedAt": "2026-09-20",
+  "harnessSha256": {
+    "scripts/verify-flutter-android-runtime.mjs": "0123a650152a1f6fd9cd7e8d7b73206c9ea01bb4974cbbf3451a48da4b7b0c17",
+    "scripts/verify-flutter-ios-runtime.mjs": "8091b6b2d830d36a4c0a0ab8c6235ee6dcc9891be74488de67c4a8f069fac58f",
+    "scripts/verify-rn-android-runtime.mjs": "4730a41dc232699011568f43fdd6522b627febd5e0ec3479827417d20d17e5ad"
+  },
+  "runtime": {
+    "android": {
+      "scope": "real-flutter-android-native-channels",
+      "flutter": "3.47.2",
+      "buildMode": "release",
+      "deviceProfile": {
+        "apiLevel": "36",
+        "release": "16",
+        "abi": "arm64-v8a",
+        "kind": "physical"
+      },
+      "publicPlugin": {
+        "package": "shared_preferences_android",
+        "version": "2.4.1",
+        "files": [
+          {
+            "path": "AUTHORS",
+            "sha256": "e89602d9d136178bcf1e20cbdfe98c236050f7fefcd8e9a03a18fbc4aa771af4"
+          },
+          {
+            "path": "CHANGELOG.md",
+            "sha256": "ca94dd5a4b8ba588e5e6ebedd2b21cd7cae8498da3df40e5c24cec1b0492f33a"
+          },
+          {
+            "path": "LICENSE",
+            "sha256": "89519eca6f7b9529b35bdddd623a58c3af06a88c458dbd6531ddb4675acf75a9"
+          },
+          {
+            "path": "README.md",
+            "sha256": "a497c38c9826adcc63d8efd719cf03c8f6874a9ca1ddcc71428ee7ead3b1e8bf"
+          },
+          {
+            "path": "android/build.gradle",
+            "sha256": "b40ddb081bb6bee9025d87063f1670cdeb3e3cfaa9589ff65011372d27c52329"
+          },
+          {
+            "path": "android/gradle.properties",
+            "sha256": "ae1c9b0a163886458179e1ea16c02ff1315ff5baf2e5d6c4438d11084d2e5237"
+          },
+          {
+            "path": "android/settings.gradle",
+            "sha256": "711f379a0bb7a4ff6d0a1175f957f60d2a1951423c970bb8996c26ff87581fab"
+          },
+          {
+            "path": "android/src/main/AndroidManifest.xml",
+            "sha256": "40c4f0d01fe04626ece76e3470ad233060bec2de9adc4c53071a51e2e39acd5b"
+          },
+          {
+            "path": "android/src/main/java/io/flutter/plugins/sharedpreferences/LegacySharedPreferencesPlugin.java",
+            "sha256": "7fc39d5e77db92d037d8d55a7eaf02300426e687264b7394eb920fee6f4558c6"
+          },
+          {
+            "path": "android/src/main/java/io/flutter/plugins/sharedpreferences/Messages.java",
+            "sha256": "fd632ef35e02ba98a44a315a41188dd426ce4c064ee7cfb70cc2ce312bd91e5f"
+          },
+          {
+            "path": "android/src/main/java/io/flutter/plugins/sharedpreferences/SharedPreferencesListEncoder.java",
+            "sha256": "4f0b55533371c18fa0d06bc0c0b04d1bf48e64ecffe5e92cd9a6f67a0e399930"
+          },
+          {
+            "path": "android/src/main/kotlin/io/flutter/plugins/sharedpreferences/MessagesAsync.g.kt",
+            "sha256": "9aa5b18159a389a1b642365853e40b29fcccdd92147ea1146ec4da22c7ad10c8"
+          },
+          {
+            "path": "android/src/main/kotlin/io/flutter/plugins/sharedpreferences/SharedPreferencesPlugin.kt",
+            "sha256": "3aae77e1e2d68fd62190e98aa8d3dea58ac77f7c358149f005265d3e1219d5eb"
+          },
+          {
+            "path": "android/src/main/kotlin/io/flutter/plugins/sharedpreferences/StringListObjectInputStream.kt",
+            "sha256": "67ba60ee9c9f8f31cf91fa9f721a86e1ebe9bcb24c61b40f349c69fa2763b923"
+          },
+          {
+            "path": "lib/shared_preferences_android.dart",
+            "sha256": "a4689d6fd3984078e8211cf86fed17ba935361e72b3047fb3c672996005ba6d6"
+          },
+          {
+            "path": "lib/src/messages.g.dart",
+            "sha256": "516d9275301d7c9374771f03cf73d3dd9eeee0c14d50e718bc4f53f78a81628b"
+          },
+          {
+            "path": "lib/src/messages_async.g.dart",
+            "sha256": "db23fc1dab2f4242ac68923a12474439e417c158985e7ccae0a94952f79cf01d"
+          },
+          {
+            "path": "lib/src/shared_preferences_android.dart",
+            "sha256": "5a18c6586cea3933492d580aa6c82e46b4da9635fcbf0868ac08acc4640be53f"
+          },
+          {
+            "path": "lib/src/shared_preferences_async_android.dart",
+            "sha256": "5b28a6df2b9d8c1d2ab77784870dadf8b78879a277b562760875abe48b0ee12b"
+          },
+          {
+            "path": "pigeons/copyright.txt",
+            "sha256": "add31e0762a1baaa6dead956a46392e14f268e4f385a3e98490dc13f3483aa23"
+          },
+          {
+            "path": "pigeons/messages.dart",
+            "sha256": "a0635bebf391ae4d8ae63fe7e0fdde5e8e6a7c6f06cddf9284e126899fca2a77"
+          },
+          {
+            "path": "pigeons/messages_async.dart",
+            "sha256": "9787733f82b58ac13a67f4faa205fbca1c0fc1fe0e1b8527c89617aea93fa431"
+          },
+          {
+            "path": "pubspec.yaml",
+            "sha256": "1bb0279ca86afe1d3304c627a0a9267cfb24b0ed1de8409f08d323293fca229b"
+          }
+        ]
+      },
+      "revision": "sha256:3c1632bf359909d001c904f12887733578af5ad4487a3437d7540d13241186b6",
+      "sourceRevision": "sha256:3c1632bf359909d001c904f12887733578af5ad4487a3437d7540d13241186b6",
+      "nativeExecutionEvidence": {
+        "implementation": "MainActivity.kt",
+        "handlers": [
+          "echo",
+          "basic",
+          "failure",
+          "slow",
+          "never"
+        ]
+      },
+      "runtime": {
+        "success": {
+          "droppedEvents": 0,
+          "expectedFailedCalls": 0,
+          "failedCalls": 0,
+          "failedChecks": 0,
+          "incompleteChecks": 0,
+          "incompleteRuns": 0,
+          "passedChecks": 3,
+          "pendingCalls": 0,
+          "runs": 1,
+          "staleRuns": 0,
+          "unexpectedFailedCalls": 0,
+          "unobservedChecks": 0
+        },
+        "allowedNegative": {
+          "droppedEvents": 0,
+          "expectedFailedCalls": 3,
+          "failedCalls": 3,
+          "failedChecks": 0,
+          "incompleteChecks": 0,
+          "incompleteRuns": 0,
+          "passedChecks": 3,
+          "pendingCalls": 0,
+          "runs": 2,
+          "staleRuns": 0,
+          "unexpectedFailedCalls": 0,
+          "unobservedChecks": 0
+        },
+        "pendingStatus": "incomplete"
+      },
+      "limitations": [
+        "The harness verifies declared Flutter channel scenarios and Kotlin handler execution markers; it does not discover undeclared runtime dependencies.",
+        "One physical Android profile in release mode was exercised; other API and lifecycle variants remain untested.",
+        "The public Pigeon fixture uses shared_preferences_android 2.4.1 and its generated SharedPreferencesAsyncApi codec; message suffixes are preserved as observed addresses."
+      ]
+    },
+    "ios": {
+      "scope": "real-flutter-ios-native-channels",
+      "flutter": "3.47.2",
+      "runtime": "27.0",
+      "deviceKind": "simulator",
+      "buildMode": "debug",
+      "swiftHandlers": [
+        "echo",
+        "basic",
+        "failure",
+        "slow",
+        "never"
+      ],
+      "success": {
+        "droppedEvents": 0,
+        "expectedFailedCalls": 0,
+        "failedCalls": 0,
+        "failedChecks": 0,
+        "incompleteChecks": 0,
+        "incompleteRuns": 0,
+        "passedChecks": 2,
+        "pendingCalls": 0,
+        "runs": 1,
+        "staleRuns": 0,
+        "unexpectedFailedCalls": 0,
+        "unobservedChecks": 0
+      },
+      "negativeOutcomes": [
+        "error",
+        "missing-handler",
+        "timeout"
+      ],
+      "pending": "incomplete",
+      "limitations": [
+        "One owned iOS simulator in debug mode; physical iPhone, iOS release and lifecycle variants are untested.",
+        "Explicit fixture Method/Basic routes only; no public iOS plugin or static producer completeness claim."
+      ]
+    },
+    "rn": {
+      "scope": "public-rn-event-real-engine",
+      "reactNative": "0.81.4",
+      "engine": "Hermes",
+      "architecture": "legacy-bridge",
+      "buildMode": "release",
+      "deviceKind": "physical",
+      "abi": "arm64-v8a",
+      "package": "react-native-sound@0.13.0",
+      "sourceHashes": {
+        "src/index.ts": "bf4c3183073566c10f52e4643b40578fcbe0e1957bf85c54007ce2357895633c",
+        "android/src/main/java/com/zmxv/RNSound/Sound.kt": "67ff790be69e12c10e6ef300f5281dc0881dd958d4b5973edab0fb5bc2249f58"
+      },
+      "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
+      "lockfileSha256": "01682d7846ec1d5f23406900f5ebc626befc23b87d6a868cb5fe6fc06b599c46",
+      "apkSha256": "b7a62446bac0457388f53939639f41b450e4ef381d9527b1c6ace18b7dc7b400",
+      "observed": {
+        "status": "passed",
+        "checks": [
+          "hermes-engine",
+          "android-platform",
+          "release-js",
+          "initial-state",
+          "original-subscription-receives",
+          "other-player-excluded",
+          "payload-state-change",
+          "removed-subscription-excluded",
+          "remaining-subscription-receives"
+        ],
+        "engine": "Hermes",
+        "reactNative": {
+          "minor": 81,
+          "prerelease": null,
+          "patch": 4,
+          "major": 0
+        },
+        "architecture": "legacy-bridge",
+        "buildMode": "release",
+        "nativeEmissions": 4,
+        "androidDebuggable": false
+      },
+      "limitations": [
+        "One Android device, legacy bridge and release mode; Fabric/TurboModules, iOS and other lifecycle variants remain untested.",
+        "Original JS subscription and Kotlin Sound.setOnPlay execute unchanged. A fixture module supplies preparation callbacks; no audio playback or full plugin behavior is claimed.",
+        "This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate."
+      ]
+    }
+  }
+}
