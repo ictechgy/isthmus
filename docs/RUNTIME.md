@@ -84,6 +84,35 @@ Kotlin 본문의 실행 marker를 확인했다. 공개 패키지의 원본 소�
 revision은 원래 실행 기록과 구분한다. Kotlin의 공통 Pigeon 등록 함수는 여러 채널을 영향
 후보로 넓힐 수 있으므로 메서드별 완전한 정밀도를 주장하지 않는다.
 
+## iPhone release와 RN 새 아키텍처 개발 하네스
+
+저장소의 검증 스크립트는 npm CLI의 지원 transport와 별개다. 아래 명령은 SDK·서명·기기
+환경을 사용해 테스트 앱을 만들고 설치하므로 해당 환경에서 실행 권한을 먼저 확보한다.
+
+```bash
+node scripts/verify-flutter-ios-runtime.mjs /path/to/flutter --physical --release
+# 필요하면 --team=TEAM_ID로 테스트 개발 팀을 지정한다.
+node scripts/verify-rn-android-runtime.mjs /path/to/adb --new-architecture --new-emulator
+```
+
+iOS 하네스의 기본값은 새로 만든 simulator의 debug 실행이다. `--physical --release`는
+Developer Mode가 켜진 iPhone 한 대를 사용하며 기존 fixture 앱이 있으면 덮어쓰지 않는다.
+실제 Dart product 모드와 Swift marker, 성공·오류·미등록·timeout·pending을 확인한 뒤 앱을 제거한다.
+
+RN은 기본적으로 연결된 Android 실기기 한 대를 선택한다. `--new-emulator`를 주면 설치된
+API36 이미지로 전용 AVD를 만들고 종료·정리한다. `--new-architecture`는 RN0.81.4/Hermes의
+release·bridgeless 모드에서 app/public Sound Codegen, Fabric 기본 View의 layout event,
+TurboModule 왕복·오류, 원본 `react-native-sound@0.13.0`의 미디어·이벤트 경로를 실행한다.
+외부 미디어 대신 직접 만든 2초 무음 PCM을 사용한다. 재생 중 위치 증가·완료 시간,
+pause/resume/stop/release, 해제된 같은 player key의 이벤트 제외, background/foreground 뒤
+호출·이벤트를 대조한다. 빌드한 APK·입력·근거를 보존하며 장치 식별자는 보고하지 않는다.
+
+[2026-09-21 실행 결과](../experiments/real-corpus/results/runtime-native-development-results.json)는
+iPhone/iOS27 release의 성공 2건과 세 실패·pending 대조, 전용 Android 에뮬레이터의 RN 검사
+26건 통과를 기록한다. 기존 Android 실기기의 legacy bridge 결과는 별도 기록으로 유지한다.
+RN 결과는 `bridge-runtime` 스키마나 `verify-runtime` 판정으로 변환하지 않는다. iOS RN,
+모든 lifecycle·오디오 interruption·process death·가청 출력·임의 앱의 정적 분석 완전성은 검증하지 않았다.
+
 ## 독립적인 기대 목록
 
 `bridge-expectations` v1:

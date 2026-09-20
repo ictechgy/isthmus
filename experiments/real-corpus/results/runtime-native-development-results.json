@@ -1,0 +1,152 @@
+{
+  "format": "isthmus-runtime-native-results",
+  "version": 1,
+  "checkedAt": "2026-09-21",
+  "harnessSha256": {
+    "scripts/verify-flutter-ios-runtime.mjs": "b352ef72900f933570a9f7b0f564eb2c81339938473e60d08fdeb720a00999d0",
+    "scripts/verify-rn-android-runtime.mjs": "f5fb703466e625fb980e8c751403934807a684fe6504ec50fb388373f1874289",
+    "scripts/fixtures/rn-new-architecture.mjs": "92dfb8e4ca6e0f41f81cb840ee2d16112e080ff15c11cf1c941871fa7d070ae5",
+    "scripts/stop-detached-process.mjs": "5f8b3f5b289331b4a65945eb9c246b4013739f0946e1d879ef34e5bbdb823317",
+    "scripts/runtime-harness-failures.mjs": "9c5dc50f15c4da2771bd276f88202776a42e67acfd3eb97235dbb8066fb8577d"
+  },
+  "runtime": {
+    "ios": {
+      "scope": "real-flutter-ios-native-channels",
+      "flutter": "3.47.2",
+      "runtime": "27.0",
+      "deviceKind": "physical",
+      "buildMode": "release",
+      "observedProductMode": true,
+      "swiftHandlers": [
+        "echo",
+        "basic",
+        "failure",
+        "slow",
+        "never"
+      ],
+      "success": {
+        "droppedEvents": 0,
+        "expectedFailedCalls": 0,
+        "failedCalls": 0,
+        "failedChecks": 0,
+        "incompleteChecks": 0,
+        "incompleteRuns": 0,
+        "passedChecks": 2,
+        "pendingCalls": 0,
+        "runs": 1,
+        "staleRuns": 0,
+        "unexpectedFailedCalls": 0,
+        "unobservedChecks": 0
+      },
+      "negativeOutcomes": [
+        "error",
+        "missing-handler",
+        "timeout"
+      ],
+      "pending": "incomplete",
+      "limitations": [
+        "One physical iPhone and the reported build mode; other devices and lifecycle variants remain untested.",
+        "Explicit fixture Method/Basic routes only; no public iOS plugin or static producer completeness claim."
+      ],
+      "cleanup": {
+        "uninstall": 0
+      },
+      "copyAttempts": 2,
+      "failedCopyAttempts": 1
+    },
+    "rn": {
+      "scope": "public-rn-event-real-engine",
+      "reactNative": "0.81.4",
+      "engine": "Hermes",
+      "architecture": "new-architecture",
+      "buildMode": "release",
+      "deviceKind": "emulator",
+      "abi": "arm64-v8a",
+      "package": "react-native-sound@0.13.0",
+      "sourceHashes": {
+        "src/index.ts": "bf4c3183073566c10f52e4643b40578fcbe0e1957bf85c54007ce2357895633c",
+        "android/src/main/java/com/zmxv/RNSound/Sound.kt": "67ff790be69e12c10e6ef300f5281dc0881dd958d4b5973edab0fb5bc2249f58"
+      },
+      "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
+      "lockfileSha256": "79d2fc83a81c5d6d76dcfb9a3698943d8ace306e89aafb9e424773517e11848e",
+      "apkSha256": "e1883896bb57cc162291f369c11de525e3a749583fc42a9be6c5d48d987b1a63",
+      "observed": {
+        "status": "passed",
+        "checks": [
+          "hermes-engine",
+          "android-platform",
+          "release-js",
+          "bridgeless-runtime",
+          "fabric-manager",
+          "fabric-native-layout",
+          "turbo-promise-roundtrip",
+          "turbo-error-roundtrip",
+          "media-prepared",
+          "media-duration",
+          "initial-state",
+          "public-play-event",
+          "other-player-excluded",
+          "media-completion",
+          "media-progress-and-completion-time",
+          "public-completion-event",
+          "media-pause",
+          "media-resume",
+          "media-stop",
+          "removed-subscription-excluded",
+          "released-player-excluded",
+          "remaining-subscription-receives",
+          "background-foreground",
+          "turbo-after-resume",
+          "public-event-after-resume",
+          "media-released"
+        ],
+        "states": [
+          "active",
+          "active",
+          "background",
+          "active"
+        ],
+        "measurements": {
+          "playingPosition": 0.083,
+          "playbackMilliseconds": 2223,
+          "completionPosition": 2
+        },
+        "reactNative": {
+          "minor": 81,
+          "prerelease": null,
+          "patch": 4,
+          "major": 0
+        },
+        "engine": "Hermes",
+        "nativeEchoCalls": 2,
+        "controlEmissions": 1,
+        "androidDebuggable": false,
+        "newArchitectureEnabled": true
+      },
+      "codegen": {
+        "probe": "48e12402970a266c58c02df6a4a2fa0f4608280521d4debb654c5584e7041b77",
+        "sound": "737937f1d054ff068cb5a8b8db93d010d1a60ef2dc0358f1aa2df5ebcc4ac1c6"
+      },
+      "media": "2-second silent PCM decoded and played by the original Sound MediaPlayer implementation",
+      "limitations": [
+        "One reported Android device profile with RN 0.81.4, Hermes and release mode; iOS RN and other lifecycle variants remain untested.",
+        "Fabric evidence covers a native View layout event. TurboModule evidence covers generated app/public Sound specs, calls, errors and resume.",
+        "Silent local PCM playback, completion, pause/resume/stop/release and one background/foreground transition; no audible-output, audio-focus interruption or process-death claim.",
+        "This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate."
+      ],
+      "cleanup": {
+        "installed": true,
+        "uninstallExit": 0,
+        "emulator": {
+          "stopped": true,
+          "forced": false
+        }
+      }
+    }
+  },
+  "limitations": [
+    "The RN new-architecture result is from an owned Android emulator; the earlier physical-device legacy result remains a separate record.",
+    "A first physical Android new-architecture build completed, but the device disconnected before installation; it is not runtime evidence.",
+    "These explicit native harnesses do not establish static producer completeness or all lifecycle/media behavior."
+  ]
+}

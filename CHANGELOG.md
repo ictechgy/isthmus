@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Verified
+
+- iPhone 실기기의 Flutter3.47.2/iOS27 release에서 Dart product 모드, Method/Basic 성공 2건,
+  오류·미등록·timeout·pending과 Swift marker를 확인했다. 테스트 앱 제거까지 검증했다.
+- 전용 Android 에뮬레이터의 RN0.81.4/Hermes 새 아키텍처 release에서 Fabric layout,
+  Codegen TurboModule 왕복·오류, 공개 Sound 원본의 실제 무음 미디어 재생·구독 해제·
+  background/foreground 뒤 호출과 이벤트 등 26개 검사를 통과했다. Android 실기기 legacy
+  기록과 구분하며 iOS RN·모든 lifecycle·가청 출력의 검증을 주장하지 않는다.
+
+### Changed
+
+- iOS 하네스에 `--physical --release`와 선택적 `--team`, RN 하네스에 `--new-architecture`·
+  `--new-emulator`를 추가했다. RN은 설치 전에 입력과 APK를 보존하고 소유한 앱·AVD 정리 실패를 전달한다.
+
 ## [0.9.0] - 2026-09-20
 
 호환 릴리스 세트: cartograph 0.20.0 · kartograph 0.13.0 · dartograph 0.15.0.
