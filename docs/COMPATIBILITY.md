@@ -1,6 +1,6 @@
 # 공개 호환 버전 세트
 
-2026-09-20 추가 검증한 발행 버전 세트다. MethodChannel·BasicMessageChannel 조인,
+2026-09-20 준비한 isthmus 0.9.0의 호환 대상 세트다. MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
@@ -12,21 +12,21 @@
 이 표와 cold-cache CI의 기계 판독 정본은 현재 저장소 루트의 `compatibility.json`이다.
 각 npm 패키지는 발행 시점의 manifest를 포함한다. 이미 발행된 npm 0.8.0의 원본은
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
-세트이며, 현재 저장소는 0.12.0 추가 검증을 반영한다. 기존 npm 아카이브를 덮어쓴 것이 아니다.
+세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증을 보존하고, 현재 manifest는 0.9.0 + 0.13.0을 대상으로 한다. 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
 
 ## 호환 버전 표
 
-아래 버전은 발행본 설치로 대조했다. 설치 후 실제 버전을 확인하며, 새 릴리스나 설치 경로의
-변화는 cold-cache CI의 버전 검사로 확인한다.
+아래 표는 현재 패키지의 호환 대상이다. 발행 전에는 후보 산출물로 검사하고 발행 후에는
+registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발행본 검증은 아래 이력과 구분한다.
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.8.0** | `npm install --global isthmus-cli` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
+| isthmus-cli | **0.9.0** | `npm install --global isthmus-cli@0.9.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
 | cartograph | **0.20.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
-| kartograph | **0.12.0** | GitHub Release 아카이브(`kartograph-0.12.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
+| kartograph | **0.13.0** | GitHub Release 아카이브(`kartograph-0.13.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
 | dartograph | **0.15.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
@@ -44,10 +44,19 @@ Expo Modules는 사실의 선택적 `mechanism` 필드(`core`·`expo`, 생략=co
 kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.` 한정 호출은
 0.10.2에서 스캔된다.
 
-일반 RN/Expo 수신 측을 `bridges --target react-native`로 필터링할 때는 0.12.0을 사용한다.
+일반 RN/Expo 수신 측의 `bridges --target react-native` 수정은 0.12.0 이상에 포함된다.
 0.11.0은 이 정상 명령을 코드 64로 거부하는 회귀가 있었고, 공개 expo-haptics 원본에서
-재현해 0.12.0에서 수정했다. 현재 [공개 코퍼스](../experiments/real-corpus/README.md)는
-원래 npm 0.8.0 설치본과 이 추가 producer 조합을 사용한다.
+재현해 0.12.0에서 수정했다. [공개 코퍼스](../experiments/real-corpus/README.md)는
+원래 npm 0.8.0 설치본의 결과와 후속 개발 검증을 별도 파일로 보존한다.
+
+## 0.9.0 / 0.13.0 후속
+
+isthmus 0.9.0은 안정적인 모듈 범위 let/var·CommonJS namespace 이벤트 구독과
+선택적 sourceModifiedAt 보존을 추가한다. kartograph 0.13.0은 bridge 추출 시각을 source
+mtime과 분리하며 dependency baseline/suppress 및 선택적 JSR-269 source 귀속을 제공한다.
+공개 RN 원본의 source-fact TP4/FN0/FP0, 컴파일된 Sound.kt의 retention·원본 caller explain,
+Flutter3.47.2 macOS 앱·Android 에뮬레이터 검증은 [범위별 결과](../experiments/real-corpus/README.md)에 있다.
+원래 0.8.0/0.12.0의 발행본·캐시 수치와 새 버전 설치 검증은 별도 근거다.
 
 ## 새 브리지 기능과 검증 범위 (2026-09-20)
 
@@ -224,7 +233,7 @@ jobs:
           channel: stable
       - run: brew install ictechgy/tap/cartograph
       - run: dart pub global activate dartograph
-      - run: npm install --global isthmus-cli@0.7.0
+      - run: npm install --global isthmus-cli@0.9.0
       - run: flutter pub get
       - name: Capture bridge facts and producer analyses
         env:

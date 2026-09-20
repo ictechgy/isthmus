@@ -7,8 +7,9 @@ _Last updated: 2026-09-20_
 
 ## 현재 상태
 
-- 발행본은 isthmus-cli **0.8.0**, cartograph **0.20.0**, kartograph **0.12.0**, dartograph
-  **0.15.0**이다. 이번 후속은 개발 소스 변경이며 버전·태그·registry 발행을 추가하지 않았다.
+- 현재 소스 버전은 isthmus-cli **0.9.0**이며 호환 세트는 cartograph **0.20.0**, kartograph
+  **0.13.0**, dartograph **0.15.0**이다. [npm 0.9.0](https://www.npmjs.com/package/isthmus-cli/v/0.9.0)과
+  [릴리스](https://github.com/ictechgy/isthmus/releases/tag/v0.9.0)는 발행 후 설치 근거와 함께 확인한다.
   현재 [compatibility.json](compatibility.json)과 불변 npm 0.8.0의 옛 manifest를 구분한다.
 - JS 이벤트 추출은 안정적인 모듈 범위 let/var와 직접 CommonJS RN namespace를 지원한다.
   초기화 전·재할당·escape·이름 가림·생성자 변경과 const 블록 범위 밖 구독은 확정하지 않는다.
@@ -42,6 +43,7 @@ _Last updated: 2026-09-20_
 ## 재개 기준
 
 이번 후속의 실제 머지·CI 상태는 PR에서 확인한다. 구현·후보 검증·발행본·앱 실행을 구분한다.
-새 발행을 요청받으면 새 버전·CHANGELOG·패키지 및 설치 검증을 진행하며 기존 태그/아카이브를 바꾸지 않는다.
+0.9.0/0.13.0 발행 작업의 원시는 로컬 `.git/release-followups-20260920/`에 기록한다.
+버전 파일만으로 발행을 단정하지 말고 registry·실제 설치·릴리스 CI를 확인한다. 기존 태그/아카이브는 바꾸지 않는다.
 물리 기기/iOS와 KAPT/KSP 확장은 추가 환경·구현 범위를 명시해 선택한다. 이미 끝난 RN var 누락,
 타임스탬프 분리, 공개 컴파일 retention, macOS/Android 하네스를 과거 목록 때문에 다시 시작하지 않는다.

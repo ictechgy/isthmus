@@ -39,8 +39,8 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The current verified producer set for **0.8.0** is:
-cartograph **0.20.0**, kartograph **0.12.0**, and dartograph **0.15.0** — see
+The compatible producer set for **0.9.0** is:
+cartograph **0.20.0**, kartograph **0.13.0**, and dartograph **0.15.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
