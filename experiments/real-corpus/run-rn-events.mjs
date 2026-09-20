@@ -8,9 +8,12 @@ import { runChild } from '../../scripts/run-child.mjs';
 import { fetchPinnedPackage } from './public-archive.mjs';
 
 // 공개 패키지 원본의 구독·방출을 검증한다. JS 미지원 형태도 정답의 누락으로 기록한다.
-const [cliArgument, kartographArgument, outputArgument, ...extra] = process.argv.slice(2);
-if (!cliArgument || !kartographArgument || extra.length) {
-  process.stderr.write('Usage: node experiments/real-corpus/run-rn-events.mjs <isthmus-cli-main.js> <kartograph-bin> [output-json]\n');
+const arguments_ = process.argv.slice(2);
+const published = arguments_.at(-1) === '--published';
+if (published) arguments_.pop();
+const [cliArgument, kartographArgument, outputArgument, ...extra] = arguments_;
+if (!cliArgument || !kartographArgument || extra.length || outputArgument?.startsWith('--')) {
+  process.stderr.write('Usage: node experiments/real-corpus/run-rn-events.mjs <isthmus-cli-main.js> <kartograph-bin> [output-json] [--published]\n');
   process.exit(64);
 }
 const cli = await realpath(cliArgument);
@@ -29,6 +32,7 @@ function execute(command, args, expectedStatus = 0) {
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const rows = [];
 for (const [id, definition] of Object.entries(manifest.rnEvents)) {
+  const expectedCallerFacts = published ? definition.publishedCallerFacts : definition.expectedCallerFacts;
   assert.deepEqual(definition.groundTruthCounts, { caller: 1, native: 1 }, 'each case describes one listener/emission pair');
   const root = await fetchPinnedPackage(definition, work);
   const callerText = execute(process.execPath, [cli, 'extract-js', join(root, definition.source), '--project', root, '--events']);
@@ -40,9 +44,9 @@ for (const [id, definition] of Object.entries(manifest.rnEvents)) {
     assert.equal(document.transport, 'react-native-event');
     assert.ok(document.limitations.some((limit) => limit.startsWith('rn-event-scan-scope:')));
   }
-  assert.equal(caller.facts.length, definition.expectedCallerFacts, `caller scan scope: ${id}`);
+  assert.equal(caller.facts.length, expectedCallerFacts, `caller scan scope: ${id}`);
   assert.deepEqual(caller.facts.map(({ kind, channel, dynamic, location }) =>
-    [kind, channel, dynamic, location.path, location.line]), definition.expectedCallerFacts ?
+    [kind, channel, dynamic, location.path, location.line]), expectedCallerFacts ?
     [['event-listen', definition.event, false, definition.source, definition.callerLine]] : []);
   assert.deepEqual(native.facts.map(({ kind, channel, dynamic, location }) =>
     [kind, channel, dynamic, location.path, location.line]),
@@ -54,11 +58,11 @@ for (const [id, definition] of Object.entries(manifest.rnEvents)) {
   await writeFile(nativePath, nativeText);
   const inputs = [callerPath, nativePath];
   const report = JSON.parse(execute(process.execPath, [cli, 'check', ...inputs, '--strict']));
-  assert.equal(report.summary.matchedEvents, definition.expectedCallerFacts);
+  assert.equal(report.summary.matchedEvents, expectedCallerFacts);
   assert.equal(report.summary.errors, 0);
-  assert.deepEqual(report.issues.map(({ code, severity }) => [code, severity]), definition.expectedCallerFacts ? [] :
+  assert.deepEqual(report.issues.map(({ code, severity }) => [code, severity]), expectedCallerFacts ? [] :
     [['event-emit-without-listen', 'warning']]);
-  if (definition.expectedCallerFacts) {
+  if (expectedCallerFacts) {
     const query = JSON.parse(execute(process.execPath, [cli, 'query', `react-native:event:${definition.event}`, ...inputs]));
     assert.equal(query.result.dependsOn.length, 1, 'one observed native receiver');
     // 소스만 스캔한 native 사실로 JVM ID를 추측하거나 부분 보존에 성공해서는 안 된다.
@@ -79,8 +83,8 @@ for (const [id, definition] of Object.entries(manifest.rnEvents)) {
     truePositives: caller.facts.length + native.facts.length,
     falseNegatives: truth.caller + truth.native - caller.facts.length - native.facts.length,
     falsePositives: 0,
-    expectedScopeMatches: caller.facts.length === definition.expectedCallerFacts && native.facts.length === truth.native,
-    missingJvmIdsRejectRetention: definition.expectedCallerFacts ? true : null,
+    expectedScopeMatches: caller.facts.length === expectedCallerFacts && native.facts.length === truth.native,
+    missingJvmIdsRejectRetention: expectedCallerFacts ? true : null,
     limitations: { caller: caller.limitations, native: native.limitations, consumer: report.limitations },
     issues: report.issues.map(({ code, severity }) => ({ code, severity })),
   });
@@ -91,11 +95,12 @@ const totals = rows.reduce((sum, row) => ({
 }), { tp: 0, fn: 0, fp: 0 });
 const document = {
   format: 'isthmus-public-rn-event-results', version: 1,
+  inputProfile: published ? 'published-isthmus-0.8.0' : 'development',
   metricUnit: 'source facts: each case has one caller subscription and one native emission; matchedEvents counts joined event names separately',
   scope: 'Original npm source; global JS event subscriptions joined with Kotlin/Java emissions. No native compilation, JVM identity, retention success, RN engine or app runtime validation.',
   tools: { isthmus: execute(process.execPath, [cli, '--version']).trim(), kartograph: execute(kartograph, ['--version']).trim() },
   totals, cases: rows,
 };
-await writeFile(outputArgument ?? join(resultsDir, 'rn-event-results.json'), JSON.stringify(document, null, 2) + '\n');
+await writeFile(outputArgument ?? join(resultsDir, published ? 'rn-event-results.json' : 'rn-event-development-results.json'), JSON.stringify(document, null, 2) + '\n');
 process.stdout.write(JSON.stringify({ totals, cases: rows.map(({ id, observed, falseNegatives, expectedScopeMatches }) =>
   ({ id, observed, falseNegatives, expectedScopeMatches })) }, null, 2) + '\n');

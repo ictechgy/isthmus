@@ -311,9 +311,11 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
       tokens[start + 4]?.text === '(') return start + 4;
     return undefined;
   };
+  const handledConstructors = new Set<number>();
   for (const declaration of declarations) {
     const open = constructorOpen(declaration.valueIndex);
     if (open === undefined) continue;
+    handledConstructors.add(open);
     const name = tokens[declaration.nameIndex]!;
     const end = findMatching(tokens, open, '(', ')');
     if (end === undefined || !endsExpression(tokens, end) || !stable(name.text, declaration.nameIndex) ||
@@ -332,12 +334,12 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     const receiver = receivers.get(token.text);
-    if (receiver !== undefined && index >= receiver.from && index < receiver.to &&
+    if (receiver !== undefined &&
       !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
-      !isShadowed(context, token.text, index) &&
       ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'addListener' &&
       tokens[index + 3]?.text === '(') {
-      add(index + 2);
+      if (index >= receiver.from && index < receiver.to && !isShadowed(context, token.text, index)) add(index + 2);
+      else unsupported++;
     }
     if (namespaces.has(token.text) && index >= namespaces.get(token.text)! && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
       !isShadowed(context, token.text, index) && tokens[index + 1]?.text === '.' && tokens[index + 2]?.text === 'DeviceEventEmitter' &&
@@ -347,6 +349,7 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
       const end = findMatching(tokens, open, '(', ')');
       if (end !== undefined && tokens[end + 1]?.text === '.' && tokens[end + 2]?.text === 'addListener' &&
         tokens[end + 3]?.text === '(') add(end + 2);
+      else if (!handledConstructors.has(open)) unsupported++;
     }
   }
   return { facts, unsupported };
@@ -357,18 +360,24 @@ function eventDeclarations(tokens: readonly JsToken[]) {
   const braces: number[] = [];
   const parentheses: number[] = [];
   const ends = new Map<number, number>();
+  const controlEnds = new Set<number>();
   const declarations: Array<{ keyword: string; nameIndex: number; valueIndex: number; scope: number | undefined; fileScope: boolean; inForHeader: boolean }> = [];
   tokens.forEach((token, index) => {
     if (['const', 'let', 'var'].includes(token.text) && tokens[index + 1]?.kind === 'identifier' && tokens[index + 2]?.text === '=') {
       declarations.push({ keyword: token.text, nameIndex: index + 1, valueIndex: index + 3,
-        scope: braces.at(-1), fileScope: braces.length === 0 && parentheses.length === 0,
+        scope: braces.at(-1), fileScope: braces.length === 0 && parentheses.length === 0 &&
+          !controlEnds.has(index - 1) && !['else', 'do', ':'].includes(tokens[index - 1]?.text ?? ''),
         inForHeader: parentheses.some((open) => tokens[open - 1]?.text === 'for' ||
           (tokens[open - 1]?.text === 'await' && tokens[open - 2]?.text === 'for')) });
     }
     if (token.text === '{') braces.push(index);
     else if (token.text === '}') { const open = braces.pop(); if (open !== undefined) ends.set(open, index); }
     else if (token.text === '(') parentheses.push(index);
-    else if (token.text === ')') parentheses.pop();
+    else if (token.text === ')') {
+      const open = parentheses.pop();
+      if (open !== undefined && (['if', 'for', 'while', 'with'].includes(tokens[open - 1]?.text ?? '') ||
+        (tokens[open - 1]?.text === 'await' && tokens[open - 2]?.text === 'for'))) controlEnds.add(index);
+    }
   });
   return declarations.map((declaration) => ({ ...declaration,
     to: declaration.scope === undefined ? tokens.length : ends.get(declaration.scope) }));

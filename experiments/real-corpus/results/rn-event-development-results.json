@@ -1,6 +1,7 @@
 {
   "format": "isthmus-public-rn-event-results",
   "version": 1,
+  "inputProfile": "development",
   "metricUnit": "source facts: each case has one caller subscription and one native emission; matchedEvents counts joined event names separately",
   "scope": "Original npm source; global JS event subscriptions joined with Kotlin/Java emissions. No native compilation, JVM identity, retention success, RN engine or app runtime validation.",
   "tools": {
@@ -86,7 +87,7 @@
         "event": "onPlayChange",
         "callerFacts": 1,
         "nativeFacts": 1,
-        "explanation": "The original CommonJS ReactNative namespace and stable module-scope var emitter subscribe to onPlayChange; the Java emission uses the same global event name. Published isthmus 0.8.0 missed this caller; the development extractor now observes it."
+        "explanation": "The original CommonJS ReactNative namespace and module-scope var emitter subscribe to onPlayChange at sound.js:59; the Java emission at RNSoundModule.java:51 uses the same global event name."
       },
       "observed": {
         "callerFacts": 1,

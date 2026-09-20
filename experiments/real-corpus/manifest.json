@@ -50,6 +50,7 @@
       "callerLine": 127,
       "nativeLine": 34,
       "expectedCallerFacts": 1,
+      "publishedCallerFacts": 1,
       "groundTruthCounts": { "caller": 1, "native": 1 },
       "groundTruth": "The original const NativeEventEmitter instance subscribes to onPlayChange; Sound.setOnPlay directly requests RCTDeviceEventEmitter and emits the same literal. This is a global event-name join, not module-name attribution."
     },
@@ -66,8 +67,9 @@
       "callerLine": 59,
       "nativeLine": 51,
       "expectedCallerFacts": 1,
+      "publishedCallerFacts": 0,
       "groundTruthCounts": { "caller": 1, "native": 1 },
-      "groundTruth": "The original CommonJS ReactNative namespace and stable module-scope var emitter subscribe to onPlayChange; the Java emission uses the same global event name. Published isthmus 0.8.0 missed this caller; the development extractor now observes it."
+      "groundTruth": "The original CommonJS ReactNative namespace and module-scope var emitter subscribe to onPlayChange at sound.js:59; the Java emission at RNSoundModule.java:51 uses the same global event name."
     }
   },
   "archives": {

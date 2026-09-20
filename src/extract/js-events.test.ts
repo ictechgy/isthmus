@@ -106,9 +106,29 @@ test('var 초기화 전이나 조건부·함수 내부 초기화를 파일 전�
     `e.addListener('wrong', cb); var e = new N();`,
     `if (enabled) { var e = new N(); } e.addListener('wrong', cb);`,
     `function setup() { var e = new N(); } e.addListener('wrong', cb);`,
+    `if (enabled) var e = new N(); e.addListener('wrong', cb);`,
+    `while (enabled) var e = new N(); e.addListener('wrong', cb);`,
+    `for (;;) var e = new N(); e.addListener('wrong', cb);`,
+    `if (enabled) work(); else var e = new N(); e.addListener('wrong', cb);`,
+    `do var e = new N(); while (enabled); e.addListener('wrong', cb);`,
+    `if (enabled) label: var e = new N(); e.addListener('wrong', cb);`,
   ]) assert.deepEqual(scan(`import { NativeEventEmitter as N } from 'react-native'; ${body}`).facts, []);
   assert.deepEqual(scan(`var e = new RN.NativeEventEmitter(); var RN = require('react-native');
 e.addListener('wrong', cb);`).facts, []);
+});
+
+test('직접 초기화 범위 밖의 알려진 constructor와 초기화 전 구독은 미해석 한계로 남긴다', () => {
+  for (const source of [
+    `let a = 1, e = new N(); e.addListener('ready', cb);`,
+    `let e = (new N()); e.addListener('ready', cb);`,
+    `e.addListener('ready', cb); var e = new N();`,
+  ]) {
+    const document = scan(`import { NativeEventEmitter as N } from 'react-native'; ${source}`);
+    assert.deepEqual(document.facts, []);
+    assert.ok(document.limitations.some((item) => item.startsWith('unresolved-js-event-emitters:')));
+  }
+  assert.deepEqual(scan(`if (enabled) var RN = require('react-native');
+var e = new RN.NativeEventEmitter(); e.addListener('wrong', cb);`).facts, []);
 });
 
 test('namespace 직접 구독과 inline 생성은 실제 import에만 귀속한다', () => {

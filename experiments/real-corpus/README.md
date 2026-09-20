@@ -146,6 +146,10 @@ Kotlin 수신 측을 포함하려면 기존 명령 뒤에 `--kartograph /path/to
 node experiments/real-corpus/run-rn-events.mjs /path/to/isthmus/dist/cli/main.js /path/to/kartograph
 ```
 
+기본 기대값·출력은 개발 소스용이다. 발행된 isthmus0.8.0을 대조하려면 마지막에
+`--published`를 주면 해당 버전의 알려진 누락 기대값을 사용한다. 선택적 output-json을
+지정해 별도 파일로 기록할 수 있다. 개발 실행은 과거 발행본 결과 파일을 덮어쓰지 않는다.
+
 고정 `react-native-sound` 두 버전의 원본을 검사한다. 0.13.0의 `src/index.ts`는 직접 만든
 const NativeEventEmitter로 `onPlayChange`를 구독하고 Kotlin `Sound.kt`는 같은 리터럴을
 방출한다. 0.11.2의 CommonJS namespace와 모듈 범위 `var` emitter 구독은 개발 소스에서

@@ -67,6 +67,8 @@ async function verifyNativeRuntime() {
 try {
   if (isthmusOverride === undefined) step('npm', ['run', 'build'], 'isthmus build', repository);
   const version = JSON.parse(step(flutterBinary, ['--version', '--machine'], 'Flutter version').stdout);
+  const [flutterMajor, flutterMinor] = version.frameworkVersion.split('.').map(Number);
+  assert.ok(Number.isInteger(flutterMajor) && Number.isInteger(flutterMinor), 'Flutter version must identify a major/minor release.');
   step(flutterBinary, ['create', '--platforms=macos', '--project-name=isthmus_runtime_probe',
     '--no-pub', '--offline', appRoot], 'Flutter app creation');
   const project = await realpath(appRoot);
@@ -77,7 +79,7 @@ try {
     + (publicPluginRoot === undefined ? '  url_launcher_macos: 3.2.2\n'
       : '  url_launcher_macos:\n    path: vendor/url_launcher_macos\n')
     // 현재 SDK에서는 이 하네스의 명시적 CocoaPods 입력을 앱 단위로 선택한다.
-    + (Number(version.frameworkVersion.split('.')[1]) >= 38
+    + (flutterMajor > 3 || (flutterMajor === 3 && flutterMinor >= 38)
       ? 'flutter:\n  config:\n    enable-swift-package-manager: false\n' : ''));
   await writeFile(join(appRoot, 'lib/main.dart'), dartSource);
   await writeFile(join(appRoot, 'macos/Runner/MainFlutterWindow.swift'), swiftSource);
