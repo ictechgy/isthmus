@@ -3,8 +3,8 @@
   "version": 1,
   "scope": "extract-js (caller) + cartograph --target react-native (Expo DSL receiver) joined by isthmus check; Android Kotlin receiver is out of scope, so the Android-only method stays unmatched",
   "tools": {
-    "isthmus": "0.8.0",
-    "cartograph": "0.20.0"
+    "isthmus": "0.7.0",
+    "cartograph": "0.18.0"
   },
   "cases": [
     {

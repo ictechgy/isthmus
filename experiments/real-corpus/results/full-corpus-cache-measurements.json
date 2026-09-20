@@ -1,0 +1,1380 @@
+{
+  "format": "isthmus-full-corpus-cache-measurements",
+  "version": 1,
+  "tools": {
+    "isthmus": "0.8.0",
+    "cartograph": "0.20.0",
+    "dartograph": "dartograph 0.15.0",
+    "kartograph": "kartograph 0.12.0"
+  },
+  "scope": "One isolated isthmus cache miss/hit pair per case; complete reports identical. SDK/build/producer caches are preserved. These are observations on one host, not a full-app benchmark or a general speedup estimate.",
+  "artifactEvidence": "published-tools.json",
+  "cases": [
+    {
+      "id": "bp-file-swift-plugin",
+      "uncached": {
+        "milliseconds": 11446,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 7484
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 255
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 251
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 250
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 472
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 111
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 106
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 41
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 1569
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 129
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 183,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "bp-file-dart-channel",
+      "uncached": {
+        "milliseconds": 2190,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 74
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 623
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 242
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 236
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 250
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 112
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 112
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 112
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 134
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 138
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 191,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 81
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 8
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "bp-symbol-dart-batterylevel",
+      "uncached": {
+        "milliseconds": 2243,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 82
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 8
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 615
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 265
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 259
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 253
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 113
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 112
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 113
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 139
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 139
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 201,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 80
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "bp-file-event-handler",
+      "uncached": {
+        "milliseconds": 2707,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 91
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 675
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 282
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 280
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 274
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 114
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 114
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 113
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 40
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 147
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 139
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 137
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 137
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 196,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 96
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "bp-diff-622-623",
+      "uncached": {
+        "milliseconds": 11012,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 14
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 15
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 12
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 83
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 8
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 7480
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 246
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 240
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 241
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 433
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 107
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 108
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 41
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 1833
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 477,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 13
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 13
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 16
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 84
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "sp-file-plugin",
+      "uncached": {
+        "milliseconds": 12551,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 87
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 9
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 7531
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 296
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 323
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 303
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 359
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 70
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 41
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 47
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 1924
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 137
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 139
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 135
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 128
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 123
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 123
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 123
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 182,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "sp-file-generated",
+      "uncached": {
+        "milliseconds": 3482,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 650
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 297
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 300
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 299
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 42
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 68
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 41
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 39
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 134
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 124
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 128
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 123
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 127
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 185,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "sp-symbol-legacy-remove",
+      "uncached": {
+        "milliseconds": 2155,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 587
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 294
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 298
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 296
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 40
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 68
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 40
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 37
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 137
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 129
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 184,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 78
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "sp-diff-253-254",
+      "uncached": {
+        "milliseconds": 11115,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 11
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 13
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 11
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 6151
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 290
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 303
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 307
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 361
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 68
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 39
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 47
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 1886
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 129
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 128
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 126
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 125
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 128
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 128
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 215,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 13
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 11
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 11
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 74
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ul-file-plugin",
+      "uncached": {
+        "milliseconds": 9556,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 6264
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 286
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 268
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 274
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 342
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 47
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 33
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 40
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 1540
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 118
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 117
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 173,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ul-symbol-setup",
+      "uncached": {
+        "milliseconds": 2183,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 620
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 279
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 280
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 270
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 35
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 49
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 32
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 34
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 124
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 120
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 121
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 174,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ul-diff-321-322",
+      "uncached": {
+        "milliseconds": 9505,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 12
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 12
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 11
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 6256
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 282
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 274
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 272
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 354
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 49
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 32
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 40
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 1557
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 125
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 206,
+        "timings": [
+          {
+            "step": "git-base",
+            "milliseconds": 13
+          },
+          {
+            "step": "git-changes",
+            "milliseconds": 12
+          },
+          {
+            "step": "git-untracked",
+            "milliseconds": 11
+          },
+          {
+            "step": "dartograph-version",
+            "milliseconds": 75
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ls-swift-appdelegate",
+      "uncached": {
+        "milliseconds": 23546,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 97
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 5794
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 735
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 674
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 664
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 368
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 44
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 44
+          },
+          {
+            "step": "kotlin-bridges",
+            "milliseconds": 109
+          },
+          {
+            "step": "kotlin-messages",
+            "milliseconds": 109
+          },
+          {
+            "step": "kotlin-events",
+            "milliseconds": 106
+          },
+          {
+            "step": "swift-impact",
+            "milliseconds": 64
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 8281
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 629
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 499
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 493
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 506
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 500
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 503
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 493
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 503
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 491
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 496
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 491
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 495
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 299,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 74
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 50
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ls-dart-macos-channel",
+      "uncached": {
+        "milliseconds": 5312,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 49
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 656
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 707
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 672
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 679
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 49
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 46
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 44
+          },
+          {
+            "step": "kotlin-bridges",
+            "milliseconds": 106
+          },
+          {
+            "step": "kotlin-messages",
+            "milliseconds": 109
+          },
+          {
+            "step": "kotlin-events",
+            "milliseconds": 111
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 509
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 628
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 623
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 302,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 78
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 52
+          }
+        ]
+      },
+      "identicalReports": true
+    },
+    {
+      "id": "ls-dart-android-channel",
+      "uncached": {
+        "milliseconds": 5425,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 76
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 50
+          },
+          {
+            "step": "prepare-1",
+            "milliseconds": 619
+          },
+          {
+            "step": "dart-bridges",
+            "milliseconds": 757
+          },
+          {
+            "step": "dart-messages",
+            "milliseconds": 658
+          },
+          {
+            "step": "dart-events",
+            "milliseconds": 752
+          },
+          {
+            "step": "swift-bridges",
+            "milliseconds": 47
+          },
+          {
+            "step": "swift-messages",
+            "milliseconds": 45
+          },
+          {
+            "step": "swift-events",
+            "milliseconds": 45
+          },
+          {
+            "step": "kotlin-bridges",
+            "milliseconds": 103
+          },
+          {
+            "step": "kotlin-messages",
+            "milliseconds": 108
+          },
+          {
+            "step": "kotlin-events",
+            "milliseconds": 105
+          },
+          {
+            "step": "dart-impact",
+            "milliseconds": 500
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 627
+          },
+          {
+            "step": "dart-bindings",
+            "milliseconds": 642
+          }
+        ]
+      },
+      "reused": {
+        "milliseconds": 291,
+        "timings": [
+          {
+            "step": "dartograph-version",
+            "milliseconds": 82
+          },
+          {
+            "step": "cartograph-version",
+            "milliseconds": 7
+          },
+          {
+            "step": "kartograph-version",
+            "milliseconds": 53
+          }
+        ]
+      },
+      "identicalReports": true
+    }
+  ]
+}

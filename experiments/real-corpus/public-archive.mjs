@@ -11,7 +11,7 @@ export async function fetchPinnedPackage(definition, work) {
   const id = `${definition.package}-${definition.version}`;
   const archive = join(work, `${id}.tgz`);
   const target = join(work, id);
-  const download = runChild('curl', ['-fsSL', '--retry', '3', definition.archiveUrl, '-o', archive], { timeout: 120_000 });
+  const download = runChild('curl', ['-fsSL', '--retry', '3', '-o', archive, '--', definition.archiveUrl], { timeout: 120_000 });
   assert.equal(download.status, 0, `archive download failed: ${id}`);
   assert.equal(createHash('sha256').update(await readFile(archive)).digest('hex'), definition.sha256,
     `archive sha256 mismatch: ${id}`);

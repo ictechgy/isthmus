@@ -81,7 +81,7 @@ for (const [id, definition] of Object.entries(manifest.rnEvents)) {
     falsePositives: 0,
     expectedScopeMatches: caller.facts.length === definition.expectedCallerFacts && native.facts.length === truth.native,
     missingJvmIdsRejectRetention: definition.expectedCallerFacts ? true : null,
-    limitations: { caller: caller.limitations, native: native.limitations },
+    limitations: { caller: caller.limitations, native: native.limitations, consumer: report.limitations },
     issues: report.issues.map(({ code, severity }) => ({ code, severity })),
   });
 }
