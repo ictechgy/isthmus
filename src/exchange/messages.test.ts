@@ -7,6 +7,16 @@ const fact = { kind: 'message-send', channel: 'camera', dynamic: false,
 const document = { format: 'bridge-facts', version: 2, transport: 'basic-message-channel', platform: 'dart', target: 'flutter',
   project: '/app', generatedAt: '2026-09-14T00:00:00Z', tool: { name: 'dartograph', version: 'dev' }, facts: [fact], limitations: [] };
 
+test('v2 source mtime은 선택적 관찰값으로 보존하고 잘못된 시각은 거부한다', () => {
+  assert.equal('sourceModifiedAt' in parseMessageBridgeDocument(document), false);
+  for (const sourceModifiedAt of ['1985-10-26T08:15:00.000Z', '2030-01-01T00:00:00Z']) {
+    assert.equal(parseMessageBridgeDocument({ ...document, sourceModifiedAt }).sourceModifiedAt, sourceModifiedAt);
+  }
+  for (const sourceModifiedAt of [null, 0, '', '2026-02-31T00:00:00Z', '2026-01-01T00:00:00']) {
+    assert.throws(() => parseMessageBridgeDocument({ ...document, sourceModifiedAt }), /Invalid sourceModifiedAt/);
+  }
+});
+
 test('Basic v2는 method를 만들지 않고 literal과 증명된 prefix를 보존한다', () => {
   const parsed = parseMessageBridgeDocument({ ...document, facts: [{ ...fact, extra: 'discard' },
     { ...fact, channel: 'pigeonName', dynamic: true, channelPrefix: 'dev.flutter.pigeon.Api.read' }] });

@@ -25,6 +25,14 @@ isthmus 0.8.0·cartograph 0.20.0·kartograph 0.11.0의 `bridge-facts` v2 확장�
 필드·파일 간 emitter 추적, Expo 모듈별 이벤트, Fabric UI 이벤트와 TurboModule codegen
 이벤트, Swift extension·조건부 컴파일/import·파일 범위 이름 가림은 완전하게 해석하지 않으며 관찰 범위를 limitations로 남긴다.
 
+JS 호출 측은 named/namespace ESM import와 모듈 범위의 직접
+`const|let|var RN = require('react-native')`를 지원한다. 인스턴스의 `let`/`var`는 모듈
+범위에서 직접 초기화한 경우만 추적하며, 재할당·escape·이름 가림·생성자 변경이나 초기화
+전 구독은 확정하지 않는다. `const`는 선언된 블록 범위 안에서만 추적한다.
+하나의 declarator와 괄호 없는 직접 constructor 초기화가 현재 범위다. 그 밖의 식에서
+알려진 RN constructor가 관찰되면 사실을 추측하지 않고 미해석 한계로 센다.
+이 확장은 개발 소스의 동작이며 이미 발행된 isthmus 0.8.0에는 포함되지 않는다.
+
 `preflight`와 런타임 대조는 이 transport를 아직 지원하지 않는다. preflight context에
 넣으면 명시적으로 거부한다. 이 계약의 구현·단위 검사·공개 소스 실행·발행은 별도 상태다.
 

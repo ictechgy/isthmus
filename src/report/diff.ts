@@ -21,6 +21,7 @@ export interface DiffProducerVersion {
   readonly name: string;
   readonly version: string;
   readonly generatedAt: string;
+  readonly sourceModifiedAt?: string;
 }
 
 /**
@@ -238,7 +239,8 @@ function producerInventory(docs: readonly BridgeFactsDocument[]): string[] {
 
 /** 추출기 업그레이드가 관찰 차이의 원인인지 검토할 버전 근거다. */
 function producerVersions(docs: readonly BridgeFactsDocument[]) {
-  return docs.map((doc) => ({ platform: doc.platform, ...doc.tool, generatedAt: doc.generatedAt }))
+  return docs.map((doc) => ({ platform: doc.platform, ...doc.tool, generatedAt: doc.generatedAt,
+    ...(doc.sourceModifiedAt === undefined ? {} : { sourceModifiedAt: doc.sourceModifiedAt }) }))
     .sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
 }
 

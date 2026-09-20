@@ -62,7 +62,7 @@ export interface BridgeImpactReport {
   readonly issues: readonly CheckIssue[];
   readonly limitations: readonly JoinLimitation[];
   readonly relevantLimitations: readonly JoinLimitation[];
-  readonly inputs: ReadonlyArray<Pick<BridgeFactsDocument, 'tool' | 'platform' | 'target' | 'generatedAt'>>;
+  readonly inputs: ReadonlyArray<Pick<BridgeFactsDocument, 'tool' | 'platform' | 'target' | 'generatedAt' | 'sourceModifiedAt'>>;
   readonly runtime?: RuntimeImpactEvidence;
 }
 
@@ -170,8 +170,9 @@ export function createBridgeImpact(
     selectedFacts, channels, methods, reviewFiles, issues,
     ...(runtime === undefined ? {} : { runtime }),
     limitations: joined.limitations, relevantLimitations,
-    inputs: documents.map(({ tool, platform, target, generatedAt }) => ({
+    inputs: documents.map(({ tool, platform, target, generatedAt, sourceModifiedAt }) => ({
       tool, platform, target, generatedAt,
+      ...(sourceModifiedAt === undefined ? {} : { sourceModifiedAt }),
     })).sort((a, b) => compareStrings(encodeSortedJson(a), encodeSortedJson(b))),
   };
 }

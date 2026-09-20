@@ -16,10 +16,12 @@ const parsedArguments = parseArguments(process.argv.slice(2));
 const [flutterBinary, adbBinary, isthmusOverride, requestedDevice] = parsedArguments.positionals;
 const kartographArgument = parsedArguments.options.kartograph;
 const dartographArgument = parsedArguments.options.dartograph;
+const newEmulator = parsedArguments.options.newEmulator === true;
 if (flutterBinary === undefined || adbBinary === undefined || parsedArguments.invalid ||
+  (newEmulator && requestedDevice !== undefined) ||
   (kartographArgument !== undefined) !== (dartographArgument !== undefined)) {
   process.stderr.write('Usage (Android): verify-flutter-android-runtime.mjs <flutter-bin> <adb> [isthmus-js] [device-id] '
-    + '[--kartograph <bin> --dartograph <AOT>]\n');
+    + '[--new-emulator] [--kartograph <bin> --dartograph <AOT>]\n');
   process.exit(64);
 }
 const kartographBinary = kartographArgument === undefined ? undefined : await realpath(kartographArgument);
@@ -31,6 +33,11 @@ function parseArguments(arguments_) {
   let invalid = false;
   for (let index = 0; index < arguments_.length; index++) {
     const value = arguments_[index];
+    if (value === '--new-emulator') {
+      if (options.newEmulator) invalid = true;
+      options.newEmulator = true;
+      continue;
+    }
     if (!value.startsWith('--')) { positionals.push(value); continue; }
     const key = value === '--kartograph' ? 'kartograph' : value === '--dartograph' ? 'dartograph' : undefined;
     if (key === undefined || options[key] !== undefined || index + 1 >= arguments_.length || arguments_[index + 1].startsWith('-')) {
@@ -184,7 +191,7 @@ async function selectDevice() {
       throw new Error(`Requested Android device is unavailable: ${requestedDevice}. ${listed}`);
     }
     emulatorId = requestedDevice;
-  } else if (devices.length > 0) {
+  } else if (!newEmulator && devices.length > 0) {
     emulatorId = devices[0];
   } else {
     await createAndStartEmulator();

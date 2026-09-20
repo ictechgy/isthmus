@@ -134,9 +134,11 @@ Kotlin 수신 측을 포함하려면 기존 명령 뒤에 `--kartograph /path/to
 성공·앱 런타임을 검증하는 경로는 아니다. 이전 Swift 전용 결과는
 [과거 결과](results/history/pre-kotlin-rn-receiver.json)에 보존한다.
 
-고정 npm 아카이브의 파일 mtime은 `1985-10-26T08:15:00Z`다. Kotlin 생산자는 이 값을
+고정 npm 아카이브의 파일 mtime은 `1985-10-26T08:15:00Z`다. 발행된 Kotlin 0.12.0 생산자는 이 값을
 `generatedAt`에 사용하고 JS·Swift는 추출 시각을 사용하므로, 소비자에 수십 년의
 `input-freshness` 차이가 기록된다. 원본 해시 검증과 이 시간 한계를 함께 보존·해석한다.
+개발 소스에서는 `generatedAt`을 추출 시각으로 통일하고 `sourceModifiedAt`에 mtime을
+따로 기록한다. 어느 시각도 compiler snapshot과 source의 일치를 보장하지 않는다.
 
 ## React Native 전역 이벤트 (JS ↔ Kotlin/Java)
 
@@ -144,22 +146,45 @@ Kotlin 수신 측을 포함하려면 기존 명령 뒤에 `--kartograph /path/to
 node experiments/real-corpus/run-rn-events.mjs /path/to/isthmus/dist/cli/main.js /path/to/kartograph
 ```
 
+기본 기대값·출력은 개발 소스용이다. 발행된 isthmus0.8.0을 대조하려면 마지막에
+`--published`를 주면 해당 버전의 알려진 누락 기대값을 사용한다. 선택적 output-json을
+지정해 별도 파일로 기록할 수 있다. 개발 실행은 과거 발행본 결과 파일을 덮어쓰지 않는다.
+
 고정 `react-native-sound` 두 버전의 원본을 검사한다. 0.13.0의 `src/index.ts`는 직접 만든
 const NativeEventEmitter로 `onPlayChange`를 구독하고 Kotlin `Sound.kt`는 같은 리터럴을
-방출한다. 0.11.2의 `var` emitter 구독은 현재 JS 추출 범위 밖이지만 Java 방출은 관찰된다.
-후자를 지우거나 정답을 0으로 낮추지 않고 알려진 caller FN으로 기록한다.
+방출한다. 0.11.2의 CommonJS namespace와 모듈 범위 `var` emitter 구독은 개발 소스에서
+직접 초기화·안정 바인딩을 확인해 관찰한다. 발행된 0.8.0의 caller FN 기록은 보존한다.
 
 TP/FN/FP 단위는 **소스 사실**이며 각 케이스의 정답은 구독 1개·방출 1개다.
-이벤트 이름 조인 수(`matchedEvents`)와 구분한다. 현재 두 사례의 합은 TP 3 / FN 1 / FP 0이며,
-0.13.0만 이벤트 1개가 연결된다. `expectedScopeMatches`는 이 명시된 범위와 관측이 맞는지
+이벤트 이름 조인 수(`matchedEvents`)와 구분한다. [개발 소스 결과](results/rn-event-development-results.json)는
+TP 4 / FN 0 / FP 0이며 두 사례에서 각각 이벤트 1개가 연결된다. `expectedScopeMatches`는 이 명시된 범위와 관측이 맞는지
 확인하는 값이지 전체 정확도나 삭제 안전성 판정이 아니다.
 원본 위치·아카이브 해시를 검사하고 소스/라이선스 해시를 근거로 기록한다. native 컴파일이나
 RN 엔진을 실행하지 않으며 JVM ID가 없어 보존 요청이 거부되는 것도 검사한다.
-보존 거부 검사는 짝이 관찰된 0.13.0에서 실행한다. 조인이 없는 0.11.2의 해당 결과는 null이다.
+개발 소스에서는 두 사례 모두 JVM ID가 없는 보존 요청을 거부하는지 확인한다.
 결과의 `limitations`는 caller·native·consumer가 실제로 보고한 한계를 모두 보존한다.
 
 아카이브 경계의 회귀 검사는 `node --test experiments/real-corpus/public-archive.test.mjs`로
 실행하며 두 OS PR CI에도 포함된다.
+
+## 컴파일된 공개 RN 원본과 실제 Flutter 앱 (개발 소스)
+
+```bash
+node experiments/real-corpus/run-rn-compiled.mjs /path/to/isthmus/dist/cli/main.js \
+  /path/to/kartograph /path/to/gradle /path/to/android-35/android.jar /path/to/result.json
+```
+
+[컴파일된 원본 결과](results/rn-compiled-development-results.json)는 react-native-sound0.13.0의
+원본 `Sound.kt`를 Kotlin2.4.20/JVM21로 컴파일한다. Android SDK와 명시적인 RN API 스텁을
+사용하고 원본 JS/Kotlin·라이선스 바이트를 확인한다. `Sound.setOnPlay(ZD)V`의 실제 JVM ID로
+retention을 만들고 dead 후보 억제와 `src/index.ts:127` caller explain을 확인했다.
+스텁을 RN 엔진 실행으로 해석하지 않으며, 이 fixture에는 Gradle build witness를 붙이지 않았다.
+
+[런타임 결과](results/runtime-development-results.json)는 Flutter3.47.2의 실제 macOS 앱과
+소유한 Android API36 arm64 에뮬레이터 앱에서 MethodChannel·BasicMessageChannel 및 고정
+공개 Pigeon plugin을 실행한 별도 근거다. 성공·오류·미등록·타임아웃·pending을 대조했다.
+물리 기기·iOS·release·모든 lifecycle 검증은 포함하지 않고, RN 엔진 검증과도 구분한다.
+연결된 기기 대신 전용 에뮬레이터를 선택하려면 Android 하네스에 `--new-emulator`를 준다.
 
 ## 현재 발행 조합 결과 (2026-09-20)
 
@@ -171,8 +196,8 @@ cold-cache CI에도 반영하며, npm 0.8.0에 처음 포함된 manifest와 구�
 - [Flutter 원시 결과](results/results.json): **TP 83 / FN 0 / FP 0**, 15/15.
 - [전체 캐시 측정](results/full-corpus-cache-measurements.json): 15/15 miss→hit·전체 보고서 동일성.
 - [Kotlin/Swift Expo 수신 측](results/rn-kotlin-receiver-results.json): 모듈 1개·메서드 4개, 미대응 호출 0.
-- [RN 전역 이벤트](results/rn-event-results.json): 소스 사실 **TP 3 / FN 1 / FP 0**.
-  FN 1은 위에서 설명한 0.11.2의 미지원 var emitter 구독이며, 성공 코드로 완전성을 주장하지 않는다.
+- [RN 전역 이벤트](results/rn-event-results.json): 발행본 소스 사실 **TP 3 / FN 1 / FP 0**.
+  FN 1은 발행본 0.8.0이 놓친 0.11.2의 var emitter 구독이다. 위 개발 소스 결과와 구분한다.
 
 각 수치는 그 케이스의 수동 정답·선택 범위를 대상으로 한다. Flutter 스텁·수동 Dart package_config·
 Kotlin/Java 소스 스캔의 한계를 유지하며, 앱 엔진이나 기기를 실행한 결과가 아니다.

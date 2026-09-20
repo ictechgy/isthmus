@@ -32,7 +32,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "format": "bridge-facts",
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
-  "generatedAt": "2026-09-04T12:00:00Z",   // 신선도 판단용
+  "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
   "platform": "dart" | "swift" | "kotlin" | "js",
   "target": "flutter" | "react-native" | "capacitor" | null,  // 브리지 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
@@ -143,8 +143,18 @@ NEL(U+0085)과 Unicode 줄·문단 구분자(U+2028/U+2029)도 허용하지 않�
 `limitations` 문자열은 원인 설명이라 문장을 자유롭게 쓸 수 있고 소비자가 내용을
 검증하지 않는다. 소비자의 텍스트 출력(DOT·Mermaid 주석 등)에는 제어 문자를
 제거해 넣고, JSON 출력은 인코딩이 이스케이프를 맡는다.
-`generatedAt`은 timezone이 명시된 ISO 8601 날짜·시각이어야 한다. 생산자는 입력 offset을
+`generatedAt`은 문서를 추출한 시각이다. source mtime이나 compiler index 생성 시각을
+대신 넣지 않는다. v1·v2 문서는 선택적 `sourceModifiedAt`으로 이번 추출에서 읽은
+소스 파일의 최신 filesystem mtime을 별도로 보존할 수 있다. 읽은 파일이 없거나 mtime을
+측정하지 않았으면 생략한다. archive가 고정한 오래된 mtime도 그대로 관찰값이며,
+추출 시각보다 미래여도 거부하거나 추측해 교정하지 않는다.
+두 필드 모두 timezone이 명시된 ISO 8601 날짜·시각이어야 한다. 생산자는 입력 offset을
 UTC로 변환하고 밀리초 세 자리의 `YYYY-MM-DDTHH:mm:ss.SSSZ` 형식으로 정규화한다.
+입력 간 추출 시각 차이는 `generatedAt`만 비교한다. 어느 시각도 compiler snapshot과
+현재 source의 일치, 실제 앱 실행, 분석 완전성을 입증하지 않는다. 이를 확인하는
+build witness와 `limitations`는 별도로 유지한다. 기존 kartograph 0.12.0 이하의
+기본 `generatedAt`은 source mtime이었으므로 다른 생산자와 비교한 시각 차이를
+빌드 노후화로 해석하지 않는다. 소비자는 버전을 보고 시각을 임의로 교체하지 않는다.
 소비자는 버전 1에 정의되지 않은 추가 필드를 검증 경계에서
 제거하고, 위치의 줄·열은 1 이상의 안전한 정수만 허용한다.
 

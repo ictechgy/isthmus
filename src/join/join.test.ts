@@ -884,6 +884,14 @@ test('입력 생성 시각이 하루 넘게 다르면 신선도 한계를 추가
   );
 });
 
+test('동일 추출 시각의 오래된 archive mtime을 입력 신선도 차이로 보고하지 않는다', () => {
+  const result = joinBridgeDocuments([
+    { ...dartDocument, sourceModifiedAt: '1985-10-26T08:15:00Z' },
+    { ...swiftDocument, sourceModifiedAt: '2030-01-01T00:00:00Z' },
+  ]);
+  assert.equal(result.limitations.some(({ message }) => message.startsWith('input-freshness:')), false);
+});
+
 test('같은 메서드의 여러 핸들러 위치를 한 논리 매치에 정렬한다', () => {
   const swiftWithDuplicateHandler = parseBridgeFactsDocument({
     ...swiftDocument,
