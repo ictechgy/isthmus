@@ -4,13 +4,42 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-20
+
+호환 릴리스 세트: cartograph 0.20.0 · kartograph 0.13.0 · dartograph 0.15.0.
+
+### Added
+
+- RN 이벤트 추출이 named/namespace ESM과 직접 CommonJS RN namespace의 안정적인
+  모듈 범위 let/var NativeEventEmitter 초기화를 지원한다. 공개 react-native-sound 두 버전의
+  source-fact 검사는 TP 4 / FN 0 / FP 0이며, 이전 0.8.0의 caller FN 기록도 보존한다.
+- v1/v2의 선택적 `sourceModifiedAt`을 검증하고 impact/diff 입력 근거에 보존한다.
+  `generatedAt`은 추출 시각이며 source mtime이나 compiler freshness를 대신하지 않는다.
+
+### Verified
+
+- 원본 Sound.kt의 실제 컴파일 JVM ID → retention → dead 억제·JS caller explain과
+  무관한 메서드 미도달 대조를 추가했다. Android SDK+명시적인 RN API 스텁을 사용하며
+  RN 엔진 실행이나 Gradle build witness 검증으로 해석하지 않는다.
+- Flutter 3.47.2의 실제 macOS 앱·소유한 Android 에뮬레이터에서 Method/Basic/Pigeon의
+  성공·오류·미등록·timeout·pending을 대조했다. 실기기·iOS·release·모든 lifecycle은 범위 밖이다.
+
+### Fixed
+
+- README에서 연결하는 호환 버전 문서를 npm 패키지에 포함하고 package 계약에서 확인한다.
+- 초기화 전·재할당·escape·이름 가림·중괄호 없는 조건부 선언과 const 블록 밖 구독을
+  확정하지 않는다. 직접 초기화 범위 밖의 알려진 constructor는 미해석 한계로 남기고,
+  예약어 이름의 객체 메서드 호출 뒤 ASI 선언을 조건문 본문으로 오인하지 않는다.
+- macOS 하네스가 이미 12.0인 deployment target과 새 Flutter의 프로젝트 단위 CocoaPods
+  설정을 처리한다. Android 하네스의 `--new-emulator`는 전용 AVD를 선택한다.
+
 ### Changed
 
-- 현재 저장소의 검증된 producer 세트를 kartograph 0.12.0으로 갱신했다. 0.11.0의
+- 호환 producer 세트를 kartograph 0.13.0으로 갱신했다. 0.11.0의
   일반 RN target 필터 회귀를 수정한 producer이며, 기존 npm 0.8.0 아카이브의 발행 시점
   manifest와 구분한다.
 - 공개 RN 이벤트·Kotlin 수신 측 코퍼스와 전체 Flutter 15케이스의 cache miss/hit·보고서
-  동등성 검증을 추가했다. 알려진 JS caller 누락과 앱 런타임 미검증 범위를 그대로 보고한다.
+  동등성 검증을 추가했다. 발행본과 개발 소스의 기대값·결과 파일을 분리하고 관찰 한계를 보존한다.
 
 ## [0.8.0] - 2026-09-20
 

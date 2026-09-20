@@ -1,6 +1,6 @@
 {
   "name": "isthmus-cli",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Join bridge facts across cross-platform application boundaries.",
   "keywords": [
     "flutter",
@@ -32,6 +32,7 @@
     "scripts/run-child.mjs",
     "scripts/build-preflight-toolchain.mjs",
     "docs/TOOLCHAIN.md",
+    "docs/COMPATIBILITY.md",
     "docs/PREFLIGHT.md",
     "docs/RUNTIME.md",
     "docs/IMPACT.md",
