@@ -238,6 +238,14 @@ export interface ScannedJsEvent {
 export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsupported: number } {
   const context = createBoundContext(source);
   const { tokens } = context;
+  const references = new Map<string, number[]>();
+  tokens.forEach((token, index) => {
+    if (token.kind !== 'identifier' && token.kind !== 'keyword') return;
+    const positions = references.get(token.text) ?? [];
+    positions.push(index);
+    references.set(token.text, positions);
+  });
+  const declarations = eventDeclarations(tokens);
   const imports = context.imports.filter(({ specifier, exportedName }) => specifier === 'react-native' &&
     (exportedName === 'DeviceEventEmitter' || exportedName === 'NativeEventEmitter'));
   const importPositions = new Set<number>();
@@ -249,27 +257,71 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
     index = end;
   }
   // 선언·재대입·매개변수·다른 함수로 전달된 이름은 파일 범위에서 보수적으로 제외한다.
-  const stable = (name: string, declaration = -1) => tokens.every((token, index) => {
-    if (token.text !== name || importPositions.has(index) || index === declaration ||
+  const stable = (name: string, declaration = -1, constructor = false) => (references.get(name) ?? []).every((index) => {
+    if (importPositions.has(index) || index === declaration ||
       ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) return true;
-    if (tokens[index - 1]?.text === 'new' && tokens[index + 1]?.text === '(') return true;
+    if (constructor && tokens[index - 1]?.text === 'new' && tokens[index + 1]?.text === '(') return true;
     return ['.', '?.'].includes(tokens[index + 1]?.text ?? '') &&
       tokens[index + 3]?.text === '(';
   });
   const constructors = new Set(imports.filter((entry) => entry.exportedName === 'NativeEventEmitter' &&
-    !context.localNames.has(entry.localName) && stable(entry.localName)).map(({ localName }) => localName));
-  const receivers = new Set(imports.filter((entry) => entry.exportedName === 'DeviceEventEmitter' &&
-    !context.localNames.has(entry.localName) && stable(entry.localName)).map(({ localName }) => localName));
+    !context.localNames.has(entry.localName) && stable(entry.localName, -1, true)).map(({ localName }) => localName));
+  const receivers = new Map(imports.filter((entry) => entry.exportedName === 'DeviceEventEmitter' &&
+    !context.localNames.has(entry.localName) && stable(entry.localName))
+    .map(({ localName }) => [localName, { from: 0, to: tokens.length }]));
   let unsupported = imports.length - constructors.size - receivers.size;
+  const namespaces = new Map<string, number>();
+  const namespaceStable = (name: string, declaration: number) => (references.get(name) ?? []).every((index) => {
+    if (index === declaration || importPositions.has(index) || ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) return true;
+    if (!['.', '?.'].includes(tokens[index + 1]?.text ?? '') ||
+      ['delete', '++', '--'].includes(tokens[index - 1]?.text ?? '')) return false;
+    const member = tokens[index + 2]?.text;
+    if (member === 'NativeEventEmitter') return tokens[index - 1]?.text === 'new' && tokens[index + 3]?.text === '(';
+    if (member === 'DeviceEventEmitter') return ['.', '?.'].includes(tokens[index + 3]?.text ?? '') && tokens[index + 5]?.text === '(';
+    let end = index;
+    while (['.', '?.'].includes(tokens[end + 1]?.text ?? '') && tokens[end + 2]?.kind === 'identifier') end += 2;
+    // Namespace의 다른 export를 읽는 것은 허용하지만 멤버 대입·삭제는 제외한다.
+    return !['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '??=', '&&=', '||=', '++', '--', '[']
+      .includes(tokens[end + 1]?.text ?? '') &&
+      !(['&&', '||', '??', '<<', '>>', '**'].includes(tokens[end + 1]?.text ?? '') && tokens[end + 2]?.text === '=');
+  });
+  const namespace = (name: string, declaration: number, from = 0) => {
+    if (namespaceStable(name, declaration)) namespaces.set(name, from);
+    else unsupported++;
+  };
+  for (const declaration of declarations) {
+    const { nameIndex, valueIndex } = declaration;
+    if (!declaration.fileScope || context.localNames.has('require') ||
+      isShadowed(context, 'require', valueIndex) || readRequireSpecifier(tokens, valueIndex) !== 'react-native' ||
+      !endsExpression(tokens, valueIndex + 3)) continue;
+    namespace(tokens[nameIndex]!.text, nameIndex, valueIndex + 4);
+  }
   for (let index = 0; index < tokens.length; index++) {
-    if (tokens[index]?.text !== 'const' || tokens[index + 2]?.text !== '=' || tokens[index + 3]?.text !== 'new' ||
-      !constructors.has(tokens[index + 4]?.text ?? '') || tokens[index + 5]?.text !== '(') continue;
-    const name = tokens[index + 1]!;
-    const end = findMatching(tokens, index + 5, '(', ')');
-    if (end === undefined || !endsExpression(tokens, end) || !stable(name.text, index + 1)) {
+    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text === '*' && tokens[index + 2]?.text === 'as' &&
+      tokens[index + 3]?.kind === 'identifier' && tokens[index + 4]?.text === 'from' && tokens[index + 5]?.value === 'react-native') {
+      namespace(tokens[index + 3]!.text, -1);
+    }
+  }
+  const constructorOpen = (start: number): number | undefined => {
+    if (tokens[start]?.text !== 'new' || ['.', '?.'].includes(tokens[start - 1]?.text ?? '')) return undefined;
+    const name = tokens[start + 1]?.text ?? '';
+    if (isShadowed(context, name, start + 1)) return undefined;
+    if (constructors.has(name) && tokens[start + 2]?.text === '(') return start + 2;
+    if (namespaces.has(name) && start >= namespaces.get(name)! && tokens[start + 2]?.text === '.' && tokens[start + 3]?.text === 'NativeEventEmitter' &&
+      tokens[start + 4]?.text === '(') return start + 4;
+    return undefined;
+  };
+  for (const declaration of declarations) {
+    const open = constructorOpen(declaration.valueIndex);
+    if (open === undefined) continue;
+    const name = tokens[declaration.nameIndex]!;
+    const end = findMatching(tokens, open, '(', ')');
+    if (end === undefined || !endsExpression(tokens, end) || !stable(name.text, declaration.nameIndex) ||
+      declaration.to === undefined || declaration.inForHeader ||
+      (declaration.keyword !== 'const' && !declaration.fileScope)) {
       unsupported++; continue;
     }
-    receivers.add(name.text);
+    receivers.set(name.text, { from: end + 1, to: declaration.to });
   }
   const facts: ScannedJsEvent[] = [];
   const add = (methodIndex: number) => {
@@ -279,19 +331,47 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
   };
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
-    if (receivers.has(token.text) && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+    const receiver = receivers.get(token.text);
+    if (receiver !== undefined && index >= receiver.from && index < receiver.to &&
+      !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
       !isShadowed(context, token.text, index) &&
       ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'addListener' &&
       tokens[index + 3]?.text === '(') {
       add(index + 2);
     }
-    if (token.text === 'new' && constructors.has(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === '(') {
-      const end = findMatching(tokens, index + 2, '(', ')');
+    if (namespaces.has(token.text) && index >= namespaces.get(token.text)! && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+      !isShadowed(context, token.text, index) && tokens[index + 1]?.text === '.' && tokens[index + 2]?.text === 'DeviceEventEmitter' &&
+      ['.', '?.'].includes(tokens[index + 3]?.text ?? '') && tokens[index + 4]?.text === 'addListener' && tokens[index + 5]?.text === '(') add(index + 4);
+    const open = constructorOpen(index);
+    if (open !== undefined) {
+      const end = findMatching(tokens, open, '(', ')');
       if (end !== undefined && tokens[end + 1]?.text === '.' && tokens[end + 2]?.text === 'addListener' &&
         tokens[end + 3]?.text === '(') add(end + 2);
     }
   }
   return { facts, unsupported };
+}
+
+/** 직접 선언의 초기화 위치·lexical 경계를 모아 파일 밖/초기화 전으로 바인딩을 퍼뜨리지 않는다. */
+function eventDeclarations(tokens: readonly JsToken[]) {
+  const braces: number[] = [];
+  const parentheses: number[] = [];
+  const ends = new Map<number, number>();
+  const declarations: Array<{ keyword: string; nameIndex: number; valueIndex: number; scope: number | undefined; fileScope: boolean; inForHeader: boolean }> = [];
+  tokens.forEach((token, index) => {
+    if (['const', 'let', 'var'].includes(token.text) && tokens[index + 1]?.kind === 'identifier' && tokens[index + 2]?.text === '=') {
+      declarations.push({ keyword: token.text, nameIndex: index + 1, valueIndex: index + 3,
+        scope: braces.at(-1), fileScope: braces.length === 0 && parentheses.length === 0,
+        inForHeader: parentheses.some((open) => tokens[open - 1]?.text === 'for' ||
+          (tokens[open - 1]?.text === 'await' && tokens[open - 2]?.text === 'for')) });
+    }
+    if (token.text === '{') braces.push(index);
+    else if (token.text === '}') { const open = braces.pop(); if (open !== undefined) ends.set(open, index); }
+    else if (token.text === '(') parentheses.push(index);
+    else if (token.text === ')') parentheses.pop();
+  });
+  return declarations.map((declaration) => ({ ...declaration,
+    to: declaration.scope === undefined ? tokens.length : ends.get(declaration.scope) }));
 }
 
 /**

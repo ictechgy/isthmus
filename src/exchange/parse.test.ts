@@ -15,6 +15,16 @@ const emptyDocument = {
   limitations: [],
 };
 
+test('source mtime은 추출 시각과 별도로 검증하고 생략과 미래 관찰값을 보존한다', () => {
+  assert.equal('sourceModifiedAt' in parseBridgeFactsDocument(emptyDocument), false);
+  for (const sourceModifiedAt of ['1985-10-26T08:15:00.000Z', '2030-01-01T00:00:00Z']) {
+    assert.equal(parseBridgeFactsDocument({ ...emptyDocument, sourceModifiedAt }).sourceModifiedAt, sourceModifiedAt);
+  }
+  for (const sourceModifiedAt of [null, 0, '', '2026-02-31T00:00:00Z', '2026-01-01T00:00:00']) {
+    assert.throws(() => parseBridgeFactsDocument({ ...emptyDocument, sourceModifiedAt }), /Invalid sourceModifiedAt/);
+  }
+});
+
 const validMethodFact = {
   kind: 'method-invoke',
   channel: 'dev.isthmus/camera',

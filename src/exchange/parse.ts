@@ -109,6 +109,8 @@ export interface BridgeFactsDocument {
   readonly version: 1;
   readonly tool: Readonly<{ name: string; version: string }>;
   readonly generatedAt: string;
+  /** 이번 추출에서 읽은 소스의 최신 mtime이며 compiler 신선도 증거가 아니다. */
+  readonly sourceModifiedAt?: string;
   readonly platform: BridgePlatform;
   readonly target: BridgeTarget | null;
   readonly project: string;
@@ -152,6 +154,7 @@ function normalizeDocument(document: BridgeFactsDocument): BridgeFactsDocument {
     version: 1,
     tool: { name: document.tool.name, version: document.tool.version },
     generatedAt: document.generatedAt,
+    ...(document.sourceModifiedAt === undefined ? {} : { sourceModifiedAt: document.sourceModifiedAt }),
     platform: document.platform,
     target: document.target,
     project: document.project,
@@ -200,6 +203,7 @@ function validateDocumentMetadata(
 ): asserts document is Record<string, unknown> & BridgeFactsDocument {
   validateTool(document.tool);
   if (!isBridgeTimestamp(document.generatedAt)) fail('Invalid generatedAt timestamp.');
+  if (document.sourceModifiedAt !== undefined && !isBridgeTimestamp(document.sourceModifiedAt)) fail('Invalid sourceModifiedAt timestamp.');
   if (!bridgePlatforms.has(document.platform)) fail('Unsupported bridge platform.');
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');

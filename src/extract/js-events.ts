@@ -18,7 +18,7 @@ export function createJsEventFactsDocument(
     target: facts.length ? 'react-native' : null, project, generatedAt,
     tool: { name: 'isthmus', version: toolVersion }, facts,
     limitations: [
-      'rn-event-scan-scope: only imported core RN global emitters and direct const NativeEventEmitter instances are scanned; Expo, codegen, wrappers and cross-file emitter bindings are not resolved',
+      'rn-event-scan-scope: only stable core RN ESM/CommonJS namespace emitters and direct NativeEventEmitter instances are scanned; let/var instances require module scope; Expo, codegen, wrappers and cross-file emitter bindings are not resolved',
       ...(unsupported ? [`unresolved-js-event-emitters: ${unsupported} emitter bindings or subscriptions could not be resolved`] : []),
       ...(dynamic ? [`dynamic-event-names: ${dynamic} event subscriptions have a non-literal name`] : []),
     ],

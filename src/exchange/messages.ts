@@ -30,6 +30,8 @@ export interface BridgeMessageDocument {
   readonly target: 'flutter' | 'react-native' | null;
   readonly project: string;
   readonly generatedAt: string;
+  /** 이번 추출에서 읽은 소스의 최신 mtime이며 compiler 신선도 증거가 아니다. */
+  readonly sourceModifiedAt?: string;
   readonly tool: { readonly name: string; readonly version: string };
   readonly facts: readonly BridgeMessageFact[];
   readonly limitations: readonly string[];
@@ -82,6 +84,7 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
   if (!Array.isArray(value.facts) || value.facts.length > MAX_FACTS_PER_DOCUMENT) fail('Invalid message bridge fact count.');
   if (value.target !== (value.facts.length ? messageTarget(value.transport) : null)) fail('Invalid message bridge target.');
   if (!isBridgeTimestamp(value.generatedAt)) fail('Invalid message bridge timestamp.');
+  if (value.sourceModifiedAt !== undefined && !isBridgeTimestamp(value.sourceModifiedAt)) fail('Invalid sourceModifiedAt timestamp.');
   const project = safe(value.project);
   const tool = object(value.tool);
   const limitations = value.limitations;
@@ -126,6 +129,7 @@ export function parseMessageBridgeDocument(input: unknown): BridgeMessageDocumen
   }
   return { format: 'bridge-facts', version: 2, transport: value.transport, platform: value.platform as BridgeMessageDocument['platform'],
     target: facts.length ? messageTarget(value.transport) : null, project, generatedAt: value.generatedAt,
+    ...(value.sourceModifiedAt === undefined ? {} : { sourceModifiedAt: value.sourceModifiedAt }),
     tool: { name: safe(tool.name), version: safe(tool.version) }, facts, limitations: [...limitations] };
 }
 

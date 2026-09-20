@@ -70,3 +70,62 @@ remote.E.addListener('false', cb);
 remote?.E.addListener('alsoFalse', cb);`);
   assert.deepEqual(document.facts.map(({ channel }) => channel), ['real']);
 });
+
+test('변경되지 않은 CommonJS namespace와 var emitter의 구독을 관찰한다', () => {
+  const document = scan(`var ReactNative = require('react-native');
+var RNSound = ReactNative.NativeModules.RNSound;
+var eventEmitter = new ReactNative.NativeEventEmitter(RNSound);
+function Sound() { eventEmitter.addListener('onPlayChange', listener); }`);
+  assert.deepEqual(document.facts.map(({ channel, dynamic }) => ({ channel, dynamic })),
+    [{ channel: 'onPlayChange', dynamic: false }]);
+  assert.equal(document.facts[0]?.location.line, 4);
+});
+
+test('직접 초기화된 파일 범위 let과 var emitter는 재대입이 없을 때만 관찰한다', () => {
+  for (const keyword of ['let', 'var']) {
+    const prefix = `import { NativeEventEmitter as N } from 'react-native';\n${keyword} e = new N();\n`;
+    assert.deepEqual(scan(prefix + `e.addListener('ready', cb);`).facts.map(({ channel }) => channel), ['ready']);
+    for (const mutation of ['e = other;', 'mutate(e);', 'e.addListener = fake;', 'function work(e) {}']) {
+      assert.deepEqual(scan(prefix + mutation + `e.addListener('wrong', cb);`).facts, []);
+    }
+  }
+});
+
+test('namespace 가림과 constructor 변경·별칭 탈출은 RN emitter로 확정하지 않는다', () => {
+  const prefix = `var RN = require('react-native');\n`;
+  for (const change of [
+    'RN = other;', 'mutate(RN);', 'RN.NativeEventEmitter = Fake;',
+    'const Alias = RN.NativeEventEmitter;', 'function work(RN) {}',
+  ]) assert.deepEqual(scan(prefix + change + `var e = new RN.NativeEventEmitter(); e.addListener('wrong', cb);`).facts, []);
+  assert.deepEqual(scan(`var require = fake; var RN = require('react-native');
+var e = new RN.NativeEventEmitter(); e.addListener('wrong', cb);`).facts, []);
+});
+
+test('var 초기화 전이나 조건부·함수 내부 초기화를 파일 전체로 확대하지 않는다', () => {
+  for (const body of [
+    `e.addListener('wrong', cb); var e = new N();`,
+    `if (enabled) { var e = new N(); } e.addListener('wrong', cb);`,
+    `function setup() { var e = new N(); } e.addListener('wrong', cb);`,
+  ]) assert.deepEqual(scan(`import { NativeEventEmitter as N } from 'react-native'; ${body}`).facts, []);
+  assert.deepEqual(scan(`var e = new RN.NativeEventEmitter(); var RN = require('react-native');
+e.addListener('wrong', cb);`).facts, []);
+});
+
+test('namespace 직접 구독과 inline 생성은 실제 import에만 귀속한다', () => {
+  const document = scan(`import * as RN from 'react-native';
+RN.DeviceEventEmitter.addListener('global', cb);
+new RN.NativeEventEmitter().addListener('inline', cb);`);
+  assert.deepEqual(document.facts.map(({ channel }) => channel), ['global', 'inline']);
+  assert.deepEqual(scan(`var RN = require('other'); new RN.NativeEventEmitter().addListener('wrong', cb);`).facts, []);
+});
+
+test('const emitter의 lexical 범위와 namespace 멤버 쓰기를 보존한다', () => {
+  const document = scan(`import { NativeEventEmitter as N } from 'react-native';
+function setup() { const e = new N(); e.addListener('inside', cb); }
+e.addListener('outside', cb);`);
+  assert.deepEqual(document.facts.map(({ channel }) => channel), ['inside']);
+  for (const mutation of ['RN.NativeModules ||= other;', 'delete RN.NativeModules;', 'RN.NativeModules.value++;']) {
+    assert.deepEqual(scan(`var RN = require('react-native'); ${mutation}
+var e = new RN.NativeEventEmitter(); e.addListener('wrong', cb);`).facts, []);
+  }
+});

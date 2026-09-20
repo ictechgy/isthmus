@@ -8,9 +8,9 @@ import { runChild } from '../../scripts/run-child.mjs';
 import { fetchPinnedPackage } from './public-archive.mjs';
 
 // 공개 패키지 원본의 구독·방출을 검증한다. JS 미지원 형태도 정답의 누락으로 기록한다.
-const [cliArgument, kartographArgument, ...extra] = process.argv.slice(2);
+const [cliArgument, kartographArgument, outputArgument, ...extra] = process.argv.slice(2);
 if (!cliArgument || !kartographArgument || extra.length) {
-  process.stderr.write('Usage: node experiments/real-corpus/run-rn-events.mjs <isthmus-cli-main.js> <kartograph-bin>\n');
+  process.stderr.write('Usage: node experiments/real-corpus/run-rn-events.mjs <isthmus-cli-main.js> <kartograph-bin> [output-json]\n');
   process.exit(64);
 }
 const cli = await realpath(cliArgument);
@@ -96,6 +96,6 @@ const document = {
   tools: { isthmus: execute(process.execPath, [cli, '--version']).trim(), kartograph: execute(kartograph, ['--version']).trim() },
   totals, cases: rows,
 };
-await writeFile(join(resultsDir, 'rn-event-results.json'), JSON.stringify(document, null, 2) + '\n');
+await writeFile(outputArgument ?? join(resultsDir, 'rn-event-results.json'), JSON.stringify(document, null, 2) + '\n');
 process.stdout.write(JSON.stringify({ totals, cases: rows.map(({ id, observed, falseNegatives, expectedScopeMatches }) =>
   ({ id, observed, falseNegatives, expectedScopeMatches })) }, null, 2) + '\n');

@@ -75,15 +75,18 @@ try {
     + `environment:\n  sdk: '>=3.7.0 <4.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\n`
     + `  isthmus_runtime:\n    path: ${JSON.stringify(packageRoot)}\n`
     + (publicPluginRoot === undefined ? '  url_launcher_macos: 3.2.2\n'
-      : '  url_launcher_macos:\n    path: vendor/url_launcher_macos\n'));
+      : '  url_launcher_macos:\n    path: vendor/url_launcher_macos\n')
+    // 현재 SDK에서는 이 하네스의 명시적 CocoaPods 입력을 앱 단위로 선택한다.
+    + (Number(version.frameworkVersion.split('.')[1]) >= 38
+      ? 'flutter:\n  config:\n    enable-swift-package-manager: false\n' : ''));
   await writeFile(join(appRoot, 'lib/main.dart'), dartSource);
   await writeFile(join(appRoot, 'macos/Runner/MainFlutterWindow.swift'), swiftSource);
   await writeFile(join(appRoot, 'macos/Runner/NativeRuntimeHelper.swift'), swiftHelperSource);
   // 현대 Xcode가 빌드할 수 있는 최소 버전을 전용 앱과 CocoaPods 타깃에 함께 적용한다.
   const projectFile = join(appRoot, 'macos/Runner.xcodeproj/project.pbxproj');
   const originalProject = await readFile(projectFile, 'utf8');
+  assert.match(originalProject, /MACOSX_DEPLOYMENT_TARGET = [^;]+;/u, 'Fixture deployment targets must be found.');
   const updatedProject = originalProject.replace(/MACOSX_DEPLOYMENT_TARGET = [^;]+;/gu, 'MACOSX_DEPLOYMENT_TARGET = 12.0;');
-  assert.notEqual(originalProject, updatedProject, 'Fixture deployment targets must be found.');
   await writeFile(projectFile, addSwiftSourceToProject(updatedProject));
   const podfile = join(appRoot, 'macos/Podfile');
   const originalPods = await readFile(join(version.flutterRoot, 'packages/flutter_tools/templates/cocoapods/Podfile-macos'), 'utf8');
