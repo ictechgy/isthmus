@@ -1,5 +1,43 @@
 # 브리지 수집 캐시 측정
 
+## 2026-09-20 — 발행본 전체 15케이스
+
+isthmus npm 0.8.0 · cartograph 0.20.0 · kartograph 0.12.0 · dartograph 0.15.0 설치본을 사용했다.
+[아카이브·Portal 설치 근거](results/published-tools.json)와
+[원시 측정·스텝 시간](results/full-corpus-cache-measurements.json)을 보존한다.
+
+15개 케이스 모두 별도의 빈 isthmus 캐시에서 첫 capture는 miss, 같은 입력의 두 번째는 hit였고
+전체 보고서가 같았다. 표는 첫 capture와 재사용을 각각 잰 값이며 둘을 합산하지 않는다.
+SDK·Swift build·JVM·producer 캐시는 유지했다. 케이스당 한 쌍이므로 일반적인 속도 향상이나
+앱 전체 빌드·런타임 성능으로 확대 해석하지 않는다.
+
+| 케이스 | 첫 capture(ms) | 재사용(ms) |
+|---|---:|---:|
+| bp-file-swift-plugin | 11446 | 183 |
+| bp-file-dart-channel | 2190 | 191 |
+| bp-symbol-dart-batterylevel | 2243 | 201 |
+| bp-file-event-handler | 2707 | 196 |
+| bp-diff-622-623 | 11012 | 477 |
+| sp-file-plugin | 12551 | 182 |
+| sp-file-generated | 3482 | 185 |
+| sp-symbol-legacy-remove | 2155 | 184 |
+| sp-diff-253-254 | 11115 | 215 |
+| ul-file-plugin | 9556 | 173 |
+| ul-symbol-setup | 2183 | 174 |
+| ul-diff-321-322 | 9505 | 206 |
+| ls-swift-appdelegate | 23546 | 299 |
+| ls-dart-macos-channel | 5312 | 302 |
+| ls-dart-android-channel | 5425 | 291 |
+
+재현:
+
+```bash
+node experiments/real-corpus/run.mjs /path/to/cartograph /path/to/dartograph /path/to/kartograph \
+  --isthmus-package /path/to/node_modules/isthmus-cli --measure-cache
+```
+
+## 이전 4케이스 측정 — 당시 조건 보존
+
 2026-09-19 개발 중 측정. 같은 입력에서 새 isthmus 캐시로 수집하고 즉시 재사용했다.
 네 케이스 모두 첫 수집은 miss, 두 번째는 hit였으며 전체 보고서가 동일했다.
 

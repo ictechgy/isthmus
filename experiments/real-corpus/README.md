@@ -21,7 +21,7 @@
   미구성 플랫폼 한계를 관측한다.
 - **범위 밖**: Kotlin 컴파일 인덱스·Android 기기 실행,
   Flutter 엔진 실행, iOS 기기 빌드, 앱 수준 전체 정밀도.
-- Objective-C 소스는 Swift 인덱스 밖이다 — cartograph가 직접 패턴으로 읽은 사실만
+- 이 하네스의 iOS Objective-C 파일은 컴파일하지 않는다 — cartograph가 직접 패턴으로 읽은 사실만
   포함되며 `objective-c-handlers`/`objective-c-sources` 한계가 붙는다.
 
 ## 구성
@@ -29,6 +29,8 @@
 - `manifest.json` — 고정 아카이브(package·버전·URL·sha256·라이선스·upstream),
   스테이징 규칙, 케이스별 선택과 수동 정답.
 - `run.mjs` — 아카이브 검증·스테이징→`swift build`→`capturePreflight`→비교.
+- `public-archive.mjs` — RN npm 아카이브의 고정 SHA256·멤버 경로/종류 검사. 고정 해시가
+  신뢰 기준이며 tar 목록 검사는 보조 방어다. 임의의 신뢰할 수 없는 아카이브를 받는 제품 API가 아니다.
 - `harness/` — FlutterMacOS.swift 스텁, flutter_stub Dart 패키지.
 - `results/results.json` — 최근 실행의 케이스별 예측·정답·계수·한계.
 
@@ -73,9 +75,22 @@ npm run build
 node experiments/real-corpus/run.mjs /path/to/cartograph /path/to/dartograph [/path/to/kartograph]
 ```
 
+발행 npm 패키지의 수집기를 직접 사용하고 15케이스의 캐시도 함께 측정하려면:
+
+```bash
+node experiments/real-corpus/run.mjs /path/to/cartograph /path/to/dartograph /path/to/kartograph \
+  --isthmus-package /path/to/node_modules/isthmus-cli --measure-cache
+```
+
 macOS 전용(스텁은 macOS SwiftPM만 둔다). 아카이브는 pub.dev·GitHub에서 받아 sha256을
 검증하고, diff 케이스는 프로젝트를 git 초기화해 기저를 커밋한 뒤 새 버전을 덮어쓴다.
-kartograph 인자가 있으면 `kotlin: true` 케이스의 Kotlin 브리지 문서를 조인한다.
+kartograph 인자가 있으면 `kotlin: true` 케이스의 Kotlin 브리지 문서를 조인한다. GitHub 배포의
+`bin/kartograph`와 형제 `lib/` 디렉터리를 유지해야 하며, 둘 다 수집 캐시 지문에 포함한다.
+생성물·하네스는 Git diff 선택에서 제외하되 capture 입력으로 계속 지문을 남긴다.
+케이스 오류·FN/FP·예상 한계 불일치는 종료 코드 1이다. `--measure-cache`는 케이스마다
+새 isthmus 캐시에서 miss→hit와 전체 보고서 동일성을 검사한다. 결과의 `milliseconds`는 첫
+capture만의 시간이며, 재사용 시간과 스텝별 시간은 `cacheMeasurement`에 분리한다.
+SDK·컴파일·producer 캐시는 지우지 않으므로 앱 빌드나 일반적인 성능 향상 측정은 아니다.
 
 ## React Native 호출 측 (extract-js)
 
@@ -90,7 +105,7 @@ node experiments/real-corpus/run-rn-js.mjs "$(pwd)/dist/cli/main.js"
 범위는 JS/TS `extract-js`가 생산하는 `module-import`·`method-invoke`뿐이다. expo-haptics
 14.1.4는 `ExpoHaptics` 모듈 수입(mechanism `expo`, optional) 1건과 메서드 호출 4건을
 기대하며, 2026-09-18 실행은 **TP 5 / FN 0 / FP 0**이었다. 수신 측(cartograph Expo
-DSL 스캔)은 아래 `run-rn-receiver.mjs`가 다룬다 — kartograph Kotlin은 범위 밖이다.
+DSL 스캔)은 아래 `run-rn-receiver.mjs`가 다룬다. Kotlin 수신 측은 명시적으로 추가한다.
 
 ## React Native 수신 측 (cartograph Expo DSL)
 
@@ -104,15 +119,69 @@ node experiments/real-corpus/run-rn-receiver.mjs \
   "$(pwd)/dist/cli/main.js" /path/to/cartograph [/path/to/empty-index-store]
 ```
 
-결과: **matchedModules 1**(ExpoHaptics, `mechanism: "expo"`) ·
+Swift 전용 결과: **matchedModules 1**(ExpoHaptics, `mechanism: "expo"`) ·
 **matchedMethods 3**(notificationAsync·impactAsync·selectionAsync). iOS만 쓰면
 Android 전용 `performHapticsAsync`가 미대응 invocation으로 남는다 — 이는 결함이
 아니라 플랫폼 비대칭이다. kartograph Android 수신 측을 더하면 4가 된다. 결과는
 `results/rn-receiver-results.json`에 남긴다.
 
-## 결과 해석 (LocalSend 추가 실행 기준)
+Kotlin 수신 측을 포함하려면 기존 명령 뒤에 `--kartograph /path/to/kartograph`를 붙인다.
+원본 `HapticsModule.kt`의 4개 핸들러를 별도로 확인하고 Swift의 3개 핸들러도 독립적으로 대조한다.
+두 플랫폼을 합치면 모듈 1개·메서드 4개가 조인되고 Android 전용 메서드도 대응한다.
+결과는 `results/rn-kotlin-receiver-results.json`에 써서 Swift 전용 실행 결과와 구분한다.
+**kartograph 0.12.0 이상**을 사용한다. 0.11.0은 일반 `--target react-native`를 코드 64로
+거부하는 회귀가 있었으며 이 공개 코퍼스에서 재현해 수정했다. 소스 스캔이므로 JVM ID·보존
+성공·앱 런타임을 검증하는 경로는 아니다. 이전 Swift 전용 결과는
+[과거 결과](results/history/pre-kotlin-rn-receiver.json)에 보존한다.
+
+고정 npm 아카이브의 파일 mtime은 `1985-10-26T08:15:00Z`다. Kotlin 생산자는 이 값을
+`generatedAt`에 사용하고 JS·Swift는 추출 시각을 사용하므로, 소비자에 수십 년의
+`input-freshness` 차이가 기록된다. 원본 해시 검증과 이 시간 한계를 함께 보존·해석한다.
+
+## React Native 전역 이벤트 (JS ↔ Kotlin/Java)
+
+```bash
+node experiments/real-corpus/run-rn-events.mjs /path/to/isthmus/dist/cli/main.js /path/to/kartograph
+```
+
+고정 `react-native-sound` 두 버전의 원본을 검사한다. 0.13.0의 `src/index.ts`는 직접 만든
+const NativeEventEmitter로 `onPlayChange`를 구독하고 Kotlin `Sound.kt`는 같은 리터럴을
+방출한다. 0.11.2의 `var` emitter 구독은 현재 JS 추출 범위 밖이지만 Java 방출은 관찰된다.
+후자를 지우거나 정답을 0으로 낮추지 않고 알려진 caller FN으로 기록한다.
+
+TP/FN/FP 단위는 **소스 사실**이며 각 케이스의 정답은 구독 1개·방출 1개다.
+이벤트 이름 조인 수(`matchedEvents`)와 구분한다. 현재 두 사례의 합은 TP 3 / FN 1 / FP 0이며,
+0.13.0만 이벤트 1개가 연결된다. `expectedScopeMatches`는 이 명시된 범위와 관측이 맞는지
+확인하는 값이지 전체 정확도나 삭제 안전성 판정이 아니다.
+원본 위치·아카이브 해시를 검사하고 소스/라이선스 해시를 근거로 기록한다. native 컴파일이나
+RN 엔진을 실행하지 않으며 JVM ID가 없어 보존 요청이 거부되는 것도 검사한다.
+보존 거부 검사는 짝이 관찰된 0.13.0에서 실행한다. 조인이 없는 0.11.2의 해당 결과는 null이다.
+결과의 `limitations`는 caller·native·consumer가 실제로 보고한 한계를 모두 보존한다.
+
+아카이브 경계의 회귀 검사는 `node --test experiments/real-corpus/public-archive.test.mjs`로
+실행하며 두 OS PR CI에도 포함된다.
+
+## 현재 발행 조합 결과 (2026-09-20)
+
+[검증한 설치본/해시](results/published-tools.json)는 isthmus 0.8.0 · cartograph 0.20.0 ·
+kartograph 0.12.0 · dartograph 0.15.0이다. npm 패키지에 들어 있는 capture 라이브러리를
+직접 불러 전체 15케이스를 실행했다. 새 producer 버전은 현재 저장소의 compatibility.json과
+cold-cache CI에도 반영하며, npm 0.8.0에 처음 포함된 manifest와 구분한다.
+
+- [Flutter 원시 결과](results/results.json): **TP 83 / FN 0 / FP 0**, 15/15.
+- [전체 캐시 측정](results/full-corpus-cache-measurements.json): 15/15 miss→hit·전체 보고서 동일성.
+- [Kotlin/Swift Expo 수신 측](results/rn-kotlin-receiver-results.json): 모듈 1개·메서드 4개, 미대응 호출 0.
+- [RN 전역 이벤트](results/rn-event-results.json): 소스 사실 **TP 3 / FN 1 / FP 0**.
+  FN 1은 위에서 설명한 0.11.2의 미지원 var emitter 구독이며, 성공 코드로 완전성을 주장하지 않는다.
+
+각 수치는 그 케이스의 수동 정답·선택 범위를 대상으로 한다. Flutter 스텁·수동 Dart package_config·
+Kotlin/Java 소스 스캔의 한계를 유지하며, 앱 엔진이나 기기를 실행한 결과가 아니다.
+
+## 이전 결과 해석 (LocalSend 추가 실행 기준)
 
 `isthmus 0.6.0` + `cartograph 0.15.1` + `dartograph 0.11.0` + `kartograph 0.9.0` 조합:
+
+원본 수치는 [이전 Flutter 결과](results/history/pre-0.8.0-flutter.json)에 보존한다.
 
 - **TP 83 / FN 0 / FP 0** (15/15 케이스 실행, `kotlinCoverage: true`).
 - FN 0 — 정답 경계를 빠뜨리지 않았다. 단 Objective-C·동적 채널·JVM 심볼은
@@ -131,6 +200,5 @@ Android 전용 `performHapticsAsync`가 미대응 invocation으로 남는다 —
 
 ## 수집 캐시 측정
 
-[캐시 측정 기록](CACHE-MEASUREMENTS.md)은 공개 캐시 소스 3케이스와 합성 1케이스에서
-첫 수집·재사용·보고서 동등성을 확인한다. SDK와 생산자 캐시는 유지하며, 전체 코퍼스
-정밀도나 앱 런타임 성능 측정과 구분한다.
+[캐시 측정 기록](CACHE-MEASUREMENTS.md)은 최신 발행 조합의 전체 15케이스와 이전
+4케이스를 조건별로 구분한다. SDK와 생산자 캐시는 유지하며 앱 런타임 성능 측정과 구분한다.

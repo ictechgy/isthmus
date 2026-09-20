@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 현재 저장소의 검증된 producer 세트를 kartograph 0.12.0으로 갱신했다. 0.11.0의
+  일반 RN target 필터 회귀를 수정한 producer이며, 기존 npm 0.8.0 아카이브의 발행 시점
+  manifest와 구분한다.
+- 공개 RN 이벤트·Kotlin 수신 측 코퍼스와 전체 Flutter 15케이스의 cache miss/hit·보고서
+  동등성 검증을 추가했다. 알려진 JS caller 누락과 앱 런타임 미검증 범위를 그대로 보고한다.
+
 ## [0.8.0] - 2026-09-20
 
 호환 릴리스 세트: cartograph 0.20.0 · kartograph 0.11.0 · dartograph 0.15.0.

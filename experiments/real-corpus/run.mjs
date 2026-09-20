@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { capturePreflight } from '../../scripts/capture-preflight.mjs';
 import { runChild } from '../../scripts/run-child.mjs';
 
 // 실사용 코퍼스 실행기: 고정 pub.dev/GitHub 아카이브를 sha256 검증·스테이징한 뒤
@@ -16,23 +15,51 @@ import { runChild } from '../../scripts/run-child.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, 'manifest.json'), 'utf8'));
-const [cartographBin, dartographBin, kartographBin, ...rest] = process.argv.slice(2);
-if (cartographBin === undefined || dartographBin === undefined || rest.length > 0 || process.platform !== 'darwin') {
-  process.stderr.write('Usage (macOS): node experiments/real-corpus/run.mjs <cartograph-bin> <dartograph-bin> [kartograph-bin]\n');
+const [cartographBin, dartographBin, ...rest] = process.argv.slice(2);
+const kartographBin = rest[0] && !rest[0].startsWith('--') ? rest.shift() : undefined;
+let packageRoot = resolve(here, '../..');
+let packageSelected = false;
+let measureCache = false;
+let invalidOptions = false;
+while (rest.length) {
+  const flag = rest.shift();
+  if (flag === '--isthmus-package' && !packageSelected && rest[0] && !rest[0].startsWith('--')) {
+    packageRoot = resolve(rest.shift());
+    packageSelected = true;
+  } else if (flag === '--measure-cache' && !measureCache) {
+    measureCache = true;
+  } else { invalidOptions = true; break; }
+}
+if (cartographBin === undefined || dartographBin === undefined || invalidOptions || process.platform !== 'darwin') {
+  process.stderr.write('Usage (macOS): node experiments/real-corpus/run.mjs <cartograph-bin> <dartograph-bin> [kartograph-bin] [--isthmus-package <installed-package-dir>] [--measure-cache]\n');
   process.exit(64);
 }
+const packageDocument = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+assert.equal(packageDocument.name, 'isthmus-cli', 'isthmus package name');
+const { capturePreflight } = await import(pathToFileURL(join(packageRoot, 'scripts/capture-preflight.mjs')).href);
 
 const cartographReal = await realpath(cartographBin);
 const dartographReal = await realpath(dartographBin);
 const kartographReal = kartographBin === undefined ? undefined : await realpath(kartographBin);
-const toolVersion = (bin) => runChild(bin, ['--version'], { timeout: 30_000 }).stdout.trim();
-const toolInfo = { cartograph: toolVersion(cartographReal), dartograph: toolVersion(dartographReal),
+let kartographRuntime;
+if (kartographReal !== undefined) {
+  try { kartographRuntime = await realpath(join(dirname(kartographReal), '../lib')); }
+  catch { throw new Error('Use the released kartograph bin/kartograph launcher with its sibling lib directory intact.'); }
+}
+const toolVersion = (bin) => {
+  const result = runChild(bin, ['--version'], { timeout: 30_000 });
+  assert.equal(result.status, 0, 'producer version command');
+  assert.match(result.stdout.trim(), /\d+\.\d+\.\d+$/);
+  return result.stdout.trim();
+};
+const toolInfo = { isthmus: packageDocument.version, cartograph: toolVersion(cartographReal), dartograph: toolVersion(dartographReal),
   ...(kartographReal === undefined ? {} : { kartograph: toolVersion(kartographReal) }) };
 const work = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-real-corpus-')));
 const sourceDir = join(work, 'src');
 const resultsDir = join(here, 'results');
 await mkdir(sourceDir, { recursive: true });
 await mkdir(resultsDir, { recursive: true });
+await mkdir(join(work, 'capture-cache'));
 
 const flutterStub = join(here, 'harness', 'flutter_stub');
 const swiftStub = join(here, 'harness', 'swift', 'FlutterMacOS.swift');
@@ -106,6 +133,8 @@ async function stageProject(name, definition) {
   }).join(',\n');
   await writeFile(join(project, 'Package.swift'),
     `// swift-tools-version: 6.0\nimport PackageDescription\n\nlet package = Package(\n    name: "IsthmusCorpus${name.replace(/[^A-Za-z0-9]/g, '')}",\n    platforms: [.macOS(.v12)],\n    targets: [\n${targetText},\n    ],\n    swiftLanguageModes: [.v5]\n)\n`);
+  // diff 선택에 원본 앱 변경만 남긴다. 생성물·하네스는 별도의 capture 입력으로 지문을 남긴다.
+  await writeFile(join(project, '.gitignore'), '.build/\n.corpus/\n.dart_tool/\n.isthmus-corpus/\n');
 
   // Dart 해석: Flutter 스텁 + pub 의존성을 vendor하고 package_config를 직접 쓴다.
   const vendor = join(project, '.corpus', 'vendor');
@@ -141,7 +170,9 @@ for (const [name, definition] of Object.entries(manifest.projects)) {
 }
 
 function git(project, args, label) {
-  const result = runChild('git', ['-C', project, ...args], { timeout: 60_000 });
+  const result = runChild('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-C', project, ...args], {
+    timeout: 60_000, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+  });
   assert.equal(result.status, 0, `${label}: ${result.stderr}`);
   return result.stdout.trim();
 }
@@ -188,10 +219,9 @@ function predictedKeys(report) {
 const rows = [];
 let kotlinUsed = false;
 for (const corpusCase of manifest.cases) {
-  const started = performance.now();
   const project = projects[corpusCase.project];
   const contextOut = join(resultsDir, `${corpusCase.id}.context.json`);
-  const cacheOut = join(resultsDir, `${corpusCase.id}.cache.json`);
+  const cacheOut = join(work, 'capture-cache', `${corpusCase.id}.cache.json`);
   const config = {
     project: project.project,
     // 하네스 스텁과 vendor 사본도 지문에 넣어 스텁 수정 시 캐시가 무효화되게 한다.
@@ -199,7 +229,7 @@ for (const corpusCase of manifest.cases) {
       '.isthmus-corpus', '.corpus',
       ...project.staged.map(({ to }) => to.split('/')[0])].filter((v, i, a) => a.indexOf(v) === i),
     toolInputs: [cartographReal, dartographReal,
-      ...(kartographReal === undefined ? [] : [kartographReal])],
+      ...(kartographReal === undefined ? [] : [kartographReal, kartographRuntime])],
     prepare: [['swift', 'build', '--package-path', project.project]],
     dartograph: [dartographReal],
     cartograph: [cartographReal],
@@ -222,8 +252,20 @@ for (const corpusCase of manifest.cases) {
     config.selection = corpusCase.selection;
   }
   let outcome;
+  let cacheMeasurement;
   try {
     outcome = await capturePreflight(config);
+    if (measureCache) {
+      assert.equal(outcome.cached, false, 'First capture must use the isolated empty cache.');
+      const reused = await capturePreflight(config);
+      assert.equal(reused.cached, true, 'Unchanged declared inputs must reuse the cache.');
+      assert.deepEqual(reused.report, outcome.report, 'Cache reuse must preserve the complete report.');
+      cacheMeasurement = {
+        uncached: { milliseconds: outcome.milliseconds, timings: outcome.timings },
+        reused: { milliseconds: reused.milliseconds, timings: reused.timings },
+        identicalReports: true,
+      };
+    }
   } catch (error) {
     rows.push({ id: corpusCase.id, error: error.message });
     continue;
@@ -266,7 +308,8 @@ for (const corpusCase of manifest.cases) {
     ...gapChecks,
     reviewFiles: report.reviewFiles?.length ?? 0,
     cached: outcome.cached,
-    milliseconds: Math.round(performance.now() - started),
+    ...(cacheMeasurement === undefined ? {} : { cacheMeasurement }),
+    milliseconds: Math.round(outcome.milliseconds),
   });
 }
 
@@ -276,6 +319,7 @@ const totals = rows.filter((r) => r.error === undefined).reduce(
 const document = {
   format: 'isthmus-real-corpus-results', version: 1,
   runtimeExecution: false, flutterSdk: false, kotlinCoverage: kotlinUsed,
+  cacheMeasurement: measureCache ? 'One miss/hit pair per case with a fresh isthmus cache; SDK, build and producer caches remain.' : null,
   note: 'Stub-compiled Swift index + manual package_config. Kotlin은 스냅샷 없는 소스 스캔으로 측정하고 런타임 실행은 범위 밖.',
   tools: toolInfo,
   totals, cases: rows,
@@ -285,3 +329,7 @@ process.stdout.write(`${JSON.stringify({ work, totals, cases: rows.map(({ id, st
   ({ id, status, tp: truePositives, fn: falseNegatives, fp: falsePositives, error,
     // 기대한 커버리지 공백이 사라지면 결과 행에도 남긴다 — 조용한 회귀를 알아차리기 위해서다.
     ...(expectGap === false ? { expectGap } : {}) })) }, null, 2)}\n`);
+if (rows.length !== manifest.cases.length || rows.some((row) => row.error !== undefined ||
+  row.falseNegatives !== 0 || row.falsePositives !== 0 || row.expectGap === false || row.expectKotlinGap === false)) {
+  process.exitCode = 1;
+}

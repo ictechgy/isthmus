@@ -4,13 +4,11 @@
   "runtimeExecution": false,
   "flutterSdk": false,
   "kotlinCoverage": true,
-  "cacheMeasurement": "One miss/hit pair per case with a fresh isthmus cache; SDK, build and producer caches remain.",
   "note": "Stub-compiled Swift index + manual package_config. Kotlin은 스냅샷 없는 소스 스캔으로 측정하고 런타임 실행은 범위 밖.",
   "tools": {
-    "isthmus": "0.8.0",
-    "cartograph": "0.20.0",
-    "dartograph": "dartograph 0.15.0",
-    "kartograph": "kartograph 0.12.0"
+    "cartograph": "0.15.1",
+    "dartograph": "dartograph 0.11.0",
+    "kartograph": "kartograph 0.9.0"
   },
   "totals": {
     "tp": 83,
@@ -57,126 +55,31 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 17
+        "evidenceGaps": 13
       },
       "limitations": [
         "cartograph-runtime-review: 2 item(s) require review in the producer report",
-        "objective-c-sources: 1 file(s); the graph uses available Clang index evidence, while runtime dispatch and unindexed source paths may be absent",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
         "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "unscanned-event-channels: 1 EventChannel constructor",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent"
+        "unscanned-event-channels: 1 EventChannel constructor"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 11446,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 7484
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 255
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 251
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 250
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 472
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 111
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 106
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 41
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 1569
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 129
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 183,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 11446
+      "milliseconds": 6984
     },
     {
       "id": "bp-file-dart-channel",
@@ -217,103 +120,28 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 14
+        "evidenceGaps": 10
       },
       "limitations": [
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "unscanned-event-channels: 1 EventChannel constructor",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent"
+        "unscanned-event-channels: 1 EventChannel constructor"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 2190,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 74
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 623
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 242
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 236
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 250
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 112
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 112
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 112
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 134
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 138
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 191,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 81
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 8
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 2190
+      "milliseconds": 1198
     },
     {
       "id": "bp-symbol-dart-batterylevel",
@@ -346,96 +174,24 @@
         "reviewFiles": 3,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 7
+        "evidenceGaps": 6
       },
       "limitations": [
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "unscanned-event-channels: 1 EventChannel constructor",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent"
+        "unscanned-event-channels: 1 EventChannel constructor"
       ],
       "reviewFiles": 3,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 2243,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 82
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 8
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 615
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 265
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 259
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 253
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 113
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 112
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 113
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 139
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 139
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 201,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 80
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 2243
+      "milliseconds": 1162
     },
     {
       "id": "bp-file-event-handler",
@@ -472,117 +228,30 @@
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 15
+        "evidenceGaps": 11
       },
       "limitations": [
         "cartograph-runtime-review: 2 item(s) require review in the producer report",
-        "objective-c-sources: 1 file(s); the graph uses available Clang index evidence, while runtime dispatch and unindexed source paths may be absent",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
         "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "Handler dependencies could not be fully attributed in the observed index; enclosing declaration impact remains conservative.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "unscanned-event-channels: 1 EventChannel constructor",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent"
+        "unscanned-event-channels: 1 EventChannel constructor"
       ],
       "expectGap": true,
       "reviewFiles": 5,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 2707,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 91
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 675
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 282
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 280
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 274
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 114
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 114
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 113
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 40
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 147
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 139
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 137
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 137
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 196,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 96
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 2707
+      "milliseconds": 1239
     },
     {
       "id": "bp-diff-622-623",
@@ -619,16 +288,15 @@
         "reviewFiles": 3,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 15
+        "evidenceGaps": 14
       },
       "limitations": [
         "cartograph-selection-issues: 1 item(s) require review in the producer report",
-        "objective-c-sources: 1 file(s); the graph uses available Clang index evidence, while runtime dispatch and unindexed source paths may be absent",
+        "objective-c-sources: 1 file(s) are not analysed, so a Swift declaration used only from Objective-C looks unreached",
         "unindexed-sources: 2 of 5 source file(s) have no known index unit; build their targets, or exclude files that are not target sources, before relying on absent callers",
         "unresolved-impact-inputs: 1 input(s) could not be resolved; deleted, renamed, excluded or unbuilt declarations require the pre-change index or explicit review",
         "The producer did not resolve a requested change selection.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 EventChannel constructor",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
@@ -637,111 +305,16 @@
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-event-channels: 1 EventChannel constructor",
-        "objective-c-handlers: 3 method handlers lack a compiler identity; rebuild their Clang index before exporting external retentions",
+        "objective-c-handlers: 3 method handlers come from Objective-C sources and are outside the Swift analysis graph, so their retentions cannot be applied by --external-retentions",
         "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
         "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "unscanned-event-channels: 1 EventChannel constructor",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent",
-        "unscanned-event-channels: 1 FlutterEventChannel constructor(s) are not read; stream handlers are outside this format",
-        "objective-c-sources: 1 Objective-C file(s) were read for React Native export macros and supported direct Flutter patterns; other Objective-C handlers may be absent"
+        "unscanned-event-channels: 1 EventChannel constructor"
       ],
       "expectKotlinGap": true,
       "reviewFiles": 3,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 11012,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 14
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 15
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 12
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 83
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 8
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 7480
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 246
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 240
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 241
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 433
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 107
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 108
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 41
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 1833
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 477,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 13
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 13
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 16
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 84
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 11012
+      "milliseconds": 6891
     },
     {
       "id": "sp-file-plugin",
@@ -792,7 +365,7 @@
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 31
+        "evidenceGaps": 29
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -823,133 +396,18 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 5,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 12551,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 87
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 9
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 7531
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 296
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 323
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 303
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 359
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 70
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 41
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 47
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 1924
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 137
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 139
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 135
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 128
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 123
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 123
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 123
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 182,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 12551
+      "milliseconds": 8116
     },
     {
       "id": "sp-file-generated",
@@ -1000,7 +458,7 @@
         "reviewFiles": 6,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 31
+        "evidenceGaps": 29
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1031,133 +489,18 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 6,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 3482,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 650
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 297
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 300
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 299
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 42
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 68
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 41
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 39
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 134
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 124
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 128
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 123
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 127
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 185,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 3482
+      "milliseconds": 1319
     },
     {
       "id": "sp-symbol-legacy-remove",
@@ -1188,7 +531,7 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 10
+        "evidenceGaps": 8
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1198,93 +541,18 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 2155,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 587
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 294
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 298
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 296
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 40
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 68
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 40
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 37
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 137
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 129
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 184,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 78
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 2155
+      "milliseconds": 1040
     },
     {
       "id": "sp-diff-253-254",
@@ -1335,7 +603,7 @@
         "reviewFiles": 6,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 32
+        "evidenceGaps": 30
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1367,157 +635,18 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-method-names: 1 method invocation uses a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
         "unjoined-dynamic-methods: 1 method facts with a non-literal name were not joined",
         "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 11 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 11 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 11 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 11 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 6,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 11115,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 11
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 13
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 11
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 6151
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 290
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 303
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 307
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 361
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 68
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 39
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 47
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 1886
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 129
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 128
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 126
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 125
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 128
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 128
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 215,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 13
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 11
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 11
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 74
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 11115
+      "milliseconds": 7858
     },
     {
       "id": "ul-file-plugin",
@@ -1550,7 +679,7 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 12
+        "evidenceGaps": 10
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1562,95 +691,16 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 9556,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 6264
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 286
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 268
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 274
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 342
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 47
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 33
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 40
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 1540
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 118
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 117
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 173,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 9556
+      "milliseconds": 7021
     },
     {
       "id": "ul-symbol-setup",
@@ -1683,7 +733,7 @@
         "reviewFiles": 4,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 11
+        "evidenceGaps": 9
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1694,95 +744,16 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 4,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 2183,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 620
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 279
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 280
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 270
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 35
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 49
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 32
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 34
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 124
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 120
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 121
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 174,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 2183
+      "milliseconds": 1215
     },
     {
       "id": "ul-diff-321-322",
@@ -1815,7 +786,7 @@
         "reviewFiles": 5,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 11
+        "evidenceGaps": 9
       },
       "limitations": [
         "a declared plugin entry point was not found in the graph",
@@ -1826,115 +797,16 @@
         "Message channel prefixes describe possible routes; suffix and instance wiring are not resolved.",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
         "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
         "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format",
         "dynamic-basic-message-channel-names: 2 BasicMessageChannel constructors use a non-literal name",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "unscanned-basic-message-channels: 2 BasicMessageChannel constructors",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically",
-        "unscanned-message-channels: 2 BasicMessageChannel constructor(s) are not read; Pigeon-generated bridges are outside this format"
+        "dynamic-message-channel-names: 2 message handlers have a channel name that could not be resolved statically"
       ],
       "reviewFiles": 5,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 9505,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 12
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 12
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 11
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 6256
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 282
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 274
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 272
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 354
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 49
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 32
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 40
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 1557
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 125
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 206,
-          "timings": [
-            {
-              "step": "git-base",
-              "milliseconds": 13
-            },
-            {
-              "step": "git-changes",
-              "milliseconds": 12
-            },
-            {
-              "step": "git-untracked",
-              "milliseconds": 11
-            },
-            {
-              "step": "dartograph-version",
-              "milliseconds": 75
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 9505
+      "milliseconds": 7102
     },
     {
       "id": "ls-swift-appdelegate",
@@ -1989,7 +861,7 @@
         "reviewFiles": 13,
         "errors": 1,
         "warnings": 1,
-        "evidenceGaps": 5200
+        "evidenceGaps": 5199
       },
       "limitations": [
         "analysis gaps may affect reachability outside the source files where they were observed",
@@ -7188,154 +6060,17 @@
         "cartograph-runtime-review: 15 item(s) require review in the producer report",
         "interface-builder-documents: 1 document(s) are matched by custom class name only, never connection by connection",
         "unresolved-runtime-boundaries: 51 boundary(s) have unresolved names, receivers or index evidence; impact can miss paths through them. Inspect runtime discover or collect a trace.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "A bridge endpoint has no verified language symbol binding.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)"
+        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively"
       ],
       "reviewFiles": 13,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 23546,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 97
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 5794
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 735
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 674
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 664
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 368
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 44
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 44
-            },
-            {
-              "step": "kotlin-bridges",
-              "milliseconds": 109
-            },
-            {
-              "step": "kotlin-messages",
-              "milliseconds": 109
-            },
-            {
-              "step": "kotlin-events",
-              "milliseconds": 106
-            },
-            {
-              "step": "swift-impact",
-              "milliseconds": 64
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 8281
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 629
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 499
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 493
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 506
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 500
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 503
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 493
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 503
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 491
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 496
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 491
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 495
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 299,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 74
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 50
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 23546
+      "milliseconds": 13062
     },
     {
       "id": "ls-dart-macos-channel",
@@ -7388,7 +6123,7 @@
         "reviewFiles": 13,
         "errors": 1,
         "warnings": 0,
-        "evidenceGaps": 476
+        "evidenceGaps": 475
       },
       "limitations": [
         "analysis gaps may affect reachability outside the source files where they were observed",
@@ -7863,110 +6598,17 @@
         "source-unresolved-invocations: project:lib/widget/watcher/shortcut_watcher.dart",
         "source-unresolved-invocations: project:lib/widget/watcher/tray_watcher.dart",
         "source-unresolved-invocations: project:lib/widget/watcher/window_watcher.dart",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "A bridge endpoint has no verified language symbol binding.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)"
+        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively"
       ],
       "reviewFiles": 13,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 5312,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 49
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 656
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 707
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 672
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 679
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 49
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 46
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 44
-            },
-            {
-              "step": "kotlin-bridges",
-              "milliseconds": 106
-            },
-            {
-              "step": "kotlin-messages",
-              "milliseconds": 109
-            },
-            {
-              "step": "kotlin-events",
-              "milliseconds": 111
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 509
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 628
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 623
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 302,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 78
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 52
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 5312
+      "milliseconds": 2879
     },
     {
       "id": "ls-dart-android-channel",
@@ -8009,7 +6651,7 @@
         "reviewFiles": 19,
         "errors": 0,
         "warnings": 0,
-        "evidenceGaps": 483
+        "evidenceGaps": 482
       },
       "limitations": [
         "analysis gaps may affect reachability outside the source files where they were observed",
@@ -8484,7 +7126,6 @@
         "source-unresolved-invocations: project:lib/widget/watcher/shortcut_watcher.dart",
         "source-unresolved-invocations: project:lib/widget/watcher/tray_watcher.dart",
         "source-unresolved-invocations: project:lib/widget/watcher/window_watcher.dart",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "A bridge endpoint has no verified language symbol binding.",
@@ -8495,106 +7136,14 @@
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
         "A bridge endpoint has no verified language symbol binding.",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
         "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 6 method handler(s)",
         "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)",
-        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively",
-        "flutter-services-provenance-unverified: channel facts matched package:flutter/services.dart textually, but the resolved flutter package could not be verified against .dart_tool/package_config.json (missing, malformed, or resolving outside the Flutter SDK/pub-cache layout)"
+        "pattern-variable-scopes: 2 pattern bindings were resolved conservatively"
       ],
       "reviewFiles": 19,
       "cached": false,
-      "cacheMeasurement": {
-        "uncached": {
-          "milliseconds": 5425,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 76
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 50
-            },
-            {
-              "step": "prepare-1",
-              "milliseconds": 619
-            },
-            {
-              "step": "dart-bridges",
-              "milliseconds": 757
-            },
-            {
-              "step": "dart-messages",
-              "milliseconds": 658
-            },
-            {
-              "step": "dart-events",
-              "milliseconds": 752
-            },
-            {
-              "step": "swift-bridges",
-              "milliseconds": 47
-            },
-            {
-              "step": "swift-messages",
-              "milliseconds": 45
-            },
-            {
-              "step": "swift-events",
-              "milliseconds": 45
-            },
-            {
-              "step": "kotlin-bridges",
-              "milliseconds": 103
-            },
-            {
-              "step": "kotlin-messages",
-              "milliseconds": 108
-            },
-            {
-              "step": "kotlin-events",
-              "milliseconds": 105
-            },
-            {
-              "step": "dart-impact",
-              "milliseconds": 500
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 627
-            },
-            {
-              "step": "dart-bindings",
-              "milliseconds": 642
-            }
-          ]
-        },
-        "reused": {
-          "milliseconds": 291,
-          "timings": [
-            {
-              "step": "dartograph-version",
-              "milliseconds": 82
-            },
-            {
-              "step": "cartograph-version",
-              "milliseconds": 7
-            },
-            {
-              "step": "kartograph-version",
-              "milliseconds": 53
-            }
-          ]
-        },
-        "identicalReports": true
-      },
-      "milliseconds": 5425
+      "milliseconds": 2845
     }
   ]
 }

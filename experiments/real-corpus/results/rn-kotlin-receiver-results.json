@@ -1,10 +1,11 @@
 {
   "format": "isthmus-rn-receiver-corpus-results",
   "version": 1,
-  "scope": "extract-js (caller) + cartograph --target react-native (Expo DSL receiver) joined by isthmus check; Android Kotlin receiver is out of scope, so the Android-only method stays unmatched",
+  "scope": "extract-js (caller) + cartograph --target react-native (Expo DSL receiver) joined by isthmus check; includes original Android Kotlin Expo DSL receiver source; no JVM IDs, retention or app runtime validation",
   "tools": {
     "isthmus": "0.8.0",
-    "cartograph": "0.20.0"
+    "cartograph": "0.20.0",
+    "kartograph": "kartograph 0.12.0"
   },
   "cases": [
     {
@@ -13,23 +14,27 @@
       "version": "14.1.4",
       "sha256": "d721711e1315800035a7b8fbada612f9091ebed593529a2a0c08d48333acd130",
       "license": "MIT",
+      "kotlinMethodHandles": [
+        "ExpoHaptics/impactAsync",
+        "ExpoHaptics/notificationAsync",
+        "ExpoHaptics/performHapticsAsync",
+        "ExpoHaptics/selectionAsync"
+      ],
       "predicted": {
         "matchedModules": 1,
-        "matchedMethods": 3,
-        "unhandledInvocations": [
-          "ExpoHaptics/performHapticsAsync"
-        ]
+        "matchedMethods": 4,
+        "unhandledInvocations": []
       },
       "expected": {
         "matchedModules": 1,
-        "matchedMethods": 3,
-        "unhandledInvocations": [
-          "ExpoHaptics/performHapticsAsync"
-        ]
+        "matchedMethods": 4,
+        "unhandledInvocations": []
       },
       "countsMatch": true,
       "limitations": [
+        "input-freshness: bridge documents differ by 358535 hours",
         "js-binding-scope: member calls through bindings that leave the scan set (package imports, function results, instance state) are not attributed to a module name",
+        "missing-handler-usrs: source scanning cannot resolve JVM identifiers for 4 method handler(s)",
         "missing-handler-usrs: 3 method handlers have only a qualified name",
         "objc-named-classes: 1 module-export and 3 method-handle fact(s) come from @objc(Name) classes, which may name an Objective-C class rather than a React Native module"
       ]

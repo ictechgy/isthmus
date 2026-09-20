@@ -1,0 +1,77 @@
+{
+  "format": "isthmus-published-corpus-tools",
+  "version": 1,
+  "checkedAt": "2026-09-20T07:34:24.682316+00:00",
+  "scope": "Published npm capture library and published native/Dart tool installations; repository corpus harness; no app runtime verification",
+  "tools": {
+    "isthmus": {
+      "version": "0.8.0",
+      "sourceCommit": "5825329a6c39f8cd527fbc450ced9673559d9cdc",
+      "archiveSha256": "175d8f5d91dc4424836aa46323a415c4a11db0f9037ecaa91cb329ff0f56cbf0",
+      "archiveIntegrity": "sha512-Nn/twdSwwLQC9LP9ZrrSRWEwoYhC1RGpBrEFK346JeMPI42S+rNbRQC9b1Yo+GSnmtvAxADx2nDlSShfthefTg==",
+      "release": "https://github.com/ictechgy/isthmus/releases/tag/v0.8.0"
+    },
+    "cartograph": {
+      "version": "0.20.0",
+      "sourceCommit": "d7df4122d0beb00373ab8aaff2ea2ffef00f8a57",
+      "archiveSha256": "833eb3c86deffc8e7c845297df57d41e35bb644bd5a943b09843e52075c6f072",
+      "release": "https://github.com/ictechgy/cartograph/releases/tag/0.20.0"
+    },
+    "kartograph": {
+      "version": "0.12.0",
+      "sourceCommit": "0d6f6d45839d1b026b7bca6da153ab70445a8482",
+      "archiveHashes": {
+        "kartograph-0.12.0.zip": "16e7b270c42c928a1e8d1e043768654d1d068b56898442fbb795981a7ec7ce41",
+        "kartograph-0.12.0.tar": "6a3e0867258803b288010c4d9d657e2e9f026216fdd14d883a12375fca761d41",
+        "kartograph-gradle-plugin-0.12.0.jar": "368f77e856ade54347660f7f41b62bfafe0d0d0588a5f9d7473157702a7d0104",
+        "kartograph-0.12.0.cdx.json": "257bac9d24acec0e29027f9852cadcdc9362ae96aaf21a315ec618ed4c53e7cb",
+        "kartograph-gradle-plugin-0.12.0.cdx.json": "68a094a9f0db920164d6c2cf4ddb31ae1137ef09e0bad56d7835718da4f7757e"
+      },
+      "release": "https://github.com/ictechgy/kartograph/releases/tag/v0.12.0",
+      "portalMarker": "https://plugins.gradle.org/m2/io/github/ictechgy/kartograph/io.github.ictechgy.kartograph.gradle.plugin/0.12.0/io.github.ictechgy.kartograph.gradle.plugin-0.12.0.pom",
+      "portalJarSha256": "368f77e856ade54347660f7f41b62bfafe0d0d0588a5f9d7473157702a7d0104",
+      "isolatedPortalConsumer": {
+        "status": "passed",
+        "pluginVersion": "0.12.0",
+        "isolatedGradleUserHome": true,
+        "localPluginSubstitution": false,
+        "configurationCacheReused": true,
+        "identicalReports": true,
+        "diagnostics": [
+          {
+            "artifact": "annotations-26.0.2.jar",
+            "coordinate": "org.jetbrains:annotations:26.0.2",
+            "evidenceClasses": [
+              "org/jetbrains/annotations/NotNull"
+            ],
+            "ruleId": "dependency-scope-mismatch",
+            "scope": "implementation",
+            "state": "scope-mismatch",
+            "suggestedScope": "api"
+          }
+        ],
+        "limitations": [
+          "API evidence uses JVM declarations and readable Kotlin metadata, including signatures and inline bodies; it is a review candidate, not an automatic dependency edit",
+          "only references from supplied compiled roots are measured; reflection strings, resources, SOURCE-retention annotations and processor-specific generated-code attribution are not resolved",
+          "test class roots were not supplied; test scopes are counted but not judged"
+        ]
+      }
+    },
+    "dartograph": {
+      "version": "0.15.0",
+      "sourceCommit": "b1248399c5815873fa64e87e577bc4e838d46ee2",
+      "archiveSha256": "4fc7a7958d2af6652ca7532fea3c73366ec16269d7783596d491a53f8170e38c",
+      "registry": "https://pub.dev/api/packages/dartograph/versions/0.15.0"
+    }
+  },
+  "harnessSha256": {
+    "experiments/real-corpus/manifest.json": "6568f1b60c6944b5b06a82c0cd563a7dcd6d95dd90058cc6fa0b1a27712547c9",
+    "experiments/real-corpus/run.mjs": "cb94ebe0b5259de7711e6d1a13f813f7f0cb1e2303587babdab6152efb18e529",
+    "experiments/real-corpus/run-rn-events.mjs": "74c9d7b2adc899bfbe2420cc112d8f115e3b57be96d37d0816377b8edb5cbd19",
+    "experiments/real-corpus/run-rn-receiver.mjs": "40f1f8a5757e69e214ab90ba17a618d115cfe32c7cfaefc5b93f5674131f537e",
+    "experiments/real-corpus/public-archive.mjs": "4c45ef6c228d34d99a23f641a200ad84e17dbe9787c6508c17f21cb4e04a2528",
+    "scripts/run-child.mjs": "5fe8189bc5b93bddb23b4d1e04ba2c2b1522a8a58b0a32341953ebd9a08b06f0"
+  },
+  "originalNpm080ManifestKartograph": "0.11.0",
+  "currentRepositoryManifestKartograph": "0.12.0"
+}
