@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완료 · 자매 발행 완료 · npm 인증 갱신 대기)_
+_Last updated: 2026-09-20 (네 저장소 호환 릴리스 발행·설치 검증 완료 · kartograph P1.1-2 머지 완료)_
 
 ## 현재 재개 기준
 
@@ -8,20 +8,23 @@ _Last updated: 2026-09-20 (자매 브리지 확장 PR 4개 CI 통과·머지 완
 
 - 0.8.0 준비 PR [#98](https://github.com/ictechgy/isthmus/pull/98)이 머지됐다(`5825329`).
   npm verify·두 OS CI·GLM 검토를 통과했고 동일 아카이브를 보존했다.
-- npm 점검 중 PUT 503, 점검 종료 후 PUT 404·whoami 401로 발행이 차단됐다.
-  0.8.0 버전 GET도 404였다. 이 세션에서 사람 사용자에게 로컬 터미널의 npm login 갱신을
-  요청했다. whoami 성공과 발행 권한을 재확인한 뒤 같은 아카이브로 재시도한다. 재시도 전 정확한
-  버전의 등록 여부를 다시 조회하고, 이미 등록됐으면 integrity부터
-  대조해 중복 발행을 피한다. 인증 파일이나 토큰을 직접 읽지 않는다.
+- 사용자가 npm `isthmus-cli@0.8.0` 발행을 완료했다. registry의 정확한 버전과 latest를
+  확인했고, 다운로드 아카이브가 검증한 후보와 바이트 단위로 일치했다. 이전 점검·인증
+  차단은 해소됐다. [GitHub Release](https://github.com/ictechgy/isthmus/releases/tag/v0.8.0)와
+  tag `v0.8.0`은 검증한 릴리스 소스 `5825329`에 연결했다.
+- 별도 빈 npm 캐시와 디렉터리에 registry 0.8.0을 설치해 --version, CLI 계약(0/1/2/64),
+  cold-cache의 조인·보존·사전 점검을 통과했다. 아카이브 SHA256은
+  `175d8f5d91dc4424836aa46323a415c4a11db0f9037ecaa91cb329ff0f56cbf0`이다.
 - 자매 발행본: cartograph 0.20.0(GitHub·Homebrew), kartograph 0.11.0(GitHub·Plugin Portal),
   dartograph 0.15.0(pub.dev·GitHub). 설치 CLI 버전과 native archive/Portal JAR 해시를 대조했다.
 - 이 세 발행본과 0.8.0 후보 아카이브로 ObjC·RN·Dart/Swift·고정 공개 battery·limitation-scopes
   왕복을 통과했다. 별도 Kotlin 컴파일+지원되는 when(call.method) handler로 snapshot→bridges→
   retention→dead/explain도 확인했다. Flutter API는 합성 stub이며 앱 런타임 검증은 아니다.
-  npm 발행본 검증으로 표현하지 않고, 발행 후 registry integrity와 독립 설치를 추가 확인한다.
+  npm 발행 아카이브와 후보의 동일성을 확인했으므로 이 왕복 근거를 재사용한다.
 - 판정·원시 로그·아카이브 및 진행 기록은 `.git/release-p1-20260920/`에 있다. 설치/소스 캐시를
   정리하기 전 활성 입력인지 확인하고, 과거 임시 디렉터리의 존재를 가정하지 않는다.
-- kartograph P1.1-2는 별도 후속 개발이며 0.11.0 발행본에 포함되지 않는다.
+- kartograph P1.1-2는 [PR #85](https://github.com/ictechgy/kartograph/pull/85)로 머지됐다(`e1e38a3`).
+  최종 CI 4잡·783 tests·Kover를 통과했다. main의 별도 후속 개발이며 0.11.0 발행본에 포함되지 않는다.
 - 아래 날짜별 과거 발행·설치 상태는 이 최상단 상태로 대체해 읽는다.
 
 저장소별 재개 정보: [cartograph](https://github.com/ictechgy/cartograph/blob/main/HANDOFF.md) ·
