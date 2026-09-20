@@ -184,6 +184,7 @@ async function createAndStartEmulator() {
   await writeFile(avdConfig, boundedConfig, { mode: 0o600 });
   const port = await findAvailableEmulatorPort();
   emulatorId = `emulator-${port}`;
+  knownDeviceIds.add(emulatorId);
   const logPath = join(artifacts, 'emulator.log');
   const output = openSync(logPath, 'w', 0o600);
   emulatorProcess = spawn(emulatorBinary, ['-avd', avdName, '-no-snapshot', '-no-boot-anim', '-no-window', '-gpu', 'swiftshader_indirect', '-port', String(port)], {

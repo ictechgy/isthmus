@@ -23,6 +23,7 @@ const method = 'example/ios-runtime';
 const basic = 'dev.flutter.pigeon.ios_probe.Api.echo';
 const steps = [];
 let simulator;
+let summary;
 function run(command, args, label, cwd = project, expected = 0, timeout = 180_000) {
   const start = performance.now();
   const result = runChild(command, args, { cwd, timeout, maxBuffer: 32 * 1024 * 1024,
@@ -195,13 +196,12 @@ try {
   assert.equal(documents.pending.run.status, 'incomplete');
   await cp(project, join(evidence, 'fixture'), { recursive: true,
     filter: (source) => !relative(project, source).split('/').some((part) => ['build', '.dart_tool', '.git', 'Pods', '.symlinks'].includes(part)) });
-  const summary = { scope: 'real-flutter-ios-native-channels', flutter: version.frameworkVersion, runtime: runtime.version,
+  summary = { scope: 'real-flutter-ios-native-channels', flutter: version.frameworkVersion, runtime: runtime.version,
     deviceKind: 'simulator', buildMode: 'debug', swiftHandlers: markers.split('\n'), success: positive.summary,
     negativeOutcomes: ['error', 'missing-handler', 'timeout'], pending: 'incomplete',
     limitations: ['One owned iOS simulator in debug mode; physical iPhone, iOS release and lifecycle variants are untested.',
       'Explicit fixture Method/Basic routes only; no public iOS plugin or static producer completeness claim.'], evidence };
   await save(join(evidence, 'verification.json'), JSON.stringify(summary, null, 2) + '\n');
-  process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
 } finally {
   const cleanup = {};
   if (simulator) {
@@ -210,4 +210,6 @@ try {
   await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
   await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
   await rm(scratch, { recursive: true, force: true });
+  assert.ok(simulator === undefined || cleanup.delete === 0, `Owned iOS simulator cleanup failed; evidence: ${evidence}`);
 }
+process.stdout.write(JSON.stringify(summary, null, 2) + '\n');

@@ -4,7 +4,7 @@
   "checkedAt": "2026-09-20",
   "harnessSha256": {
     "scripts/verify-flutter-android-runtime.mjs": "0123a650152a1f6fd9cd7e8d7b73206c9ea01bb4974cbbf3451a48da4b7b0c17",
-    "scripts/verify-flutter-ios-runtime.mjs": "8091b6b2d830d36a4c0a0ab8c6235ee6dcc9891be74488de67c4a8f069fac58f",
+    "scripts/verify-flutter-ios-runtime.mjs": "8783382a82c355a7192811381712e16abe80a402cc5b0cd7cf77043966e9ae43",
     "scripts/verify-rn-android-runtime.mjs": "4730a41dc232699011568f43fdd6522b627febd5e0ec3479827417d20d17e5ad"
   },
   "runtime": {
@@ -250,5 +250,9 @@
         "This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate."
       ]
     }
+  },
+  "postRunChecks": {
+    "androidOwnedEmulatorDiagnostics": "Added owned-emulator serial to diagnostic redaction after the recorded physical run; syntax checked.",
+    "iosCleanup": "Repeated the real simulator run with cleanup failure propagation; shutdown and delete both exited 0."
   }
 }
