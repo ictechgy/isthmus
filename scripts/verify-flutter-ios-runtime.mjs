@@ -6,10 +6,18 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
 
-// 직접 만든 시뮬레이터에서만 앱을 실행하고 실제 Swift 응답과 recorder 결과를 확인한다.
-const [flutterArg, cliArg, ...extra] = process.argv.slice(2);
-if (!flutterArg || extra.length) {
-  process.stderr.write('Usage: verify-flutter-ios-runtime.mjs <flutter-bin> [isthmus-js]\n');
+// 소유한 시뮬레이터 또는 명시적으로 선택한 테스트 iPhone에서만 검증한다.
+const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'));
+const options = process.argv.slice(2).filter((value) => value.startsWith('--'));
+const [flutterArg, cliArg] = positional;
+const physical = options.includes('--physical');
+const release = options.includes('--release');
+const teamOption = options.find((value) => value.startsWith('--team='));
+const team = teamOption?.slice('--team='.length);
+if (!flutterArg || positional.length > 2 || new Set(options).size !== options.length ||
+    options.some((value) => !['--physical', '--release', teamOption].includes(value)) ||
+    release && !physical || teamOption !== undefined && (!physical || !/^[A-Z0-9]{10}$/u.test(team))) {
+  process.stderr.write('Usage: verify-flutter-ios-runtime.mjs <flutter-bin> [isthmus-js] [--physical --release --team=TEAM_ID]\n');
   process.exit(64);
 }
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -18,11 +26,14 @@ const cli = await realpath(cliArg ?? join(repository, 'dist/cli/main.js'));
 const evidence = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-ios-evidence-')));
 const scratch = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-ios-runtime-')));
 const project = join(scratch, 'app');
-const bundle = 'com.example.isthmusIosProbe';
+const bundle = physical ? 'com.isthmus.iosPhysicalProbe' : 'com.example.isthmusIosProbe';
 const method = 'example/ios-runtime';
 const basic = 'dev.flutter.pigeon.ios_probe.Api.echo';
 const steps = [];
 let simulator;
+let device;
+let installed = false;
+let runtimeVersion;
 let summary;
 function run(command, args, label, cwd = project, expected = 0, timeout = 180_000) {
   const start = performance.now();
@@ -32,7 +43,7 @@ function run(command, args, label, cwd = project, expected = 0, timeout = 180_00
   process.stderr.write(`iOS verification: ${label} (${result.status})\n`);
   if (result.status !== expected || result.error) {
     // 기기 목록이나 앱의 임의 출력은 진단에 복사하지 않는다.
-    if (command === flutter) {
+    if (command === flutter && !physical) {
       const text = (result.stdout + '\n' + result.stderr).replace(/https?:\/\/\S+/gu, '[URL omitted]');
       return writeFile(join(evidence, 'build-failure.log'), text, { mode: 0o600 }).then(() => {
         throw new Error(`${label} failed; evidence: ${evidence}`);
@@ -48,6 +59,7 @@ async function save(path, value) {
 }
 
 const dart = String.raw`import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -75,6 +87,8 @@ Future<void> main() async {
   // 앱이 자기 sandbox 경로를 결정한다. 기기 경로나 식별자를 기록하지 않는다.
   output = await const MethodChannel('example/ios-probe-storage').invokeMethod<String>('path') ?? '';
   if (output.isEmpty) throw StateError('missing output');
+  await Directory(output).create(recursive: true);
+  await File('$output/build-mode.json').writeAsString(jsonEncode({'product': const bool.fromEnvironment('dart.vm.product')}), flush: true);
   final success = recorder('success');
   final channel = MethodChannel('example/ios-runtime', const StandardMethodCodec(), success.binaryMessenger);
   if (await channel.invokeMethod<String>('echo', 'fixture-private-payload') != 'ios-ok') throw StateError('echo');
@@ -141,38 +155,79 @@ import UIKit
 
 try {
   await mkdir(project);
+  if (physical) {
+    const list = JSON.parse(await run('xcrun', ['devicectl', 'list', 'devices', '--json-output', '-', '--quiet', '--timeout', '20'], 'Discover test iPhone'));
+    const candidates = list.result.devices.filter((item) => {
+      const hardware = item.properties?.hardware ?? item.hardwareProperties;
+      return hardware?.deviceType === 'iPhone' && hardware.reality === 'physical';
+    });
+    assert.equal(candidates.length, 1, 'Exactly one paired physical iPhone is required.');
+    device = candidates[0].identifier;
+    const osVersion = (candidates[0].properties?.software ?? candidates[0].deviceProperties).osVersionNumber;
+    runtimeVersion = typeof osVersion === 'string' ? osVersion : osVersion.stringValue;
+    const state = candidates[0].properties?.state ?? candidates[0].deviceProperties;
+    assert.ok(state.developerModeStatus === 'enabled' || state.developerModeStatus?.enabled?.mode === 1,
+      'The test iPhone must have Developer Mode enabled.');
+    const apps = JSON.parse(await run('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', device, '--bundle-id', bundle, '--json-output', '-', '--quiet', '--timeout', '20'], 'Check fixture ownership'));
+    assert.equal(apps.result.apps.length, 0, 'Refusing to replace a preexisting iPhone fixture.');
+  }
   const version = JSON.parse(await run(flutter, ['--version', '--machine'], 'Flutter version'));
   await run(flutter, ['create', '--platforms=ios', '--project-name=isthmus_ios_probe', '--no-pub', '--offline', project], 'Create fixture');
   await save(join(project, 'pubspec.yaml'), `name: isthmus_ios_probe\nversion: 1.0.0+1\nenvironment:\n  sdk: '>=3.7.0 <4.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\n  isthmus_runtime:\n    path: ${JSON.stringify(join(repository, 'packages/isthmus_runtime'))}\nflutter:\n  config:\n    enable-swift-package-manager: false\n`);
   await save(join(project, 'lib/main.dart'), dart);
   await save(join(project, 'ios/Runner/AppDelegate.swift'), swift);
+  if (physical) {
+    const pbx = join(project, 'ios/Runner.xcodeproj/project.pbxproj');
+    let contents = (await readFile(pbx, 'utf8')).replaceAll('com.example.isthmusIosProbe', bundle);
+    if (team) contents = contents.replaceAll('PRODUCT_BUNDLE_IDENTIFIER =', `DEVELOPMENT_TEAM = ${team};\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER =`);
+    await save(pbx, contents);
+  }
   const revision = 'sha256:' + createHash('sha256').update(dart).update(swift)
     .update(await readFile(join(repository, 'packages/isthmus_runtime/lib/src/runtime_recorder.dart'))).update(version.frameworkRevision).digest('hex');
   await run(flutter, ['pub', 'get'], 'Resolve fixture');
-  await run(flutter, ['build', 'ios', '--simulator', '--debug', '--no-pub', `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`], 'Build iOS simulator app', project, 0, 600_000);
-  const runtimes = JSON.parse(await run('xcrun', ['simctl', 'list', 'runtimes', '--json'], 'Discover iOS runtime')).runtimes;
-  const runtime = runtimes.filter((item) => item.isAvailable && item.identifier.includes('SimRuntime.iOS')).at(-1);
-  assert.ok(runtime, 'An installed iOS simulator runtime is required.');
-  const types = JSON.parse(await run('xcrun', ['simctl', 'list', 'devicetypes', '--json'], 'Discover simulator type')).devicetypes;
-  const runtimeVersion = runtime.version.split('.').reduce((v, part, index) => v + Number(part) * 2 ** (16 - index * 8), 0);
-  const type = types.filter((item) => item.name.startsWith('iPhone') && item.minRuntimeVersion <= runtimeVersion && item.maxRuntimeVersion >= runtimeVersion).at(-1);
-  assert.ok(type, 'A compatible iPhone simulator type is required.');
-  simulator = (await run('xcrun', ['simctl', 'create', 'isthmus-owned-ios-probe', type.identifier, runtime.identifier], 'Create owned simulator')).trim();
-  assert.match(simulator, /^[0-9A-F-]{36}$/iu);
-  await run('xcrun', ['simctl', 'boot', simulator], 'Boot owned simulator');
-  await run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], 'Wait for simulator', project, 0, 180_000);
-  await run('xcrun', ['simctl', 'install', simulator, join(project, 'build/ios/iphonesimulator/Runner.app')], 'Install fixture');
-  await run('xcrun', ['simctl', 'launch', simulator, bundle], 'Launch fixture');
-  const container = (await run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data'], 'Locate fixture data')).trim();
-  const recordings = join(container, 'Documents/isthmus-runtime');
+  await run(flutter, ['build', 'ios', ...(physical ? [] : ['--simulator']), release ? '--release' : '--debug', '--no-pub', `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`], 'Build iOS fixture', project, 0, 600_000);
+  let recordings;
+  if (physical) {
+    await run('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device, join(project, 'build/ios/iphoneos/Runner.app'), '--quiet', '--timeout', '120'], 'Install owned iPhone fixture');
+    installed = true;
+    await run('xcrun', ['devicectl', 'device', 'process', 'launch', '--device', device, bundle, '--quiet', '--timeout', '30'], 'Launch iPhone fixture');
+    recordings = join(scratch, 'recordings');
+    await mkdir(recordings);
+  } else {
+    const runtimes = JSON.parse(await run('xcrun', ['simctl', 'list', 'runtimes', '--json'], 'Discover iOS runtime')).runtimes;
+    const runtime = runtimes.filter((item) => item.isAvailable && item.identifier.includes('SimRuntime.iOS')).at(-1);
+    assert.ok(runtime, 'An installed iOS simulator runtime is required.');
+    runtimeVersion = runtime.version;
+    const types = JSON.parse(await run('xcrun', ['simctl', 'list', 'devicetypes', '--json'], 'Discover simulator type')).devicetypes;
+    const runtimeNumber = runtime.version.split('.').reduce((v, part, index) => v + Number(part) * 2 ** (16 - index * 8), 0);
+    const type = types.filter((item) => item.name.startsWith('iPhone') && item.minRuntimeVersion <= runtimeNumber && item.maxRuntimeVersion >= runtimeNumber).at(-1);
+    assert.ok(type, 'A compatible iPhone simulator type is required.');
+    simulator = (await run('xcrun', ['simctl', 'create', 'isthmus-owned-ios-probe', type.identifier, runtime.identifier], 'Create owned simulator')).trim();
+    assert.match(simulator, /^[0-9A-F-]{36}$/iu);
+    await run('xcrun', ['simctl', 'boot', simulator], 'Boot owned simulator');
+    await run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], 'Wait for simulator', project, 0, 180_000);
+    await run('xcrun', ['simctl', 'install', simulator, join(project, 'build/ios/iphonesimulator/Runner.app')], 'Install fixture');
+    await run('xcrun', ['simctl', 'launch', simulator, bundle], 'Launch fixture');
+    const container = (await run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data'], 'Locate fixture data')).trim();
+    recordings = join(container, 'Documents/isthmus-runtime');
+  }
   const deadline = Date.now() + 120_000;
   for (;;) {
+    if (physical) {
+      // 테스트 앱의 sandbox만 복사하며 다른 앱/기기 정보는 보존하지 않는다.
+      runChild('xcrun', ['devicectl', 'device', 'copy', 'from', '--device', device,
+        '--domain-type', 'appDataContainer', '--domain-identifier', bundle,
+        '--source', 'Documents/isthmus-runtime/', '--destination', recordings, '--quiet', '--timeout', '10'], { timeout: 15_000 });
+    }
     try { await access(join(recordings, 'pending.json')); break; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     assert.ok(Date.now() < deadline, `iOS probe did not complete; evidence: ${evidence}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const documents = {};
+  const mode = JSON.parse(await readFile(join(recordings, 'build-mode.json'), 'utf8'));
+  assert.equal(mode.product, release, 'Observed Dart product mode must match the requested build mode.');
+  await save(join(evidence, 'build-mode.json'), JSON.stringify(mode));
   for (const name of ['success', 'failure', 'timeout', 'pending']) {
     const bytes = await readFile(join(recordings, name + '.json'), 'utf8');
     assert.ok(!bytes.includes('fixture-private-payload'));
@@ -195,15 +250,20 @@ try {
   assert.ok(incomplete.summary.pendingCalls > 0);
   assert.equal(documents.pending.run.status, 'incomplete');
   await cp(project, join(evidence, 'fixture'), { recursive: true,
-    filter: (source) => !relative(project, source).split('/').some((part) => ['build', '.dart_tool', '.git', 'Pods', '.symlinks'].includes(part)) });
-  summary = { scope: 'real-flutter-ios-native-channels', flutter: version.frameworkVersion, runtime: runtime.version,
-    deviceKind: 'simulator', buildMode: 'debug', swiftHandlers: markers.split('\n'), success: positive.summary,
+    filter: (source) => !relative(project, source).split('/').some((part) => ['build', '.dart_tool', '.git', 'Pods', '.symlinks', 'xcuserdata'].includes(part)) });
+  if (physical) {
+    const archivedPbx = join(evidence, 'fixture/ios/Runner.xcodeproj/project.pbxproj');
+    await save(archivedPbx, (await readFile(archivedPbx, 'utf8')).replace(/DEVELOPMENT_TEAM = [^;]+;/gu, 'DEVELOPMENT_TEAM = TEAM_ID;'));
+  }
+  summary = { scope: 'real-flutter-ios-native-channels', flutter: version.frameworkVersion, runtime: runtimeVersion,
+    deviceKind: physical ? 'physical' : 'simulator', buildMode: release ? 'release' : 'debug', observedProductMode: mode.product, swiftHandlers: markers.split('\n'), success: positive.summary,
     negativeOutcomes: ['error', 'missing-handler', 'timeout'], pending: 'incomplete',
-    limitations: ['One owned iOS simulator in debug mode; physical iPhone, iOS release and lifecycle variants are untested.',
+    limitations: [physical ? 'One physical iPhone and the reported build mode; other devices and lifecycle variants remain untested.' : 'One owned iOS simulator in debug mode; physical iPhone, iOS release and lifecycle variants are untested.',
       'Explicit fixture Method/Basic routes only; no public iOS plugin or static producer completeness claim.'], evidence };
   await save(join(evidence, 'verification.json'), JSON.stringify(summary, null, 2) + '\n');
 } finally {
   const cleanup = {};
+  if (installed) cleanup.uninstall = runChild('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device, bundle, '--quiet', '--timeout', '30'], { timeout: 60_000 }).status;
   if (simulator) {
     for (const action of ['shutdown', 'delete']) cleanup[action] = runChild('xcrun', ['simctl', action, simulator], { timeout: 60_000 }).status;
   }
@@ -211,5 +271,6 @@ try {
   await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
   await rm(scratch, { recursive: true, force: true });
   assert.ok(simulator === undefined || cleanup.delete === 0, `Owned iOS simulator cleanup failed; evidence: ${evidence}`);
+  assert.ok(!installed || cleanup.uninstall === 0, `Owned iPhone fixture cleanup failed; evidence: ${evidence}`);
 }
 process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
