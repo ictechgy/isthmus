@@ -36,6 +36,7 @@ let device;
 let installed = false;
 let installAttempted = false;
 let primaryFailure;
+const copies = [];
 let runtimeVersion;
 let summary;
 function run(command, args, label, cwd = project, expected = 0, timeout = 180_000) {
@@ -45,16 +46,10 @@ function run(command, args, label, cwd = project, expected = 0, timeout = 180_00
   steps.push({ label, exit: result.status, milliseconds: Math.round(performance.now() - start) });
   process.stderr.write(`iOS verification: ${label} (${result.status})\n`);
   if (result.status !== expected || result.error) {
-    if (command === flutter && physical) return save(join(evidence, 'build-failure.json'), JSON.stringify(describeBuildFailure(label, result))).then(() => {
+    if (command === flutter) return save(join(evidence, 'build-failure.json'), JSON.stringify(describeBuildFailure(label, result))).then(() => {
       throw new Error(`${label} failed; evidence: ${evidence}`);
     });
     // 기기 목록이나 앱의 임의 출력은 진단에 복사하지 않는다.
-    if (command === flutter && !physical) {
-      const text = (result.stdout + '\n' + result.stderr).replace(/https?:\/\/\S+/gu, '[URL omitted]');
-      return writeFile(join(evidence, 'build-failure.log'), text, { mode: 0o600 }).then(() => {
-        throw new Error(`${label} failed; evidence: ${evidence}`);
-      });
-    }
     throw new Error(`${label} failed; evidence: ${evidence}`);
   }
   return result.stdout;
@@ -235,15 +230,20 @@ try {
   }
   const deadline = Date.now() + 120_000;
   for (;;) {
+    assert.ok(Date.now() < deadline, `iOS probe or fixture copy did not complete; evidence: ${evidence}`);
     if (physical) {
       // 테스트 앱의 sandbox만 복사하며 다른 앱/기기 정보는 보존하지 않는다.
-      runChild('xcrun', ['devicectl', 'device', 'copy', 'from', '--device', device,
+      const copied = runChild('xcrun', ['devicectl', 'device', 'copy', 'from', '--device', device,
         '--domain-type', 'appDataContainer', '--domain-identifier', bundle,
         '--source', 'Documents/isthmus-runtime/', '--destination', recordings, '--quiet', '--timeout', '10'], { timeout: 15_000 });
+      copies.push({ exit: copied.status, failed: copied.status !== 0 || copied.error !== undefined });
+      if (copies.at(-1).failed) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
     }
     try { await access(join(recordings, 'pending.json')); break; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    assert.ok(Date.now() < deadline, `iOS probe did not complete; evidence: ${evidence}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const documents = {};
@@ -300,8 +300,11 @@ try {
   }
   if (simulator !== undefined && cleanup.delete !== 0) failures.push(new Error(`Owned iOS simulator cleanup failed; evidence: ${evidence}`));
   try {
-    await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
     await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
+  } catch (error) { failures.push(error); }
+  try {
+    await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
+    if (physical) await save(join(evidence, 'copy-status.json'), JSON.stringify(copies));
     await rm(scratch, { recursive: true, force: true });
   } catch (error) { failures.push(error); }
   throwHarnessFailures(primaryFailure, failures);

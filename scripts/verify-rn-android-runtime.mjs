@@ -296,7 +296,7 @@ try {
   let stopped;
   try { stopped = await stopDetachedProcess(emulatorProcess); }
   catch (error) { failures.push(error); }
-  if (!stopped?.stopped) failures.push(new Error(`Owned RN emulator cleanup failed; evidence: ${evidence}`));
+  if (stopped !== undefined && !stopped.stopped) failures.push(new Error(`Owned RN emulator cleanup failed; evidence: ${evidence}`));
   if (installed && uninstallExit !== 0) failures.push(new Error(`Owned RN fixture cleanup failed; evidence: ${evidence}`));
   try {
     await save(join(evidence, 'cleanup.json'), JSON.stringify({ installed, uninstallExit, emulator: stopped }));
