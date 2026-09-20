@@ -3,10 +3,11 @@
   "version": 1,
   "checkedAt": "2026-09-21",
   "harnessSha256": {
-    "scripts/verify-flutter-ios-runtime.mjs": "d0f9350eab1e097a32d0321e0b58599bb5ee7326abb16b7ca06cc8b818081e66",
-    "scripts/verify-rn-android-runtime.mjs": "f61c67573acf7ddcccee17df7049f3c4de00ef1d679c4c876800629746fa5f14",
+    "scripts/verify-flutter-ios-runtime.mjs": "4abde96c96bd8a6a503d4edb9eda4294c97de4e9560bc39dcd3cce328091dabc",
+    "scripts/verify-rn-android-runtime.mjs": "a48359152246e0137e63f60b1d3018117bdb2ca72dd0af3729eb5b975a78604e",
     "scripts/fixtures/rn-new-architecture.mjs": "4d735a8446cb9165e1289a41d8910a3e9ef47ff92be25cd9aea210a80ede64fe",
-    "scripts/stop-detached-process.mjs": "5f8b3f5b289331b4a65945eb9c246b4013739f0946e1d879ef34e5bbdb823317"
+    "scripts/stop-detached-process.mjs": "5f8b3f5b289331b4a65945eb9c246b4013739f0946e1d879ef34e5bbdb823317",
+    "scripts/runtime-harness-failures.mjs": "9c5dc50f15c4da2771bd276f88202776a42e67acfd3eb97235dbb8066fb8577d"
   },
   "runtime": {
     "ios": {
@@ -66,7 +67,7 @@
       },
       "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
       "lockfileSha256": "79d2fc83a81c5d6d76dcfb9a3698943d8ace306e89aafb9e424773517e11848e",
-      "apkSha256": "cd3412c52d46d4110e087161ae6b6785ff9af4c5988b9e1a2dec3e20450f4c4e",
+      "apkSha256": "7e4676bc41cfdf035fc97a9bb13205f6bbe1582d68865bda8b2b7a77c1685c4c",
       "observed": {
         "status": "passed",
         "checks": [
@@ -99,13 +100,12 @@
         ],
         "states": [
           "active",
-          "active",
           "background",
           "active"
         ],
         "measurements": {
-          "playingPosition": 0.016,
-          "playbackMilliseconds": 2296,
+          "playingPosition": 0.128,
+          "playbackMilliseconds": 2178,
           "completionPosition": 2
         },
         "reactNative": {

@@ -11,6 +11,7 @@ import { runChild } from './run-child.mjs';
 import { fetchPinnedPackage } from '../experiments/real-corpus/public-archive.mjs';
 import { javascript as newJavascript, kotlin as newKotlin, spec, silentWav } from './fixtures/rn-new-architecture.mjs';
 import { stopDetachedProcess } from './stop-detached-process.mjs';
+import { throwHarnessFailures } from './runtime-harness-failures.mjs';
 
 // 공개 Sound 원본의 이벤트를 실제 RN/Hermes 엔진에서 소비한다.
 const [adbArg, ...extra] = process.argv.slice(2);
@@ -30,6 +31,8 @@ const resultPath = `/sdcard/Android/data/${appId}/files/rn-probe.json`;
 const steps = [];
 let device;
 let installed = false;
+let installAttempted = false;
+let primaryFailure;
 let emulatorProcess;
 let summary;
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -215,6 +218,8 @@ try {
   await save(build, (await readFile(build, 'utf8')).replace('applicationId "com.helloworld"', `applicationId "${appId}"`));
   await save(join(project, 'android/local.properties'), `sdk.dir=${dirname(dirname(adb))}\n`);
   await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], 'Install pinned RN tooling', project, 0, 600_000);
+  await cp(project, join(evidence, 'fixture'), { recursive: true, filter: (path) =>
+    !relative(project, path).split('/').some((part) => ['node_modules', 'build', '.gradle', '.git', '.cxx', 'ios'].includes(part)) && !path.endsWith('.keystore') });
   const wrapper = join(project, 'android/gradlew'); await chmod(wrapper, 0o700);
   await run(wrapper, ['--no-daemon', 'assembleRelease', `-PreactNativeArchitectures=${abi}`, '--max-workers=2'], 'Build RN Hermes release', join(project, 'android'), 0, 900_000);
   const codegen = {};
@@ -229,11 +234,11 @@ try {
   }
   const apk = join(project, 'android/app/build/outputs/apk/release/app-release.apk');
   // 기기가 빌드 중 분리되더라도 검증한 원본·설치 입력을 보존한다.
-  await cp(project, join(evidence, 'fixture'), { recursive: true, filter: (path) =>
-    !relative(project, path).split('/').some((part) => ['node_modules', 'build', '.gradle', '.git', '.cxx', 'ios'].includes(part)) && !path.endsWith('.keystore') });
   await cp(apk, join(evidence, 'app-release.apk'));
   await save(join(evidence, 'build.json'), JSON.stringify({ sourceHashes, templateSha256: templateHash, codegen,
     lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), apkSha256: sha(await readFile(apk)) }, null, 2));
+  assert.ok(!(await run(adb, ['-s', device, 'shell', 'pm', 'list', 'packages', appId], 'Recheck fixture ownership')).includes(appId), 'Fixture appeared during the build; refusing to replace it.');
+  installAttempted = true;
   await run(adb, ['-s', device, 'install', apk], 'Install owned RN fixture'); installed = true;
   await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Launch RN Hermes');
   let observed;
@@ -279,13 +284,25 @@ try {
       'Original JS subscription and Kotlin Sound.setOnPlay execute unchanged. A fixture module supplies preparation callbacks; no audio playback or full plugin behavior is claimed.',
       'This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate.'], evidence };
   await save(join(evidence, 'verification.json'), JSON.stringify(summary, null, 2));
+} catch (error) {
+  primaryFailure = error;
 } finally {
+  const failures = [];
+  if (installAttempted && !installed) {
+    try { installed = (await run(adb, ['-s', device, 'shell', 'pm', 'list', 'packages', appId], 'Check interrupted installation')).split(/\r?\n/u).includes(`package:${appId}`); }
+    catch { failures.push(new Error(`Unable to confirm interrupted RN installation; evidence: ${evidence}`)); }
+  }
   const uninstallExit = installed ? runChild(adb, ['-s', device, 'uninstall', appId], { timeout: 60_000 }).status : undefined;
-  const stopped = await stopDetachedProcess(emulatorProcess);
-  await save(join(evidence, 'cleanup.json'), JSON.stringify({ installed, uninstallExit, emulator: stopped }));
-  await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
-  if (stopped.stopped) await rm(scratch, { recursive: true, force: true });
-  assert.ok(stopped.stopped, `Owned RN emulator cleanup failed; evidence: ${evidence}`);
-  assert.ok(!installed || uninstallExit === 0, `Owned RN fixture cleanup failed; evidence: ${evidence}`);
+  let stopped;
+  try { stopped = await stopDetachedProcess(emulatorProcess); }
+  catch (error) { failures.push(error); }
+  if (!stopped?.stopped) failures.push(new Error(`Owned RN emulator cleanup failed; evidence: ${evidence}`));
+  if (installed && uninstallExit !== 0) failures.push(new Error(`Owned RN fixture cleanup failed; evidence: ${evidence}`));
+  try {
+    await save(join(evidence, 'cleanup.json'), JSON.stringify({ installed, uninstallExit, emulator: stopped }));
+    await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
+    if (stopped?.stopped) await rm(scratch, { recursive: true, force: true });
+  } catch (error) { failures.push(error); }
+  throwHarnessFailures(primaryFailure, failures);
 }
 process.stdout.write(JSON.stringify(summary, null, 2) + '\n');

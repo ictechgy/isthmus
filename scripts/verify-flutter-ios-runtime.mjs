@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
+import { describeBuildFailure, throwHarnessFailures } from './runtime-harness-failures.mjs';
 
 // 소유한 시뮬레이터 또는 명시적으로 선택한 테스트 iPhone에서만 검증한다.
 const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'));
@@ -33,6 +34,8 @@ const steps = [];
 let simulator;
 let device;
 let installed = false;
+let installAttempted = false;
+let primaryFailure;
 let runtimeVersion;
 let summary;
 function run(command, args, label, cwd = project, expected = 0, timeout = 180_000) {
@@ -42,6 +45,9 @@ function run(command, args, label, cwd = project, expected = 0, timeout = 180_00
   steps.push({ label, exit: result.status, milliseconds: Math.round(performance.now() - start) });
   process.stderr.write(`iOS verification: ${label} (${result.status})\n`);
   if (result.status !== expected || result.error) {
+    if (command === flutter && physical) return save(join(evidence, 'build-failure.json'), JSON.stringify(describeBuildFailure(label, result))).then(() => {
+      throw new Error(`${label} failed; evidence: ${evidence}`);
+    });
     // 기기 목록이나 앱의 임의 출력은 진단에 복사하지 않는다.
     if (command === flutter && !physical) {
       const text = (result.stdout + '\n' + result.stderr).replace(/https?:\/\/\S+/gu, '[URL omitted]');
@@ -56,6 +62,15 @@ function run(command, args, label, cwd = project, expected = 0, timeout = 180_00
 async function save(path, value) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, value, { mode: 0o600 });
+}
+
+async function preserveFixture() {
+  await cp(project, join(evidence, 'fixture'), { recursive: true,
+    filter: (source) => !relative(project, source).split('/').some((part) => ['build', '.dart_tool', '.git', 'Pods', '.symlinks', 'xcuserdata'].includes(part)) });
+  if (physical) {
+    const archivedPbx = join(evidence, 'fixture/ios/Runner.xcodeproj/project.pbxproj');
+    await save(archivedPbx, (await readFile(archivedPbx, 'utf8')).replace(/DEVELOPMENT_TEAM = [^;]+;/gu, 'DEVELOPMENT_TEAM = TEAM_ID;'));
+  }
 }
 
 const dart = String.raw`import 'dart:async';
@@ -78,7 +93,9 @@ IsthmusRuntimeRecorder recorder(String scenario, {Duration? timeout}) => Isthmus
 Future<void> save(String name, IsthmusRuntimeRecorder value) async {
   final file = File('$output/$name.json');
   await file.parent.create(recursive: true);
-  await file.writeAsString(value.finish().encode(), flush: true);
+  final pending = File('$output/$name.pending');
+  await pending.writeAsString(value.finish().encode(), flush: true);
+  await pending.rename(file.path);
 }
 late String output;
 Future<void> main() async {
@@ -164,9 +181,10 @@ try {
     assert.equal(candidates.length, 1, 'Exactly one paired physical iPhone is required.');
     device = candidates[0].identifier;
     const osVersion = (candidates[0].properties?.software ?? candidates[0].deviceProperties).osVersionNumber;
-    runtimeVersion = typeof osVersion === 'string' ? osVersion : osVersion.stringValue;
+    runtimeVersion = typeof osVersion === 'string' ? osVersion : osVersion?.stringValue;
+    assert.ok(typeof runtimeVersion === 'string' && /^\d+(\.\d+)*$/u.test(runtimeVersion), 'Unsupported iPhone OS version metadata.');
     const state = candidates[0].properties?.state ?? candidates[0].deviceProperties;
-    assert.ok(state.developerModeStatus === 'enabled' || state.developerModeStatus?.enabled?.mode === 1,
+    assert.ok(state?.developerModeStatus === 'enabled' || state?.developerModeStatus?.enabled?.mode === 1,
       'The test iPhone must have Developer Mode enabled.');
     const apps = JSON.parse(await run('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', device, '--bundle-id', bundle, '--json-output', '-', '--quiet', '--timeout', '20'], 'Check fixture ownership'));
     assert.equal(apps.result.apps.length, 0, 'Refusing to replace a preexisting iPhone fixture.');
@@ -184,10 +202,14 @@ try {
   }
   const revision = 'sha256:' + createHash('sha256').update(dart).update(swift)
     .update(await readFile(join(repository, 'packages/isthmus_runtime/lib/src/runtime_recorder.dart'))).update(version.frameworkRevision).digest('hex');
+  await preserveFixture();
   await run(flutter, ['pub', 'get'], 'Resolve fixture');
   await run(flutter, ['build', 'ios', ...(physical ? [] : ['--simulator']), release ? '--release' : '--debug', '--no-pub', `--dart-define=ISTHMUS_PROJECT=${project}`, `--dart-define=ISTHMUS_REVISION=${revision}`], 'Build iOS fixture', project, 0, 600_000);
   let recordings;
   if (physical) {
+    const apps = JSON.parse(await run('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', device, '--bundle-id', bundle, '--json-output', '-', '--quiet', '--timeout', '20'], 'Recheck fixture ownership'));
+    assert.equal(apps.result.apps.length, 0, 'Fixture appeared during the build; refusing to replace it.');
+    installAttempted = true;
     await run('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device, join(project, 'build/ios/iphoneos/Runner.app'), '--quiet', '--timeout', '120'], 'Install owned iPhone fixture');
     installed = true;
     await run('xcrun', ['devicectl', 'device', 'process', 'launch', '--device', device, bundle, '--quiet', '--timeout', '30'], 'Launch iPhone fixture');
@@ -249,28 +271,39 @@ try {
   const incomplete = await verify(['success', 'pending'], 1);
   assert.ok(incomplete.summary.pendingCalls > 0);
   assert.equal(documents.pending.run.status, 'incomplete');
-  await cp(project, join(evidence, 'fixture'), { recursive: true,
-    filter: (source) => !relative(project, source).split('/').some((part) => ['build', '.dart_tool', '.git', 'Pods', '.symlinks', 'xcuserdata'].includes(part)) });
-  if (physical) {
-    const archivedPbx = join(evidence, 'fixture/ios/Runner.xcodeproj/project.pbxproj');
-    await save(archivedPbx, (await readFile(archivedPbx, 'utf8')).replace(/DEVELOPMENT_TEAM = [^;]+;/gu, 'DEVELOPMENT_TEAM = TEAM_ID;'));
-  }
+  await preserveFixture();
   summary = { scope: 'real-flutter-ios-native-channels', flutter: version.frameworkVersion, runtime: runtimeVersion,
     deviceKind: physical ? 'physical' : 'simulator', buildMode: release ? 'release' : 'debug', observedProductMode: mode.product, swiftHandlers: markers.split('\n'), success: positive.summary,
     negativeOutcomes: ['error', 'missing-handler', 'timeout'], pending: 'incomplete',
     limitations: [physical ? 'One physical iPhone and the reported build mode; other devices and lifecycle variants remain untested.' : 'One owned iOS simulator in debug mode; physical iPhone, iOS release and lifecycle variants are untested.',
       'Explicit fixture Method/Basic routes only; no public iOS plugin or static producer completeness claim.'], evidence };
   await save(join(evidence, 'verification.json'), JSON.stringify(summary, null, 2) + '\n');
+} catch (error) {
+  primaryFailure = error;
 } finally {
   const cleanup = {};
-  if (installed) cleanup.uninstall = runChild('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device, bundle, '--quiet', '--timeout', '30'], { timeout: 60_000 }).status;
+  const failures = [];
+  if (installAttempted && !installed) {
+    try {
+      const apps = JSON.parse(await run('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', device, '--bundle-id', bundle, '--json-output', '-', '--quiet', '--timeout', '20'], 'Check interrupted installation'));
+      assert.ok(Array.isArray(apps.result.apps), 'Unsupported iPhone app metadata.');
+      installed = apps.result.apps.length > 0;
+      cleanup.interruptedInstallPresent = installed;
+    } catch { failures.push(new Error(`Unable to confirm interrupted iPhone installation; evidence: ${evidence}`)); }
+  }
+  if (installed) {
+    cleanup.uninstall = runChild('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device, bundle, '--quiet', '--timeout', '30'], { timeout: 60_000 }).status;
+    if (cleanup.uninstall !== 0) failures.push(new Error(`Owned iPhone fixture cleanup failed; evidence: ${evidence}`));
+  }
   if (simulator) {
     for (const action of ['shutdown', 'delete']) cleanup[action] = runChild('xcrun', ['simctl', action, simulator], { timeout: 60_000 }).status;
   }
-  await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
-  await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
-  await rm(scratch, { recursive: true, force: true });
-  assert.ok(simulator === undefined || cleanup.delete === 0, `Owned iOS simulator cleanup failed; evidence: ${evidence}`);
-  assert.ok(!installed || cleanup.uninstall === 0, `Owned iPhone fixture cleanup failed; evidence: ${evidence}`);
+  if (simulator !== undefined && cleanup.delete !== 0) failures.push(new Error(`Owned iOS simulator cleanup failed; evidence: ${evidence}`));
+  try {
+    await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
+    await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
+    await rm(scratch, { recursive: true, force: true });
+  } catch (error) { failures.push(error); }
+  throwHarnessFailures(primaryFailure, failures);
 }
 process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
