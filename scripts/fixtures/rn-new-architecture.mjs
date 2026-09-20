@@ -146,9 +146,10 @@ async function probe() {
   check('remaining-subscription-receives', true);
   await new Promise(resolve => second.stop(resolve));
 
+  const lifecycleStart = states.length;
   NativeProbe.checkpoint('awaiting-background');
-  await until(() => states.includes('background'), 'background-transition', 60000);
-  await until(() => states.slice(states.indexOf('background') + 1).includes('active'), 'foreground-transition', 60000);
+  await until(() => states.indexOf('background', lifecycleStart) >= 0, 'background-transition', 60000);
+  await until(() => states.slice(states.indexOf('background', lifecycleStart) + 1).includes('active'), 'foreground-transition', 60000);
   check('background-foreground', true);
   check('turbo-after-resume', await NativeProbe.echo('resumed') === 'resumed');
   second.play();

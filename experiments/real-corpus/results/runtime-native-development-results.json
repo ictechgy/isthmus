@@ -4,8 +4,8 @@
   "checkedAt": "2026-09-21",
   "harnessSha256": {
     "scripts/verify-flutter-ios-runtime.mjs": "b352ef72900f933570a9f7b0f564eb2c81339938473e60d08fdeb720a00999d0",
-    "scripts/verify-rn-android-runtime.mjs": "a48359152246e0137e63f60b1d3018117bdb2ca72dd0af3729eb5b975a78604e",
-    "scripts/fixtures/rn-new-architecture.mjs": "4d735a8446cb9165e1289a41d8910a3e9ef47ff92be25cd9aea210a80ede64fe",
+    "scripts/verify-rn-android-runtime.mjs": "f5fb703466e625fb980e8c751403934807a684fe6504ec50fb388373f1874289",
+    "scripts/fixtures/rn-new-architecture.mjs": "92dfb8e4ca6e0f41f81cb840ee2d16112e080ff15c11cf1c941871fa7d070ae5",
     "scripts/stop-detached-process.mjs": "5f8b3f5b289331b4a65945eb9c246b4013739f0946e1d879ef34e5bbdb823317",
     "scripts/runtime-harness-failures.mjs": "9c5dc50f15c4da2771bd276f88202776a42e67acfd3eb97235dbb8066fb8577d"
   },
@@ -69,7 +69,7 @@
       },
       "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
       "lockfileSha256": "79d2fc83a81c5d6d76dcfb9a3698943d8ace306e89aafb9e424773517e11848e",
-      "apkSha256": "7e4676bc41cfdf035fc97a9bb13205f6bbe1582d68865bda8b2b7a77c1685c4c",
+      "apkSha256": "e1883896bb57cc162291f369c11de525e3a749583fc42a9be6c5d48d987b1a63",
       "observed": {
         "status": "passed",
         "checks": [
@@ -102,12 +102,13 @@
         ],
         "states": [
           "active",
+          "active",
           "background",
           "active"
         ],
         "measurements": {
-          "playingPosition": 0.128,
-          "playbackMilliseconds": 2178,
+          "playingPosition": 0.083,
+          "playbackMilliseconds": 2223,
           "completionPosition": 2
         },
         "reactNative": {
@@ -147,12 +148,5 @@
     "The RN new-architecture result is from an owned Android emulator; the earlier physical-device legacy result remains a separate record.",
     "A first physical Android new-architecture build completed, but the device disconnected before installation; it is not runtime evidence.",
     "These explicit native harnesses do not establish static producer completeness or all lifecycle/media behavior."
-  ],
-  "postRunChecks": {
-    "rnCleanupErrorAggregation": {
-      "change": "Avoid a duplicate generic stop error after the stop helper throws; the recorded successful runtime path is unchanged.",
-      "sourceSha256": "f5fb703466e625fb980e8c751403934807a684fe6504ec50fb388373f1874289",
-      "verification": "Failure and process helper tests (7) and script syntax checks passed."
-    }
-  }
+  ]
 }
