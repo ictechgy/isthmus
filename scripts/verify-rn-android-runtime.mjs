@@ -93,7 +93,7 @@ async function startOwnedEmulator() {
   let launchError;
   emulatorProcess.once('error', (error) => { launchError = error; });
   emulatorProcess.unref();
-  const deadline = Date.now() + 180_000;
+  const deadline = Date.now() + 300_000;
   for (;;) {
     assert.ok(!launchError && emulatorProcess.exitCode === null && emulatorProcess.signalCode === null && Date.now() < deadline,
       `Owned RN emulator did not boot; evidence: ${evidence}`);

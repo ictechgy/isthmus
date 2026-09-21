@@ -37,7 +37,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/isthmus-native" native-report
           echo "TMPDIR=$RUNNER_TEMP/isthmus-native" >> "$GITHUB_ENV"
           sudo apt-get update -qq
-          sudo apt-get install -y libpulse0 libglu1-mesa
+          sudo apt-get install -y libpulse0 libglu1-mesa pulseaudio pulseaudio-utils
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=isthmus
+          pactl set-default-sink isthmus
           test -c /dev/kvm
           sudo chmod a+rw /dev/kvm
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -78,7 +81,7 @@ jobs:
               emulator_log = folders[0] / 'emulator.log'
               if emulator_log.is_file():
                   lines = emulator_log.read_text(errors='replace').splitlines()
-                  selected = [line for line in lines if any(word in line.lower() for word in ['audio', 'pulse', 'not enough space'])]
+                  selected = [line for line in lines if any(word in line.lower() for word in ['audio', 'pulse', 'not enough space', 'error', 'warning', 'boot'])]
                   (destination / 'emulator-audio-diagnostics.txt').write_text('\n'.join(selected[-100:]) + '\n')
           (destination / 'artifact-scope.json').write_text(json.dumps({
               'scope': 'verification JSON and original raw-file manifest; local configs, app binaries and raw bundle are not uploaded',
