@@ -36,6 +36,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/isthmus-native" native-report
           echo "TMPDIR=$RUNNER_TEMP/isthmus-native" >> "$GITHUB_ENV"
+          sudo apt-get update -qq
+          sudo apt-get install -y libpulse0 libglu1-mesa
           test -c /dev/kvm
           sudo chmod a+rw /dev/kvm
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -50,7 +52,7 @@ jobs:
         if: always()
         run: |
           python3 - <<'PY'
-          import json, os
+          import json, os, shutil
           from pathlib import Path
           destination = Path('native-report')
           destination.mkdir(exist_ok=True)
@@ -65,8 +67,11 @@ jobs:
               for name in ['verification.json', 'runtime.json', 'runtime-restarted.json', 'build.json', 'cleanup.json', 'steps.json', 'evidence-manifest.json']:
                   path = folders[0] / name
                   if path.is_file():
-                      value = json.loads(path.read_text())
-                      (destination / name).write_text(json.dumps(scrub(value), indent=2) + '\n')
+                      if name == 'verification.json':
+                          value = json.loads(path.read_text())
+                          (destination / name).write_text(json.dumps(scrub(value), indent=2) + '\n')
+                      else:
+                          shutil.copyfile(path, destination / name)
           (destination / 'artifact-scope.json').write_text(json.dumps({
               'scope': 'verification JSON and original raw-file manifest; local configs, app binaries and raw bundle are not uploaded',
               'evidenceDirectories': len(folders)
