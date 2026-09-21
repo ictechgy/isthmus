@@ -15,6 +15,8 @@
 
 ### Changed
 
+- 현재 저장소의 호환 producer pin을 kartograph 0.14.0으로 갱신했다. npm 0.9.0의
+  원본 아카이브와 발행 당시 kartograph 0.13.0 manifest는 유지한다.
 - iOS 하네스에 `--physical --release`와 선택적 `--team`, RN 하네스에 `--new-architecture`·
   `--new-emulator`를 추가했다. RN은 설치 전에 입력과 APK를 보존하고 소유한 앱·AVD 정리 실패를 전달한다.
 
