@@ -65,7 +65,7 @@ async function startOwnedEmulator() {
   const adbPort = reservation.address().port;
   await new Promise(resolve => reservation.close(resolve));
   Object.assign(environment, { ANDROID_USER_HOME: androidUser, ANDROID_AVD_HOME: avdHome,
-    ADB_SERVER_SOCKET: `tcp:127.0.0.1:${adbPort}`, ANDROID_ADB_SERVER_PORT: String(adbPort) });
+    ADB_SERVER_SOCKET: `tcp:${adbPort}`, ANDROID_ADB_SERVER_PORT: String(adbPort) });
   const env = environment;
   await mkdir(androidUser, { recursive: true });
   const adbLog = openSync(join(evidence, 'adb-server.log'), 'w', 0o600);

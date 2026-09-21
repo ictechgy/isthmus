@@ -78,6 +78,10 @@ jobs:
                           (destination / name).write_text(json.dumps(scrub(value), indent=2) + '\n')
                       else:
                           shutil.copyfile(path, destination / name)
+              for diagnostic in ['adb-server.log', 'avd-create.log', 'cleanup-uninstall.log', 'build-failure.log']:
+                  path = folders[0] / diagnostic
+                  if path.is_file():
+                      shutil.copyfile(path, destination / diagnostic)
               emulator_log = folders[0] / 'emulator.log'
               if emulator_log.is_file():
                   lines = emulator_log.read_text(errors='replace').splitlines()
