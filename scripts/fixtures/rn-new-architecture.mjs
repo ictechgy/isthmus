@@ -131,13 +131,20 @@ async function probe() {
   check('initial-state', !first.isPlaying() && !second.isPlaying());
   // 무음 PCM을 실제 MediaPlayer로 재생한다. 사용자의 시스템 볼륨은 바꾸지 않는다.
   const playbackStarted = Date.now();
-  const completed = new Promise(resolve => first.play(resolve));
+  let playbackEnded = false;
+  const completed = new Promise(resolve => first.play(value => { playbackEnded = true; resolve(value); }));
   await until(() => first.isPlaying(), 'play-event');
   check('public-play-event', true);
   check('other-player-excluded', !second.isPlaying());
-  await pause(250);
-  measurements.playingPosition = await new Promise(resolve => first.getCurrentTime(resolve));
-  check('media-completion', await completed === true);
+  measurements.playingPosition = 0;
+  measurements.playbackSamples = [];
+  while (!playbackEnded && Date.now() - playbackStarted < 15000) {
+    const sample = await new Promise(resolve => first.getCurrentTime((position, playing) => resolve({position, playing})));
+    measurements.playbackSamples.push({...sample, elapsedMilliseconds: Date.now() - playbackStarted});
+    if (sample.playing && sample.position > 0 && sample.position < 2.1) { measurements.playingPosition = sample.position; break; }
+    await pause(50);
+  }
+  check('media-completion', await Promise.race([completed, pause(15000).then(() => { throw new Error('media-completion-timeout'); })]) === true);
   measurements.playbackMilliseconds = Date.now() - playbackStarted;
   const position = await new Promise(resolve => first.getCurrentTime(resolve));
   measurements.completionPosition = position;

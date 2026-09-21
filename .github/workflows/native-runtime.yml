@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: native-runtime-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   android:
@@ -45,14 +45,17 @@ jobs:
             'system-images;android-36;google_apis_playstore;x86_64'
           "$ANDROID_HOME/emulator/emulator" -version > native-report/emulator-version.txt
       - name: Execute RN release and restart controls
+        id: runtime
         run: |
           node scripts/verify-rn-android-runtime.mjs "$ANDROID_HOME/platform-tools/adb" \
             --new-architecture --new-emulator > native-report/runtime-local.json
       - name: Preserve bounded verification evidence
         if: always()
+        env:
+          NATIVE_EXECUTION_OUTCOME: ${{ steps.runtime.outcome }}
         run: |
           python3 - <<'PY'
-          import json, os, shutil
+          import hashlib, json, os, shutil
           from pathlib import Path
           destination = Path('native-report')
           destination.mkdir(exist_ok=True)
@@ -72,11 +75,30 @@ jobs:
                           (destination / name).write_text(json.dumps(scrub(value), indent=2) + '\n')
                       else:
                           shutil.copyfile(path, destination / name)
+              emulator_log = folders[0] / 'emulator.log'
+              if emulator_log.is_file():
+                  lines = emulator_log.read_text(errors='replace').splitlines()
+                  selected = [line for line in lines if any(word in line.lower() for word in ['audio', 'pulse', 'not enough space'])]
+                  (destination / 'emulator-audio-diagnostics.txt').write_text('\n'.join(selected[-100:]) + '\n')
           (destination / 'artifact-scope.json').write_text(json.dumps({
               'scope': 'verification JSON and original raw-file manifest; local configs, app binaries and raw bundle are not uploaded',
-              'evidenceDirectories': len(folders)
+              'evidenceDirectories': len(folders), 'executionOutcome': os.environ['NATIVE_EXECUTION_OUTCOME']
           }, indent=2) + '\n')
           (destination / 'runtime-local.json').unlink(missing_ok=True)
+          if os.environ['NATIVE_EXECUTION_OUTCOME'] == 'success':
+              assert len(folders) == 1, 'successful execution must preserve one evidence directory'
+              summary = json.loads((destination / 'verification.json').read_text())
+              first = json.loads((destination / 'runtime.json').read_text())
+              second = json.loads((destination / 'runtime-restarted.json').read_text())
+              assert first == summary['observed'] and second == summary['processRestart']['observed']
+              assert first['status'] == second['status'] == 'passed' and first['runId'] != second['runId']
+              assert first['invocation'] == second['invocation'] == json.loads((destination / 'build.json').read_text())['invocation']
+              assert summary['cleanup']['uninstallExit'] == 0 and summary['cleanup']['emulator']['stopped']
+              manifest = destination / 'evidence-manifest.json'
+              assert hashlib.sha256(manifest.read_bytes()).hexdigest() == summary['evidenceManifest']['sha256']
+              hashes = {item['path']: item['sha256'] for item in json.loads(manifest.read_text())['files']}
+              for name in ['runtime.json', 'runtime-restarted.json', 'build.json', 'cleanup.json', 'steps.json']:
+                  assert hashlib.sha256((destination / name).read_bytes()).hexdigest() == hashes[name]
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
