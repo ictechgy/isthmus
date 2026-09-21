@@ -21,8 +21,6 @@ jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      TMPDIR: ${{ runner.temp }}/isthmus-native
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,7 +34,8 @@ jobs:
           java-version: '17'
       - name: Prepare owned emulator environment
         run: |
-          mkdir -p "$TMPDIR" native-report
+          mkdir -p "$RUNNER_TEMP/isthmus-native" native-report
+          echo "TMPDIR=$RUNNER_TEMP/isthmus-native" >> "$GITHUB_ENV"
           test -c /dev/kvm
           sudo chmod a+rw /dev/kvm
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -55,7 +54,7 @@ jobs:
           from pathlib import Path
           destination = Path('native-report')
           destination.mkdir(exist_ok=True)
-          folders = list(Path(os.environ['TMPDIR']).glob('isthmus-rn-engine-evidence-*'))
+          folders = list((Path(os.environ['RUNNER_TEMP']) / 'isthmus-native').glob('isthmus-rn-engine-evidence-*'))
           def scrub(value):
               if isinstance(value, dict):
                   return {k: scrub(v) for k, v in value.items() if k != 'evidence'}
