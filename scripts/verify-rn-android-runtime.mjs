@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
@@ -36,6 +36,7 @@ let installed = false;
 let installAttempted = false;
 let primaryFailure;
 let emulatorProcess;
+let adbServerProcess;
 let summary;
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const environment = { ...process.env, ANDROID_HOME: dirname(dirname(adb)), CI: 'true' };
@@ -59,7 +60,35 @@ async function startOwnedEmulator() {
   const androidUser = join(scratch, 'android-user');
   const avdHome = join(androidUser, 'avd');
   const name = 'isthmus-rn-' + basename(scratch);
-  const env = { ...environment, ANDROID_USER_HOME: androidUser, ANDROID_AVD_HOME: avdHome };
+  const reservation = createServer();
+  await new Promise((resolve, reject) => { reservation.once('error', reject); reservation.listen(0, '127.0.0.1', resolve); });
+  const adbPort = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  Object.assign(environment, { ANDROID_USER_HOME: androidUser, ANDROID_AVD_HOME: avdHome,
+    ADB_SERVER_SOCKET: `tcp:127.0.0.1:${adbPort}`, ANDROID_ADB_SERVER_PORT: String(adbPort) });
+  const env = environment;
+  await mkdir(androidUser, { recursive: true });
+  const adbLog = openSync(join(evidence, 'adb-server.log'), 'w', 0o600);
+  adbServerProcess = spawn(adb, ['-L', environment.ADB_SERVER_SOCKET, 'nodaemon', 'server'],
+    { env, detached: true, stdio: ['ignore', adbLog, adbLog] });
+  closeSync(adbLog);
+  let adbLaunchError;
+  adbServerProcess.once('error', error => { adbLaunchError = error; });
+  adbServerProcess.unref();
+  const serverDeadline = Date.now() + 30000;
+  for (;;) {
+    assert.ok(!adbLaunchError && adbServerProcess.exitCode === null && adbServerProcess.signalCode === null && Date.now() < serverDeadline,
+      `Owned ADB server did not start; evidence: ${evidence}`);
+    const connected = await new Promise(resolve => {
+      const socket = createConnection({ host: '127.0.0.1', port: adbPort });
+      socket.setTimeout(500);
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('error', () => { socket.destroy(); resolve(false); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+    });
+    if (connected) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   const abi = process.arch === 'arm64' ? 'arm64-v8a' : 'x86_64';
   const made = runChild(join(sdk, 'cmdline-tools/latest/bin/avdmanager'), ['create', 'avd', '--name', name,
     '--package', `system-images;android-36;google_apis_playstore;${abi}`, '--device', 'pixel_2'], { env, input: 'no\n', timeout: 120_000 });
@@ -97,11 +126,11 @@ async function startOwnedEmulator() {
   for (;;) {
     assert.ok(!launchError && emulatorProcess.exitCode === null && emulatorProcess.signalCode === null && Date.now() < deadline,
       `Owned RN emulator did not boot; evidence: ${evidence}`);
-    const boot = runChild(adb, ['-s', device, 'shell', 'getprop', 'sys.boot_completed'], { timeout: 10_000 });
+    const boot = runChild(adb, ['-s', device, 'shell', 'getprop', 'sys.boot_completed'], { env: environment, timeout: 10_000 });
     if (boot.status === 0 && boot.stdout.trim() === '1') break;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  const identity = runChild(adb, ['-s', device, 'shell', 'getprop', 'ro.boot.qemu.avd_name'], { timeout: 10_000 });
+  const identity = runChild(adb, ['-s', device, 'shell', 'getprop', 'ro.boot.qemu.avd_name'], { env: environment, timeout: 10_000 });
   assert.ok(identity.status === 0 && identity.stdout.trim() === name, 'Owned RN AVD identity mismatch; refusing device operations.');
 }
 const kotlin = String.raw`package com.zmxv.RNSound
@@ -259,7 +288,7 @@ try {
     const deadline = Date.now() + 180_000;
     while (Date.now() < deadline) {
       if (newArchitecture && !lifecycleTriggered) {
-        const checkpoint = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath.replace('rn-probe.json', 'rn-checkpoint.json')], { timeout: 10_000 });
+        const checkpoint = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath.replace('rn-probe.json', 'rn-checkpoint.json')], { env: environment, timeout: 10_000 });
         let value;
         if (checkpoint.status === 0) { try { value = JSON.parse(checkpoint.stdout); } catch { /* 다음 atomic 기록을 기다린다. */ } }
         if (matchesBuildInvocation(value, buildInvocation) && typeof value.runId === 'string' && value.runId !== previousRunId) {
@@ -303,7 +332,7 @@ try {
   let processRestart;
   if (newArchitecture) {
     await run(adb, ['-s', device, 'shell', 'am', 'force-stop', appId], 'Terminate owned fixture process');
-    const stopped = runChild(adb, ['-s', device, 'shell', 'pidof', appId], { timeout: 10_000 });
+    const stopped = runChild(adb, ['-s', device, 'shell', 'pidof', appId], { env: environment, timeout: 10_000 });
     assert.ok(stopped.status === 1 && stopped.stdout.trim() === '', 'Owned fixture process remains alive.');
     await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Restart owned RN fixture');
     const restarted = await collectRun('runtime-restarted', observed.runId);
@@ -329,15 +358,19 @@ try {
     try { installed = (await run(adb, ['-s', device, 'shell', 'pm', 'list', 'packages', appId], 'Check interrupted installation')).split(/\r?\n/u).includes(`package:${appId}`); }
     catch { failures.push(new Error(`Unable to confirm interrupted RN installation; evidence: ${evidence}`)); }
   }
-  const uninstall = installed ? runChild(adb, ['-s', device, 'uninstall', appId], { timeout: 60_000 }) : undefined;
+  const uninstall = installed ? runChild(adb, ['-s', device, 'uninstall', appId], { env: environment, timeout: 60_000 }) : undefined;
   const uninstallExit = uninstall?.status;
   let stopped;
   try { stopped = await stopDetachedProcess(emulatorProcess); }
   catch (error) { failures.push(error); }
+  let adbStopped;
+  try { adbStopped = await stopDetachedProcess(adbServerProcess); }
+  catch (error) { failures.push(error); }
+  if (adbStopped !== undefined && !adbStopped.stopped) failures.push(new Error(`Owned ADB server cleanup failed; evidence: ${evidence}`));
   if (stopped !== undefined && !stopped.stopped) failures.push(new Error(`Owned RN emulator cleanup failed; evidence: ${evidence}`));
   if (installed && uninstallExit !== 0) failures.push(new Error(`Owned RN fixture cleanup failed; evidence: ${evidence}`));
   try {
-    const cleanup = { installed, uninstallExit, emulator: stopped };
+    const cleanup = { installed, uninstallExit, emulator: stopped, adbServer: adbStopped };
     if (uninstall) await save(join(evidence, 'cleanup-uninstall.log'), (uninstall.stdout + '\n' + uninstall.stderr).replaceAll(device, '[selected-device]'));
     await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
     await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
