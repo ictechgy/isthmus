@@ -1,6 +1,7 @@
 # 공개 호환 버전 세트
 
-2026-09-20 준비한 isthmus 0.9.0의 호환 대상 세트다. MethodChannel·BasicMessageChannel 조인,
+2026-09-21 갱신한 isthmus 0.9.0의 호환 대상 세트다. 이번 갱신의 설치본 검증은
+[0.9.0 / 0.14.0 절](#090--0140-호환-갱신-2026-09-21)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
@@ -12,21 +13,23 @@
 이 표와 cold-cache CI의 기계 판독 정본은 현재 저장소 루트의 `compatibility.json`이다.
 각 npm 패키지는 발행 시점의 manifest를 포함한다. 이미 발행된 npm 0.8.0의 원본은
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
-세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증을 보존하고, 현재 manifest는 0.9.0 + 0.13.0을 대상으로 한다. 기존 npm 아카이브는 불변이다.
+세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증도 보존한다. npm 0.9.0의 원본은
+[v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
+세트이며, 현재 저장소 manifest는 0.9.0 + 0.14.0을 대상으로 한다. 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
 
 ## 호환 버전 표
 
-아래 표는 현재 패키지의 호환 대상이다. 발행 전에는 후보 산출물로 검사하고 발행 후에는
+아래 표는 현재 저장소에서 검증하는 호환 대상이다. 발행 전에는 후보 산출물로 검사하고 발행 후에는
 registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발행본 검증은 아래 이력과 구분한다.
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
 | isthmus-cli | **0.9.0** | `npm install --global isthmus-cli@0.9.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
 | cartograph | **0.20.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
-| kartograph | **0.13.0** | GitHub Release 아카이브(`kartograph-0.13.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
+| kartograph | **0.14.0** | GitHub Release 아카이브(`kartograph-0.14.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
 | dartograph | **0.15.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
@@ -48,6 +51,22 @@ kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.
 0.11.0은 이 정상 명령을 코드 64로 거부하는 회귀가 있었고, 공개 expo-haptics 원본에서
 재현해 0.12.0에서 수정했다. [공개 코퍼스](../experiments/real-corpus/README.md)는
 원래 npm 0.8.0 설치본의 결과와 후속 개발 검증을 별도 파일로 보존한다.
+
+## 0.9.0 / 0.14.0 호환 갱신 (2026-09-21)
+
+npm의 isthmus 0.9.0, Homebrew의 cartograph 0.20.0, pub.dev의 dartograph 0.15.0,
+GitHub Release의 kartograph 0.14.0 TAR 설치본을 현재 manifest와 대조했다.
+kartograph TAR의 SHA-256은 발행 checksum과 일치하며, 격리한 npm 설치와 pub cache를 사용했다.
+`scripts/verify-cold-cache.mjs`에서 고정 문서의 정상·오류 조인, retention 출력,
+preflight summary와 `fixtures/bridge-app`의 실제 producer 추출 → 3방향 MethodChannel
+조인 → cartograph 대상 retention 출력을 확인했다. 새 러너의 공개 설치 경로는
+[cold-cache workflow](../.github/workflows/cold-cache.yml)가 같은 manifest로 검증한다.
+
+이 검사는 Swift 스텁을 컴파일하고 Kotlin 소스를 스캔한다. Kotlin JVM 식별자 보존,
+실제 앱 실행, 전체 공개 코퍼스의 정확도를 새 조합으로 다시 측정한 결과는 아니다.
+kartograph 0.14.0의 KAPT/KSP receipt·snapshot·Gradle cache·선택적 collector 검증은
+[별도 릴리스](https://github.com/ictechgy/kartograph/releases/tag/v0.14.0)의 범위다.
+아래 0.13.0 조합과 런타임 검증 이력은 그대로 보존하며, isthmus npm은 재발행하지 않는다.
 
 ## 0.9.0 / 0.13.0 후속
 
@@ -108,15 +127,19 @@ release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로�
 
 ```bash
 # 발행 패키지만으로 고정 fixture 검증 (Ubuntu 포함 어느 OS나)
-npm install --global isthmus-cli
+npm install --global isthmus-cli@0.9.0
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
 
 # producer까지 포함한 3방향 조인 검증 (macOS)
 brew install ictechgy/tap/cartograph
-dart pub global activate dartograph
-curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.11.0/kartograph-0.11.0.tar | tar -x
+dart pub global activate dartograph 0.15.0
+curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.14.0/kartograph-0.14.0.tar -o kartograph-0.14.0.tar
+tar -xf kartograph-0.14.0.tar
+node scripts/verify-installed-compatibility.mjs \
+  isthmus="$(command -v isthmus)" cartograph="$(brew --prefix)/bin/cartograph" \
+  dartograph="$HOME/.pub-cache/bin/dartograph" kartograph="$PWD/kartograph-0.14.0/bin/kartograph"
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
-  "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" <kartograph-경로>/bin/kartograph
+  "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" "$PWD/kartograph-0.14.0/bin/kartograph"
 ```
 
 두 번째 명령은 `fixtures/bridge-app`을 세 producer가 각각 스캔한다 —
