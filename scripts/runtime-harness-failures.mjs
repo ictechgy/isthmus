@@ -15,3 +15,8 @@ export function throwHarnessFailures(primary, cleanupFailures) {
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, 'Runtime verification and cleanup failed; inspect both causes.');
 }
+/** 재설치 때 남은 파일도 이전 APK의 관찰로 구분한다. 비어 있는 기대값은 수락하지 않는다. */
+export function matchesBuildInvocation(value, expected) {
+  return typeof expected === 'string' && expected.length > 0 && value !== null &&
+    typeof value === 'object' && value.invocation === expected;
+}

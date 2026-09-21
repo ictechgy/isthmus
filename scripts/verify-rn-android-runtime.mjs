@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runChild } from './run-child.mjs';
 import { fetchPinnedPackage } from '../experiments/real-corpus/public-archive.mjs';
 import { javascript as newJavascript, kotlin as newKotlin, spec, silentWav } from './fixtures/rn-new-architecture.mjs';
 import { stopDetachedProcess } from './stop-detached-process.mjs';
-import { throwHarnessFailures } from './runtime-harness-failures.mjs';
+import { matchesBuildInvocation, throwHarnessFailures } from './runtime-harness-failures.mjs';
+import { writeEvidenceManifest } from './runtime-evidence-manifest.mjs';
 
 // 공개 Sound 원본의 이벤트를 실제 RN/Hermes 엔진에서 소비한다.
 const [adbArg, ...extra] = process.argv.slice(2);
@@ -26,6 +27,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-rn-engine-')));
 const evidence = await realpath(await mkdtemp(join(tmpdir(), 'isthmus-rn-engine-evidence-')));
 const project = join(scratch, 'app');
+const buildInvocation = randomUUID();
 const appId = newArchitecture ? 'com.isthmus.rnnewarchprobe' : 'com.isthmus.rnprobe';
 const resultPath = `/sdcard/Android/data/${appId}/files/rn-probe.json`;
 const steps = [];
@@ -34,6 +36,7 @@ let installed = false;
 let installAttempted = false;
 let primaryFailure;
 let emulatorProcess;
+let adbServerProcess;
 let summary;
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const environment = { ...process.env, ANDROID_HOME: dirname(dirname(adb)), CI: 'true' };
@@ -57,13 +60,48 @@ async function startOwnedEmulator() {
   const androidUser = join(scratch, 'android-user');
   const avdHome = join(androidUser, 'avd');
   const name = 'isthmus-rn-' + basename(scratch);
-  const env = { ...environment, ANDROID_USER_HOME: androidUser, ANDROID_AVD_HOME: avdHome };
+  const reservation = createServer();
+  await new Promise((resolve, reject) => { reservation.once('error', reject); reservation.listen(0, '127.0.0.1', resolve); });
+  const adbPort = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  Object.assign(environment, { ANDROID_USER_HOME: androidUser, ANDROID_AVD_HOME: avdHome,
+    ADB_SERVER_SOCKET: `tcp:${adbPort}`, ANDROID_ADB_SERVER_PORT: String(adbPort) });
+  const env = environment;
+  await mkdir(androidUser, { recursive: true });
+  const adbLog = openSync(join(evidence, 'adb-server.log'), 'w', 0o600);
+  adbServerProcess = spawn(adb, ['-L', environment.ADB_SERVER_SOCKET, 'nodaemon', 'server'],
+    { env, detached: true, stdio: ['ignore', adbLog, adbLog] });
+  closeSync(adbLog);
+  let adbLaunchError;
+  adbServerProcess.once('error', error => { adbLaunchError = error; });
+  adbServerProcess.unref();
+  const serverDeadline = Date.now() + 30000;
+  for (;;) {
+    assert.ok(!adbLaunchError && adbServerProcess.exitCode === null && adbServerProcess.signalCode === null && Date.now() < serverDeadline,
+      `Owned ADB server did not start; evidence: ${evidence}`);
+    const connected = await new Promise(resolve => {
+      const socket = createConnection({ host: '127.0.0.1', port: adbPort });
+      socket.setTimeout(500);
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('error', () => { socket.destroy(); resolve(false); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+    });
+    if (connected) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   const abi = process.arch === 'arm64' ? 'arm64-v8a' : 'x86_64';
   const made = runChild(join(sdk, 'cmdline-tools/latest/bin/avdmanager'), ['create', 'avd', '--name', name,
     '--package', `system-images;android-36;google_apis_playstore;${abi}`, '--device', 'pixel_2'], { env, input: 'no\n', timeout: 120_000 });
+  await save(join(evidence, 'avd-create.log'), made.stdout + '\n' + made.stderr);
   assert.equal(made.status, 0, 'Owned RN AVD creation failed; an installed API36 system image is required.');
   const config = join(avdHome, name + '.avd/config.ini');
-  await save(config, (await readFile(config, 'utf8')).replace(/^disk\.dataPartition\.size=.*$/mu, 'disk.dataPartition.size=4096M'));
+  const initial = await readFile(config, 'utf8');
+  const configured = /^disk\.dataPartition\.size\s*=/mu.test(initial)
+    ? initial.replace(/^disk\.dataPartition\.size\s*=.*$/mu, 'disk.dataPartition.size=4096M')
+    : initial + '\ndisk.dataPartition.size=4096M\n';
+  assert.match(configured, /^disk\.dataPartition\.size=4096M$/mu, 'Owned AVD data size was not configured.');
+  await save(config, configured);
+  await save(join(evidence, 'emulator-config.ini'), configured);
   let port;
   for (let candidate = 5554; candidate <= 5584; candidate += 2) {
     const servers = [createServer(), createServer()];
@@ -78,20 +116,21 @@ async function startOwnedEmulator() {
   assert.ok(port, 'No available port for the owned RN emulator.');
   device = `emulator-${port}`;
   const log = openSync(join(evidence, 'emulator.log'), 'w', 0o600);
-  emulatorProcess = spawn(join(sdk, 'emulator/emulator'), ['-avd', name, '-no-window', '-no-snapshot', '-no-boot-anim', '-gpu', 'swiftshader_indirect', '-port', String(port)],
+  emulatorProcess = spawn(join(sdk, 'emulator/emulator'), ['-avd', name, '-partition-size', '4096', '-no-window', '-no-snapshot', '-no-boot-anim', '-gpu', 'swiftshader_indirect', '-port', String(port)],
     { env, detached: true, stdio: ['ignore', log, log] });
   closeSync(log);
   let launchError;
   emulatorProcess.once('error', (error) => { launchError = error; });
   emulatorProcess.unref();
-  const deadline = Date.now() + 180_000;
+  const deadline = Date.now() + 300_000;
   for (;;) {
-    assert.ok(!launchError && Date.now() < deadline, 'Owned RN emulator did not boot.');
-    const boot = runChild(adb, ['-s', device, 'shell', 'getprop', 'sys.boot_completed'], { timeout: 10_000 });
+    assert.ok(!launchError && emulatorProcess.exitCode === null && emulatorProcess.signalCode === null && Date.now() < deadline,
+      `Owned RN emulator did not boot; evidence: ${evidence}`);
+    const boot = runChild(adb, ['-s', device, 'shell', 'getprop', 'sys.boot_completed'], { env: environment, timeout: 10_000 });
     if (boot.status === 0 && boot.stdout.trim() === '1') break;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  const identity = runChild(adb, ['-s', device, 'shell', 'getprop', 'ro.boot.qemu.avd_name'], { timeout: 10_000 });
+  const identity = runChild(adb, ['-s', device, 'shell', 'getprop', 'ro.boot.qemu.avd_name'], { env: environment, timeout: 10_000 });
   assert.ok(identity.status === 0 && identity.stdout.trim() === name, 'Owned RN AVD identity mismatch; refusing device operations.');
 }
 const kotlin = String.raw`package com.zmxv.RNSound
@@ -123,6 +162,7 @@ class ProbeModule(private val context: ReactApplicationContext) : ReactContextBa
   @ReactMethod fun finishProbe(result: String) {
     val value = JSONObject(result)
     value.put("nativeEmissions", emissions)
+    value.put("invocation", "__ISTHMUS_RN_BUILD_INVOCATION__")
     value.put("androidDebuggable", context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
     File(requireNotNull(context.getExternalFilesDir(null)), "rn-probe.json").writeText(value.toString())
   }
@@ -209,7 +249,7 @@ try {
   pkg.devDependencies = Object.fromEntries(Object.entries(pkg.devDependencies).filter(([name]) => ['@babel/core', '@babel/runtime', '@react-native-community/cli', '@react-native-community/cli-platform-android', '@react-native/babel-preset', '@react-native/metro-config'].includes(name)));
   await save(join(project, 'package.json'), JSON.stringify(pkg, null, 2));
   await save(join(project, 'index.js'), newArchitecture ? newJavascript : javascript);
-  await save(join(project, 'android/app/src/main/java/com/helloworld/ProbePackage.kt'), newArchitecture ? newKotlin : kotlin);
+  await save(join(project, 'android/app/src/main/java/com/helloworld/ProbePackage.kt'), (newArchitecture ? newKotlin : kotlin).replaceAll('__ISTHMUS_RN_BUILD_INVOCATION__', buildInvocation));
   const application = join(project, 'android/app/src/main/java/com/helloworld/MainApplication.kt');
   await save(application, (await readFile(application, 'utf8')).replace('PackageList(this).packages.apply {', `PackageList(this).packages.apply {\n              add(${newArchitecture ? 'com.helloworld' : 'com.zmxv.RNSound'}.ProbePackage())`));
   const properties = join(project, 'android/gradle.properties');
@@ -235,51 +275,77 @@ try {
   const apk = join(project, 'android/app/build/outputs/apk/release/app-release.apk');
   // 기기가 빌드 중 분리되더라도 검증한 원본·설치 입력을 보존한다.
   await cp(apk, join(evidence, 'app-release.apk'));
-  await save(join(evidence, 'build.json'), JSON.stringify({ sourceHashes, templateSha256: templateHash, codegen,
+  await save(join(evidence, 'build.json'), JSON.stringify({ invocation: buildInvocation, sourceHashes, templateSha256: templateHash, codegen,
     lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), apkSha256: sha(await readFile(apk)) }, null, 2));
   assert.ok(!(await run(adb, ['-s', device, 'shell', 'pm', 'list', 'packages', appId], 'Recheck fixture ownership')).includes(appId), 'Fixture appeared during the build; refusing to replace it.');
   installAttempted = true;
   await run(adb, ['-s', device, 'install', apk], 'Install owned RN fixture'); installed = true;
   await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Launch RN Hermes');
-  let observed;
-  let lifecycleTriggered = false;
-  const deadline = Date.now() + 180_000;
-  while (Date.now() < deadline) {
-    if (newArchitecture && !lifecycleTriggered) {
-      const checkpoint = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath.replace('rn-probe.json', 'rn-checkpoint.json')], { timeout: 10_000 });
-      if (checkpoint.status === 0 && checkpoint.stdout.includes('awaiting-background')) {
-        await run(adb, ['-s', device, 'shell', 'input', 'keyevent', 'KEYCODE_HOME'], 'Background owned fixture');
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Resume owned fixture');
-        lifecycleTriggered = true;
+  async function collectRun(label, previousRunId) {
+    let observed;
+    let lifecycleTriggered = false;
+    let currentRunId;
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      if (newArchitecture && !lifecycleTriggered) {
+        const checkpoint = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath.replace('rn-probe.json', 'rn-checkpoint.json')], { env: environment, timeout: 10_000 });
+        let value;
+        if (checkpoint.status === 0) { try { value = JSON.parse(checkpoint.stdout); } catch { /* 다음 atomic 기록을 기다린다. */ } }
+        if (matchesBuildInvocation(value, buildInvocation) && typeof value.runId === 'string' && value.runId !== previousRunId) {
+          currentRunId = value.runId;
+          if (value.phase === 'awaiting-background') {
+            await run(adb, ['-s', device, 'shell', 'input', 'keyevent', 'KEYCODE_HOME'], 'Background owned fixture');
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Resume owned fixture');
+            lifecycleTriggered = true;
+          }
+        }
       }
+      const result = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath], { env: environment, timeout: 10_000 });
+      if (result.status === 0) {
+        try {
+          const value = JSON.parse(result.stdout);
+          if (matchesBuildInvocation(value, buildInvocation) && (!newArchitecture || typeof value.runId === 'string' && value.runId !== previousRunId)) { observed = value; break; }
+        } catch { /* 다음 atomic 기록을 기다린다. */ }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const result = runChild(adb, ['-s', device, 'exec-out', 'cat', resultPath], { env: environment, timeout: 10_000 });
-    if (result.status === 0) { try { observed = JSON.parse(result.stdout); break; } catch { /* 완료 파일의 atomic하지 않은 짧은 쓰기를 기다린다. */ } }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await save(join(evidence, label + '.json'), JSON.stringify(observed ?? { status: 'unobserved' }, null, 2));
+    assert.equal(observed?.status, 'passed', `RN engine probe did not pass; evidence: ${evidence}`);
+    assert.equal(observed.androidDebuggable, false);
+    assert.deepEqual(observed.reactNative, { major: 0, minor: 81, patch: 4, prerelease: null });
+    if (newArchitecture) {
+      assert.equal(lifecycleTriggered, true);
+      assert.equal(observed.runId, currentRunId, 'Result and controlled lifecycle belong to different native processes.');
+      assert.equal(observed.newArchitectureEnabled, true);
+      assert.equal(observed.nativeEchoCalls, 2);
+      assert.equal(observed.controlEmissions, 1);
+      assert.equal(observed.checks.length, 31);
+      assert.ok(observed.states.includes('background') && observed.states.includes('active'));
+    } else {
+      assert.equal(observed.nativeEmissions, 4);
+      assert.equal(observed.checks.length, 9);
+    }
+    return observed;
   }
-  await save(join(evidence, 'runtime.json'), JSON.stringify(observed ?? { status: 'unobserved' }, null, 2));
-  assert.equal(observed?.status, 'passed', `RN engine probe did not pass; evidence: ${evidence}`);
-  assert.equal(observed.androidDebuggable, false);
-  assert.deepEqual(observed.reactNative, { major: 0, minor: 81, patch: 4, prerelease: null });
+  const observed = await collectRun('runtime');
+  let processRestart;
   if (newArchitecture) {
-    assert.equal(lifecycleTriggered, true);
-    assert.equal(observed.newArchitectureEnabled, true);
-    assert.equal(observed.nativeEchoCalls, 2);
-    assert.equal(observed.controlEmissions, 1);
-    assert.equal(observed.checks.length, 26);
-    assert.ok(observed.states.includes('background') && observed.states.includes('active'));
-  } else {
-    assert.equal(observed.nativeEmissions, 4);
-    assert.equal(observed.checks.length, 9);
+    await run(adb, ['-s', device, 'shell', 'am', 'force-stop', appId], 'Terminate owned fixture process');
+    const stopped = runChild(adb, ['-s', device, 'shell', 'pidof', appId], { env: environment, timeout: 10_000 });
+    assert.ok(stopped.status === 1 && stopped.stdout.trim() === '', 'Owned fixture process remains alive.');
+    await run(adb, ['-s', device, 'shell', 'am', 'start', '-n', `${appId}/com.helloworld.MainActivity`], 'Restart owned RN fixture');
+    const restarted = await collectRun('runtime-restarted', observed.runId);
+    assert.notEqual(restarted.runId, observed.runId);
+    processRestart = { termination: 'am force-stop; pidof confirms no process', freshRun: true, observed: restarted };
   }
   summary = { scope: 'public-rn-event-real-engine', reactNative: '0.81.4', engine: 'Hermes', architecture: newArchitecture ? 'new-architecture' : 'legacy-bridge', buildMode: 'release', deviceKind: newEmulator ? 'emulator' : 'physical', abi,
     package: 'react-native-sound@0.13.0', sourceHashes, templateSha256: templateHash,
     lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), apkSha256: sha(await readFile(apk)), observed,
-    ...(newArchitecture ? { codegen, media: '2-second silent PCM decoded and played by the original Sound MediaPlayer implementation' } : {}),
+    ...(newArchitecture ? { codegen, processRestart, media: '2-second silent PCM decoded and played by the original Sound MediaPlayer implementation' } : {}),
     limitations: newArchitecture ? ['One reported Android device profile with RN 0.81.4, Hermes and release mode; iOS RN and other lifecycle variants remain untested.',
       'Fabric evidence covers a native View layout event. TurboModule evidence covers generated app/public Sound specs, calls, errors and resume.',
-      'Silent local PCM playback, completion, pause/resume/stop/release and one background/foreground transition; no audible-output, audio-focus interruption or process-death claim.',
+      'Silent local PCM playback, OS transient audio focus pause/resume, background/foreground and a fresh full run after force-stop; no audible-output, incoming-call or low-memory kill claim.',
       'This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate.'] : ['One Android device, legacy bridge and release mode; Fabric/TurboModules, iOS and other lifecycle variants remain untested.',
       'Original JS subscription and Kotlin Sound.setOnPlay execute unchanged. A fixture module supplies preparation callbacks; no audio playback or full plugin behavior is claimed.',
       'This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate.'], evidence };
@@ -292,15 +358,27 @@ try {
     try { installed = (await run(adb, ['-s', device, 'shell', 'pm', 'list', 'packages', appId], 'Check interrupted installation')).split(/\r?\n/u).includes(`package:${appId}`); }
     catch { failures.push(new Error(`Unable to confirm interrupted RN installation; evidence: ${evidence}`)); }
   }
-  const uninstallExit = installed ? runChild(adb, ['-s', device, 'uninstall', appId], { timeout: 60_000 }).status : undefined;
+  const uninstall = installed ? runChild(adb, ['-s', device, 'uninstall', appId], { env: environment, timeout: 60_000 }) : undefined;
+  const uninstallExit = uninstall?.status;
   let stopped;
   try { stopped = await stopDetachedProcess(emulatorProcess); }
   catch (error) { failures.push(error); }
+  let adbStopped;
+  try { adbStopped = await stopDetachedProcess(adbServerProcess); }
+  catch (error) { failures.push(error); }
+  if (adbStopped !== undefined && !adbStopped.stopped) failures.push(new Error(`Owned ADB server cleanup failed; evidence: ${evidence}`));
   if (stopped !== undefined && !stopped.stopped) failures.push(new Error(`Owned RN emulator cleanup failed; evidence: ${evidence}`));
   if (installed && uninstallExit !== 0) failures.push(new Error(`Owned RN fixture cleanup failed; evidence: ${evidence}`));
   try {
-    await save(join(evidence, 'cleanup.json'), JSON.stringify({ installed, uninstallExit, emulator: stopped }));
+    const cleanup = { installed, uninstallExit, emulator: stopped, adbServer: adbStopped };
+    if (uninstall) await save(join(evidence, 'cleanup-uninstall.log'), (uninstall.stdout + '\n' + uninstall.stderr).replaceAll(device, '[selected-device]'));
+    await save(join(evidence, 'cleanup.json'), JSON.stringify(cleanup));
     await save(join(evidence, 'steps.json'), JSON.stringify(steps, null, 2));
+    const manifest = await writeEvidenceManifest(evidence);
+    if (summary) {
+      summary.cleanup = cleanup; summary.evidenceManifest = manifest;
+      await save(join(evidence, 'verification.json'), JSON.stringify(summary, null, 2));
+    }
     if (stopped?.stopped) await rm(scratch, { recursive: true, force: true });
   } catch (error) { failures.push(error); }
   throwHarnessFailures(primaryFailure, failures);

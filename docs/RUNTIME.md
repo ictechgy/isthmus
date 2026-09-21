@@ -93,6 +93,7 @@ revision은 원래 실행 기록과 구분한다. Kotlin의 공통 Pigeon 등록
 node scripts/verify-flutter-ios-runtime.mjs /path/to/flutter --physical --release
 # 필요하면 --team=TEAM_ID로 테스트 개발 팀을 지정한다.
 node scripts/verify-rn-android-runtime.mjs /path/to/adb --new-architecture --new-emulator
+node scripts/verify-rn-ios-runtime.mjs --fmt-consteval-workaround
 ```
 
 iOS 하네스의 기본값은 새로 만든 simulator의 debug 실행이다. `--physical --release`는
@@ -105,13 +106,33 @@ release·bridgeless 모드에서 app/public Sound Codegen, Fabric 기본 View의
 TurboModule 왕복·오류, 원본 `react-native-sound@0.13.0`의 미디어·이벤트 경로를 실행한다.
 외부 미디어 대신 직접 만든 2초 무음 PCM을 사용한다. 재생 중 위치 증가·완료 시간,
 pause/resume/stop/release, 해제된 같은 player key의 이벤트 제외, background/foreground 뒤
-호출·이벤트를 대조한다. 빌드한 APK·입력·근거를 보존하며 장치 식별자는 보고하지 않는다.
+호출·이벤트를 대조한다. 새 하네스는 OS의 transient audio focus 요청으로 native 재생 정지·위치 유지·
+focus 복귀 후 재생도 검사한다. `am force-stop` 뒤 프로세스 부재를 확인하고 새 native run ID의
+전체 시나리오를 다시 실행한다. 빌드한 APK·입력·근거를 보존하며 장치 식별자는 보고하지 않는다.
+첫 실행부터 현재 APK의 invocation을 대조하며, 전용 AVD는 별도 ADB 서버·키 환경을 사용한다.
+완료된 원시 파일의 manifest 해시로 보존 사본의 누락·변조를 검사한다.
+
+RN iOS 하네스는 전용 시뮬레이터에서 동일한 RN/Hermes 버전의 release를 구축한다. 실제 app/Sound
+Codegen, Fabric 기본 View, TurboModule 왕복·오류, 원본 Sound의 무음 PCM 재생·이벤트·
+pause/resume/stop/release를 대조하고 `simctl terminate` 뒤 새 native run ID로 재검사한다.
+현재 SDK의 [UIScene 시작 경로](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle)를
+fixture에 적용한다. `--fmt-consteval-workaround`는 RN 0.81.4에 포함된 fmt 11.0.2의
+[Apple clang consteval 문제](https://github.com/fmtlib/fmt/issues/4740)를 피하는 명시적 옵션이다.
+소유한 Pods 사본만 변경하며 원본·수정 header와 SHA-256을 남긴다. Sound 원본은 변경하지 않는다.
+앱 아카이브·입력·생성 Codegen·성공/실패 로그를 보존하고 소유한 앱과 시뮬레이터를 정리한다.
 
 [2026-09-21 실행 결과](../experiments/real-corpus/results/runtime-native-development-results.json)는
 iPhone/iOS27 release의 성공 2건과 세 실패·pending 대조, 전용 Android 에뮬레이터의 RN 검사
 26건 통과를 기록한다. 기존 Android 실기기의 legacy bridge 결과는 별도 기록으로 유지한다.
-RN 결과는 `bridge-runtime` 스키마나 `verify-runtime` 판정으로 변환하지 않는다. iOS RN,
-모든 lifecycle·오디오 interruption·process death·가청 출력·임의 앱의 정적 분석 완전성은 검증하지 않았다.
+이후 [RN 후속 실행 결과](../experiments/real-corpus/results/runtime-followup-development-results.json)는
+Android 에뮬레이터 31개 검사와 force-stop 뒤 31개, iOS 시뮬레이터 20개 검사와 terminate 뒤
+20개의 성공을 기록한다. Android 새 아키텍처 실기기는 연결되지 않아 실행하지 못했다.
+최종 Android 기록은 [GitHub의 새 Ubuntu runner](https://github.com/ictechgy/isthmus/actions/runs/35559659439)의
+x86_64 AVD와 PulseAudio null sink에서 얻었다. 첫 위치를 고정 시각에 가정하지 않고 완료 전
+실제 native playing/position을 반복 관찰한다. CI artifact는 원시 결과 JSON과 manifest만 공개하며
+개인 경로를 담을 수 있는 로컬 설정·APK·전체 bundle은 포함하지 않는다.
+RN 결과는 `bridge-runtime` 스키마나 `verify-runtime` 판정으로 변환하지 않는다. iOS 실기기 RN,
+수신 전화·iOS 오디오 세션 중단·저메모리 종료·가청 출력·임의 앱의 정적 완전성은 검증 범위 밖이다.
 
 ## 독립적인 기대 목록
 
