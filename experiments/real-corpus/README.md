@@ -262,3 +262,6 @@ force-stop 뒤 31개를, `verify-rn-ios-runtime.mjs --fmt-consteval-workaround`�
 Codegen/TurboModule·Fabric 기본 View와 Android OS audio focus 대조를 포함한다.
 원본 Sound는 유지하며 iOS fixture의 UIScene 시작 경로·명시적 fmt 우회·실패 기록을 구분한다.
 Android 새 아키텍처 실기기 연결은 확보되지 않았다. 명령·한계는 [runtime 문서](../../docs/RUNTIME.md)를 따른다.
+최종 Android 결과는 격리한 ADB 서버와 null audio sink를 사용하는
+[새 GitHub runner](https://github.com/ictechgy/isthmus/actions/runs/35559659439)에서 수집했다.
+현재 APK invocation·재시작 run ID·정리 결과·업로드한 원시 JSON의 manifest 해시를 대조했다.

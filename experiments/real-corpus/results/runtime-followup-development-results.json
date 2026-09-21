@@ -4,10 +4,12 @@
   "checkedAt": "2026-09-21",
   "sourceState": "development harnesses; npm isthmus-cli remains 0.9.0",
   "harnessSha256": {
-    "scripts/verify-rn-android-runtime.mjs": "2ab0b698157256e57546fc9da1fa7c2cfbeb647b29af8d304d23a8ab52b9d5ed",
-    "scripts/verify-rn-ios-runtime.mjs": "6e0810540e1ed55a693cac51fa9b3465071dc222b6c0a61ccbfec95673bb5788",
-    "scripts/fixtures/rn-new-architecture.mjs": "81ea7b50ef89c1fb5cc3beb3c87c23cd8a9cc4808909d50249b05b667a43a2b9",
-    "scripts/fixtures/rn-ios-new-architecture.mjs": "414268179f75805c5a5007a84f8cbaf34b5f9970df59df7cf245885841bf18fb"
+    "scripts/verify-rn-android-runtime.mjs": "7cb9026307937a7660b0ceecb46546b75948c0936b7ed6d95c56aef5626d71f6",
+    "scripts/verify-rn-ios-runtime.mjs": "87c6c946f5d0d0354e328783717e420863f6a9553daffc4867a4a41d821704ff",
+    "scripts/fixtures/rn-new-architecture.mjs": "191148a2edb922d25e94dcea2ce2b74e74338afc0d826a25f439409a4df87a02",
+    "scripts/fixtures/rn-ios-new-architecture.mjs": "414268179f75805c5a5007a84f8cbaf34b5f9970df59df7cf245885841bf18fb",
+    "scripts/runtime-evidence-manifest.mjs": "151a0d7eed03d5eb3e20340e4c8771997556010260783c257e12d12a94197c23",
+    "scripts/runtime-harness-failures.mjs": "f4ab24d73398c650805c988fe01e75f96707ec15dac8cd3736cb05105b1a27bd"
   },
   "runtime": {
     "android": {
@@ -17,15 +19,15 @@
       "architecture": "new-architecture",
       "buildMode": "release",
       "deviceKind": "emulator",
-      "abi": "arm64-v8a",
+      "abi": "x86_64",
       "package": "react-native-sound@0.13.0",
       "sourceHashes": {
         "src/index.ts": "bf4c3183073566c10f52e4643b40578fcbe0e1957bf85c54007ce2357895633c",
         "android/src/main/java/com/zmxv/RNSound/Sound.kt": "67ff790be69e12c10e6ef300f5281dc0881dd958d4b5973edab0fb5bc2249f58"
       },
       "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
-      "lockfileSha256": "79d2fc83a81c5d6d76dcfb9a3698943d8ace306e89aafb9e424773517e11848e",
-      "apkSha256": "3c0edffc04f83b3b40fe53bf8f336482203ac8ce990fc217f8a61a418ac507a0",
+      "lockfileSha256": "daef34964c0db5b9ffb1151a7685fa79680b197b9eaa01d8c48157d700a4b686",
+      "apkSha256": "f96b3acf8933314bed17bc7f6da3c1cb7f6fff1358fbb22f35886943915e7c46",
       "observed": {
         "status": "passed",
         "checks": [
@@ -63,13 +65,34 @@
         ],
         "states": [
           "active",
-          "active",
           "background",
           "active"
         ],
         "measurements": {
-          "playingPosition": 0.044,
-          "playbackMilliseconds": 2264,
+          "playingPosition": 0.03,
+          "playbackSamples": [
+            {
+              "position": 0,
+              "playing": true,
+              "elapsedMilliseconds": 36
+            },
+            {
+              "position": 0,
+              "playing": true,
+              "elapsedMilliseconds": 102
+            },
+            {
+              "position": 0,
+              "playing": true,
+              "elapsedMilliseconds": 169
+            },
+            {
+              "position": 0.03,
+              "playing": true,
+              "elapsedMilliseconds": 235
+            }
+          ],
+          "playbackMilliseconds": 2207,
           "completionPosition": 2,
           "audioFocus": {
             "pausedPosition": 0,
@@ -132,16 +155,34 @@
           ],
           "states": [
             "active",
+            "active",
             "background",
             "active"
           ],
           "measurements": {
-            "playingPosition": 0.078,
-            "playbackMilliseconds": 2225,
+            "playingPosition": 0.001,
+            "playbackSamples": [
+              {
+                "position": 0,
+                "playing": true,
+                "elapsedMilliseconds": 130
+              },
+              {
+                "position": 0,
+                "playing": true,
+                "elapsedMilliseconds": 194
+              },
+              {
+                "position": 0.001,
+                "playing": true,
+                "elapsedMilliseconds": 307
+              }
+            ],
+            "playbackMilliseconds": 2382,
             "completionPosition": 2,
             "audioFocus": {
-              "pausedPosition": 0.004,
-              "heldPosition": 0.004
+              "pausedPosition": 0,
+              "heldPosition": 0
             }
           },
           "reactNative": {
@@ -163,7 +204,23 @@
         "Fabric evidence covers a native View layout event. TurboModule evidence covers generated app/public Sound specs, calls, errors and resume.",
         "Silent local PCM playback, OS transient audio focus pause/resume, background/foreground and a fresh full run after force-stop; no audible-output, incoming-call or low-memory kill claim.",
         "This is RN engine evidence, separate from Flutter bridge-runtime schema and its verify-runtime gate."
-      ]
+      ],
+      "cleanup": {
+        "installed": true,
+        "uninstallExit": 0,
+        "emulator": {
+          "stopped": true,
+          "forced": false
+        },
+        "adbServer": {
+          "stopped": true,
+          "forced": false
+        }
+      },
+      "evidenceManifest": {
+        "sha256": "937c6aeab182dda1b58693c76928f7178ffd575370774e1d4a080c0e818ec954",
+        "files": 88
+      }
     },
     "ios": {
       "scope": "public-rn-ios-real-engine",
@@ -180,7 +237,11 @@
         "ios/RNSound.mm": "71582e165c194f899140b500c1651b2bca0fc21591e6bf0189ba6d7bfb8e7860"
       },
       "templateSha256": "30c8abfddb2ae16ec3145a560dd3fe64ffd12c0f0f4d85aab63526c3ed4f9692",
-      "codegenSha256": "82d2ff2d439d057f64e10a03d417b7cefded54600f806e11e00cbf6f8482f20f",
+      "codegen": {
+        "probe": "82d2ff2d439d057f64e10a03d417b7cefded54600f806e11e00cbf6f8482f20f",
+        "sound": "1232c23c9da2690e5388d822fa40232d580d5ef8c4d84c096466fb5cb6535259"
+      },
+      "appArchiveSha256": "f0a87aae81c3e2778199217673107873c66475146d5d08e27cadf381ba5fe855",
       "lockfileSha256": "7cbbb32b4d9479b00f1814b89818352263059b1390d020b805adab38395aca42",
       "observations": [
         {
@@ -208,8 +269,8 @@
             "media-released"
           ],
           "measurements": {
-            "position": 0.23575,
-            "playbackMilliseconds": 2049
+            "position": 0.224125,
+            "playbackMilliseconds": 2031
           },
           "nativeEchoCalls": 1,
           "reactNative": {
@@ -244,8 +305,8 @@
             "media-released"
           ],
           "measurements": {
-            "position": 0.252,
-            "playbackMilliseconds": 2020
+            "position": 0.2195,
+            "playbackMilliseconds": 2040
           },
           "nativeEchoCalls": 1,
           "reactNative": {
@@ -263,48 +324,51 @@
         "patchedSha256": "0f3a347f32dedb66dd3b5c4147ba5bbb3ef49f7f6bddc134f412e60fc87ce7ba",
         "reference": "https://github.com/fmtlib/fmt/issues/4740"
       },
-      "processRestart": "simctl terminate followed by a full run with a new native run ID",
+      "processRestart": {
+        "termination": "simctl terminate",
+        "freshRun": true
+      },
       "limitations": [
         "One iOS simulator profile; physical iOS RN, incoming calls, audio session interruptions and low-memory kills are untested.",
         "Silent PCM playback and a built-in Fabric View; audible output and arbitrary Fabric components are outside this fixture.",
         "RN engine evidence is separate from Flutter bridge-runtime and static producer completeness."
       ],
-      "appArchiveSha256": "f2d7269a40ee7df66848f5478454a0eebf4af67b87dee832f27500d46f692090",
-      "soundCodegenSha256": "1232c23c9da2690e5388d822fa40232d580d5ef8c4d84c096466fb5cb6535259"
+      "cleanup": {
+        "uninstallExit": 0,
+        "shutdownExit": 0,
+        "deleteExit": 0
+      },
+      "evidenceManifest": {
+        "sha256": "bf6dd57c75a5b47c201fc09756a50b3f14b3944e2ed522d926f96a26fb4c070b",
+        "files": 113
+      }
     }
   },
   "distinctNativeRuns": {
     "android": true,
     "ios": true
   },
-  "cleanup": {
+  "apkInvocationMatched": true,
+  "evidence": {
     "android": {
-      "installed": true,
-      "uninstallExit": 0,
-      "emulator": {
-        "stopped": true,
-        "forced": false
-      }
+      "workflow": "https://github.com/ictechgy/isthmus/actions/runs/35559659439",
+      "head": "59f3b3e1220c30fce5b160718b1f2b477fcdf28d",
+      "artifact": "rn-android-evidence",
+      "scope": "selected original runtime/build/cleanup/steps JSON and full raw-file manifest; no local configs or APK uploaded"
     },
     "ios": {
-      "uninstallExit": 0,
-      "shutdownExit": 0,
-      "deleteExit": 0
+      "ledger": ".git/runtime-followups-20260921/retained-runtime/ios-final",
+      "manifestSha256": "bf6dd57c75a5b47c201fc09756a50b3f14b3944e2ed522d926f96a26fb4c070b",
+      "scope": "local original inputs/logs/app archive retained; private bundle not published"
     }
   },
   "unexecuted": [
     "Physical Android new-architecture execution: no available physical device was discovered; no installation attempted.",
     "Physical iOS RN, incoming-call/iOS audio-session interruptions and low-memory process kills were not exercised."
   ],
-  "attempts": {
-    "ios": [
-      "fmt consteval compilation failure",
-      "missing host audio frameworks at link time",
-      "iOS 27 UIScene launch requirement",
-      "successful checks followed by an overly strict optional prerelease field check",
-      "full runtime and restart passed",
-      "final cleanup/ownership guard validation passed"
-    ]
-  },
-  "validationStage": "pre-review native runs; final invocation-bound Android validation pending"
+  "limitations": [
+    "A native engine result does not establish static bridge completeness or arbitrary app coverage.",
+    "Silent media and a built-in Fabric View only; audible output and arbitrary components are not claimed.",
+    "The hosted Android environment uses a PulseAudio null sink and an owned ADB server; hardware audio routing is not covered."
+  ]
 }
