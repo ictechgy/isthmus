@@ -6,6 +6,10 @@
 
 ### Verified
 
+- RN 새 아키텍처 후속 하네스에서 Android 에뮬레이터 31개 검사와 강제 종료 후 31개,
+  iOS 시뮬레이터 release 20개 검사와 종료 후 20개를 통과했다. Android는 실제 OS audio focus
+  정지·복귀를, iOS는 원본 Sound 재생과 UIKit scene 시작 경로를 확인했다. 실기기 RN 확장과
+  수신 전화·저메모리 종료는 이 결과에 포함하지 않는다.
 - iPhone 실기기의 Flutter3.47.2/iOS27 release에서 Dart product 모드, Method/Basic 성공 2건,
   오류·미등록·timeout·pending과 Swift marker를 확인했다. 테스트 앱 제거까지 검증했다.
 - 전용 Android 에뮬레이터의 RN0.81.4/Hermes 새 아키텍처 release에서 Fabric layout,
@@ -15,6 +19,8 @@
 
 ### Changed
 
+- RN iOS용 release/Codegen 하네스와 명시적 fmt consteval 우회 옵션을 추가했다.
+  성공·실패 로그와 원본/수정 의존성 근거를 보존하고 소유한 시뮬레이터만 정리한다.
 - 현재 저장소의 호환 producer pin을 kartograph 0.14.0으로 갱신했다. npm 0.9.0의
   원본 아카이브와 발행 당시 kartograph 0.13.0 manifest는 유지한다.
 - iOS 하네스에 `--physical --release`와 선택적 `--team`, RN 하네스에 `--new-architecture`·

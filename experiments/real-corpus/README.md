@@ -248,9 +248,17 @@ Android 선택에는 정확히 한 대의 연결된 실기기가 필요하며 �
 release 기록은 테스트 앱 소유 외부 디렉터리에서 읽고 앱 제거로 정리한다. iOS는 직접 만든
 시뮬레이터만 부팅·삭제한다. 실제 iPhone이나 iOS release 실행을 의미하지 않는다.
 
-RN 하네스는 원본 `src/index.ts`와 `Sound.kt`를 바꾸지 않는다. 준비 callback을 제공하는
+위 기본 legacy RN 기록은 원본 `src/index.ts`와 `Sound.kt`를 바꾸지 않는다. 준비 callback을 제공하는
 fixture native module을 통해 실제 `Sound.setOnPlay`가 실제 RN event emitter로 전달되고,
 원본 구독이 상태를 바꾸는지 확인한다. 다른 player·구독 해제 대조를 포함한다. 미디어 재생,
 TurboModules/Fabric, RN iOS, 모든 lifecycle 경로를 검증한 것은 아니다. RN 결과는 Flutter
 `bridge-runtime`/`verify-runtime` 형식과 별개이며 정적 조인 완전성 주장에 사용하지 않는다.
 템플릿·공개 원본은 고정 아카이브 해시를 검사하고 선택된 npm 의존성의 lockfile도 로컬에 보존한다.
+
+[새 아키텍처 후속 결과](results/runtime-followup-development-results.json)는 별도다.
+`verify-rn-android-runtime.mjs <adb> --new-architecture --new-emulator`에서 31개 검사와
+force-stop 뒤 31개를, `verify-rn-ios-runtime.mjs --fmt-consteval-workaround`에서 iOS
+시뮬레이터 release 20개 검사와 terminate 뒤 20개를 확인했다. 실제 무음 PCM 재생,
+Codegen/TurboModule·Fabric 기본 View와 Android OS audio focus 대조를 포함한다.
+원본 Sound는 유지하며 iOS fixture의 UIScene 시작 경로·명시적 fmt 우회·실패 기록을 구분한다.
+Android 새 아키텍처 실기기 연결은 확보되지 않았다. 명령·한계는 [runtime 문서](../../docs/RUNTIME.md)를 따른다.

@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeBuildFailure, throwHarnessFailures } from './runtime-harness-failures.mjs';
+import { describeBuildFailure, matchesBuildInvocation, throwHarnessFailures } from './runtime-harness-failures.mjs';
+
+test('an old APK result cannot complete the first run even with a passed status and matching checkpoint', () => {
+  const stale = { invocation: 'previous-apk', runId: 'previous-process', status: 'passed', checks: Array(31).fill('old-check') };
+  const checkpoint = { invocation: 'previous-apk', runId: stale.runId, phase: 'awaiting-background' };
+  assert.equal(matchesBuildInvocation(stale, 'current-apk'), false);
+  assert.equal(matchesBuildInvocation(checkpoint, 'current-apk'), false);
+  assert.equal(matchesBuildInvocation({ invocation: 'current-apk', status: 'failed' }, 'current-apk'), true);
+  assert.equal(matchesBuildInvocation({}, undefined), false);
+  assert.equal(matchesBuildInvocation({ invocation: '' }, ''), false);
+  assert.equal(matchesBuildInvocation(null, 'current-apk'), false);
+});
 
 test('failed verification remains visible when cleanup also fails', () => {
   const verification = new Error('Native response mismatch');

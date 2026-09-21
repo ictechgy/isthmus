@@ -5,6 +5,8 @@ export interface Spec extends TurboModule {
   echo(value: string): Promise<string>;
   reject(): Promise<string>;
   emitPlayState(key: number, playing: boolean): Promise<void>;
+  takeAudioFocus(): Promise<boolean>;
+  releaseAudioFocus(): Promise<boolean>;
   checkpoint(value: string): void;
   finish(value: string): void;
 }
@@ -22,6 +24,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import java.io.File
+import java.util.UUID
+import android.content.Context
+import android.media.AudioManager
 import org.json.JSONObject
 
 class ProbePackage : BaseReactPackage() {
@@ -35,6 +40,10 @@ class ProbePackage : BaseReactPackage() {
 class ProbeModule(private val context: ReactApplicationContext) : NativeIsthmusProbeSpec(context) {
   private var calls = 0
   private var controlEmissions = 0
+  private val runId = UUID.randomUUID().toString()
+  private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+  private val focusListener = AudioManager.OnAudioFocusChangeListener { }
+  private var focusHeld = false
   override fun getName() = "IsthmusProbe"
   override fun echo(value: String, promise: Promise) { calls += 1; promise.resolve(value) }
   override fun reject(promise: Promise) { promise.reject("EXPECTED_PROBE_ERROR", "fixture error") }
@@ -45,10 +54,23 @@ class ProbeModule(private val context: ReactApplicationContext) : NativeIsthmusP
     controlEmissions += 1
     promise.resolve(null)
   }
-  override fun checkpoint(value: String) { write("rn-checkpoint.json", JSONObject().put("phase", value)) }
+  // 별도 listener가 OS에 일시적 focus를 요청한다. Sound의 callback을 직접 호출하지 않는다.
+  override fun takeAudioFocus(promise: Promise) {
+    focusHeld = audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC,
+      AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    promise.resolve(focusHeld)
+  }
+  override fun releaseAudioFocus(promise: Promise) {
+    val released = !focusHeld || audioManager.abandonAudioFocus(focusListener) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    if (released) focusHeld = false
+    promise.resolve(released)
+  }
+  override fun checkpoint(value: String) { write("rn-checkpoint.json", JSONObject().put("phase", value).put("runId", runId).put("invocation", "__ISTHMUS_RN_BUILD_INVOCATION__")) }
   override fun finish(value: String) {
     val result = JSONObject(value)
     result.put("nativeEchoCalls", calls)
+    result.put("runId", runId)
+    result.put("invocation", "__ISTHMUS_RN_BUILD_INVOCATION__")
     result.put("controlEmissions", controlEmissions)
     result.put("androidDebuggable", context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
     result.put("newArchitectureEnabled", BuildConfig.IS_NEW_ARCHITECTURE_ENABLED)
@@ -89,6 +111,7 @@ const subscription = AppState.addEventListener('change', state => states.push(st
 const activeSounds = [];
 
 async function probe() {
+  NativeProbe.checkpoint('starting');
   check('hermes-engine', !!global.HermesInternal);
   check('android-platform', Platform.OS === 'android');
   check('release-js', !__DEV__);
@@ -135,6 +158,27 @@ async function probe() {
   await new Promise(resolve => second.stop(resolve));
   check('media-stop', !second.isPlaying());
 
+  // JS isPlaying은 focus-loss 때 갱신되지 않을 수 있으므로 native position/playing을 읽는다.
+  Sound.setCategory('Playback', false);
+  second.play();
+  const mediaState = () => new Promise(resolve => second.getCurrentTime((position, playing) => resolve({position, playing})));
+  await until(() => second.isPlaying(), 'focus-play-start');
+  check('audio-focus-granted', await NativeProbe.takeAudioFocus());
+  const focusDeadline = Date.now() + 10000;
+  while ((await mediaState()).playing && Date.now() < focusDeadline) await pause(30);
+  const interrupted = await mediaState();
+  check('audio-focus-native-paused', interrupted.playing === false);
+  await pause(250);
+  const held = await mediaState();
+  check('audio-focus-position-stable', held.playing === false && Math.abs(held.position - interrupted.position) < 0.1);
+  check('audio-focus-released', await NativeProbe.releaseAudioFocus());
+  const resumeDeadline = Date.now() + 10000;
+  while (!(await mediaState()).playing && Date.now() < resumeDeadline) await pause(30);
+  check('audio-focus-native-resumed', (await mediaState()).playing === true);
+  measurements.audioFocus = {pausedPosition: interrupted.position, heldPosition: held.position};
+  await new Promise(resolve => second.stop(resolve));
+  Sound.setCategory('Playback', true);
+
   first.release();
   const releasedState = first.isPlaying();
   // 해제한 바로 그 player key로 재전송해 key 필터와 실제 구독 해제를 구분한다.
@@ -158,17 +202,25 @@ async function probe() {
   await new Promise(resolve => second.stop(resolve));
   second.release();
   check('media-released', !second.isLoaded());
-  NativeProbe.finish(JSON.stringify({status: 'passed', checks, states, measurements,
-    reactNative: Platform.constants.reactNativeVersion, engine: 'Hermes'}));
+  return {status: 'passed', checks, states, measurements,
+    reactNative: Platform.constants.reactNativeVersion, engine: 'Hermes'};
 }
 
 AppRegistry.registerComponent('HelloWorld', () => () => React.createElement(View, {
   style: {width: 80, height: 80},
   onLayout: event => { if (event.nativeEvent.layout.width === 80) layout(); },
 }));
-probe().catch(error => NativeProbe.finish(JSON.stringify({status: 'failed', checks, states, measurements,
-  failure: typeof error.message === 'string' && /^[a-z-]{1,100}$/.test(error.message) ? error.message : 'native-call-failed'})))
-  .finally(() => { subscription.remove(); for (const sound of activeSounds) if (sound.isLoaded()) sound.release(); });
+probe().catch(error => ({status: 'failed', checks, states, measurements,
+  failure: typeof error.message === 'string' && /^[a-z-]{1,100}$/.test(error.message) ? error.message : 'native-call-failed'}))
+  .then(async result => {
+    const cleanupFailures = [];
+    try { if (!await NativeProbe.releaseAudioFocus()) cleanupFailures.push('audio-focus-release'); }
+    catch { cleanupFailures.push('audio-focus-release'); }
+    try { subscription.remove(); for (const sound of activeSounds) if (sound.isLoaded()) sound.release(); }
+    catch { cleanupFailures.push('media-release'); }
+    if (cleanupFailures.length) { result.status = 'failed'; result.cleanupFailures = cleanupFailures; }
+    NativeProbe.finish(JSON.stringify(result));
+  });
 `;
 
 /** 2초짜리 mono PCM 무음. 외부 미디어나 시스템 볼륨 변경 없이 native 재생을 검사한다. */
