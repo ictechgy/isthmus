@@ -744,6 +744,15 @@ test('go 문서는 호출·수신 어느 쪽 구성 요건도 채우지 않는�
     () => joinBridgeDocuments([swiftDocument, goDocument]),
     { name: 'BridgeJoinValidationError' },
   );
+  // go만 있는 입력도 같은 이유로 거부한다 — 호출·수신 어느 쪽도 없다.
+  assert.throws(
+    () => joinBridgeDocuments([goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
+  assert.throws(
+    () => joinBridgeDocuments([goDocument, goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
 });
 
 test('go 문서의 한계는 어느 target에도 귀속하지 않고 전달한다', () => {

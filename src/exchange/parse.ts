@@ -208,6 +208,12 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
+  // go 문서는 v1에서 사실을 담지 않으므로 브리지 메커니즘도 가질 수 없다.
+  // 비null target을 허용하면 소비자가 go 문서를 어느 target의 근거로 읽을지
+  // 갈리므로 입력 오류로 거부한다.
+  if (document.platform === 'go' && document.target !== null) {
+    fail('Go documents must carry a null target.');
+  }
   if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
   if (!Array.isArray(document.facts)) fail('Facts must be an array.');
   if (document.facts.length > MAX_FACTS_PER_DOCUMENT) {

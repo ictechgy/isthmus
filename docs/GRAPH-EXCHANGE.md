@@ -219,6 +219,8 @@ go 문서는 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만 실
   기존과 같이 거부된다.
 - go 문서의 limitation은 다른 문서의 공백 심각도를 바꾸지 않는다 — 수신 측 공백
   완화는 swift·kotlin 문서의 한계에만 적용된다.
+- go 문서는 사실이 없으므로 `target`은 항상 `null`이다 — 비null target은
+  입력 오류다. go가 어느 브리지 메커니즘의 증거로도 읽히지 않게 한다.
 - gomobile bind 경계는 소스 표식이 없어 정적으로 관측되지 않는다 — 생산자가
   추측해 신고하지 않는다.
 
