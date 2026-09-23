@@ -40,6 +40,32 @@ test('완전한 bridge-facts v1 문서를 파싱한다', () => {
   assert.deepEqual(parsed, emptyDocument);
 });
 
+test('go 문서는 사실 없이 limitation만 싣는다', () => {
+  const goDocument = {
+    ...emptyDocument,
+    platform: 'go',
+    limitations: ['unscanned-ffi-interop: 2 Go source files use cgo'],
+  };
+  const parsed = parseBridgeFactsDocument(goDocument);
+
+  assert.equal(parsed.platform, 'go');
+  assert.deepEqual(parsed.limitations, goDocument.limitations);
+});
+
+test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
+  // 호출 측·수신 측 종류 모두 거부돼야 한다 — go는 어느 쪽도 아니다.
+  for (const kind of ['method-invoke', 'channel-register', 'module-export']) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'go',
+        facts: [{ ...validMethodFact, kind }],
+      }),
+      /Fact kind is not valid for platform/,
+    );
+  }
+});
+
 test('계약 밖 추가 필드는 검증 경계를 넘어 출력되지 않는다', () => {
   const parsed = parseBridgeFactsDocument({
     ...emptyDocument,

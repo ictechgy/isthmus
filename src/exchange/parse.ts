@@ -1,5 +1,5 @@
 /** bridge-facts 생산 플랫폼이다. */
-export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js';
+export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go';
 
 /** 언어 경계를 잇는 메커니즘이다. */
 export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor';
@@ -401,17 +401,20 @@ function comparePositions(left: BridgeLocation, right: BridgeLocation): number {
 
 /** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */
 function isFactKindForPlatform(platform: unknown, kind: unknown): boolean {
-  return isCallerPlatform(platform)
-    ? callerFactKinds.has(kind)
-    : receiverFactKinds.has(kind);
+  // go는 v1에서 사실을 내지 않는다 — cgo/gomobile 같은 심볼 경계 interop은
+  // 정적 채널 키로 귀속할 수 없어 unscanned-ffi-interop limitation으로만
+  // 신고한다. 호출·수신 어느 쪽 종류도 허용하지 않는다.
+  if (isCallerPlatform(platform)) return callerFactKinds.has(kind);
+  if (isReceiverPlatform(platform)) return receiverFactKinds.has(kind);
+  return false;
 }
 
-/** 브리지 호출 측 사실을 생산하는 플랫폼인지 확인한다. */
+/** 브리지 호출 측 사실을 생산하는 플랫폼인지 확인한다. go는 어느 쪽도 아니다. */
 export function isCallerPlatform(platform: unknown): platform is 'dart' | 'js' {
   return platform === 'dart' || platform === 'js';
 }
 
-/** 브리지 수신 측 사실을 생산하는 플랫폼인지 확인한다. */
+/** 브리지 수신 측 사실을 생산하는 플랫폼인지 확인한다. go는 어느 쪽도 아니다. */
 export function isReceiverPlatform(
   platform: unknown,
 ): platform is 'swift' | 'kotlin' {
@@ -544,7 +547,7 @@ function fail(message: string): never {
 }
 
 /** 지원하는 생산 플랫폼 집합이다. */
-const bridgePlatforms = new Set<unknown>(['dart', 'swift', 'kotlin', 'js']);
+const bridgePlatforms = new Set<unknown>(['dart', 'swift', 'kotlin', 'js', 'go']);
 
 /** 지원하는 브리지 메커니즘 집합이다. */
 const bridgeTargets = new Set<unknown>([
