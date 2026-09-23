@@ -1575,7 +1575,36 @@ test('선언이 없는 관계 사용은 미선언으로 남고 동적 사용은 
   assert.match(limitation!.message, /\b1\b/u);
 });
 
-test('관계가 모호하면 그 컬럼 사용은 따로 진단하지 않는다', () => {
+test('관계 조인 결과는 입력 문서 순서와 철자 변형에 무관하게 결정적이다', () => {
+  // 같은 관계를 가리키는 다른 철자와 다른 문서 순서가 보고 이름·증거 순서를
+  // 바꾸면 안 된다 — 대표 철자는 최솟값, 증거는 정렬·중복 제거된다.
+  const callerA = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'PUBLIC.users' },
+  ]);
+  const callerB = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'public.USERS' },
+  ]);
+  const schemaA = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+  const schemaB = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'PUBLIC.users', symbol: 'mirror.users' },
+  ]);
+
+  const forward = joinBridgeDocuments([callerA, callerB, schemaA, schemaB]);
+  const reverse = joinBridgeDocuments([schemaB, schemaA, callerB, callerA]);
+
+  assert.equal(forward.matchedRelations.length, 1);
+  // 대표 철자는 관측된 철자 중 최솟값이다 — 'PUBLIC.users' < 'public.USERS'.
+  assert.equal(forward.matchedRelations[0]?.channel, 'PUBLIC.users');
+  assert.equal(forward.matchedRelations[0]?.decls.length, 2);
+  assert.deepEqual(
+    JSON.stringify(forward.matchedRelations),
+    JSON.stringify(reverse.matchedRelations),
+  );
+});
+
+test('관계가 모호하면 컬럼만 있는 사용도 모호성 진단으로 보고한다', () => {
   const caller = persistenceDocument('go', [
     { kind: 'relation-use', channel: 'users', method: 'email' },
   ]);
@@ -1588,8 +1617,12 @@ test('관계가 모호하면 그 컬럼 사용은 따로 진단하지 않는다'
 
   const result = joinBridgeDocuments([caller, schema]);
 
-  // 관계 수준 사용 사실이 없으므로 모호성 진단도 없고, 컬럼만 조용히 보류된다.
-  assert.deepEqual(result.ambiguousRelationUses, []);
+  // 관계 수준 사용 사실이 없어도 컬럼 참조 자체가 관계 참조의 관측이다 —
+  // 모호함을 숨기면 코드가 참조하는데 어느 선언인지 모르는 상태가 사라진다.
+  assert.equal(result.ambiguousRelationUses.length, 1);
+  assert.equal(result.ambiguousRelationUses[0]!.channel, 'users');
+  assert.deepEqual(result.ambiguousRelationUses[0]!.candidates, ['a.users', 'b.users']);
+  // 컬럼 진단은 관계가 유일하게 해석돼야 하므로 여전히 내지 않는다.
   assert.deepEqual(result.matchedColumns, []);
   assert.deepEqual(result.columnUsesWithoutDecls, []);
 });

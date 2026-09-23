@@ -770,6 +770,30 @@ test('relation-decl은 symbol과 리터럴 이름을 요구한다', () => {
   );
 });
 
+test('relation-decl은 한정 schema.name 채널을 요구한다', () => {
+  // 선언 측 채널은 항상 한정 형태다 — 비한정 선언은 조인 의미가 없다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...sqlDocument,
+      facts: [{ ...validRelationDecl, channel: 'users' }],
+    }),
+    /qualified schema\.name channel/,
+  );
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...sqlDocument,
+      facts: [{ ...validRelationDecl, channel: 'public.' }],
+    }),
+    /qualified schema\.name channel/,
+  );
+  // 식별자 안의 escape된 점은 한정 세그먼트로 세지 않는다.
+  const parsed = parseBridgeFactsDocument({
+    ...sqlDocument,
+    facts: [{ ...validRelationDecl, channel: 'public.a%2Eb' }],
+  });
+  assert.equal(parsed.facts[0]?.channel, 'public.a%2Eb');
+});
+
 test('relation-use는 소스 위치가 필수다', () => {
   const { location: _location, ...noLocation } = validRelationUse;
   assert.throws(

@@ -1100,7 +1100,9 @@ function joinRelationFacts(
   // 사용 측은 버킷 키(한정 여부 + 정규화 키) 아래 원문 채널과 끝점을 모은다 —
   // 보고는 생산자가 쓴 원문 이름으로 해야 한다.
   const relationUses = new Map<string, { channel: string; uses: BridgeEndpoint[] }>();
-  const columnUses = new Map<string, { column: string; uses: BridgeEndpoint[] }>();
+  // 컬럼 버킷은 관계 채널 철자도 함께 담는다 — 컬럼만 관측된 관계의 진단이
+  // 생산자 원문 이름을 필요로 한다.
+  const columnUses = new Map<string, { channel: string; column: string; uses: BridgeEndpoint[] }>();
   for (const document of documents) {
     if (document.target !== 'persistence') continue;
     for (const fact of document.facts) {
@@ -1115,19 +1117,34 @@ function joinRelationFacts(
         const bucketKey = `${fact.channel.includes('.') ? '1' : '0'}${useKey}`;
         if (fact.method === undefined) {
           const entry = relationUses.get(bucketKey) ?? { channel: fact.channel, uses: [] };
+          // 대소문자가 다른 철자는 같은 키로 묶인다 — 보고 채널은 최소 철자로
+          // 고정해 입력 순서와 무관한 출력을 보장한다.
+          if (compareStrings(fact.channel, entry.channel) < 0) {
+            entry.channel = fact.channel;
+          }
           entry.uses.push(endpoint);
           relationUses.set(bucketKey, entry);
         } else {
           const column = normalizeIdentifier(fact.method);
           const key = `${bucketKey}${COLUMN_KEY_SEPARATOR}${column}`;
           const entry = columnUses.get(key) ??
-            { column: fact.method, uses: [] };
+            { channel: fact.channel, column: fact.method, uses: [] };
+          if (compareStrings(fact.channel, entry.channel) < 0) {
+            entry.channel = fact.channel;
+          }
+          if (compareStrings(fact.method, entry.column) < 0) {
+            entry.column = fact.method;
+          }
           entry.uses.push(endpoint);
           columnUses.set(key, entry);
         }
       }
     }
   }
+  // 선언 증거도 사용 증거와 같이 정렬·중복 제거한다 — 입력 문서 순서가
+  // evidence 배열에 새면 같은 입력이 다른 보고서를 만든다.
+  for (const group of objectDecls.values()) sortUniqueEndpoints(group.decls);
+  for (const list of columnDecls.values()) sortUniqueEndpoints(list);
 
   // 비한정 사용 키 하나가 어느 선언에 닿는지 한 번만 해석한다 —
   // 컬럼 수준 판정도 같은 해석을 재사용한다. 버킷 키 앞 한 글자가 한정 여부다.
@@ -1197,15 +1214,27 @@ function joinRelationFacts(
 
   const matchedColumns: MatchedColumn[] = [];
   const columnUsesWithoutDecls: ColumnUseWithoutDecl[] = [];
-  for (const [columnKey, { column, uses }] of columnUses) {
+  // 관계 수준 사용이 없는 버킷(컬럼 참조만 관측)이 미해석·모호로 끝나면
+  // 관계 진단이 아무것도 없어 사실이 조용히 사라진다 — 컬럼 증거로 관계
+  // 수준 진단을 채운다.
+  const columnOnlyUses = new Map<string, { channel: string; uses: BridgeEndpoint[] }>();
+  for (const [columnKey, { channel, column, uses }] of columnUses) {
     sortUniqueEndpoints(uses);
     const separator = columnKey.lastIndexOf(COLUMN_KEY_SEPARATOR);
     const bucketKey = columnKey.slice(0, separator);
     const normalizedColumn = columnKey.slice(separator + COLUMN_KEY_SEPARATOR.length);
     const outcome = resolveUse(bucketKey);
-    // 관계 해석이 모호하거나 없으면 관계 수준 진단이 이미 그 사실을 덮는다 —
-    // 컬럼만 따로 벌 수 없으므로 관계가 유일하게 해석된 경우만 판정한다.
-    if (outcome === 'ambiguous' || outcome === 'missing') continue;
+    if (outcome === 'ambiguous' || outcome === 'missing') {
+      if (!relationUses.has(bucketKey)) {
+        const entry = columnOnlyUses.get(bucketKey) ?? { channel, uses: [] };
+        if (compareStrings(channel, entry.channel) < 0) {
+          entry.channel = channel;
+        }
+        entry.uses.push(...uses);
+        columnOnlyUses.set(bucketKey, entry);
+      }
+      continue;
+    }
     const declChannel = objectDecls.get(outcome)!.channel;
     const decls = columnDecls.get(
       `${outcome}${COLUMN_KEY_SEPARATOR}${normalizedColumn}`,
@@ -1220,6 +1249,20 @@ function joinRelationFacts(
       });
     }
   }
+  for (const [bucketKey, { channel, uses }] of columnOnlyUses) {
+    sortUniqueEndpoints(uses);
+    const outcome = resolveUse(bucketKey);
+    if (outcome === 'missing') {
+      relationUsesWithoutDecls.push({ target: 'persistence', channel, uses });
+    } else if (outcome === 'ambiguous') {
+      ambiguousRelationUses.push({
+        target: 'persistence',
+        channel,
+        uses,
+        candidates: ambiguousCandidates.get(bucketKey)!,
+      });
+    }
+  }
 
   return {
     matchedRelations: matchedRelations.sort(compareRelationKeys),
@@ -1231,9 +1274,9 @@ function joinRelationFacts(
   };
 }
 
-/** 조립 중인 선언 그룹 — channel은 첫 관측된 한정 이름을 보존한다. */
+/** 조립 중인 선언 그룹 — channel은 관측된 철자 중 최솟값으로 고정한다. */
 interface MutableRelationDeclGroup {
-  readonly channel: string;
+  channel: string;
   readonly decls: BridgeEndpoint[];
 }
 
@@ -1249,6 +1292,11 @@ function collectRelationDecl(
   if (fact.method === undefined) {
     const group = objectDecls.get(qualifiedKey) ??
       { channel: fact.channel as string, decls: [] };
+    // 대소문자가 다른 선언 철자는 같은 키로 묶인다 — 보고 이름은 최소 철자로
+    // 고정해 입력 순서와 무관한 출력을 보장한다.
+    if (compareStrings(fact.channel as string, group.channel) < 0) {
+      group.channel = fact.channel as string;
+    }
     group.decls.push(endpoint);
     objectDecls.set(qualifiedKey, group);
     const segment = lastRelationSegment(qualifiedKey);
@@ -1286,10 +1334,14 @@ function normalizeIdentifier(segment: string): string {
 
 /** 생산자가 `%XX`로 escape한 식별자 세그먼트를 원래 문자로 되돌린다. */
 function unescapeIdentifier(segment: string): string {
-  return segment.replace(
-    /%([0-9A-Fa-f]{2})/g,
-    (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
-  );
+  return segment.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => {
+    const code = Number.parseInt(hex, 16);
+    // %00·%01은 디코딩하면 조인 키의 구조 구분자(SEGMENT/COLUMN)와 같은
+    // 문자가 되어 키 경계를 오염시킨다 — 식별자가 담을 수 없는 문자라
+    // escape 그대로 둔다.
+    if (code <= 1) return `%${hex}`;
+    return String.fromCharCode(code);
+  });
 }
 
 /** 정규화된 한정 키의 마지막 세그먼트다 — 비한정 사용이 여기로 잇는다. */

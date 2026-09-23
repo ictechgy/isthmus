@@ -546,7 +546,7 @@ function receiverCoverageGaps(
       allDecls: false, allRelationUses: false,
       handlerChannels: new Set<string>(), registrationChannels: new Set<string>(),
     };
-    for (const { target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
+    for (const { platform, target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
       if (gapTarget !== null && gapTarget !== target) continue;
       const handlers = startsWithAny(producerHandlerGapPrefixes)(message) ||
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
@@ -554,7 +554,9 @@ function receiverCoverageGaps(
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusRegistrationGapPrefixes)(message));
       const exports = origin === 'consumer' && tool === 'isthmus' &&
         startsWithAny(isthmusExportGapPrefixes)(message);
-      const decls = startsWithAny(schemaDeclGapPrefixes)(message);
+      // 카탈로그 커버리지 공백은 sql 문서의 자기 신고만 인정한다 — 다른
+      // 플랫폼 문서가 같은 접두사를 달아도 스키마 스캔 범위의 근거가 아니다.
+      const decls = platform === 'sql' && startsWithAny(schemaDeclGapPrefixes)(message);
       // 하나라도 범위가 불명확한 공백이 있으면 같은 target의 좁은 범위로 덮지 않는다.
       if (channels === undefined) {
         gaps.allHandlers ||= handlers;

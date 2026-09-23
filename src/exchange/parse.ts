@@ -323,10 +323,18 @@ function validateFact(value: unknown, index: number, platform: unknown,
   }
   // 카탈로그 선언은 소스 위치가 없고 이름이 항상 리터럴이다 — dynamic이거나
   // 객체만 가리키는 symbol 없는 relation-decl은 소비자가 진단을 못 가리키게
-  // 하므로 거부한다.
-  if (value.kind === 'relation-decl' &&
-    (value.dynamic === true || !isJsonObject(value.symbol))) {
-    fail(`Relation declarations require a symbol and must be literal at index ${index}.`);
+  // 하므로 거부한다. 선언 이름은 계약상 항상 `schema.name` 한정 형태다 —
+  // 비한정 선언은 조인 의미가 정의되지 않아 거부한다.
+  if (value.kind === 'relation-decl') {
+    if (value.dynamic === true || !isJsonObject(value.symbol)) {
+      fail(`Relation declarations require a symbol and must be literal at index ${index}.`);
+    }
+    const segments = typeof value.channel === 'string'
+      ? value.channel.split('.')
+      : [];
+    if (segments.length < 2 || segments.some((segment) => segment.length === 0)) {
+      fail(`Relation declarations require a qualified schema.name channel at index ${index}.`);
+    }
   }
   if (value.mechanism !== undefined &&
     (!mechanismFactKinds.has(value.kind) || !bridgeMechanisms.has(value.mechanism))) {

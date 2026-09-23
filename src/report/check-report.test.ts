@@ -1240,6 +1240,29 @@ test('카탈로그 커버리지 공백은 미선언 진단을 판정 불가로 �
   );
 });
 
+test('카탈로그 커버리지 근거는 sql 생산자의 것만 인정한다', () => {
+  // 비sql 생산자가 catalog-coverage: 접두사를 신고해도 판정 불가로 내리지 않는다 —
+  // 호출 측이 스키마 커버리지를 스스로 선언해 진단을 약화하는 것을 막는다.
+  const joined = joinBridgeDocuments([
+    persistenceDocument('go', [
+      { kind: 'relation-use', channel: 'ghost_table' },
+    ], ['catalog-coverage: 1 schema(s) were outside the probe scope']),
+    persistenceDocument('sql', [
+      { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    ]),
+  ]);
+
+  const report = createCheckReport(joined);
+
+  assert.deepEqual(
+    report.issues.map(({ code, severity }) => [code, severity]),
+    [
+      ['relation-use-without-decl', 'error'],
+      ['relation-decl-without-use', 'warning'],
+    ],
+  );
+});
+
 test('동적 관계 사용 공백은 미참조 선언 진단을 판정 불가로 내린다', () => {
   const joined = joinBridgeDocuments([
     persistenceDocument('go', [
