@@ -16,7 +16,8 @@ import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
   readonly platform: BridgePlatform;
-  readonly location: BridgeLocation;
+  /** `relation-decl` 증거는 live catalog 객체라 소스 위치가 없을 수 있다. */
+  readonly location?: BridgeLocation;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
   /**
@@ -140,6 +141,56 @@ export interface JoinLimitation {
   readonly origin?: 'consumer';
 }
 
+/** 논리 관계 이름 하나에 모인 코드 참조·스키마 선언 증거다. channel은 선언 측 한정 이름이다. */
+export interface MatchedRelation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly uses: readonly BridgeEndpoint[];
+  readonly decls: readonly BridgeEndpoint[];
+}
+
+/** 선언을 찾지 못한 논리 관계 이름과 모든 코드 참조 증거다. */
+export interface RelationUseWithoutDecl {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly uses: readonly BridgeEndpoint[];
+}
+
+/** 코드 참조를 찾지 못한 논리 관계 이름과 모든 선언 증거다. */
+export interface RelationDeclWithoutUse {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly decls: readonly BridgeEndpoint[];
+}
+
+/**
+ * 비한정 이름이 여러 스키마의 선언과 동시에 맞아 어느 객체인지 추측하지 못한
+ * 사용이다. match도 missing도 아니며 후보 한정 이름을 함께 낸다.
+ */
+export interface AmbiguousRelationUse {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly uses: readonly BridgeEndpoint[];
+  readonly candidates: readonly string[];
+}
+
+/** 논리 (관계, 컬럼) 하나에 모인 참조·선언 증거다. channel은 선언 측 한정 관계다. */
+export interface MatchedColumn {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly column: string;
+  readonly uses: readonly BridgeEndpoint[];
+  readonly decls: readonly BridgeEndpoint[];
+}
+
+/** 관계는 맞았지만 그 안에 컬럼 선언이 없는 참조다. */
+export interface ColumnUseWithoutDecl {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly column: string;
+  readonly uses: readonly BridgeEndpoint[];
+}
+
 /** 검증된 교환 문서들의 논리 조인 결과다. */
 export interface BridgeJoinResult {
   readonly deferred: boolean;
@@ -157,6 +208,12 @@ export interface BridgeJoinResult {
   readonly matchedComponents: readonly MatchedBoundaryName[];
   readonly componentRequiresWithoutExports: readonly UnexportedBoundaryName[];
   readonly componentExportsWithoutRequires: readonly UnrequiredBoundaryName[];
+  readonly matchedRelations: readonly MatchedRelation[];
+  readonly relationUsesWithoutDecls: readonly RelationUseWithoutDecl[];
+  readonly ambiguousRelationUses: readonly AmbiguousRelationUse[];
+  readonly relationDeclsWithoutUses: readonly RelationDeclWithoutUse[];
+  readonly matchedColumns: readonly MatchedColumn[];
+  readonly columnUsesWithoutDecls: readonly ColumnUseWithoutDecl[];
   readonly limitations: readonly JoinLimitation[];
 }
 
@@ -233,6 +290,7 @@ export function joinBridgeDocuments(
   const componentGroups = collectNameGroups(documents, 'component-require', 'component-export');
   const moduleNames = classifyNameGroups(moduleGroups, 'module-import');
   const componentNames = classifyNameGroups(componentGroups, 'component-require');
+  const relations = joinRelationFacts(documents);
   return {
     deferred: false,
     observedFacts,
@@ -248,6 +306,12 @@ export function joinBridgeDocuments(
     matchedComponents: componentNames.matched,
     componentRequiresWithoutExports: componentNames.unexported,
     componentExportsWithoutRequires: componentNames.unrequired,
+    matchedRelations: relations.matchedRelations,
+    relationUsesWithoutDecls: relations.relationUsesWithoutDecls,
+    ambiguousRelationUses: relations.ambiguousRelationUses,
+    relationDeclsWithoutUses: relations.relationDeclsWithoutUses,
+    matchedColumns: relations.matchedColumns,
+    columnUsesWithoutDecls: relations.columnUsesWithoutDecls,
     limitations,
   };
 }
@@ -266,18 +330,56 @@ function validateProjects(documents: readonly BridgeFactsDocument[]): void {
   }
 }
 
-/** 호출 측·수신 측 문서가 모두 있어야 경계 사실로 조인할 수 있다. */
+/** 호출 측·수신 측 문서가 모두 있어야 경계 사실로 조인할 수 있다 — 도메인별로 검사한다. */
 function validatePlatformComposition(
   documents: readonly BridgeFactsDocument[],
 ): void {
-  const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
-  const hasReceiver = documents.some(({ platform }) =>
-    isReceiverPlatform(platform),
+  const hasPersistenceDomain = documents.some(
+    (document) => document.platform === 'sql' || document.target === 'persistence',
   );
-  if (!hasCaller || !hasReceiver) {
+  const hasBridgeDomain = documents.some(
+    (document) =>
+      document.target !== 'persistence' &&
+      (isCallerPlatform(document.platform) || isReceiverPlatform(document.platform)),
+  );
+  if (!hasPersistenceDomain) {
+    // bridge만 있는 입력은 기존 호출·수신 구성 규칙을 그대로 적용한다.
+    const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
+    const hasReceiver = documents.some(({ platform }) =>
+      isReceiverPlatform(platform),
+    );
+    if (!hasCaller || !hasReceiver) {
+      throw new BridgeJoinValidationError(
+        'Bridge documents must include at least one caller platform (dart, js) document '
+        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
+      );
+    }
+    return;
+  }
+  if (hasBridgeDomain) {
+    const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
+    const hasReceiver = documents.some(({ platform }) =>
+      isReceiverPlatform(platform),
+    );
+    if (!hasCaller || !hasReceiver) {
+      throw new BridgeJoinValidationError(
+        'Bridge documents must include at least one caller platform (dart, js) document '
+        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
+      );
+    }
+  }
+  // persistence 도메인: sql 선언 문서 하나와, 이 경계를 실제로 스캔한
+  // (target이 persistence인) 비sql 호출 측 문서 하나를 요구한다. target이
+  // null인 문서는 이 도메인의 호출 측으로 세지 않는다 — 스키마 경계를
+  // 보지 않은 문서를 "참조 없음"으로 읽으면 모든 선언이 거짓 미사용이 된다.
+  const hasSqlDecls = documents.some(({ platform }) => platform === 'sql');
+  const hasPersistenceCaller = documents.some(
+    (document) => document.target === 'persistence' && document.platform !== 'sql',
+  );
+  if (!hasSqlDecls || !hasPersistenceCaller) {
     throw new BridgeJoinValidationError(
-      'Bridge documents must include at least one caller platform (dart, js) document '
-      + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
+      'Persistence documents must include at least one sql declaration document '
+      + 'and one non-sql caller document with the persistence target; run a producer for the missing side.',
     );
   }
 }
@@ -327,6 +429,12 @@ export function emptyBridgeJoinResult(): BridgeJoinResult {
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations: [],
   };
 }
@@ -351,6 +459,12 @@ function emptyJoinResult(
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations,
   };
 }
@@ -413,6 +527,12 @@ function unjoinedFactLimitations(
       isUnjoinedDynamicImport,
       'unjoined-dynamic-imports',
       'module import or component require facts with a non-literal name',
+    ),
+    ...unjoinedLimitations(
+      documents,
+      isUnjoinedDynamicRelation,
+      'unjoined-dynamic-relations',
+      'relation use facts with a non-literal name',
     ),
     ...unjoinedLimitations(
       documents,
@@ -496,14 +616,14 @@ function countFactsByPlatformTarget(
  * 같은 키로 합쳐지지 않는다.
  */
 function unjoinedFactKey(fact: BridgeFact): string {
-  const { path, line, column } = fact.location;
+  const location = fact.location;
   return JSON.stringify([
     fact.kind,
     fact.channel,
     fact.method ?? null,
-    path,
-    line,
-    column,
+    location?.path ?? null,
+    location?.line ?? null,
+    location?.column ?? null,
   ]);
 }
 
@@ -546,6 +666,11 @@ function isUnjoinedDynamicExport(fact: BridgeFact): boolean {
     fact.dynamic &&
     (fact.kind === 'module-export' || fact.kind === 'component-export')
   );
+}
+
+/** 관계 이름이 리터럴이 아니어서 조인하지 못한 코드 참조 사실인지 확인한다. */
+function isUnjoinedDynamicRelation(fact: BridgeFact): boolean {
+  return fact.dynamic && fact.kind === 'relation-use';
 }
 
 /** 생성 시각 차이가 하루를 넘을 때 교차 입력 한계를 만든다. */
@@ -630,11 +755,17 @@ function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
 
 /** 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다. */
 function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
-  const locationOrder =
-    compareStrings(left.platform, right.platform) ||
-    compareStrings(left.location.path, right.location.path) ||
-    left.location.line - right.location.line ||
-    left.location.column - right.location.column;
+  const platformOrder = compareStrings(left.platform, right.platform);
+  if (platformOrder !== 0) return platformOrder;
+  // 카탈로그 선언처럼 위치가 없는 증거는 있는 증거 뒤에 두고, 둘 다 없으면
+  // 심볼 비교로 내려간다.
+  const locationOrder = left.location === undefined
+    ? right.location === undefined ? 0 : 1
+    : right.location === undefined
+      ? -1
+      : compareStrings(left.location.path, right.location.path) ||
+        left.location.line - right.location.line ||
+        left.location.column - right.location.column;
   if (locationOrder !== 0) return locationOrder;
   const languageOrder = compareOptionalStrings(left.sourceLanguage, right.sourceLanguage);
   if (languageOrder !== 0) return languageOrder;
@@ -888,7 +1019,8 @@ function toEndpoint(
   fact: BridgeFactsDocument['facts'][number],
 ): BridgeEndpoint {
   return {
-    platform, location: fact.location,
+    platform,
+    ...(fact.location === undefined ? {} : { location: fact.location }),
     ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }),
     ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
     ...(fact.optional === undefined ? {} : { optional: fact.optional }),
@@ -940,3 +1072,261 @@ interface MutableNameGroup extends MatchedBoundaryName {
 
 const millisecondsPerHour = 60 * 60 * 1_000;
 const millisecondsPerDay = 24 * millisecondsPerHour;
+
+/** persistence 도메인 조인의 분류 결과다. */
+interface RelationJoinResult {
+  readonly matchedRelations: MatchedRelation[];
+  readonly relationUsesWithoutDecls: RelationUseWithoutDecl[];
+  readonly ambiguousRelationUses: AmbiguousRelationUse[];
+  readonly relationDeclsWithoutUses: RelationDeclWithoutUse[];
+  readonly matchedColumns: MatchedColumn[];
+  readonly columnUsesWithoutDecls: ColumnUseWithoutDecl[];
+}
+
+/**
+ * `target: "persistence"` 문서의 관계·컬럼 사실을 이름 키로 조인한다.
+ *
+ * 선언 측(sql)은 항상 `schema.name` 한정 이름을 내고 사용 측은 코드에 쓰인
+ * 그대로 낸다. 비한정 사용은 마지막 세그먼트로 선언을 찾되 후보가 둘 이상이면
+ * 어느 쪽인지 추측하지 않고 모호함으로 보고한다. 컬럼 사용은 관계가 유일하게
+ * 해석된 뒤에만 (관계, 컬럼) 쌍으로 판정한다.
+ */
+function joinRelationFacts(
+  documents: readonly BridgeFactsDocument[],
+): RelationJoinResult {
+  const objectDecls = new Map<string, MutableRelationDeclGroup>();
+  const lastSegmentIndex = new Map<string, Set<string>>();
+  const columnDecls = new Map<string, BridgeEndpoint[]>();
+  // 사용 측은 버킷 키(한정 여부 + 정규화 키) 아래 원문 채널과 끝점을 모은다 —
+  // 보고는 생산자가 쓴 원문 이름으로 해야 한다.
+  const relationUses = new Map<string, { channel: string; uses: BridgeEndpoint[] }>();
+  const columnUses = new Map<string, { column: string; uses: BridgeEndpoint[] }>();
+  for (const document of documents) {
+    if (document.target !== 'persistence') continue;
+    for (const fact of document.facts) {
+      if (fact.dynamic || typeof fact.channel !== 'string') continue;
+      const endpoint = toEndpoint(document.platform, fact);
+      if (fact.kind === 'relation-decl') {
+        collectRelationDecl(fact, endpoint, objectDecls, columnDecls, lastSegmentIndex);
+      } else if (fact.kind === 'relation-use') {
+        const useKey = normalizeRelationKey(fact.channel);
+        // 한정 여부는 원문의 escape되지 않은 `.`로 판정한다 — `%2E`는
+        // 한정자가 아니라 식별자 안의 점이라 정규화 키가 이를 보존하지 않는다.
+        const bucketKey = `${fact.channel.includes('.') ? '1' : '0'}${useKey}`;
+        if (fact.method === undefined) {
+          const entry = relationUses.get(bucketKey) ?? { channel: fact.channel, uses: [] };
+          entry.uses.push(endpoint);
+          relationUses.set(bucketKey, entry);
+        } else {
+          const column = normalizeIdentifier(fact.method);
+          const key = `${bucketKey}${COLUMN_KEY_SEPARATOR}${column}`;
+          const entry = columnUses.get(key) ??
+            { column: fact.method, uses: [] };
+          entry.uses.push(endpoint);
+          columnUses.set(key, entry);
+        }
+      }
+    }
+  }
+
+  // 비한정 사용 키 하나가 어느 선언에 닿는지 한 번만 해석한다 —
+  // 컬럼 수준 판정도 같은 해석을 재사용한다. 버킷 키 앞 한 글자가 한정 여부다.
+  const resolution = new Map<string, string | 'missing' | 'ambiguous'>();
+  const ambiguousCandidates = new Map<string, string[]>();
+  const resolveUse = (bucketKey: string): string | 'missing' | 'ambiguous' => {
+    const cached = resolution.get(bucketKey);
+    if (cached !== undefined) return cached;
+    const useKey = bucketKey.slice(1);
+    let outcome: string | 'missing' | 'ambiguous';
+    if (bucketKey[0] === '1') {
+      outcome = objectDecls.has(useKey) ? useKey : 'missing';
+    } else {
+      const candidates = [...(lastSegmentIndex.get(useKey) ?? [])].sort(compareStrings);
+      if (candidates.length === 1) {
+        outcome = candidates[0]!;
+      } else if (candidates.length === 0) {
+        outcome = 'missing';
+      } else {
+        outcome = 'ambiguous';
+        // 후보 보고는 정규화 키가 아니라 생산자가 쓴 한정 이름으로 한다.
+        ambiguousCandidates.set(
+          bucketKey,
+          candidates.map((key) => objectDecls.get(key)!.channel),
+        );
+      }
+    }
+    resolution.set(bucketKey, outcome);
+    return outcome;
+  };
+
+  const matchedRelations: MatchedRelation[] = [];
+  const relationUsesWithoutDecls: RelationUseWithoutDecl[] = [];
+  const ambiguousRelationUses: AmbiguousRelationUse[] = [];
+  const usedDeclKeys = new Set<string>();
+  for (const [bucketKey, { channel, uses }] of relationUses) {
+    sortUniqueEndpoints(uses);
+    const outcome = resolveUse(bucketKey);
+    if (outcome === 'missing') {
+      relationUsesWithoutDecls.push({ target: 'persistence', channel, uses });
+    } else if (outcome === 'ambiguous') {
+      ambiguousRelationUses.push({
+        target: 'persistence',
+        channel,
+        uses,
+        candidates: ambiguousCandidates.get(bucketKey)!,
+      });
+    } else {
+      usedDeclKeys.add(outcome);
+      const group = objectDecls.get(outcome)!;
+      matchedRelations.push({
+        target: 'persistence',
+        channel: group.channel,
+        uses,
+        decls: group.decls,
+      });
+    }
+  }
+
+  const relationDeclsWithoutUses: RelationDeclWithoutUse[] = [...objectDecls.entries()]
+    .filter(([key]) => !usedDeclKeys.has(key))
+    .map(([, group]) => ({
+      target: 'persistence' as const,
+      channel: group.channel,
+      decls: group.decls,
+    }));
+
+  const matchedColumns: MatchedColumn[] = [];
+  const columnUsesWithoutDecls: ColumnUseWithoutDecl[] = [];
+  for (const [columnKey, { column, uses }] of columnUses) {
+    sortUniqueEndpoints(uses);
+    const separator = columnKey.lastIndexOf(COLUMN_KEY_SEPARATOR);
+    const bucketKey = columnKey.slice(0, separator);
+    const normalizedColumn = columnKey.slice(separator + COLUMN_KEY_SEPARATOR.length);
+    const outcome = resolveUse(bucketKey);
+    // 관계 해석이 모호하거나 없으면 관계 수준 진단이 이미 그 사실을 덮는다 —
+    // 컬럼만 따로 벌 수 없으므로 관계가 유일하게 해석된 경우만 판정한다.
+    if (outcome === 'ambiguous' || outcome === 'missing') continue;
+    const declChannel = objectDecls.get(outcome)!.channel;
+    const decls = columnDecls.get(
+      `${outcome}${COLUMN_KEY_SEPARATOR}${normalizedColumn}`,
+    ) ?? [];
+    if (decls.length > 0) {
+      matchedColumns.push({
+        target: 'persistence', channel: declChannel, column, uses, decls,
+      });
+    } else {
+      columnUsesWithoutDecls.push({
+        target: 'persistence', channel: declChannel, column, uses,
+      });
+    }
+  }
+
+  return {
+    matchedRelations: matchedRelations.sort(compareRelationKeys),
+    relationUsesWithoutDecls: relationUsesWithoutDecls.sort(compareRelationKeys),
+    ambiguousRelationUses: ambiguousRelationUses.sort(compareRelationKeys),
+    relationDeclsWithoutUses: relationDeclsWithoutUses.sort(compareRelationKeys),
+    matchedColumns: matchedColumns.sort(compareColumnKeys),
+    columnUsesWithoutDecls: columnUsesWithoutDecls.sort(compareColumnKeys),
+  };
+}
+
+/** 조립 중인 선언 그룹 — channel은 첫 관측된 한정 이름을 보존한다. */
+interface MutableRelationDeclGroup {
+  readonly channel: string;
+  readonly decls: BridgeEndpoint[];
+}
+
+/** 선언 사실을 관계 수준·컬럼 수준 인덱스에 나눠 담는다. */
+function collectRelationDecl(
+  fact: BridgeFactsDocument['facts'][number],
+  endpoint: BridgeEndpoint,
+  objectDecls: Map<string, MutableRelationDeclGroup>,
+  columnDecls: Map<string, BridgeEndpoint[]>,
+  lastSegmentIndex: Map<string, Set<string>>,
+): void {
+  const qualifiedKey = normalizeRelationKey(fact.channel as string);
+  if (fact.method === undefined) {
+    const group = objectDecls.get(qualifiedKey) ??
+      { channel: fact.channel as string, decls: [] };
+    group.decls.push(endpoint);
+    objectDecls.set(qualifiedKey, group);
+    const segment = lastRelationSegment(qualifiedKey);
+    const keys = lastSegmentIndex.get(segment) ?? new Set<string>();
+    keys.add(qualifiedKey);
+    lastSegmentIndex.set(segment, keys);
+    return;
+  }
+  const key = `${qualifiedKey}${COLUMN_KEY_SEPARATOR}${normalizeIdentifier(fact.method)}`;
+  const list = columnDecls.get(key) ?? [];
+  list.push(endpoint);
+  columnDecls.set(key, list);
+}
+
+/**
+ * 관계 이름을 조인 키로 정규화한다.
+ *
+ * `.`는 한정 구분자이고 `%XX` escape 안의 문자는 구분자로 세지 않는다 —
+ * `a%2Eb`처럼 이름 자체에 점이 있는 객체는 escape된 세그먼트로 남는다.
+ * 세그먼트는 escape가 풀린 뒤 다시 점을 담을 수 있으므로 결합에는 식별자에
+ * 올 수 없는 제어 문자를 쓴다. 비교는 방언별 대소문자 규칙 차이를 흡수하는
+ * 기본 소문자 접기다.
+ */
+function normalizeRelationKey(channel: string): string {
+  return channel
+    .split('.')
+    .map(normalizeIdentifier)
+    .join(SEGMENT_SEPARATOR);
+}
+
+/** 한 식별자 세그먼트의 escape를 풀고 소문자로 접는다. 컬럼 이름도 같게 접는다. */
+function normalizeIdentifier(segment: string): string {
+  return unescapeIdentifier(segment).toLowerCase();
+}
+
+/** 생산자가 `%XX`로 escape한 식별자 세그먼트를 원래 문자로 되돌린다. */
+function unescapeIdentifier(segment: string): string {
+  return segment.replace(
+    /%([0-9A-Fa-f]{2})/g,
+    (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+}
+
+/** 정규화된 한정 키의 마지막 세그먼트다 — 비한정 사용이 여기로 잇는다. */
+function lastRelationSegment(key: string): string {
+  const index = key.lastIndexOf(SEGMENT_SEPARATOR);
+  return index < 0 ? key : key.slice(index + SEGMENT_SEPARATOR.length);
+}
+
+/** 관계 결과를 target·채널 순으로 고정한다. */
+function compareRelationKeys(
+  left: Pick<MatchedRelation, 'target' | 'channel'>,
+  right: Pick<MatchedRelation, 'target' | 'channel'>,
+): number {
+  return (
+    compareStrings(left.target, right.target) ||
+    compareStrings(left.channel, right.channel)
+  );
+}
+
+/** 컬럼 결과를 target·채널·컬럼 순으로 고정한다. */
+function compareColumnKeys(
+  left: Pick<MatchedColumn, 'target' | 'channel' | 'column'>,
+  right: Pick<MatchedColumn, 'target' | 'channel' | 'column'>,
+): number {
+  return (
+    compareStrings(left.target, right.target) ||
+    compareStrings(left.channel, right.channel) ||
+    compareStrings(left.column, right.column)
+  );
+}
+
+/**
+ * 정규화된 관계 키 안에서 한정 세그먼트를 가르는 구분자다.
+ * 식별자가 이 문자를 담을 수 없어 `%2E`가 풀린 세그먼트 안의 점과
+ * 섞이지 않는다.
+ */
+const SEGMENT_SEPARATOR = '\u0000';
+
+/** 컬럼 인덱스 키에서 관계와 컬럼을 가르는 구분자다. */
+const COLUMN_KEY_SEPARATOR = '\u0001';

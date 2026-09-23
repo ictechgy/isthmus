@@ -68,4 +68,18 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'A JavaScript React Native event subscription has no observed native emission, and native analysis gaps may hide it.',
   'event-emit-without-listen':
     'A native React Native event emission has no observed JavaScript subscription with the same global event name.',
+  'relation-use-without-decl':
+    'A code-side relation reference has no matching declaration in the observed schema catalog.',
+  'relation-use-without-decl-unverified':
+    'A code-side relation reference has no matching declaration, and the schema catalog coverage is known to be incomplete.',
+  'ambiguous-relation-use':
+    'An unqualified code-side relation reference matches more than one declared relation, so it could not be joined.',
+  'relation-decl-without-use':
+    'A schema relation declaration has no observed code-side reference; it is a dead-schema candidate, not a deletion verdict.',
+  'relation-decl-without-use-unverified':
+    'A schema relation declaration has no observed code-side reference, and dynamic relation uses may be hiding it.',
+  'column-use-without-decl':
+    'A code-side column reference has no matching column declaration on the resolved relation.',
+  'column-use-without-decl-unverified':
+    'A code-side column reference has no matching column declaration, and the schema catalog coverage is known to be incomplete.',
 };

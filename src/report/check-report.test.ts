@@ -1146,3 +1146,135 @@ test('optional 호출자에 mechanism 불일치 export가 관찰되면 불일치
     'module-import-mechanism-mismatch',
   ]);
 });
+
+/** persistence 도메인 문서를 만드는 테스트 조립기다. */
+function persistenceDocument(
+  platform: 'go' | 'sql',
+  facts: ReadonlyArray<{
+    kind: 'relation-use' | 'relation-decl';
+    channel: string;
+    method?: string;
+    dynamic?: boolean;
+    symbol?: string;
+    path?: string;
+  }>,
+  limitations: readonly string[] = [],
+): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform,
+    target: 'persistence',
+    project: '/fixture',
+    facts: facts.map((fact, index) => ({
+      kind: fact.kind,
+      channel: fact.channel,
+      ...(fact.method === undefined ? {} : { method: fact.method }),
+      dynamic: fact.dynamic ?? false,
+      ...(fact.kind === 'relation-decl' && fact.path === undefined ? {} : {
+        location: {
+          path: fact.path ?? 'db/access.go',
+          line: index + 1,
+          column: 1,
+        },
+      }),
+      ...(fact.symbol === undefined ? {} : {
+        symbol: { qualifiedName: fact.symbol },
+      }),
+    })),
+    limitations,
+  });
+}
+
+test('미선언 관계 사용은 오류, 미참조 선언은 경고로 보고한다', () => {
+  const joined = joinBridgeDocuments([
+    persistenceDocument('go', [
+      { kind: 'relation-use', channel: 'public.users' },
+      { kind: 'relation-use', channel: 'ghost_table' },
+    ]),
+    persistenceDocument('sql', [
+      { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+      { kind: 'relation-decl', channel: 'public.archive', symbol: 'public.archive' },
+    ]),
+  ]);
+
+  const report = createCheckReport(joined);
+
+  assert.deepEqual(
+    report.issues.map(({ code, severity }) => [code, severity]),
+    [
+      ['relation-use-without-decl', 'error'],
+      ['relation-decl-without-use', 'warning'],
+    ],
+  );
+  // persistence 요약 필드는 이 도메인의 사실이 있을 때만 실린다.
+  assert.equal(report.summary.matchedRelations, 1);
+  assert.equal(report.summary.errors, 1);
+  assert.equal(report.summary.warnings, 1);
+});
+
+test('카탈로그 커버리지 공백은 미선언 진단을 판정 불가로 내린다', () => {
+  const joined = joinBridgeDocuments([
+    persistenceDocument('go', [
+      { kind: 'relation-use', channel: 'ghost_table' },
+      { kind: 'relation-use', channel: 'public.users', method: 'nickname' },
+    ]),
+    persistenceDocument('sql', [
+      { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    ], ['catalog-coverage: 2 schema(s) were outside the probe scope']),
+  ]);
+
+  const report = createCheckReport(joined);
+
+  assert.deepEqual(
+    report.issues.map(({ code, severity }) => [code, severity]),
+    [
+      ['relation-use-without-decl-unverified', 'warning'],
+      ['column-use-without-decl-unverified', 'warning'],
+      // 컬럼 참조는 관계 참조를 함축하지 않는다 — 관계 사용 사실이 없으므로
+      // public.users 선언은 미참조 후보로도 남는다.
+      ['relation-decl-without-use', 'warning'],
+    ],
+  );
+});
+
+test('동적 관계 사용 공백은 미참조 선언 진단을 판정 불가로 내린다', () => {
+  const joined = joinBridgeDocuments([
+    persistenceDocument('go', [
+      { kind: 'relation-use', channel: 'prefix + suffix', dynamic: true },
+    ]),
+    persistenceDocument('sql', [
+      { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    ]),
+  ]);
+
+  const report = createCheckReport(joined);
+
+  assert.deepEqual(
+    report.issues.map(({ code }) => code),
+    ['relation-decl-without-use-unverified'],
+  );
+  assert.equal(report.issues[0]?.severity, 'warning');
+});
+
+test('모호한 비한정 사용은 후보와 함께 경고로 보고한다', () => {
+  const joined = joinBridgeDocuments([
+    persistenceDocument('go', [
+      { kind: 'relation-use', channel: 'users' },
+    ]),
+    persistenceDocument('sql', [
+      { kind: 'relation-decl', channel: 'a.users', symbol: 'a.users' },
+      { kind: 'relation-decl', channel: 'b.users', symbol: 'b.users' },
+    ]),
+  ]);
+
+  const report = createCheckReport(joined);
+
+  const ambiguous = report.issues.find(
+    ({ code }) => code === 'ambiguous-relation-use',
+  );
+  assert.equal(ambiguous?.severity, 'warning');
+  assert.deepEqual(ambiguous?.candidates, ['a.users', 'b.users']);
+});

@@ -210,6 +210,12 @@ test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations: [],
   };
 
@@ -275,6 +281,12 @@ test('같은 위치에 서로 다른 심볼이 있으면 노드를 손실 병합
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations: [],
   };
 
@@ -334,6 +346,12 @@ test('같은 위치의 심볼 있는 증거로 기존 노드를 보강한다', (
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations: [],
   };
 
@@ -397,6 +415,12 @@ test('같은 심볼의 USR 있는 증거로 기존 노드를 보강한다', () =
     matchedComponents: [],
     componentRequiresWithoutExports: [],
     componentExportsWithoutRequires: [],
+    matchedRelations: [],
+    relationUsesWithoutDecls: [],
+    ambiguousRelationUses: [],
+    relationDeclsWithoutUses: [],
+    matchedColumns: [],
+    columnUsesWithoutDecls: [],
     limitations: [],
   };
 

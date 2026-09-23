@@ -250,7 +250,7 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
   for (const document of bridges) {
     if (document.platform !== 'dart') continue;
     for (const fact of document.facts) {
-      if (fact.symbol === undefined) continue;
+      if (fact.symbol === undefined || fact.location === undefined) continue;
       const key = locationKey(fact.location);
       const entries = facts.get(key) ?? [];
       entries.push({ path: fact.location.path, qualifiedName: fact.symbol.qualifiedName });

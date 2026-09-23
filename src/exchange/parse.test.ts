@@ -71,8 +71,8 @@ test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
   }
 });
 
-test('go 문서는 target을 null로만 싣는다', () => {
-  // go는 v1에서 브리지 메커니즘에 참여하지 않는다 — 비null target은 입력 오류다.
+test('go 문서는 target을 null 또는 persistence로만 싣는다', () => {
+  // go는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
   for (const target of ['flutter', 'react-native', 'capacitor']) {
     assert.throws(
       () => parseBridgeFactsDocument({
@@ -80,7 +80,7 @@ test('go 문서는 target을 null로만 싣는다', () => {
         platform: 'go',
         target,
       }),
-      /Go documents must carry a null target/,
+      /Go documents may only carry a null or persistence target/,
     );
   }
 });
@@ -317,7 +317,7 @@ test('아스트랄 문자는 유효한 서러게이트 쌍으로 그대로 통�
   });
 
   assert.equal(document.facts[0]?.channel, '예시/카메라😀');
-  assert.equal(document.facts[0]?.location.path, 'lib/카메라😀.dart');
+  assert.equal(document.facts[0]?.location?.path, 'lib/카메라😀.dart');
 });
 
 test('귀속할 수 없는 method-handle은 원인을 limitation으로 알려야 한다', () => {
@@ -712,4 +712,130 @@ test('optional 필드는 module-import에만 허용하고 정규화 뒤에도 �
       },
     );
   }
+});
+
+const sqlDocument = {
+  ...emptyDocument,
+  platform: 'sql',
+  target: 'persistence',
+};
+
+const goPersistenceDocument = {
+  ...emptyDocument,
+  platform: 'go',
+  target: 'persistence',
+};
+
+const validRelationDecl = {
+  kind: 'relation-decl',
+  channel: 'public.users',
+  dynamic: false,
+  symbol: { qualifiedName: 'public.users' },
+};
+
+const validRelationUse = {
+  kind: 'relation-use',
+  channel: 'users',
+  dynamic: false,
+  location: { path: 'db/access.go', line: 10, column: 5 },
+};
+
+test('relation-decl은 소스 위치 없이 정규 식별자만으로 올 수 있다', () => {
+  const parsed = parseBridgeFactsDocument({
+    ...sqlDocument,
+    facts: [validRelationDecl],
+  });
+
+  assert.equal(parsed.facts[0]?.kind, 'relation-decl');
+  assert.equal('location' in (parsed.facts[0] ?? {}), false);
+  assert.equal(parsed.facts[0]?.symbol?.qualifiedName, 'public.users');
+});
+
+test('relation-decl은 symbol과 리터럴 이름을 요구한다', () => {
+  // 카탈로그 선언은 항상 리터럴이고 진단을 가리킬 정규 식별자가 필요하다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...sqlDocument,
+      facts: [{ ...validRelationDecl, dynamic: true }],
+    }),
+    /Relation declarations require a symbol and must be literal/,
+  );
+  const { symbol: _symbol, ...noSymbol } = validRelationDecl;
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...sqlDocument,
+      facts: [noSymbol],
+    }),
+    /Relation declarations require a symbol and must be literal/,
+  );
+});
+
+test('relation-use는 소스 위치가 필수다', () => {
+  const { location: _location, ...noLocation } = validRelationUse;
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...goPersistenceDocument,
+      facts: [noLocation],
+    }),
+    /Fact at index 0 requires a location/,
+  );
+});
+
+test('persistence 도메인의 kind는 플랫폼 역할을 따른다', () => {
+  // sql은 선언 측, 나머지 플랫폼은 사용 측이다 — 역할이 뒤집힌 사실은 거부다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...sqlDocument,
+      facts: [{ ...validRelationUse }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...goPersistenceDocument,
+      facts: [{ ...validRelationDecl }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+  // bridge 도메인 kind는 persistence target에 실을 수 없다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...goPersistenceDocument,
+      facts: [{ ...validMethodFact }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+  // relation kind는 bridge target에 실을 수 없다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      facts: [{ ...validRelationUse }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+});
+
+test('sql 문서는 persistence 외 target을 거부한다', () => {
+  for (const target of ['flutter', 'react-native', 'capacitor']) {
+    assert.throws(
+      () => parseBridgeFactsDocument({ ...sqlDocument, target }),
+      /Sql documents may only carry a null or persistence target/,
+    );
+  }
+});
+
+test('컬럼 사실은 method를 컬럼 이름으로 싣는다', () => {
+  const parsed = parseBridgeFactsDocument({
+    ...sqlDocument,
+    facts: [
+      { ...validRelationDecl, method: 'email', symbol: { qualifiedName: 'public.users.email' } },
+    ],
+  });
+  assert.equal(parsed.facts[0]?.method, 'email');
+
+  const useParsed = parseBridgeFactsDocument({
+    ...goPersistenceDocument,
+    facts: [{ ...validRelationUse, method: 'email' }],
+  });
+  assert.equal(useParsed.facts[0]?.method, 'email');
 });

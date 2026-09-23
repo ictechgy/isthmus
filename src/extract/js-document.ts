@@ -6,7 +6,7 @@
  * 파일시스템을 읽지 않는 순수 조립이다 — 경로 해석·읽기는 cli/가 담당한다.
  */
 
-import type { BridgeFact, BridgeFactsDocument } from '../exchange/parse.ts';
+import type { BridgeFact, BridgeFactsDocument, BridgeLocation } from '../exchange/parse.ts';
 import type { BoundName, ScannedImport } from './js-scan.ts';
 import { scanJsSource } from './js-scan.ts';
 import type { JsFileScan } from './js-scan.ts';
@@ -191,7 +191,7 @@ function toFact(path: string, fact: {
 function locationOf(
   path: string,
   token: { line: number; column: number },
-): BridgeFact['location'] {
+): BridgeLocation {
   return { path, line: token.line, column: token.column };
 }
 
@@ -199,6 +199,9 @@ function locationOf(
 function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
   const seen = new Map<string, BridgeFact>();
   for (const fact of facts) {
+    // 이 추출기가 만드는 사실은 항상 위치를 가진다 — 위치 없는 사실은
+    // dedup 키를 만들 수 없으므로 여기서 제외한다.
+    if (fact.location === undefined) continue;
     const key = JSON.stringify([
       fact.kind,
       fact.channel,
@@ -211,13 +214,15 @@ function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
     if (!seen.has(key)) seen.set(key, fact);
   }
   return [...seen.values()].sort((left, right) => {
-    const byPath = left.location.path.localeCompare(right.location.path);
+    const leftLocation = left.location!;
+    const rightLocation = right.location!;
+    const byPath = leftLocation.path.localeCompare(rightLocation.path);
     if (byPath !== 0) return byPath;
-    if (left.location.line !== right.location.line) {
-      return left.location.line - right.location.line;
+    if (leftLocation.line !== rightLocation.line) {
+      return leftLocation.line - rightLocation.line;
     }
-    if (left.location.column !== right.location.column) {
-      return left.location.column - right.location.column;
+    if (leftLocation.column !== rightLocation.column) {
+      return leftLocation.column - rightLocation.column;
     }
     return (left.channel ?? '').localeCompare(right.channel ?? '');
   });

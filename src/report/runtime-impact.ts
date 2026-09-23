@@ -52,7 +52,8 @@ export function collectRuntimeImpact(
   const native = document.run.platform === 'android' ? 'kotlin'
     : document.run.platform === 'ios' || document.run.platform === 'macos' ? 'swift' : undefined;
   const files = new Set(selection.files);
-  const locations = new Set(selected.map(({ location }) => locationKey(location)));
+  const locations = new Set(selected.flatMap(({ location }) =>
+    location === undefined ? [] : [locationKey(location)]));
   const selectedChannels = new Set<string>();
   const selectedMethods = new Set<string>();
   for (const fact of selected) {

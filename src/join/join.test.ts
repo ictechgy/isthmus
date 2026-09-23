@@ -72,11 +72,11 @@ test('채널 증거는 입력 순서와 중복에 무관하게 정렬한다', ()
   const result = joinBridgeDocuments([receiver, caller]);
   const channel = result.matchedChannels[0];
 
-  assert.deepEqual(channel?.creations.map(({ location }) => location.path), [
+  assert.deepEqual(channel?.creations.map(({ location }) => location?.path), [
     'lib/a_bridge.dart',
     'lib/camera_bridge.dart',
   ]);
-  assert.deepEqual(channel?.registrations.map(({ location }) => location.path), [
+  assert.deepEqual(channel?.registrations.map(({ location }) => location?.path), [
     'ios/APlugin.swift',
     'ios/Runner/CameraPlugin.swift',
   ]);
@@ -1368,7 +1368,7 @@ test('같은 이름에 섞인 mechanism 호출자는 만족한 쪽만 매치로 
   assert.equal(result.matchedModules[0]?.callers[0]?.mechanism, 'expo');
   assert.equal(result.moduleImportsWithoutExports.length, 1);
   assert.equal(
-    result.moduleImportsWithoutExports[0]?.callers[0]?.location.path,
+    result.moduleImportsWithoutExports[0]?.callers[0]?.location?.path,
     'src/core.ts',
   );
   // export는 expo 호출자에게 도달했으므로 미호출 경고가 아니다.
@@ -1449,4 +1449,234 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
   // 호출이 아예 없는 게 아니라 mechanism만 다른 호출이 관찰됐음이 남는다.
   assert.equal(unrequired[0]?.incompatibleCallers?.length, 1);
   assert.equal(unrequired[0]?.incompatibleCallers?.[0]?.mechanism, undefined);
+});
+
+/** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
+function persistenceDocument(
+  platform: 'go' | 'sql',
+  facts: ReadonlyArray<{
+    kind: 'relation-use' | 'relation-decl';
+    channel: string | null;
+    method?: string;
+    dynamic?: boolean;
+    path?: string;
+    symbol?: string;
+  }>,
+  limitations: readonly string[] = [],
+): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform,
+    target: 'persistence',
+    project: '/fixture',
+    facts: facts.map((fact, index) => ({
+      kind: fact.kind,
+      channel: fact.channel,
+      ...(fact.method === undefined ? {} : { method: fact.method }),
+      dynamic: fact.dynamic ?? false,
+      // 카탈로그 선언은 소스 위치 없이 올 수 있다.
+      ...(fact.kind === 'relation-decl' && fact.path === undefined ? {} : {
+        location: {
+          path: fact.path ?? 'db/access.go',
+          line: index + 1,
+          column: 1,
+        },
+      }),
+      ...(fact.symbol === undefined ? {} : {
+        symbol: { qualifiedName: fact.symbol },
+      }),
+    })),
+    limitations,
+  });
+}
+
+test('한정 관계 사용이 같은 한정 선언과 잇고 컬럼도 함께 판정한다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'public.users' },
+    { kind: 'relation-use', channel: 'public.users', method: 'email' },
+    { kind: 'relation-use', channel: 'public.users', method: 'nickname' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.users', method: 'email', symbol: 'public.users.email' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  assert.equal(result.matchedRelations.length, 1);
+  assert.equal(result.matchedRelations[0]?.channel, 'public.users');
+  assert.equal(result.matchedRelations[0]?.uses.length, 1);
+  assert.equal(result.matchedRelations[0]?.decls.length, 1);
+  // 선언 없는 컬럼(nickname)은 진단으로, 선언 있는 컬럼(email)은 match로 간다.
+  assert.deepEqual(result.matchedColumns.map(({ column }) => column), ['email']);
+  assert.deepEqual(
+    result.columnUsesWithoutDecls.map(({ column }) => column),
+    ['nickname'],
+  );
+  assert.deepEqual(result.relationUsesWithoutDecls, []);
+  assert.deepEqual(result.relationDeclsWithoutUses, []);
+});
+
+test('비한정 사용은 후보가 하나일 때만 선언과 잇는다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'audit.users', symbol: 'audit.users' },
+  ]);
+
+  const ambiguous = joinBridgeDocuments([caller, schema]);
+
+  assert.equal(ambiguous.ambiguousRelationUses.length, 1);
+  assert.equal(ambiguous.ambiguousRelationUses[0]?.channel, 'users');
+  // 후보는 선언의 원문 한정 이름으로 결정적으로 정렬된다.
+  assert.deepEqual(ambiguous.ambiguousRelationUses[0]?.candidates, [
+    'audit.users',
+    'public.users',
+  ]);
+  assert.deepEqual(ambiguous.matchedRelations, []);
+  // 모호함은 사용됨으로 세지 않는다 — 두 선언 모두 미사용 후보로 남는다.
+  assert.equal(ambiguous.relationDeclsWithoutUses.length, 2);
+
+  const uniqueSchema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.orders', symbol: 'public.orders' },
+  ]);
+  const unique = joinBridgeDocuments([caller, uniqueSchema]);
+
+  assert.equal(unique.matchedRelations.length, 1);
+  assert.equal(unique.matchedRelations[0]?.channel, 'public.users');
+  assert.equal(unique.relationDeclsWithoutUses[0]?.channel, 'public.orders');
+});
+
+test('선언이 없는 관계 사용은 미선언으로 남고 동적 사용은 limitation으로 센다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'missing_table' },
+    { kind: 'relation-use', channel: 'prefix + suffix', dynamic: true },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  assert.deepEqual(
+    result.relationUsesWithoutDecls.map(({ channel }) => channel),
+    ['missing_table'],
+  );
+  // 동적 사용은 조인하지 않고 소비자 계수 limitation으로 보존한다.
+  const limitation = result.limitations.find(({ message }) =>
+    message.startsWith('unjoined-dynamic-relations:'));
+  assert.equal(limitation?.origin, 'consumer');
+  assert.match(limitation!.message, /\b1\b/u);
+});
+
+test('관계가 모호하면 그 컬럼 사용은 따로 진단하지 않는다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users', method: 'email' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'a.users', symbol: 'a.users' },
+    { kind: 'relation-decl', channel: 'a.users', method: 'email', symbol: 'a.users.email' },
+    { kind: 'relation-decl', channel: 'b.users', symbol: 'b.users' },
+    { kind: 'relation-decl', channel: 'b.users', method: 'email', symbol: 'b.users.email' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  // 관계 수준 사용 사실이 없으므로 모호성 진단도 없고, 컬럼만 조용히 보류된다.
+  assert.deepEqual(result.ambiguousRelationUses, []);
+  assert.deepEqual(result.matchedColumns, []);
+  assert.deepEqual(result.columnUsesWithoutDecls, []);
+});
+
+test('컬럼 사용만으로는 관계 미사용이 해소되지 않는다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'public.users', method: 'email' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.users', method: 'email', symbol: 'public.users.email' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  // 컬럼은 match하지만 관계 사실이 없으므로 선언은 미사용 후보로 남는다 —
+  // 생산자가 관계 사실과 컬럼 사실을 각각 내는 계약이다.
+  assert.equal(result.matchedColumns.length, 1);
+  assert.equal(result.relationDeclsWithoutUses.length, 1);
+});
+
+test('관계 이름 비교는 대소문자를 접고 점 있는 식별자는 escape로 구분한다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'PUBLIC.USERS' },
+    // `odd%2Ename`은 식별자 `odd.name` 하나다 — 한정자가 아니다.
+    { kind: 'relation-use', channel: 'odd%2Ename' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'Public.Users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 's.odd%2Ename', symbol: 's.odd.name' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  assert.equal(result.matchedRelations.length, 2);
+  assert.deepEqual(
+    result.matchedRelations.map(({ channel }) => channel),
+    ['Public.Users', 's.odd%2Ename'],
+  );
+  assert.deepEqual(result.relationUsesWithoutDecls, []);
+  assert.deepEqual(result.relationDeclsWithoutUses, []);
+});
+
+test('persistence 입력만으로도 조인하고 bridge 도메인 구성은 요구하지 않는다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([caller, schema]);
+
+  assert.equal(result.deferred, false);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('persistence 입력에 sql 선언 문서나 호출 문서가 없으면 거부한다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([caller]),
+    /must include at least one sql declaration document/,
+  );
+  assert.throws(
+    () => joinBridgeDocuments([schema]),
+    /non-sql caller document with the persistence target/,
+  );
+});
+
+test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인한다', () => {
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, caller, schema,
+  ]);
+
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
 });

@@ -152,6 +152,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   function endpointKey(endpoint: BridgeEndpoint): string | undefined {
     if (endpoint.platform !== 'dart' && endpoint.platform !== 'swift' && endpoint.platform !== 'kotlin') return undefined;
     if (endpoint.sourceLanguage === 'objective-c') return undefined;
+    if (endpoint.location === undefined) return undefined;
     const binding = endpoint.platform === 'dart' ? bindings.get(locationKey('dart', endpoint.location)) : undefined;
     const id = endpoint.symbol?.usr ?? binding?.id;
     if (id === undefined) return undefined;
@@ -179,7 +180,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   }> = [];
 
   function boundary(target: BridgeTarget, channel: string, method: string | undefined,
-    callers: readonly BridgeEndpoint[], handlers: readonly MessageEndpoint[], wire: readonly BridgeEndpoint[],
+    callers: readonly BridgeEndpoint[], handlers: readonly BridgeEndpoint[], wire: readonly BridgeEndpoint[],
     transport?: { kind: BridgeMessageTransport; matching: 'literal' | 'prefix' }): void {
     const key = transport === undefined ? JSON.stringify(['bridge', target, channel, method ?? null])
       : JSON.stringify(['bridge', target, transport.kind, transport.matching, channel]);
@@ -285,7 +286,8 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   for (const selection of Object.values(context.selection)) for (const path of selection.files) reachedFiles.add(path);
 
   const relevant = routes.filter((route) => depths.has(route.subject.key) || route.callerKeys.some((key) => depths.has(key)) ||
-    route.receiverKeys.some((key) => depths.has(key)) || route.missing.some(({ location }) => reachedFiles.has(location.path)));
+    route.receiverKeys.some((key) => depths.has(key)) || route.missing.some(({ location }) =>
+      location !== undefined && reachedFiles.has(location.path)));
   for (const route of relevant) {
     if (route.subject.transport === 'basic-message-channel' || route.subject.transport === 'event-channel') {
       const stream = route.subject.transport === 'event-channel';
@@ -323,7 +325,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
       message: 'The producer did not resolve a requested change selection.' });
   }
   for (const document of context.bridges) for (const fact of document.facts) {
-    if ((fact.dynamic || fact.channel === null) && reachedFiles.has(fact.location.path)) limits.push({
+    if ((fact.dynamic || fact.channel === null) && fact.location !== undefined && reachedFiles.has(fact.location.path)) limits.push({
       code: 'unresolved-dynamic-boundary', message: 'A related dynamic or unattributed bridge fact could not be connected.',
       evidence: { platform: document.platform, location: fact.location },
     });
@@ -342,7 +344,9 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   const routeKeys = new Set(relevant.filter(({ subject }) => subject.transport === undefined)
     .map(({ subject }) => JSON.stringify([subject.target, subject.channel, subject.method ?? null])));
   const issues = createCheckReport(joined).issues.filter((issue) => routeKeys.has(JSON.stringify([issue.target, issue.channel, issue.method ?? null])));
-  for (const route of relevant) for (const endpoint of [...route.callers, ...route.receivers]) reachedFiles.add(endpoint.location.path);
+  for (const route of relevant) for (const endpoint of [...route.callers, ...route.receivers]) {
+    if (endpoint.location !== undefined) reachedFiles.add(endpoint.location.path);
+  }
   const reviewFiles = [...reachedFiles].sort(compareStrings);
   const hasSelection = Object.keys(context.selection).length > 0;
   return {

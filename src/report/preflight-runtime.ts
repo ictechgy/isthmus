@@ -99,6 +99,8 @@ export function attachPreflightRuntime(
     if ((document.platform !== 'swift' && document.platform !== 'kotlin') || document.target !== 'flutter') continue;
     for (const fact of document.facts) {
       if (fact.kind !== 'method-handle' || fact.dynamic || fact.channel === null || fact.method === undefined) continue;
+      // 런타임 후보는 소스 위치로 식별한다 — 위치 없는 사실은 후보가 될 수 없다.
+      if (fact.location === undefined) continue;
       const key = candidateKey(document.platform, fact.channel, fact.method);
       let group = handlers.get(key);
       if (group === undefined) {
@@ -147,7 +149,9 @@ export function attachPreflightRuntime(
       const candidates = supported && event.transport === 'method-channel' ? handlers.get(route) : undefined;
       if (candidates !== undefined && !candidateGroups.has(route)) {
         const endpoints = [...candidates.endpoints.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, value]) => value);
-        for (const endpoint of endpoints) addedFiles.add(endpoint.location.path);
+        for (const endpoint of endpoints) {
+          if (endpoint.location !== undefined) addedFiles.add(endpoint.location.path);
+        }
         candidateGroups.set(route, { key: route, channel: candidates.channel, method: candidates.method,
           handlers: endpoints.slice(0, 20), handlersOmitted: Math.max(0, endpoints.length - 20) });
       }
@@ -159,7 +163,9 @@ export function attachPreflightRuntime(
         if (matches.length > 0) {
           const unique = [...new Map(matches.map(({ endpoint }) => [JSON.stringify(endpoint), endpoint])).entries()]
             .sort(([a], [b]) => compareStrings(a, b)).map(([, endpoint]) => endpoint);
-          for (const endpoint of unique) addedFiles.add(endpoint.location.path);
+          for (const endpoint of unique) {
+            if (endpoint.location !== undefined) addedFiles.add(endpoint.location.path);
+          }
           candidateGroups.set(route, { key: route, channel: event.channel, transport: 'basic-message-channel',
             matching: matches.some(({ matching }) => matching === 'prefix') ? 'prefix' : 'literal',
             handlers: unique.slice(0, 20), handlersOmitted: Math.max(0, unique.length - 20) });
