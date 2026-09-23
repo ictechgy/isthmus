@@ -726,6 +726,57 @@ test('사실이 없는 수신 측 문서도 플랫폼 구성 요건을 충족한
   assert.equal(result.unhandledInvocations.length >= 1, true);
 });
 
+test('go 문서는 호출·수신 어느 쪽 구성 요건도 채우지 않는다', () => {
+  const goDocument = parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'go',
+    target: null,
+    facts: [],
+    limitations: ['unscanned-ffi-interop: 1 Go source file uses cgo'],
+  });
+
+  // go가 수신 측을 대신할 수 있다면 한쪽 관찰을 조용히 넘기는 길이 된다.
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
+  assert.throws(
+    () => joinBridgeDocuments([swiftDocument, goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
+  // go만 있는 입력도 같은 이유로 거부한다 — 호출·수신 어느 쪽도 없다.
+  assert.throws(
+    () => joinBridgeDocuments([goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
+  assert.throws(
+    () => joinBridgeDocuments([goDocument, goDocument]),
+    { name: 'BridgeJoinValidationError' },
+  );
+});
+
+test('go 문서의 한계는 어느 target에도 귀속하지 않고 전달한다', () => {
+  const goDocument = parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'go',
+    target: null,
+    facts: [],
+    limitations: ['unscanned-ffi-interop: 1 Go source file uses cgo'],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, swiftDocument, goDocument]);
+
+  const goLimits = result.limitations.filter(({ platform }) => platform === 'go');
+  assert.equal(goLimits.length, 1);
+  const goLimit = goLimits[0];
+  assert.ok(goLimit !== undefined);
+  assert.equal(goLimit.target, null);
+  assert.equal(
+    goLimit.message.startsWith('unscanned-ffi-interop:'),
+    true,
+  );
+});
+
 test('사실이 없는 문서의 한계는 target 귀속 없이 전달한다', () => {
   const emptyReceiver = parseBridgeFactsDocument({
     ...swiftDocument,

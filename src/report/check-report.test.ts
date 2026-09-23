@@ -306,6 +306,37 @@ test('호출 측 한계는 네이티브 핸들러를 가리지 않으므로 심�
   assert.equal(report.summary.errors > 0, true);
 });
 
+test('go 문서의 한계는 수신 측 공백 완화에 쓰이지 않는다', () => {
+  // go는 수신 측이 아니므로, go 문서가 수신 공백과 같은 접두사의 한계를
+  // 실어 와도 핸들러 진단의 심각도를 낮추지 못한다 — 낮춘다면 생산자가
+  // 진짜 불일치를 경고로 묻는 변조 경로가 된다.
+  const goDocument = parseBridgeFactsDocument({
+    ...dartDocument,
+    platform: 'go',
+    target: null,
+    facts: [],
+    limitations: [
+      'unscanned-ffi-interop: 1 Go source file uses cgo',
+      'objective-c-sources: 9 file(s) are not analysed',
+    ],
+  });
+
+  const report = createCheckReport(
+    joinBridgeDocuments([dartDocument, fullyObservedSwiftDocument, goDocument]),
+  );
+
+  assert.equal(
+    report.issues.some(({ code }) => code === 'unhandled-invocation'),
+    true,
+  );
+  assert.equal(report.summary.errors > 0, true);
+  // go limitation 자체는 platform 귀속으로 보존·전달된다.
+  assert.equal(
+    report.limitations.some(({ platform }) => platform === 'go'),
+    true,
+  );
+});
+
 test('채널 이름을 가리는 공백은 메서드 진단을 낮추지 않는다', () => {
   const dynamicChannelSwift = parseBridgeFactsDocument({
     ...fullyObservedSwiftDocument,

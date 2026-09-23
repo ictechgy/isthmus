@@ -33,7 +33,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
-  "platform": "dart" | "swift" | "kotlin" | "js",
+  "platform": "dart" | "swift" | "kotlin" | "js" | "go",
   "target": "flutter" | "react-native" | "capacitor" | null,  // 브리지 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
   "facts": [ Fact, ... ],
@@ -200,10 +200,29 @@ API로 관찰한 `module-import`에만 `optional: true`를 실을 수 있다.
 FFI·JNI 등 채널 계약 밖의 네이티브 interop은 fact로 만들지 않는다 — 심볼 이름 조인은
 런타임 결정 구조라 정적 채널 키로 귀속할 수 없다. 대신 생산자는 소스에서 interop
 근거(dart:ffi 계열 import, `@_cdecl`·Dart C API·dlsym, `external fun`·`System.loadLibrary`·
-`native` 메서드·JNI export 이름)를 관측하면 `unscanned-ffi-interop:`로 시작하는
-limitation에 파일 수를 실어 알린다. 이 라벨은 정보성이다 — 파일 수준 표식만으로는
-어느 채널의 호출·핸들러가 interop으로 가려졌는지 귀속할 수 없으므로 소비자의 공백
-심각도를 바꾸지 않고 그대로 전달한다. 어느 문서에나 실을 수 있다.
+`native` 메서드·JNI export 이름, Go의 `import "C"`·`//export`)를 관측하면
+`unscanned-ffi-interop:`로 시작하는 limitation에 파일 수를 실어 알린다. 이 라벨은
+정보성이다 — 파일 수준 표식만으로는 어느 채널의 호출·핸들러가 interop으로 가려졌는지
+귀속할 수 없으므로 소비자의 공백 심각도를 바꾸지 않고 그대로 전달한다.
+어느 문서에나 실을 수 있다.
+
+### `platform: "go"` (v1 확장)
+
+Go는 cgo(`import "C"`·`//export`)와 gomobile처럼 심볼 이름 경계의 interop을 쓴다 —
+채널·이름 리터럴 계약의 호출/수신 fact 종류로 귀속할 수 없다. 그래서 버전 1에서
+go 문서는 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만 실는다.
+
+- `isFactKindForPlatform` 관점에서 go는 호출 측도 수신 측도 아니다 — go 문서에
+  어떤 kind의 사실이 있으면 입력 오류로 거부한다.
+- 조인 입력의 호출 측(dart·js)·수신 측(swift·kotlin) 최소 하나 요건을 go 문서는
+  어느 쪽으로도 채우지 않는다 — go만 있는 입력이나 한쪽+go만 있는 입력은
+  기존과 같이 거부된다.
+- go 문서의 limitation은 다른 문서의 공백 심각도를 바꾸지 않는다 — 수신 측 공백
+  완화는 swift·kotlin 문서의 한계에만 적용된다.
+- go 문서는 사실이 없으므로 `target`은 항상 `null`이다 — 비null target은
+  입력 오류다. go가 어느 브리지 메커니즘의 증거로도 읽히지 않게 한다.
+- gomobile bind 경계는 소스 표식이 없어 정적으로 관측되지 않는다 — 생산자가
+  추측해 신고하지 않는다.
 
 ### 종류별 의미
 

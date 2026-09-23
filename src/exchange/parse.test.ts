@@ -40,6 +40,51 @@ test('완전한 bridge-facts v1 문서를 파싱한다', () => {
   assert.deepEqual(parsed, emptyDocument);
 });
 
+test('go 문서는 사실 없이 limitation만 싣는다', () => {
+  const goDocument = {
+    ...emptyDocument,
+    platform: 'go',
+    limitations: ['unscanned-ffi-interop: 2 Go source files use cgo'],
+  };
+  const parsed = parseBridgeFactsDocument(goDocument);
+
+  assert.equal(parsed.platform, 'go');
+  assert.deepEqual(parsed.limitations, goDocument.limitations);
+});
+
+test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
+  // 호출 측·수신 측 종류 모두 거부돼야 한다 — go는 어느 쪽도 아니다.
+  // 계약이 정의한 kind 전체를 순회해 집합이 바뀌어도 회귀가 따라온다.
+  const allKinds = [
+    'channel-create', 'channel-register', 'method-invoke', 'method-handle',
+    'module-export', 'module-import', 'component-export', 'component-require',
+  ];
+  for (const kind of allKinds) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'go',
+        facts: [{ ...validMethodFact, kind }],
+      }),
+      /Fact kind is not valid for platform/,
+    );
+  }
+});
+
+test('go 문서는 target을 null로만 싣는다', () => {
+  // go는 v1에서 브리지 메커니즘에 참여하지 않는다 — 비null target은 입력 오류다.
+  for (const target of ['flutter', 'react-native', 'capacitor']) {
+    assert.throws(
+      () => parseBridgeFactsDocument({
+        ...emptyDocument,
+        platform: 'go',
+        target,
+      }),
+      /Go documents must carry a null target/,
+    );
+  }
+});
+
 test('계약 밖 추가 필드는 검증 경계를 넘어 출력되지 않는다', () => {
   const parsed = parseBridgeFactsDocument({
     ...emptyDocument,
