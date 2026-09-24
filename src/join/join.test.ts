@@ -1698,6 +1698,19 @@ test('persistence 입력에 sql 선언 문서나 호출 문서가 없으면 거�
   );
 });
 
+test('rust 문서는 bridge 도메인의 호출·수신 측으로 세지 않는다', () => {
+  // rust는 persistence 생산자다 — dart 호출 문서 옆에 있어도
+  // 수신 측(swift·kotlin) 문서를 대신하지 못한다.
+  const rustCaller = persistenceDocument('rust', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, rustCaller]),
+    /one receiver platform \(swift, kotlin\) document/,
+  );
+});
+
 test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인한다', () => {
   const caller = persistenceDocument('go', [
     { kind: 'relation-use', channel: 'users' },

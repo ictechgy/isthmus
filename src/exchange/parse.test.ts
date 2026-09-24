@@ -867,6 +867,26 @@ test('rust 문서도 persistence target에서 relation-use를 싣는다', () => 
   );
 });
 
+test('rust 문서도 사실이 없을 때만 target을 null로 싣는다', () => {
+  // 빈 수확은 persistence target을 남기지 않는다 — 전역 불변을 rust에도 적용한다.
+  const parsed = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'rust',
+  });
+  assert.equal(parsed.platform, 'rust');
+  assert.equal(parsed.target, null);
+  // 사실이 있는데 target이 null이면 거부다 — relation kind는 persistence
+  // target에서만 유효하므로 kind 검증이 불변 검사보다 먼저 건다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'rust',
+      facts: [validRelationUse],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+});
+
 test('sql 문서는 persistence 외 target을 거부한다', () => {
   for (const target of ['flutter', 'react-native', 'capacitor']) {
     assert.throws(
