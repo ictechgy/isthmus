@@ -8,6 +8,8 @@ import {
   checkIssueRuleDescriptions,
   type IssueFingerprint,
 } from './rules.ts';
+import type { BridgeLocation } from '../exchange/parse.ts';
+import type { BridgeEndpoint } from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 export type { IssueFingerprint } from './rules.ts';
@@ -30,8 +32,12 @@ interface SarifResult {
   readonly ruleIndex: number;
   readonly level: 'error' | 'warning';
   readonly message: { readonly text: string };
-  readonly locations: ReadonlyArray<{
+  readonly locations?: ReadonlyArray<{
     readonly physicalLocation: SarifPhysicalLocation;
+  }>;
+  /** 물리 위치가 없는 카탈로그 증거는 논리 위치로만 표현한다. */
+  readonly logicalLocations?: ReadonlyArray<{
+    readonly fullyQualifiedName: string;
   }>;
   readonly relatedLocations?: ReadonlyArray<{
     readonly id: number;
@@ -110,9 +116,18 @@ function sarifResult(
   ruleIndex: Map<string, number>,
   issueFingerprint: IssueFingerprint,
 ): SarifResult {
-  const [primary, ...related] = issue.evidence;
-  if (primary === undefined) {
-    throw new Error('Cannot create a SARIF result without evidence.');
+  const located = issue.evidence.filter(
+    (endpoint): endpoint is BridgeEndpoint & { readonly location: BridgeLocation } =>
+      endpoint.location !== undefined,
+  );
+  const [primary, ...related] = located;
+  // 위치 없는 카탈로그 증거만 있는 이슈는 논리 위치로 표현한다.
+  const logical = located.length === 0
+    ? [...new Set(issue.evidence.map((endpoint) => endpoint.symbol?.qualifiedName)
+      .filter((name): name is string => name !== undefined))]
+    : [];
+  if (primary === undefined && logical.length === 0) {
+    throw new Error('Cannot create a SARIF result without located or named evidence.');
   }
   const index = ruleIndex.get(issue.code);
   if (index === undefined) {
@@ -126,7 +141,12 @@ function sarifResult(
     ruleIndex: index,
     level: issue.severity,
     message: { text: subject },
-    locations: [{ physicalLocation: physicalLocation(primary) }],
+    ...(primary === undefined ? {} : {
+      locations: [{ physicalLocation: physicalLocation(primary) }],
+    }),
+    ...(logical.length === 0 ? {} : {
+      logicalLocations: logical.map((fullyQualifiedName) => ({ fullyQualifiedName })),
+    }),
     ...(related.length === 0 ? {} : {
       relatedLocations: related.map((endpoint, order) => ({
         id: order + 1,

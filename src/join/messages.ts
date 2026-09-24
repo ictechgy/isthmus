@@ -1,12 +1,15 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeHandlerDependency, BridgeHandlerScope, BridgeMessageDocument, BridgeMessageTransport } from '../exchange/messages.ts';
 import { messageTarget, validateMessageDocuments } from '../exchange/messages.ts';
+import type { BridgeLocation } from '../exchange/parse.ts';
 import type { BridgeEndpoint, JoinLimitation } from './join.ts';
 import { BridgeJoinValidationError } from './join.ts';
 import { MessageAddressIndex } from './message-address.ts';
 
 /** 동적 접두사의 원래 표현식도 근거에 보존한다. */
 export interface MessageEndpoint extends BridgeEndpoint {
+  /** v2 메시지 사실은 카탈로그 선언이 없어 위치가 항상 존재한다. */
+  readonly location: BridgeLocation;
   /** RN 이벤트 근거가 Flutter 미해석 주소 한계로 섞이지 않게 한다. */
   readonly transport?: 'react-native-event';
   readonly channelExpression?: string;

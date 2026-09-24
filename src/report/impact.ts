@@ -148,7 +148,7 @@ export function createBridgeImpact(
     ...channels.flatMap(({ creations, registrations }) => [...creations, ...registrations]),
     ...methods.flatMap(({ invocations, handlers }) => [...invocations, ...handlers]),
     ...(runtime?.reviewFiles ?? []).map((path) => ({ location: { path } })),
-  ].map(({ location }) => location.path))].sort(compareStrings);
+  ].flatMap(({ location }) => location === undefined ? [] : [location.path]))].sort(compareStrings);
   const unmatchedCount = unmatchedSelectors.files.length + unmatchedSelectors.symbols.length;
   const relevantLimitations = joined.limitations.filter((limitation) =>
     unresolvedSelectedFacts > 0 || unmatchedCount > 0 || channels.some(({ target, channel }) =>
@@ -201,11 +201,11 @@ function selectFacts(documents: readonly BridgeFactsDocument[], selection: Impac
   const selected = new Map<string, SelectedBridgeFact>();
   for (const { platform, target, facts } of documents) {
     for (const fact of facts) {
-      const fileMatches = files.has(fact.location.path);
+      const fileMatches = fact.location !== undefined && files.has(fact.location.path);
       const names = fact.symbol === undefined ? [] : [fact.symbol.qualifiedName, fact.symbol.usr];
       const matchedNames = names.filter((name): name is string => name !== undefined && symbols.has(name));
       if (!fileMatches && matchedNames.length === 0) continue;
-      if (fileMatches) foundFiles.add(fact.location.path);
+      if (fileMatches && fact.location !== undefined) foundFiles.add(fact.location.path);
       for (const name of matchedNames) foundSymbols.add(name);
       const item = { ...fact, platform, target };
       selected.set(encodeSortedJson(item), item);

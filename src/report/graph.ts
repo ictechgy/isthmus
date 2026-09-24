@@ -21,7 +21,8 @@ import { encodeSortedJson } from './sorted-json.ts';
 export interface BridgeGraphNode {
   readonly id: string;
   readonly platform: BridgePlatform;
-  readonly location: BridgeLocation;
+  /** 카탈로그 선언처럼 소스 위치가 없는 끝점은 이 키가 빠진다. */
+  readonly location?: BridgeLocation | undefined;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
 }
@@ -84,7 +85,9 @@ function renderMermaid(graph: BridgeGraphDocument): string {
     lines.push(`  %% limitation: ${limitationComment(limitation)}`);
   }
   for (const node of graph.nodes) {
-    const label = `${mermaidText(node.sourceLanguage ?? node.platform)}<br/>${mermaidText(locationLabel(node.location))}`;
+    const label = node.location === undefined
+      ? mermaidText(nodeLabel(node))
+      : `${mermaidText(node.sourceLanguage ?? node.platform)}<br/>${mermaidText(locationLabel(node.location))}`;
     lines.push(`  ${identifiers.get(node.id)}["${label}"]`);
   }
   for (const edge of graph.edges) {
@@ -114,7 +117,9 @@ function renderDot(graph: BridgeGraphDocument): string {
     lines.push(`  // limitation: ${limitationComment(limitation)}`);
   }
   for (const node of graph.nodes) {
-    const label = `${node.sourceLanguage ?? node.platform}\n${locationLabel(node.location)}`;
+    const label = node.location === undefined
+      ? nodeLabel(node)
+      : `${node.sourceLanguage ?? node.platform}\n${locationLabel(node.location)}`;
     lines.push(`  ${dotString(node.id)} [label=${dotString(label)}];`);
   }
   for (const edge of graph.edges) {
@@ -355,10 +360,19 @@ function mergeSymbols(
     : { qualifiedName: left.qualifiedName, usr };
 }
 
+/** 위치 없는 노드의 라벨은 정규 식별자로 대신한다. */
+function nodeLabel(node: BridgeGraphNode): string {
+  return node.symbol?.qualifiedName ?? node.sourceLanguage ?? node.platform;
+}
+
 /** 플랫폼과 소스 위치로 실행 간 안정적인 노드 ID를 만든다. */
 function endpointId(endpoint: BridgeEndpoint): string {
-  const { path, line, column } = endpoint.location;
   const suffix = endpoint.sourceLanguage === undefined ? '' : `:${endpoint.sourceLanguage}`;
+  if (endpoint.location === undefined) {
+    // 카탈로그 선언 끝점은 위치가 없다 — 정규 식별자가 곧 노드 ID다.
+    return `${endpoint.platform}:decl:${endpoint.symbol?.qualifiedName ?? ''}${suffix}`;
+  }
+  const { path, line, column } = endpoint.location;
   return `${endpoint.platform}:${path}:${line}:${column}${suffix}`;
 }
 

@@ -20,6 +20,12 @@ export interface CheckSummary {
   readonly matchedModules: number;
   readonly matchedComponents: number;
   /**
+   * persistence 도메인 입력이 있을 때만 실리는, 양쪽이 관찰된 관계·컬럼 수다.
+   * bridge만 입력하면 키가 빠져 기존 소비자의 요약 비교를 깨지 않는다.
+   */
+  readonly matchedRelations?: number;
+  readonly matchedColumns?: number;
+  /**
    * v2 BasicMessageChannel 입력이 있을 때만 실린다 — 양쪽이 관찰된 채널 수다.
    *
    * v1만 입력하면 필드 자체가 없어 기존 소비자의 요약 비교를 깨지 않는다.
@@ -72,6 +78,13 @@ export const checkIssueCodes = [
   'event-listen-without-emit',
   'event-listen-without-emit-unverified',
   'event-emit-without-listen',
+  'relation-use-without-decl',
+  'relation-use-without-decl-unverified',
+  'ambiguous-relation-use',
+  'relation-decl-without-use',
+  'relation-decl-without-use-unverified',
+  'column-use-without-decl',
+  'column-use-without-decl-unverified',
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -85,6 +98,11 @@ export interface CheckIssue {
   readonly channel: string;
   readonly method?: string;
   readonly evidence: readonly BridgeEndpoint[];
+  /**
+   * `ambiguous-relation-use`에서 비한정 이름이 닿을 수 있는 선언 측 한정
+   * 이름 후보다. 다른 코드에는 없다.
+   */
+  readonly candidates?: readonly string[];
   /**
    * 베이스라인이 이 이슈를 인정된 상태로 억제했다는 표시다.
    *
@@ -234,6 +252,42 @@ export function createCheckReport(
       channel: item.channel,
       evidence: [...item.receivers, ...(item.incompatibleCallers ?? [])],
     })),
+    ...joined.relationUsesWithoutDecls.map<CheckIssue>((item) => ({
+      severity: gaps.hidesDecls(item.target) ? 'warning' : 'error',
+      code: gaps.hidesDecls(item.target)
+        ? 'relation-use-without-decl-unverified'
+        : 'relation-use-without-decl',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.uses,
+    })),
+    ...joined.columnUsesWithoutDecls.map<CheckIssue>((item) => ({
+      severity: gaps.hidesDecls(item.target) ? 'warning' : 'error',
+      code: gaps.hidesDecls(item.target)
+        ? 'column-use-without-decl-unverified'
+        : 'column-use-without-decl',
+      target: item.target,
+      channel: item.channel,
+      method: item.column,
+      evidence: item.uses,
+    })),
+    ...joined.ambiguousRelationUses.map<CheckIssue>((item) => ({
+      severity: 'warning',
+      code: 'ambiguous-relation-use',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.uses,
+      candidates: item.candidates,
+    })),
+    ...joined.relationDeclsWithoutUses.map<CheckIssue>((item) => ({
+      severity: 'warning',
+      code: gaps.hidesRelationUses(item.target)
+        ? 'relation-decl-without-use-unverified'
+        : 'relation-decl-without-use',
+      target: item.target,
+      channel: item.channel,
+      evidence: item.decls,
+    })),
     ...(messages === undefined ? [] : createMessageIssues(messages, gaps)),
   ];
   return {
@@ -246,6 +300,18 @@ export function createCheckReport(
       matchedMethods: joined.matchedMethods.length,
       matchedModules: joined.matchedModules.length,
       matchedComponents: joined.matchedComponents.length,
+      // persistence 입력이 있을 때만 실린다 — bridge만 있는 요약을 깨지 않는다.
+      ...(joined.matchedRelations.length > 0 ||
+          joined.relationUsesWithoutDecls.length > 0 ||
+          joined.relationDeclsWithoutUses.length > 0 ||
+          joined.ambiguousRelationUses.length > 0 ||
+          joined.matchedColumns.length > 0 ||
+          joined.columnUsesWithoutDecls.length > 0
+        ? {
+          matchedRelations: joined.matchedRelations.length,
+          matchedColumns: joined.matchedColumns.length,
+        }
+        : {}),
       ...(messages === undefined ? {} : {
         matchedMessages: matchedMessageRoutes(messages, 'basic-message-channel'),
         matchedStreams: matchedMessageRoutes(messages, 'event-channel'),
@@ -425,6 +491,16 @@ interface ReceiverCoverageGaps {
    * 이 공백은 target 단위로만 적용된다.
    */
   hidesExports(target: BridgeTarget): boolean;
+  /**
+   * persistence 수신 측(sql 문서)이 카탈로그 커버리지 공백을 신고했는지다.
+   * 스캔 범위를 벗어난 스키마를 못 봤을 수 있으면 미선언 진단은 판정 불가다.
+   */
+  hidesDecls(target: BridgeTarget): boolean;
+  /**
+   * 호출 측이 관계 사용을 동적으로 숨겼는지다 — 소비자가 직접 센
+   * `unjoined-dynamic-relations` 한계다. 미참조 선언 진단을 무른다.
+   */
+  hidesRelationUses(target: BridgeTarget): boolean;
 }
 
 /**
@@ -452,11 +528,14 @@ interface ReceiverCoverageGaps {
 function receiverCoverageGaps(
   limitations: readonly JoinLimitation[],
 ): ReceiverCoverageGaps {
+  // persistence 도메인의 수신 측은 sql이다 — sql 문서가 스스로 신고한
+  // 카탈로그 공백도 수신 측 한계로 모은다.
   const receiverLimitations = limitations.filter(({ platform }) =>
-    isReceiverPlatform(platform),
+    isReceiverPlatform(platform) || platform === 'sql',
   );
   const memoized = new Map<BridgeTarget, {
     allHandlers: boolean; allRegistrations: boolean; allExports: boolean;
+    allDecls: boolean; allRelationUses: boolean;
     handlerChannels: Set<string>; registrationChannels: Set<string>;
   }>();
   const gapsFor = (target: BridgeTarget) => {
@@ -464,9 +543,10 @@ function receiverCoverageGaps(
     if (existing !== undefined) return existing;
     const gaps = {
       allHandlers: false, allRegistrations: false, allExports: false,
+      allDecls: false, allRelationUses: false,
       handlerChannels: new Set<string>(), registrationChannels: new Set<string>(),
     };
-    for (const { target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
+    for (const { platform, target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
       if (gapTarget !== null && gapTarget !== target) continue;
       const handlers = startsWithAny(producerHandlerGapPrefixes)(message) ||
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
@@ -474,16 +554,29 @@ function receiverCoverageGaps(
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusRegistrationGapPrefixes)(message));
       const exports = origin === 'consumer' && tool === 'isthmus' &&
         startsWithAny(isthmusExportGapPrefixes)(message);
+      // 카탈로그 커버리지 공백은 sql 문서의 자기 신고만 인정한다 — 다른
+      // 플랫폼 문서가 같은 접두사를 달아도 스키마 스캔 범위의 근거가 아니다.
+      const decls = platform === 'sql' && startsWithAny(schemaDeclGapPrefixes)(message);
       // 하나라도 범위가 불명확한 공백이 있으면 같은 target의 좁은 범위로 덮지 않는다.
       if (channels === undefined) {
         gaps.allHandlers ||= handlers;
         gaps.allRegistrations ||= registrations;
         gaps.allExports ||= exports;
+        gaps.allDecls ||= decls;
       } else {
         for (const channel of channels) {
           if (handlers) gaps.handlerChannels.add(channel);
           if (registrations) gaps.registrationChannels.add(channel);
         }
+      }
+    }
+    // 호출 측이 관계 사용을 숨긴 공백은 수신 측 한계가 아니라 소비자가 직접 센
+    // 계수다 — 플랫폼과 무관하게 같은 target의 미참조 선언 진단만 무른다.
+    for (const { target: gapTarget, tool, message, origin } of limitations) {
+      if (gapTarget !== null && gapTarget !== target) continue;
+      if (origin === 'consumer' && tool === 'isthmus' &&
+        startsWithAny(isthmusRelationUseGapPrefixes)(message)) {
+        gaps.allRelationUses = true;
       }
     }
     memoized.set(target, gaps);
@@ -499,6 +592,8 @@ function receiverCoverageGaps(
       return gaps.allRegistrations || gaps.registrationChannels.has(channel);
     },
     hidesExports: (target) => gapsFor(target).allExports,
+    hidesDecls: (target) => gapsFor(target).allDecls,
+    hidesRelationUses: (target) => gapsFor(target).allRelationUses,
   };
 }
 
@@ -549,3 +644,15 @@ const isthmusRegistrationGapPrefixes = ['unjoined-dynamic-channels:'];
  * 수신 측 사실이 곧 가려진 export의 상한이다.
  */
 const isthmusExportGapPrefixes = ['unjoined-dynamic-exports:'];
+
+/**
+ * sql 문서가 스스로 신고하는 카탈로그 커버리지 공백이다 — 스캔 범위 밖
+ * 스키마를 못 봤을 수 있어 미선언 진단을 판정 불가로 내린다.
+ */
+const schemaDeclGapPrefixes = ['catalog-coverage:'];
+
+/**
+ * 호출 측 관계 참조가 동적이라 조인하지 못한 소비자 계수다 — 미참조 선언이
+ * 진짜 미참조인지 판정할 수 없게 하는 호출 측 공백이다.
+ */
+const isthmusRelationUseGapPrefixes = ['unjoined-dynamic-relations:'];

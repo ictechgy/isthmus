@@ -20,7 +20,7 @@ function flat(document: ReturnType<typeof assemble>) {
     channel: fact.channel,
     method: fact.method,
     dynamic: fact.dynamic,
-    path: fact.location.path,
+    path: fact.location?.path,
   }));
 }
 

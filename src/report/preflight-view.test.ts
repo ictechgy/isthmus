@@ -68,7 +68,7 @@ test('runtime summary counts declared scenario/platform pairs and only nonpassed
   assert.equal(view.runtime?.routes.items[0]?.instance, 'main');
   const candidate = view.runtime?.candidates.items[0];
   assert.equal(view.runtime?.routes.items[0]?.candidateKey, candidate?.key);
-  assert.equal(candidate?.handlers.items[0]?.location.path, 'ios/Handler.swift');
+  assert.equal(candidate?.handlers.items[0]?.location?.path, 'ios/Handler.swift');
   const expanded = createPreflightSummary({ ...withRuntime, runtime: { ...withRuntime.runtime!,
     candidates: [{ ...withRuntime.runtime!.candidates[0]!,
       handlers: Array(20).fill(withRuntime.runtime!.candidates[0]!.handlers[0]!), handlersOmitted: 7 }] } }, 2);

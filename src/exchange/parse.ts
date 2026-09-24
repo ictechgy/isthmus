@@ -1,8 +1,8 @@
-/** bridge-facts 생산 플랫폼이다. */
-export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go';
+/** bridge-facts 생산 플랫폼이다. sql은 스키마 카탈로그를 읽는 수신 측이다. */
+export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'sql';
 
-/** 언어 경계를 잇는 메커니즘이다. */
-export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor';
+/** 언어 경계를 잇는 메커니즘이다. persistence는 코드↔스키마 경계다. */
+export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor' | 'persistence';
 
 /**
  * 같은 target 안에서 사실이 통과하는 구체적인 해석 경로다.
@@ -35,7 +35,9 @@ export type BridgeFactKind =
   | 'module-export'
   | 'module-import'
   | 'component-export'
-  | 'component-require';
+  | 'component-require'
+  | 'relation-use'
+  | 'relation-decl';
 
 /** 한 생산 문서가 담을 수 있는 최대 사실 수다. */
 export const MAX_FACTS_PER_DOCUMENT = 100_000;
@@ -96,7 +98,11 @@ export interface BridgeFact {
    */
   readonly optional?: boolean;
   readonly dynamic: boolean;
-  readonly location: BridgeLocation;
+  /**
+   * `relation-decl`은 live catalog 선언이라 소스 위치가 없어 생략할 수 있다.
+   * 그 외 kind는 계약상 필수다.
+   */
+  readonly location?: BridgeLocation;
   readonly symbol?: BridgeSymbol;
   readonly sourceLanguage?: BridgeSourceLanguage;
   readonly handlerScope?: BridgeHandlerScope;
@@ -186,11 +192,13 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
     ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
     ...(fact.optional === undefined ? {} : { optional: fact.optional }),
     dynamic: fact.dynamic,
-    location: {
-      path: fact.location.path,
-      line: fact.location.line,
-      column: fact.location.column,
-    },
+    ...(fact.location === undefined ? {} : {
+      location: {
+        path: fact.location.path,
+        line: fact.location.line,
+        column: fact.location.column,
+      },
+    }),
     ...symbol,
     ...(fact.sourceLanguage === undefined ? {} : { sourceLanguage: fact.sourceLanguage }),
     ...(fact.handlerScope === undefined ? {} : normalizeScopeEvidence(fact.handlerScope, fact.dependencies ?? [])),
@@ -208,11 +216,16 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
-  // go 문서는 v1에서 사실을 담지 않으므로 브리지 메커니즘도 가질 수 없다.
-  // 비null target을 허용하면 소비자가 go 문서를 어느 target의 근거로 읽을지
-  // 갈리므로 입력 오류로 거부한다.
-  if (document.platform === 'go' && document.target !== null) {
-    fail('Go documents must carry a null target.');
+  // go 문서가 가질 수 있는 비null target은 persistence뿐이다 — bridge 도메인의
+  // go는 cgo·gomobile 사실을 채널 키로 귀속할 수 없어 사실을 내지 않는다.
+  // sql 문서도 같은 이유로 null 또는 persistence 외 target을 가질 수 없다.
+  if (document.platform === 'go' && document.target !== null &&
+    document.target !== 'persistence') {
+    fail('Go documents may only carry a null or persistence target.');
+  }
+  if (document.platform === 'sql' && document.target !== null &&
+    document.target !== 'persistence') {
+    fail('Sql documents may only carry a null or persistence target.');
   }
   if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
   if (!Array.isArray(document.facts)) fail('Facts must be an array.');
@@ -227,7 +240,7 @@ function validateDocumentMetadata(
     }
   };
   document.facts.forEach((fact, index) =>
-    validateFact(fact, index, document.platform, consumeScopeDependencies),
+    validateFact(fact, index, document.platform, document.target, consumeScopeDependencies),
   );
   if ((document.target === null) !== (document.facts.length === 0)) {
     fail('Target must be set exactly when facts are present.');
@@ -281,13 +294,17 @@ function validateLimitationScopes(value: unknown, limitationCount: number): void
 
 /** 사실 하나의 조인 키와 증거 필드를 검증한다. */
 function validateFact(value: unknown, index: number, platform: unknown,
-  consumeScopeDependencies: (count: number) => void): void {
+  target: unknown, consumeScopeDependencies: (count: number) => void): void {
   if (!isJsonObject(value)) fail(`Fact at index ${index} must be a JSON object.`);
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
-  if (!isFactKindForPlatform(platform, value.kind)) {
+  if (!isFactKindForPlatformTarget(platform, target, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
   }
-  if (!methodFactKinds.has(value.kind) && value.method !== undefined) {
+  if (
+    !methodFactKinds.has(value.kind) &&
+    !optionalMethodFactKinds.has(value.kind) &&
+    value.method !== undefined
+  ) {
     fail(`Unexpected method at index ${index}.`);
   }
   if (
@@ -300,6 +317,25 @@ function validateFact(value: unknown, index: number, platform: unknown,
   if (methodFactKinds.has(value.kind) && !isSafeNonEmptyString(value.method)) {
     fail(`Method fact at index ${index} requires a method name.`);
   }
+  if (optionalMethodFactKinds.has(value.kind) && value.method !== undefined &&
+    !isSafeNonEmptyString(value.method)) {
+    fail(`Invalid column name at index ${index}.`);
+  }
+  // 카탈로그 선언은 소스 위치가 없고 이름이 항상 리터럴이다 — dynamic이거나
+  // 객체만 가리키는 symbol 없는 relation-decl은 소비자가 진단을 못 가리키게
+  // 하므로 거부한다. 선언 이름은 계약상 항상 `schema.name` 한정 형태다 —
+  // 비한정 선언은 조인 의미가 정의되지 않아 거부한다.
+  if (value.kind === 'relation-decl') {
+    if (value.dynamic === true || !isJsonObject(value.symbol)) {
+      fail(`Relation declarations require a symbol and must be literal at index ${index}.`);
+    }
+    const segments = typeof value.channel === 'string'
+      ? value.channel.split('.')
+      : [];
+    if (segments.length < 2 || segments.some((segment) => segment.length === 0)) {
+      fail(`Relation declarations require a qualified schema.name channel at index ${index}.`);
+    }
+  }
   if (value.mechanism !== undefined &&
     (!mechanismFactKinds.has(value.kind) || !bridgeMechanisms.has(value.mechanism))) {
     fail(`Invalid fact mechanism at index ${index}.`);
@@ -310,9 +346,19 @@ function validateFact(value: unknown, index: number, platform: unknown,
     fail(`Invalid fact optional flag at index ${index}.`);
   }
   if (typeof value.dynamic !== 'boolean') fail(`Invalid dynamic flag at index ${index}.`);
-  validateLocation(value.location, index);
+  if (value.location === undefined) {
+    // live catalog 선언만 소스 위치 없이 올 수 있다.
+    if (value.kind !== 'relation-decl') {
+      fail(`Fact at index ${index} requires a location.`);
+    }
+  } else {
+    validateLocation(value.location, index);
+  }
   validateSymbol(value.symbol, index);
-  validateSourceLanguage(value.sourceLanguage, platform, value.location as BridgeLocation, value.symbol as BridgeSymbol | undefined, index);
+  if (value.location === undefined && value.sourceLanguage !== undefined) {
+    fail(`Invalid source language at index ${index}.`);
+  }
+  validateSourceLanguage(value.sourceLanguage, platform, value.location as BridgeLocation | undefined, value.symbol as BridgeSymbol | undefined, index);
   if (value.handlerScope !== undefined || value.dependencies !== undefined) {
     if (value.kind !== 'method-handle' || value.sourceLanguage !== undefined) {
       fail(`Scope evidence requires a native method handler at index ${index}.`);
@@ -405,11 +451,24 @@ function comparePositions(left: BridgeLocation, right: BridgeLocation): number {
   return left.line - right.line || left.column - right.column;
 }
 
-/** 호출 측과 수신 측 플랫폼이 생산할 수 있는 fact 종류인지 확인한다. */
-function isFactKindForPlatform(platform: unknown, kind: unknown): boolean {
-  // go는 v1에서 사실을 내지 않는다 — cgo/gomobile 같은 심볼 경계 interop은
-  // 정적 채널 키로 귀속할 수 없어 unscanned-ffi-interop limitation으로만
-  // 신고한다. 호출·수신 어느 쪽 종류도 허용하지 않는다.
+/** 호출 측과 수신 측 플랫폼이 주어진 target 안에서 생산할 수 있는 fact 종류인지 확인한다. */
+function isFactKindForPlatformTarget(
+  platform: unknown,
+  target: unknown,
+  kind: unknown,
+): boolean {
+  // persistence 도메인에서는 sql이 유일한 수신 측이고 나머지 플랫폼은 모두
+  // 코드 쪽 관계 참조를 내는 호출 측이다.
+  if (target === 'persistence') {
+    return platform === 'sql'
+      ? kind === 'relation-decl'
+      : kind === 'relation-use';
+  }
+  // bridge target의 go는 호출·수신 어느 쪽 종류도 허용하지 않는다 — cgo/
+  // gomobile 같은 심볼 경계 interop은 정적 채널 키로 귀속할 수 없어
+  // unscanned-ffi-interop limitation으로만 신고한다. sql은 bridge 도메인에
+  // 없다.
+  if (platform === 'sql') return false;
   if (isCallerPlatform(platform)) return callerFactKinds.has(kind);
   if (isReceiverPlatform(platform)) return receiverFactKinds.has(kind);
   return false;
@@ -481,10 +540,10 @@ export function validateSymbol(value: unknown, index: number): void {
 }
 
 /** 교환 계약별 파서가 Objective-C 출처·경로·실제 Clang 신원 규칙을 공유한다. */
-export function validateSourceLanguage(value: unknown, platform: unknown, location: BridgeLocation,
+export function validateSourceLanguage(value: unknown, platform: unknown, location: BridgeLocation | undefined,
   symbol: BridgeSymbol | undefined, index: number): void {
   if (value !== undefined && (value !== 'objective-c' || platform !== 'swift' ||
-    !/\.(?:m|mm)$/u.test(location.path) ||
+    location === undefined || !/\.(?:m|mm)$/u.test(location.path) ||
     (symbol?.usr !== undefined && !symbol.usr.startsWith('c:')))) {
     fail(`Invalid source language at index ${index}.`);
   }
@@ -553,13 +612,14 @@ function fail(message: string): never {
 }
 
 /** 지원하는 생산 플랫폼 집합이다. */
-const bridgePlatforms = new Set<unknown>(['dart', 'swift', 'kotlin', 'js', 'go']);
+const bridgePlatforms = new Set<unknown>(['dart', 'swift', 'kotlin', 'js', 'go', 'sql']);
 
-/** 지원하는 브리지 메커니즘 집합이다. */
+/** 지원하는 경계 메커니즘 집합이다. */
 const bridgeTargets = new Set<unknown>([
   'flutter',
   'react-native',
   'capacitor',
+  'persistence',
 ]);
 
 /** 버전 1이 정의한 사실 종류 집합이다. */
@@ -572,6 +632,8 @@ const bridgeFactKinds = new Set<unknown>([
   'module-import',
   'component-export',
   'component-require',
+  'relation-use',
+  'relation-decl',
 ]);
 
 const callerFactKinds = new Set<unknown>([
@@ -589,6 +651,12 @@ const receiverFactKinds = new Set<unknown>([
 
 /** method 필드가 필수인 사실 종류다. */
 const methodFactKinds = new Set<unknown>(['method-invoke', 'method-handle']);
+
+/** method 필드가 선택인 사실 종류다 — persistence 도메인에서는 컬럼 이름이다. */
+const optionalMethodFactKinds = new Set<unknown>([
+  'relation-use',
+  'relation-decl',
+]);
 
 /** mechanism 필드가 허용되는 이름 경계 사실 종류다. */
 const mechanismFactKinds = new Set<unknown>([

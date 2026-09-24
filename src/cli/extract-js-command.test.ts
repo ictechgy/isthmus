@@ -70,7 +70,7 @@ test('디렉터리 입력을 걸어 bridge-facts 문서를 stdout에 쓴다', as
       ['method-invoke', 'Cam', 'shoot'],
     ],
   );
-  assert.equal(document.facts[0]?.location.path, 'src/app.ts');
+  assert.equal(document.facts[0]?.location?.path, 'src/app.ts');
 });
 
 test('파일 입력과 --project 루트를 함께 지원한다', async () => {
@@ -84,7 +84,7 @@ test('파일 입력과 --project 루트를 함께 지원한다', async () => {
   );
   assert.equal(result.exitCode, 0);
   const document = parseBridgeFactsDocument(JSON.parse(result.standardOutput));
-  assert.equal(document.facts[0]?.location.path, 'app/src/main.ts');
+  assert.equal(document.facts[0]?.location?.path, 'app/src/main.ts');
 });
 
 test('잘못된 호출은 사용법과 코드 64다', async () => {
@@ -185,7 +185,7 @@ test('여러 입력의 공통 조상 디렉터리가 프로젝트 루트다', as
   assert.equal(result.exitCode, 0);
   const document = parseBridgeFactsDocument(JSON.parse(result.standardOutput));
   assert.deepEqual(
-    document.facts.map((fact) => fact.location.path),
+    document.facts.map((fact) => fact.location?.path),
     ['x/a.ts', 'y/b.ts'],
   );
 });
@@ -224,5 +224,5 @@ test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다
   );
   assert.equal(result.exitCode, 0);
   const document = parseBridgeFactsDocument(JSON.parse(result.standardOutput));
-  assert.equal(document.facts[0]?.location.path, 'a\\b.ts');
+  assert.equal(document.facts[0]?.location?.path, 'a\\b.ts');
 });

@@ -1,11 +1,13 @@
 import type {
   BridgeFactsDocument,
+  BridgeLocation,
   BridgePlatform,
   BridgeSymbol,
 } from '../exchange/parse.ts';
 import type { BridgeMessageDocument } from '../exchange/messages.ts';
 import {
   isBridgeJoinDeferred,
+  type BridgeEndpoint,
   type BridgeJoinResult,
 } from '../join/join.ts';
 import type { MessageBridgeJoin, MessageEndpoint } from '../join/messages.ts';
@@ -165,7 +167,7 @@ function rejectUnresolvedHandlers(
   let unresolvedObjectiveC = false;
   for (const method of joined.matchedMethods) {
     for (const handler of method.handlers) {
-      if (handler.platform !== platform) continue;
+      if (handler.platform !== platform || handler.location === undefined) continue;
       if (handler.symbol !== undefined &&
         (platform === 'swift' && handler.sourceLanguage !== 'objective-c' || handler.symbol.usr !== undefined)) continue;
       const { path, line, column } = handler.location;
@@ -176,7 +178,7 @@ function rejectUnresolvedHandlers(
   if (messages !== undefined) {
     for (const route of retainedMessageRoutes(messages)) {
       for (const handler of route.handlers) {
-        if (handler.platform !== platform) continue;
+        if (handler.platform !== platform || handler.location === undefined) continue;
         if (handler.symbol !== undefined &&
           (platform === 'swift' && handler.sourceLanguage !== 'objective-c' || handler.symbol.usr !== undefined)) continue;
         const { path, line, column } = handler.location;
@@ -207,6 +209,7 @@ function collectRetentions(
     // 결정적 순서(플랫폼·경로·줄·열)의 첫 호출이 대표 증거다. 상한 밖 호출까지
     // 객체로 만들지 않도록 먼저 자른다.
     const callers = method.invocations
+      .filter(hasLocation)
       .slice(0, MAX_RETENTION_CALLERS)
       .map(toRetentionCaller);
     const callersOmitted = method.invocations.length - callers.length;
@@ -293,6 +296,11 @@ function collectMessageRetentions(
     }
   }
   return retentions;
+}
+
+/** 위치 없는 끝점은 호출자 증거를 만들 수 없다 — 브리지 사실만 호출자가 된다. */
+function hasLocation(endpoint: BridgeEndpoint): endpoint is BridgeEndpoint & { readonly location: BridgeLocation } {
+  return endpoint.location !== undefined;
 }
 
 /** 증거 끝점을 external-retentions의 호출자 형태로 바꾼다. */

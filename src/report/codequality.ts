@@ -52,6 +52,10 @@ export function createCodeQualityFindings(
   const seen = new Set<string>();
   return report.issues
     .filter((issue) => issue.suppressed !== true)
+    // 카탈로그 선언만 증거인 이슈는 파일 위치가 없어 이 형식이 표현할 수 없다.
+    // 증거가 아예 없는 이슈는 상류 불변 위반이므로 변환 단계에서 명시적으로 실패한다.
+    .filter((issue) => issue.evidence.length === 0 ||
+      issue.evidence.some((endpoint) => endpoint.location !== undefined))
     .map((issue) => {
       const finding = codeQualityFinding(issue, issueFingerprint);
       if (seen.has(finding.fingerprint)) {
@@ -76,9 +80,9 @@ function codeQualityFinding(
   issue: CheckIssue,
   issueFingerprint: IssueFingerprint,
 ): CodeQualityFinding {
-  const primary = issue.evidence[0];
-  if (primary === undefined) {
-    throw new Error('Cannot create a Code Quality finding without evidence.');
+  const primary = issue.evidence.find((endpoint) => endpoint.location !== undefined);
+  if (primary === undefined || primary.location === undefined) {
+    throw new Error('Cannot create a Code Quality finding without evidence carrying a source location.');
   }
   const { line } = primary.location;
   if (line < 1) {

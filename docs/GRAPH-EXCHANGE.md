@@ -33,8 +33,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
-  "platform": "dart" | "swift" | "kotlin" | "js" | "go",
-  "target": "flutter" | "react-native" | "capacitor" | null,  // 브리지 메커니즘
+  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "sql",
+  "target": "flutter" | "react-native" | "capacitor" | "persistence" | null,  // 경계 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
   "facts": [ Fact, ... ],
   "limitations": [ "dynamic-channel-names: 3 channel constructors use a non-literal name", ... ]
@@ -81,9 +81,11 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 ```jsonc
 {
   "kind": "channel-create" | "channel-register" | "method-invoke" | "method-handle"
-        | "module-export" | "module-import" | "component-export" | "component-require",
-  "channel": "com.example/camera",     // 귀속할 수 없으면 null. dynamic 이면 원문 표현식
-  "method": "takePhoto",               // method-* 에만
+        | "module-export" | "module-import" | "component-export" | "component-require"
+        | "relation-use" | "relation-decl",
+  "channel": "com.example/camera",     // 귀속할 수 없으면 null. dynamic 이면 원문 표현식.
+                                       // relation-* 에서는 관계 이름(아래 persistence 절)
+  "method": "takePhoto",               // method-* 에만. relation-* 에서는 선택적 컬럼 이름
   "mechanism": "expo",                 // module-*/component-* 에만(method-*와
                                        // 상호 배타). 생략은 "core"
   "optional": true,                    // module-import 에만 — 호출 API가
@@ -132,6 +134,8 @@ dependency/dispatch 후보에서만 해당 경계로 전파하고, 수신 선언
 모든 경계를 보고하는 기존 동작이다. 옛 v1 소비자는 이 두 필드를 모르는 추가 필드로
 제거하므로, 이 확장을 내는 생산자와 읽는 소비자의 배포 순서는 자유다.
 
+`location`은 `relation-decl`을 제외한 모든 kind에서 필수다 — live catalog 선언에는
+소스 위치가 없으므로 그 kind만 생략할 수 있다(아래 persistence 절).
 `location.path`는 프로젝트 루트 기준 상대 경로다. 절대 경로, `..` 상위 이동, 제어 문자를 넣지 않는다.
 `location.line`과 `location.column`은 1부터 시작하며, `column`은 해당 줄의 UTF-8 바이트
 오프셋에 1을 더한 값이다. 생산자는 언어 런타임의 UTF-16 또는 Unicode scalar 열을 그대로
@@ -209,20 +213,81 @@ FFI·JNI 등 채널 계약 밖의 네이티브 interop은 fact로 만들지 않�
 ### `platform: "go"` (v1 확장)
 
 Go는 cgo(`import "C"`·`//export`)와 gomobile처럼 심볼 이름 경계의 interop을 쓴다 —
-채널·이름 리터럴 계약의 호출/수신 fact 종류로 귀속할 수 없다. 그래서 버전 1에서
-go 문서는 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만 실는다.
+채널·이름 리터럴 계약의 호출/수신 fact 종류로 귀속할 수 없다. 그래서 bridge
+target에서는 go 문서가 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만
+실는다. 예외는 `target: "persistence"`뿐이다 — 그 도메인에서 go는 호출 측
+생산자다(아래 persistence 절).
 
-- `isFactKindForPlatform` 관점에서 go는 호출 측도 수신 측도 아니다 — go 문서에
-  어떤 kind의 사실이 있으면 입력 오류로 거부한다.
-- 조인 입력의 호출 측(dart·js)·수신 측(swift·kotlin) 최소 하나 요건을 go 문서는
-  어느 쪽으로도 채우지 않는다 — go만 있는 입력이나 한쪽+go만 있는 입력은
-  기존과 같이 거부된다.
+- bridge target 관점에서 go는 호출 측도 수신 측도 아니다 — bridge target 문서에
+  go bridge kind 사실이 있으면 입력 오류로 거부한다.
+- bridge 도메인 입력의 호출 측(dart·js)·수신 측(swift·kotlin) 최소 하나 요건을
+  go 문서는 어느 쪽으로도 채우지 않는다 — bridge 도메인에서 go만 있는 입력이나
+  한쪽+go만 있는 입력은 기존과 같이 거부된다.
 - go 문서의 limitation은 다른 문서의 공백 심각도를 바꾸지 않는다 — 수신 측 공백
-  완화는 swift·kotlin 문서의 한계에만 적용된다.
-- go 문서는 사실이 없으므로 `target`은 항상 `null`이다 — 비null target은
-  입력 오류다. go가 어느 브리지 메커니즘의 증거로도 읽히지 않게 한다.
+  완화는 swift·kotlin 문서의 한계에만 적용된다. persistence 도메인에서는
+  go 문서가 호출 측이라 그 문서의 한계도 호출 측 한계다.
+- bridge 도메인에서 go 문서는 사실이 없으므로 `target`은 `null`이다.
+  `persistence` 외의 비null target은 입력 오류다.
 - gomobile bind 경계는 소스 표식이 없어 정적으로 관측되지 않는다 — 생산자가
   추측해 신고하지 않는다.
+
+### `target: "persistence"` (v1 확장)
+
+언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
+생산자(`platform: "go"`의 gartograph 등), 수신 측은 스키마 카탈로그를 읽는
+`platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
+측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
+그대로다.
+
+| kind | 누가 내는가 | 뜻 |
+|---|---|---|
+| `relation-use` | sql 외 플랫폼 | 코드가 관계(테이블·뷰·materialized view) 이름을 참조했다 |
+| `relation-decl` | sql | 스키마 카탈로그가 관계를 선언한다 |
+
+두 kind 모두 `channel`에 관계 이름을 싣는다. 선언 측은 항상 `schema.name`
+한정 형태를 쓰고, 사용 측은 코드에 쓰인 그대로(한정·비한정 모두) 쓴다 —
+인용 부호는 생산자가 벗겨 낸다. `method`는 이 도메인에서 컬럼 이름이다:
+`method`를 가진 `relation-use`는 (관계, 컬럼) 참조, `method`를 가진
+`relation-decl`은 그 관계의 컬럼 선언이다. 컬럼 참조는 관계 참조를 함축하지
+않는다 — 생산자는 관계 사실과 컬럼 사실을 각각 별도로 낸다.
+
+`relation-decl`만 `location`을 생략할 수 있다 — 카탈로그 객체에는 소스 위치가
+없다. 대신 `symbol.qualifiedName`에 `schema.object[.member]` 정규 id를 싣고,
+생산자의 안정 정점 식별자가 있으면 `symbol.usr`에 넣는다. `relation-use`의
+`location`은 기존 규칙 그대로 필수다. `relation-decl`은 카탈로그 이름이
+항상 리터럴이므로 `dynamic: false`다.
+
+조인 규칙 (persistence 도메인):
+
+- 조인 키는 소문자로 접은 관계 이름이다. SQL 방언마다 대소문자 규칙이 달라
+  소비자는 기본 Unicode 소문자 접기로 비교한다. 이름 안의 `.`는 한정
+  구분자다 — 이름 자체에 `.`가 들어간 객체는 생산자가 `%2E`로 escape해 낸다.
+- 한정 사용(`a.b`)은 접은 한정 선언과 정확히 같을 때만 잇는다. 비한정
+  사용(`b`)은 마지막 세그먼트가 같은 선언과 잇는다 — 후보가 하나면 match,
+  둘 이상이면 어느 선언인지 추측하지 않는다. 모호한 사용은 match도
+  missing도 아닌 `ambiguous-relation-use` 경고로만 보고한다.
+- `method`를 가진 사용은 (해석된 관계 키, 접은 컬럼) 쌍으로 조인한다 —
+  관계가 맞았어도 그 관계의 해당 컬럼 선언이 없으면 `column-use-without-decl`이다.
+- 진단: `relation-use-without-decl`은 error다 — 코드가 선언되지 않은 관계를
+  참조하는 것은 깨진 쿼리·드리프트의 근거다. `relation-decl-without-use`는
+  warning이다 — 스캔된 코드가 참조하지 않는 스키마 객체는 dead-schema
+  후보지 삭제 판정이 아니다. 컬럼 선언의 미사용은 흔하고 신호가 약아
+  `column-decl-without-use` 진단은 만들지 않는다.
+- 심각도 완화: sql 문서가 `catalog-coverage:`로 시작하는 limitation을
+  신고하면(읽지 못한 스키마·스캔 범위 제한 같은 수신 측 공백)
+  `relation-use-without-decl`·`column-use-without-decl`을 `-unverified`
+  경고로 내린다 — 모르는 한계를 공백으로 넓게 읽지 않고 알려진 접두사만
+  인정하는 기존 규칙과 같다. 소비자가 직접 센 `unjoined-dynamic-relations`
+  (조인하지 못한 dynamic·비해석 관계 사용 수)는 호출 측 공백이라
+  `relation-decl-without-use`의 `-unverified` 판정 근거다.
+- `platform: "go"`의 "사실을 담지 않는다" 규칙은 이 target에서만 풀린다 —
+  go 문서는 `relation-use`만 실을 수 있고 그때 `target`은 `persistence`다.
+- 입력 구성: `platform: "sql"` 문서나 `target: "persistence"` 문서가 하나라도
+  있으면 persistence 도메인 입력으로 보아, sql 문서 최소 하나와
+  `target: "persistence"`인 비sql 문서 최소 하나를 요구한다. `target: null`
+  문서는 이 도메인의 호출 측으로 세지 않는다 — 스키마 경계를 스캔하지 않은
+  문서를 "참조 없음"으로 읽으면 모든 선언이 거짓 미사용으로 보고된다.
+  bridge 도메인 문서가 함께 들어오면 두 도메인의 구성 요건을 각각 검사한다.
 
 ### 종류별 의미
 
@@ -236,6 +301,8 @@ go 문서는 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만 실
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
+| `relation-use` | sql 외 (v1: Go) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
 
@@ -309,7 +376,12 @@ require에는 싣지 않는다.
 - 생산자는 `project`를 내보내기 전에 **POSIX realpath**(`realpath(3)`)로 정규화한다. 결과는 항상 symlink·`..`·중복 슬래시가 접힌 절대 경로다. 프로젝트 경로를 해결할 수 없거나 결과가 이 계약이 금지하는 제어 문자(NEL과 U+2028/U+2029 포함)를 포함하면 생산자는 문서를 내보내지 않고 실패한다 — 소비자에게 거부될 문서를 내보내지 않는다. 버전 1은 POSIX를 가정하며, Windows 정규화(드라이브 문자 대소문자, `\\?\` 접두사)는 Windows 지원 시 별도 합의한다. kartograph의 목표 기준은 JVM `Path.toRealPath()`다
 - `project`는 생산자가 선언한 **조인 루트**다. 모든 사실의 `location.path`는 이 루트 기준 상대 경로이며, 모노레포에서 분석 루트와 조인 루트가 다르면 생산자가 위치를 조인 루트 기준으로 재기준화해 내보낸다. 생산 후에 문서의 `project`만 손으로 고쳐 쓰는 것은 조인 루트 선언이 아니다 — `location.path`가 다른 트리를 가리키게 되어 계약 위반이다. 선언 방법은 생산자 옵션이고 우선순위는 명시 옵션 > 자동 감지 > 분석 루트다. dartograph(0.5.0): `--project <shared-root>`는 스캔 범위를 위치 인자로 둔 채 `project`와 `location.path`를 공유 루트 기준으로 재기준화하고, 공유 루트는 realpath 정규화 후 package root를 포함하거나 동일해야 하며(위반은 사용 오류), pub workspace 자동 감지는 스캔 루트 pubspec의 `resolution: workspace` 선언 시 `workspace:` 키를 가진 가장 가까운 조상 pubspec 디렉터리(Melos의 워크스페이스 루트 정의와 동일)를 realpath로 채택한다. 자동 감지 실패(조상 루트 부재·pubspec 파싱 불가)는 분석 루트로 폴백하되 `pub-workspace-root-not-found`·`pub-workspace-pubspec-unparsed` limitation을 실어 조인 기준 어긋남을 조용히 넘기지 않는다 — 둘은 호출 측 한계라 isthmus는 심각도를 바꾸지 않고 그대로 전달한다. cartograph의 `--project`는 분석 루트 자체이므로 realpath 정규화 규칙만으로 이 정의를 만족한다. 조인 가능 여부는 소비자 설치본으로 왕복 실측했다(dartograph#38·#52: 모노레포 2패키지의 `project` 문자열 일치와 isthmus check 조인 성공, 옵션 없는 구행동 문서의 거부까지 양방향)
 - 소비자는 정확한 문자열 일치를 유지하며 경로를 스스로 해결하지 않는다(isthmus는 JSON 파일만 읽는다). 소비자는 정규화 이행 여부를 검증할 수 없다 — 검증 가능한 것은 문서 간 `project` 문자열 일치뿐이고, 정규화 위반은 오직 조인 입력 오류로만 관측된다. realpath가 수렴시키는 것은 symlink·`..`·슬래시 축뿐이다. Unicode NFC/NFD 표기 차이, 대소문자 무시 파일시스템의 표기 차이, 마운트 별칭은 같은 디렉터리에 다른 문자열로 남고 불일치로 거부된다(안전하지만 디버깅이 필요하다). 근거: 같은 정규화가 없으면 macOS의 `/tmp`↔`/private/tmp`처럼 같은 디렉터리가 도구마다 다른 문자열이 된다(isthmus에서 재현). cartograph는 Foundation의 `resolvingSymlinksInPath().standardizedFileURL.path`가 `/private/tmp`을 `/tmp`으로 출력함을 실측하고 주입된 POSIX realpath를 채택했고(cartograph#73, 0.10.1 — 실측 입출력 쌍은 그 PR 본문 참조), dartograph의 `Directory.resolveSymbolicLinks()`는 POSIX에서 같은 기준을 만족한다
-- 한 번의 조인 입력에는 호출 측 플랫폼(dart·js) 문서와 수신 측 플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 한쪽만 있는 입력은 한쪽 관찰을 경계 불일치로 오독할 수 있으므로 소비자는 입력 오류로 거부한다. 사실이 없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다
+- 조인 입력 구성 요건은 도메인별로 적용한다. bridge 도메인 문서(target이
+  브리지 메커니즘이거나 플랫폼이 dart·js·swift·kotlin인 문서)가 있으면 호출 측
+  플랫폼(dart·js) 문서와 수신 측 플랫폼(swift·kotlin) 문서가 각각 최소 하나
+  있어야 한다. 한쪽만 있는 입력은 한쪽 관찰을 경계 불일치로 오독할 수 있으므로
+  소비자는 입력 오류로 거부한다. 사실이 없는 문서도 해당 플랫폼이 분석됐다는
+  근거로 인정한다. persistence 도메인의 구성 요건은 위 persistence 절을 따른다
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 
@@ -403,6 +475,8 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | dartograph | `bridges --format json` | `MethodChannel(…)`, `invokeMethod(…)`, Pigeon 산출물 | (없음 — Dart 쪽이 부르는 쪽) |
 | kartograph | `bridges --format json` | `MethodChannel(…)`, `setMethodCallHandler`, `when (call.method)`, `@ReactModule`, `@ReactMethod` | `--external-retentions` |
 | isthmus 내장 | `extract-js` | `NativeModules.*`, `TurboModuleRegistry.get*`, `requireNativeModule`, `requireNativeComponent` 계열, 바인딩 해석된 멤버 호출 | — |
+| gartograph | `schema --format json` | Go 소스의 SQL 리터럴 관계·컬럼 이름, `db`/`sql`/`gorm` struct 태그, 쿼리 빌더 호출 (`target: "persistence"`) | (없음 — 코드 쪽이 참조하는 쪽) |
+| schemagraph | `facts --graph graph.json` | 카탈로그의 테이블·뷰·컬럼 선언 (`platform: "sql"`, `target: "persistence"`) | (없음 — 스키마 쪽이 선언하는 쪽) |
 
 **cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 
