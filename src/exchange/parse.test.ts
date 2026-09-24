@@ -71,17 +71,19 @@ test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
   }
 });
 
-test('go 문서는 target을 null 또는 persistence로만 싣는다', () => {
-  // go는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
-  for (const target of ['flutter', 'react-native', 'capacitor']) {
-    assert.throws(
-      () => parseBridgeFactsDocument({
-        ...emptyDocument,
-        platform: 'go',
-        target,
-      }),
-      /Go documents may only carry a null or persistence target/,
-    );
+test('go·rust 문서는 target을 null 또는 persistence로만 싣는다', () => {
+  // go·rust는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
+  for (const platform of ['go', 'rust']) {
+    for (const target of ['flutter', 'react-native', 'capacitor']) {
+      assert.throws(
+        () => parseBridgeFactsDocument({
+          ...emptyDocument,
+          platform,
+          target,
+        }),
+        /Go\/Rust documents may only carry a null or persistence target/,
+      );
+    }
   }
 });
 
@@ -726,6 +728,12 @@ const goPersistenceDocument = {
   target: 'persistence',
 };
 
+const rustPersistenceDocument = {
+  ...emptyDocument,
+  platform: 'rust',
+  target: 'persistence',
+};
+
 const validRelationDecl = {
   kind: 'relation-decl',
   channel: 'public.users',
@@ -836,6 +844,54 @@ test('persistence 도메인의 kind는 플랫폼 역할을 따른다', () => {
       facts: [{ ...validRelationUse }],
     }),
     /Fact kind is not valid for platform/,
+  );
+});
+
+test('rust 문서도 persistence target에서 relation-use를 싣는다', () => {
+  // rust는 go와 같은 코드 측 생산자다 — 동적·정적 관계 사용을 모두 허용한다.
+  const parsed = parseBridgeFactsDocument({
+    ...rustPersistenceDocument,
+    facts: [
+      validRelationUse,
+      { ...validRelationUse, channel: 'orders', dynamic: true },
+    ],
+  });
+  assert.equal(parsed.platform, 'rust');
+  assert.equal(parsed.facts.length, 2);
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...rustPersistenceDocument,
+      facts: [{ ...validRelationDecl }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+});
+
+test('rust 문서도 사실이 없을 때만 target을 null로 싣는다', () => {
+  // 빈 수확은 persistence target을 남기지 않는다 — 전역 불변을 rust에도 적용한다.
+  const parsed = parseBridgeFactsDocument({
+    ...emptyDocument,
+    platform: 'rust',
+  });
+  assert.equal(parsed.platform, 'rust');
+  assert.equal(parsed.target, null);
+  // 사실이 있는데 target이 null이면 거부다 — relation kind는 persistence
+  // target에서만 유효하므로 kind 검증이 불변 검사보다 먼저 건다.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...emptyDocument,
+      platform: 'rust',
+      facts: [validRelationUse],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+  // 반대 방향도 거부다 — persistence target인데 사실이 비면 불변 위반.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...rustPersistenceDocument,
+      facts: [],
+    }),
+    /Target must be set exactly when facts are present/,
   );
 });
 

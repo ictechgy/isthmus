@@ -33,7 +33,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
-  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "sql",
+  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "rust" | "sql",
   "target": "flutter" | "react-native" | "capacitor" | "persistence" | null,  // 경계 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
   "facts": [ Fact, ... ],
@@ -231,10 +231,26 @@ target에서는 go 문서가 `facts`를 비워 두고 `unscanned-ffi-interop:` l
 - gomobile bind 경계는 소스 표식이 없어 정적으로 관측되지 않는다 — 생산자가
   추측해 신고하지 않는다.
 
+### `platform: "rust"` (v1 확장)
+
+Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열로
+심볼 이름 경계의 interop이다 — go와 같은 이유로 bridge target에서는
+사실을 내지 않는다. 규칙은 go 절과 같다:
+
+- bridge target 관점에서 rust는 호출 측도 수신 측도 아니다 — bridge target을
+  선언한 rust 문서나 bridge kind 사실을 실은 rust 문서는 입력 오류로 거부한다.
+- bridge 도메인 입력의 호출·수신 측 최소 요건을 rust 문서는 어느 쪽으로도
+  채우지 않는다.
+- bridge 도메인에서 rust 문서는 사실이 없으므로 `target`은 `null`이다.
+  `persistence` 외의 비null target은 입력 오류다.
+- 예외는 `target: "persistence"`뿐이다 — 그 도메인에서 rust는 호출 측
+  생산자다(아래 persistence 절).
+
 ### `target: "persistence"` (v1 확장)
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
-생산자(`platform: "go"`의 gartograph 등), 수신 측은 스키마 카탈로그를 읽는
+생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph 등),
+수신 측은 스키마 카탈로그를 읽는
 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
@@ -280,8 +296,9 @@ target에서는 go 문서가 `facts`를 비워 두고 `unscanned-ffi-interop:` l
   인정하는 기존 규칙과 같다. 소비자가 직접 센 `unjoined-dynamic-relations`
   (조인하지 못한 dynamic·비해석 관계 사용 수)는 호출 측 공백이라
   `relation-decl-without-use`의 `-unverified` 판정 근거다.
-- `platform: "go"`의 "사실을 담지 않는다" 규칙은 이 target에서만 풀린다 —
-  go 문서는 `relation-use`만 실을 수 있고 그때 `target`은 `persistence`다.
+- `platform: "go"`·`"rust"`의 "사실을 담지 않는다" 규칙은 이 target에서만
+  풀린다 — 이 문서들은 `relation-use`만 실을 수 있고 그때 `target`은
+  `persistence`다.
 - 입력 구성: `platform: "sql"` 문서나 `target: "persistence"` 문서가 하나라도
   있으면 persistence 도메인 입력으로 보아, sql 문서 최소 하나와
   `target: "persistence"`인 비sql 문서 최소 하나를 요구한다. `target: null`
@@ -475,8 +492,9 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | dartograph | `bridges --format json` | `MethodChannel(…)`, `invokeMethod(…)`, Pigeon 산출물 | (없음 — Dart 쪽이 부르는 쪽) |
 | kartograph | `bridges --format json` | `MethodChannel(…)`, `setMethodCallHandler`, `when (call.method)`, `@ReactModule`, `@ReactMethod` | `--external-retentions` |
 | isthmus 내장 | `extract-js` | `NativeModules.*`, `TurboModuleRegistry.get*`, `requireNativeModule`, `requireNativeComponent` 계열, 바인딩 해석된 멤버 호출 | — |
-| gartograph | `schema --format json` | Go 소스의 SQL 리터럴 관계·컬럼 이름, `db`/`sql`/`gorm` struct 태그, 쿼리 빌더 호출 (`target: "persistence"`) | (없음 — 코드 쪽이 참조하는 쪽) |
+| gartograph | `schema` | Go 소스의 SQL 리터럴 관계·컬럼 이름, `db`/`sql`/`gorm` struct 태그, 쿼리 빌더 호출 (`target: "persistence"`) | (없음 — 코드 쪽이 참조하는 쪽) |
 | schemagraph | `facts --graph graph.json` | 카탈로그의 테이블·뷰·컬럼 선언 (`platform: "sql"`, `target: "persistence"`) | (없음 — 스키마 쪽이 선언하는 쪽) |
+| rustograph | `schema` | Rust 코드의 관계·컬럼 참조 — sqlx 계열 리터럴·`table!` 매크로·`table_name` 어트리뷰트 (`platform: "rust"`, `target: "persistence"`) | (없음) |
 
 **cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 
