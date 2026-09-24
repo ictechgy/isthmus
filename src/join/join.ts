@@ -1166,9 +1166,12 @@ function joinRelationFacts(
       } else {
         outcome = 'ambiguous';
         // 후보 보고는 정규화 키가 아니라 생산자가 쓴 한정 이름으로 한다.
+        // 키 순과 철자 순이 어긋날 수 있으므로 매핑 뒤에 다시 정렬한다.
         ambiguousCandidates.set(
           bucketKey,
-          candidates.map((key) => objectDecls.get(key)!.channel),
+          candidates
+            .map((key) => objectDecls.get(key)!.channel)
+            .sort(compareStrings),
         );
       }
     }
