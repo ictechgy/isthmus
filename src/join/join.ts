@@ -334,8 +334,12 @@ function validateProjects(documents: readonly BridgeFactsDocument[]): void {
 function validatePlatformComposition(
   documents: readonly BridgeFactsDocument[],
 ): void {
+  // 사실이 없는 sql 문서(target null)는 persistence 도메인을 만들지 않는다 —
+  // 선언이 없는 카탈로그가 bridge-only 조인을 막는 일이 없게 한다. 파싱이
+  // `target null ⟺ facts 빈`을 강제하므로(`parse.ts`의 target 검사) target만
+  // 보면 되고, 사실 있는 null-target 문서는 여기 도달하기 전에 거절된다.
   const hasPersistenceDomain = documents.some(
-    (document) => document.platform === 'sql' || document.target === 'persistence',
+    (document) => document.target === 'persistence',
   );
   const hasBridgeDomain = documents.some(
     (document) =>
@@ -357,9 +361,15 @@ function validatePlatformComposition(
     return;
   }
   if (hasBridgeDomain) {
-    const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
-    const hasReceiver = documents.some(({ platform }) =>
-      isReceiverPlatform(platform),
+    // persistence target 문서는 bridge 도메인의 어느 쪽도 아니다 — kotlin처럼
+    // bridge 수신 측인 플랫폼이 persistence 호출 측 사실만 실으면 수신 측
+    // 요건을 채우지 못하게 target으로 걸러낸다.
+    const hasCaller = documents.some(
+      (document) => document.target !== 'persistence' && isCallerPlatform(document.platform),
+    );
+    const hasReceiver = documents.some(
+      (document) =>
+        document.target !== 'persistence' && isReceiverPlatform(document.platform),
     );
     if (!hasCaller || !hasReceiver) {
       throw new BridgeJoinValidationError(

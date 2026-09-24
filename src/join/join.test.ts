@@ -1453,7 +1453,7 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
 
 /** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
 function persistenceDocument(
-  platform: 'go' | 'rust' | 'sql',
+  platform: 'go' | 'rust' | 'kotlin' | 'sql',
   facts: ReadonlyArray<{
     kind: 'relation-use' | 'relation-decl';
     channel: string | null;
@@ -1749,6 +1749,29 @@ test('rust persistence 문서는 sql 선언과 조인된다', () => {
   );
 });
 
+test('kotlin persistence 문서는 bridge 수신 측 요건을 채우지 않는다', () => {
+  // kotlin은 bridge 도메인의 수신 측이면서 persistence 호출 측 생산자다 —
+  // persistence 사실만 실은 kotlin 문서를 수신 문서로 세면 수신자 없는
+  // bridge 입력이 통과해 버린다.
+  const kotlinPersistence = persistenceDocument('kotlin', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, kotlinPersistence, schema]),
+    /one receiver platform \(swift, kotlin\) document/,
+  );
+  // 수신 측이 갖춰진 입력에서는 같은 문서가 persistence 호출 측으로 조인된다.
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, kotlinPersistence, schema,
+  ]);
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
 test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인한다', () => {
   const caller = persistenceDocument('go', [
     { kind: 'relation-use', channel: 'users' },
@@ -1763,4 +1786,95 @@ test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인�
 
   assert.equal(result.matchedChannels.length, 1);
   assert.equal(result.matchedRelations.length, 1);
+});
+
+test('사실이 없는 sql 문서는 persistence 도메인을 만들지 않는다', () => {
+  // 빈 카탈로그 수확(target null)이 bridge-only 입력을 persistence 구성
+  // 오류로 밀지 않는다 — 분석된 사실이 없으면 도메인 요건도 없다.
+  const emptySchema = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'schemagraph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'sql',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, swiftDocument, emptySchema]);
+  assert.equal(result.deferred, false);
+  assert.ok(result.matchedChannels.length > 0);
+  assert.equal(result.matchedRelations.length, 0);
+});
+
+test('target이 null인 수신 측 문서도 혼합 입력의 bridge 수신 측으로 인정된다', () => {
+  // 사실이 없는 kotlin 문서는 "수신 측이 분석됐다"는 근거다 — persistence
+  // 필터가 null-target 문서를 bridge 측에서 제외하면 수신 측이 사라진다.
+  const kotlinEmpty = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'kartograph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'kotlin',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([dartDocument, kotlinEmpty, caller, schema]);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('js 호출 측도 혼합 입력에서 bridge·persistence를 함께 조인한다', () => {
+  // 빈 호출 측 문서는 target null이다 — "분석됐다"는 근거로 호출 측 요건을 채운다.
+  const jsCaller = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'isthmus', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'js',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([jsCaller, swiftDocument, caller, schema]);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('빈 sql 문서만 있는 입력은 조용히 통과하지 않는다', () => {
+  // 어느 도메인도 성립하지 않는 입력이 빈 정상 결과가 되면 수확 실패와
+  // 구분할 수 없다 — 구성 오류로 거절돼야 한다.
+  const emptySchema = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'schemagraph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'sql',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+
+  assert.throws(
+    () => joinBridgeDocuments([emptySchema]),
+    /caller platform/,
+  );
 });

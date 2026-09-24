@@ -734,6 +734,12 @@ const rustPersistenceDocument = {
   target: 'persistence',
 };
 
+const kotlinPersistenceDocument = {
+  ...emptyDocument,
+  platform: 'kotlin',
+  target: 'persistence',
+};
+
 const validRelationDecl = {
   kind: 'relation-decl',
   channel: 'public.users',
@@ -861,6 +867,27 @@ test('rust 문서도 persistence target에서 relation-use를 싣는다', () => 
   assert.throws(
     () => parseBridgeFactsDocument({
       ...rustPersistenceDocument,
+      facts: [{ ...validRelationDecl }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+});
+
+test('kotlin 문서도 persistence target에서 relation-use를 싣는다', () => {
+  // kotlin은 bridge 수신 측이면서 persistence 호출 측 생산자다 — target이
+  // 역할을 가르므로 같은 플랫폼이 두 도메인에서 다른 kind를 낸다.
+  const parsed = parseBridgeFactsDocument({
+    ...kotlinPersistenceDocument,
+    facts: [
+      validRelationUse,
+      { ...validRelationUse, channel: 'orders', dynamic: true },
+    ],
+  });
+  assert.equal(parsed.platform, 'kotlin');
+  assert.equal(parsed.facts.length, 2);
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...kotlinPersistenceDocument,
       facts: [{ ...validRelationDecl }],
     }),
     /Fact kind is not valid for platform/,

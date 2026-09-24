@@ -249,8 +249,8 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 ### `target: "persistence"` (v1 확장)
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
-생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph 등),
-수신 측은 스키마 카탈로그를 읽는
+생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph,
+`platform: "kotlin"`의 kartograph 등), 수신 측은 스키마 카탈로그를 읽는
 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
@@ -318,7 +318,7 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
-| `relation-use` | sql 외 (v1: Go) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-use` | sql 외 (v1: Go·Rust·Kotlin) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
@@ -495,8 +495,9 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | gartograph | `schema` | Go 소스의 SQL 리터럴 관계·컬럼 이름, `db`/`sql`/`gorm` struct 태그, 쿼리 빌더 호출 (`target: "persistence"`) | (없음 — 코드 쪽이 참조하는 쪽) |
 | schemagraph | `facts --graph graph.json` | 카탈로그의 테이블·뷰·컬럼 선언 (`platform: "sql"`, `target: "persistence"`) | (없음 — 스키마 쪽이 선언하는 쪽) |
 | rustograph | `schema` | Rust 코드의 관계·컬럼 참조 — sqlx 계열 리터럴·`table!` 매크로·`table_name` 어트리뷰트 (`platform: "rust"`, `target: "persistence"`) | (없음) |
+| kartograph | `schema` | Kotlin/Java 소스의 관계·컬럼 참조 — Room 어노테이션·JDBC 호출·Exposed DSL·jOOQ·SQL 리터럴·`.sq`/`.sqm` (`platform: "kotlin"`, `target: "persistence"`) | (없음) |
 
-**cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
+**bridge facts 생산의 첫 구현은 cartograph다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 
 cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스토어를 요구한다. 인덱스가 없으면 불완전한 문서를 내보내지 않고 도구 실패(종료 코드 2)로 끝난다. 이는 문서 형식의 limitation이 아니라 생산 명령의 선행 조건이다.
 
