@@ -250,8 +250,8 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
 생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph,
-`platform: "kotlin"`의 kartograph 등), 수신 측은 스키마 카탈로그를 읽는
-`platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
+`platform: "kotlin"`의 kartograph, `platform: "swift"`의 cartograph 등),
+수신 측은 스키마 카탈로그를 읽는 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
 
@@ -299,9 +299,11 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 - `platform: "go"`·`"rust"`의 "사실을 담지 않는다" 규칙은 이 target에서만
   풀린다 — 이 문서들은 `relation-use`만 실을 수 있고 그때 `target`은
   `persistence`다.
-- 입력 구성: `platform: "sql"` 문서나 `target: "persistence"` 문서가 하나라도
-  있으면 persistence 도메인 입력으로 보아, sql 문서 최소 하나와
-  `target: "persistence"`인 비sql 문서 최소 하나를 요구한다. `target: null`
+- 입력 구성: `target: "persistence"` 문서가 하나라도 있으면 persistence
+  도메인 입력으로 보아, sql 문서 최소 하나와 `target: "persistence"`인 비sql
+  문서 최소 하나를 요구한다. `platform: "sql"`이지만 사실이 없는 문서
+  (`target: null`)는 이 도메인을 만들지 않는다 — 카탈로그를 못 읽은 빈
+  문서가 bridge-only 조인을 막아서는 안 된다. `target: null`
   문서는 이 도메인의 호출 측으로 세지 않는다 — 스키마 경계를 스캔하지 않은
   문서를 "참조 없음"으로 읽으면 모든 선언이 거짓 미사용으로 보고된다.
   bridge 도메인 문서가 함께 들어오면 두 도메인의 구성 요건을 각각 검사한다.
@@ -496,6 +498,7 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | schemagraph | `facts --graph graph.json` | 카탈로그의 테이블·뷰·컬럼 선언 (`platform: "sql"`, `target: "persistence"`) | (없음 — 스키마 쪽이 선언하는 쪽) |
 | rustograph | `schema` | Rust 코드의 관계·컬럼 참조 — sqlx 계열 리터럴·`table!` 매크로·`table_name` 어트리뷰트 (`platform: "rust"`, `target: "persistence"`) | (없음) |
 | kartograph | `schema` | Kotlin/Java 소스의 관계·컬럼 참조 — Room 어노테이션·JDBC 호출·Exposed DSL·jOOQ·SQL 리터럴·`.sq`/`.sqm` (`platform: "kotlin"`, `target: "persistence"`) | (없음) |
+| cartograph | `schema` | Swift 소스의 관계·컬럼 참조 — sqlite3 인자·GRDB `sql:`·`Table`·`databaseTableName`·SQLite.swift·Fluent·SQL 리터럴 (`platform: "swift"`, `target: "persistence"`) | (없음) |
 
 **bridge facts 생산의 첫 구현은 cartograph다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 

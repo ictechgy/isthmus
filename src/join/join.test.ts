@@ -1772,6 +1772,27 @@ test('kotlin persistence 문서는 bridge 수신 측 요건을 채우지 않는�
   assert.equal(result.matchedRelations.length, 1);
 });
 
+test('swift persistence 문서는 bridge 수신 측 요건을 채우지 않는다', () => {
+  // kotlin과 같은 양면 플랫폼이다 — cartograph `schema`가 낸 swift 문서는
+  // persistence 호출 측이지 수신 측 증거가 아니다.
+  const swiftPersistence = persistenceDocument('swift', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, swiftPersistence, schema]),
+    /one receiver platform \(swift, kotlin\) document/,
+  );
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, swiftPersistence, schema,
+  ]);
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
 test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인한다', () => {
   const caller = persistenceDocument('go', [
     { kind: 'relation-use', channel: 'users' },
