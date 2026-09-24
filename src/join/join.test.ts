@@ -1857,3 +1857,24 @@ test('js 호출 측도 혼합 입력에서 bridge·persistence를 함께 조인�
   const result = joinBridgeDocuments([jsCaller, swiftDocument, caller, schema]);
   assert.equal(result.matchedRelations.length, 1);
 });
+
+test('빈 sql 문서만 있는 입력은 조용히 통과하지 않는다', () => {
+  // 어느 도메인도 성립하지 않는 입력이 빈 정상 결과가 되면 수확 실패와
+  // 구분할 수 없다 — 구성 오류로 거절돼야 한다.
+  const emptySchema = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'schemagraph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'sql',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+
+  assert.throws(
+    () => joinBridgeDocuments([emptySchema]),
+    /caller platform/,
+  );
+});

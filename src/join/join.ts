@@ -335,7 +335,9 @@ function validatePlatformComposition(
   documents: readonly BridgeFactsDocument[],
 ): void {
   // 사실이 없는 sql 문서(target null)는 persistence 도메인을 만들지 않는다 —
-  // 선언이 없는 카탈로그가 bridge-only 조인을 막는 일이 없게 한다.
+  // 선언이 없는 카탈로그가 bridge-only 조인을 막는 일이 없게 한다. 파싱이
+  // `target null ⟺ facts 빈`을 강제하므로(`parse.ts`의 target 검사) target만
+  // 보면 되고, 사실 있는 null-target 문서는 여기 도달하기 전에 거절된다.
   const hasPersistenceDomain = documents.some(
     (document) => document.target === 'persistence',
   );

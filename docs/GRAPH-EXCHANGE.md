@@ -497,7 +497,7 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | rustograph | `schema` | Rust 코드의 관계·컬럼 참조 — sqlx 계열 리터럴·`table!` 매크로·`table_name` 어트리뷰트 (`platform: "rust"`, `target: "persistence"`) | (없음) |
 | kartograph | `schema` | Kotlin/Java 소스의 관계·컬럼 참조 — Room 어노테이션·JDBC 호출·Exposed DSL·jOOQ·SQL 리터럴·`.sq`/`.sqm` (`platform: "kotlin"`, `target: "persistence"`) | (없음) |
 
-**cartograph가 첫 번째 생산 구현이다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
+**bridge facts 생산의 첫 구현은 cartograph다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 
 cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스토어를 요구한다. 인덱스가 없으면 불완전한 문서를 내보내지 않고 도구 실패(종료 코드 2)로 끝난다. 이는 문서 형식의 limitation이 아니라 생산 명령의 선행 조건이다.
 
