@@ -71,17 +71,19 @@ test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
   }
 });
 
-test('go 문서는 target을 null 또는 persistence로만 싣는다', () => {
-  // go는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
-  for (const target of ['flutter', 'react-native', 'capacitor']) {
-    assert.throws(
-      () => parseBridgeFactsDocument({
-        ...emptyDocument,
-        platform: 'go',
-        target,
-      }),
-      /Go documents may only carry a null or persistence target/,
-    );
+test('go·rust 문서는 target을 null 또는 persistence로만 싣는다', () => {
+  // go·rust는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
+  for (const platform of ['go', 'rust']) {
+    for (const target of ['flutter', 'react-native', 'capacitor']) {
+      assert.throws(
+        () => parseBridgeFactsDocument({
+          ...emptyDocument,
+          platform,
+          target,
+        }),
+        /Go\/Rust documents may only carry a null or persistence target/,
+      );
+    }
   }
 });
 
@@ -726,6 +728,12 @@ const goPersistenceDocument = {
   target: 'persistence',
 };
 
+const rustPersistenceDocument = {
+  ...emptyDocument,
+  platform: 'rust',
+  target: 'persistence',
+};
+
 const validRelationDecl = {
   kind: 'relation-decl',
   channel: 'public.users',
@@ -834,6 +842,26 @@ test('persistence 도메인의 kind는 플랫폼 역할을 따른다', () => {
     () => parseBridgeFactsDocument({
       ...emptyDocument,
       facts: [{ ...validRelationUse }],
+    }),
+    /Fact kind is not valid for platform/,
+  );
+});
+
+test('rust 문서도 persistence target에서 relation-use를 싣는다', () => {
+  // rust는 go와 같은 코드 측 생산자다 — 동적·정적 관계 사용을 모두 허용한다.
+  const parsed = parseBridgeFactsDocument({
+    ...rustPersistenceDocument,
+    facts: [
+      validRelationUse,
+      { ...validRelationUse, channel: 'orders', dynamic: true },
+    ],
+  });
+  assert.equal(parsed.platform, 'rust');
+  assert.equal(parsed.facts.length, 2);
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...rustPersistenceDocument,
+      facts: [{ ...validRelationDecl }],
     }),
     /Fact kind is not valid for platform/,
   );

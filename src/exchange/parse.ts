@@ -1,5 +1,6 @@
 /** bridge-facts 생산 플랫폼이다. sql은 스키마 카탈로그를 읽는 수신 측이다. */
-export type BridgePlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'sql';
+export type BridgePlatform =
+  | 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'sql';
 
 /** 언어 경계를 잇는 메커니즘이다. persistence는 코드↔스키마 경계다. */
 export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor' | 'persistence';
@@ -216,12 +217,13 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
-  // go 문서가 가질 수 있는 비null target은 persistence뿐이다 — bridge 도메인의
-  // go는 cgo·gomobile 사실을 채널 키로 귀속할 수 없어 사실을 내지 않는다.
+  // go·rust 문서가 가질 수 있는 비null target은 persistence뿐이다 — bridge
+  // 도메인의 go는 cgo·gomobile, rust는 PyO3·cbindgen 같은 심볼 경계
+  // interop이 정적 채널 키로 귀속되지 않아 사실을 내지 않는다.
   // sql 문서도 같은 이유로 null 또는 persistence 외 target을 가질 수 없다.
-  if (document.platform === 'go' && document.target !== null &&
-    document.target !== 'persistence') {
-    fail('Go documents may only carry a null or persistence target.');
+  if ((document.platform === 'go' || document.platform === 'rust') &&
+    document.target !== null && document.target !== 'persistence') {
+    fail('Go/Rust documents may only carry a null or persistence target.');
   }
   if (document.platform === 'sql' && document.target !== null &&
     document.target !== 'persistence') {
@@ -612,7 +614,9 @@ function fail(message: string): never {
 }
 
 /** 지원하는 생산 플랫폼 집합이다. */
-const bridgePlatforms = new Set<unknown>(['dart', 'swift', 'kotlin', 'js', 'go', 'sql']);
+const bridgePlatforms = new Set<unknown>([
+  'dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql',
+]);
 
 /** 지원하는 경계 메커니즘 집합이다. */
 const bridgeTargets = new Set<unknown>([
