@@ -1453,7 +1453,7 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
 
 /** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
 function persistenceDocument(
-  platform: 'go' | 'rust' | 'sql',
+  platform: 'go' | 'rust' | 'kotlin' | 'sql',
   facts: ReadonlyArray<{
     kind: 'relation-use' | 'relation-decl';
     channel: string | null;
@@ -1747,6 +1747,29 @@ test('rust persistence 문서는 sql 선언과 조인된다', () => {
     result.relationUsesWithoutDecls.some((r) => r.channel === 'missing_t'),
     true,
   );
+});
+
+test('kotlin persistence 문서는 bridge 수신 측 요건을 채우지 않는다', () => {
+  // kotlin은 bridge 도메인의 수신 측이면서 persistence 호출 측 생산자다 —
+  // persistence 사실만 실은 kotlin 문서를 수신 문서로 세면 수신자 없는
+  // bridge 입력이 통과해 버린다.
+  const kotlinPersistence = persistenceDocument('kotlin', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, kotlinPersistence, schema]),
+    /one receiver platform \(swift, kotlin\) document/,
+  );
+  // 수신 측이 갖춰진 입력에서는 같은 문서가 persistence 호출 측으로 조인된다.
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, kotlinPersistence, schema,
+  ]);
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
 });
 
 test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인한다', () => {

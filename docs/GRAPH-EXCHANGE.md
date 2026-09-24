@@ -249,8 +249,8 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 ### `target: "persistence"` (v1 확장)
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
-생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph 등),
-수신 측은 스키마 카탈로그를 읽는
+생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph,
+`platform: "kotlin"`의 kartograph 등), 수신 측은 스키마 카탈로그를 읽는
 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
@@ -318,7 +318,7 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
-| `relation-use` | sql 외 (v1: Go) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-use` | sql 외 (v1: Go·Rust·Kotlin) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
