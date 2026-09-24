@@ -63,6 +63,17 @@ Bridge·Event 문서를 직접 소비해 transport별 진단을 낸다.
 보존 근거는 cartograph(Swift/Objective-C)와 kartograph(Kotlin/JVM)에 전달한다.
 앱 전체 적용 범위와 최초 외부 사용자 구축은 아직 검증하지 않았다.
 
+두 번째 조인 도메인 `persistence`는 코드와 DB 스키마를 잇는다.
+`gartograph schema`가 Go 측 `relation-use` 사실(타입이 확인된
+`database/sql`·sqlx·gorm 호출, SQL 리터럴, `TableName()` 바인딩,
+`db`/`sql`/`gorm` 컬럼 태그)을 보내고 `schemagraph facts`가 카탈로그
+`relation-decl` 사실을 보낸다. `check`는 선언 없는 사용, 모호한 비한정
+이름, 카탈로그에 없는 컬럼 참조, 어느 코드도 참조하지 않는 선언을 보고한다 —
+생산자가 스키마 전체를 보지 못했을 때는 `catalog-coverage:`·
+`unjoined-dynamic-relations:` limitation이 진단을 `*-unverified`로 내린다.
+계약은 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 persistence 절을
+참조한다.
+
 변경 예측은 고정된 공개 정밀도 코퍼스 — `battery_plus`·`shared_preferences_foundation`·
 `url_launcher_macos`와 **LocalSend** 앱, 파일/심볼/버전 diff 15케이스 — 로 측정한다.
 최근 실행은 **TP 83 / FN 0 / FP 0**을 기록했고, 최초의 앱 수준 Dart↔Swift↔Kotlin
@@ -87,6 +98,8 @@ cartograph  ──bridges──┐
 kartograph  ──bridges──┼──▶ isthmus ──▶ 경계 간선 · 불일치 보고 · 보존 근거
 dartograph  ──bridges──┤
 JS/TS 추출기 ─bridges──┘
+gartograph   ──persistence──┐
+schemagraph  ──persistence──┘
 ```
 
 isthmus 자체는 작다. 무거운 일(각 언어의 해석)은 자매 도구가 한다.

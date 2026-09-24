@@ -71,6 +71,17 @@ EventChannel v2 transport is implemented across the sister repositories, and
 transport-specific diagnostics. Retention export targets cartograph (Swift/Objective-C) and kartograph (Kotlin/JVM). Full application coverage and first-time external setup remain
 unverified.
 
+A second join domain, `persistence`, connects code to database schemas:
+`gartograph schema` exports Go-side `relation-use` facts (typed `database/sql`,
+sqlx, and gorm calls; SQL literals; `TableName()` bindings; `db`/`sql`/`gorm`
+column tags) and `schemagraph facts` exports catalog `relation-decl` facts.
+`check` then reports uses without declarations, ambiguous unqualified names,
+column references missing from the catalog, and declarations no code references —
+with `catalog-coverage:` and `unjoined-dynamic-relations:` limitations
+downgrading findings to `*-unverified` when a producer saw less than the whole
+schema. See the persistence section of
+[`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) for the contract.
+
 Change predictions are measured against a pinned public precision corpus —
 `battery_plus`, `shared_preferences_foundation`, `url_launcher_macos`, and the
 **LocalSend** app — over 15 file/symbol/version-diff cases. The latest run
@@ -99,6 +110,8 @@ cartograph    ──bridges──┐
 kartograph    ──bridges──┼──▶ isthmus ──▶ boundary edges · mismatch reports · retention evidence
 dartograph    ──bridges──┤
 JS/TS extractor ─bridges─┘
+gartograph    ──persistence──┐
+schemagraph   ──persistence──┘
 ```
 
 isthmus itself is small. The heavy lifting — interpreting each language — falls to the
