@@ -1453,7 +1453,7 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
 
 /** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
 function persistenceDocument(
-  platform: 'go' | 'rust' | 'kotlin' | 'sql',
+  platform: 'go' | 'rust' | 'kotlin' | 'swift' | 'sql',
   facts: ReadonlyArray<{
     kind: 'relation-use' | 'relation-decl';
     channel: string | null;
@@ -1767,6 +1767,27 @@ test('kotlin persistence 문서는 bridge 수신 측 요건을 채우지 않는�
   // 수신 측이 갖춰진 입력에서는 같은 문서가 persistence 호출 측으로 조인된다.
   const result = joinBridgeDocuments([
     dartDocument, swiftDocument, kotlinPersistence, schema,
+  ]);
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('swift persistence 문서는 bridge 수신 측 요건을 채우지 않는다', () => {
+  // kotlin과 같은 양면 플랫폼이다 — cartograph `schema`가 낸 swift 문서는
+  // persistence 호출 측이지 수신 측 증거가 아니다.
+  const swiftPersistence = persistenceDocument('swift', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, swiftPersistence, schema]),
+    /one receiver platform \(swift, kotlin\) document/,
+  );
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, swiftPersistence, schema,
   ]);
   assert.equal(result.matchedChannels.length, 1);
   assert.equal(result.matchedRelations.length, 1);
