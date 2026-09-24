@@ -1453,7 +1453,7 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
 
 /** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
 function persistenceDocument(
-  platform: 'go' | 'sql',
+  platform: 'go' | 'rust' | 'sql',
   facts: ReadonlyArray<{
     kind: 'relation-use' | 'relation-decl';
     channel: string | null;
