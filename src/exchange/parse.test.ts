@@ -885,6 +885,14 @@ test('rust 문서도 사실이 없을 때만 target을 null로 싣는다', () =>
     }),
     /Fact kind is not valid for platform/,
   );
+  // 반대 방향도 거부다 — persistence target인데 사실이 비면 불변 위반.
+  assert.throws(
+    () => parseBridgeFactsDocument({
+      ...rustPersistenceDocument,
+      facts: [],
+    }),
+    /Target must be set exactly when facts are present/,
+  );
 });
 
 test('sql 문서는 persistence 외 target을 거부한다', () => {

@@ -237,8 +237,8 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 심볼 이름 경계의 interop이다 — go와 같은 이유로 bridge target에서는
 사실을 내지 않는다. 규칙은 go 절과 같다:
 
-- bridge target 관점에서 rust는 호출 측도 수신 측도 아니다 — bridge target
-  문서에 rust 사실이 있으면 입력 오류로 거부한다.
+- bridge target 관점에서 rust는 호출 측도 수신 측도 아니다 — bridge target을
+  선언한 rust 문서나 bridge kind 사실을 실은 rust 문서는 입력 오류로 거부한다.
 - bridge 도메인 입력의 호출·수신 측 최소 요건을 rust 문서는 어느 쪽으로도
   채우지 않는다.
 - bridge 도메인에서 rust 문서는 사실이 없으므로 `target`은 `null`이다.

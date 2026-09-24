@@ -1699,15 +1699,53 @@ test('persistence 입력에 sql 선언 문서나 호출 문서가 없으면 거�
 });
 
 test('rust 문서는 bridge 도메인의 호출·수신 측으로 세지 않는다', () => {
-  // rust는 persistence 생산자다 — dart 호출 문서 옆에 있어도
-  // 수신 측(swift·kotlin) 문서를 대신하지 못한다.
-  const rustCaller = persistenceDocument('rust', [
-    { kind: 'relation-use', channel: 'users' },
-  ]);
+  // rust는 persistence 생산자다 — bridge 입력에 끼어 있어도 어느 쪽
+  // 최소 요건도 채우지 않고, 채워진 입력에서는 조용히 무시된다.
+  const rustEmpty = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'rustograph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'rust',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
 
   assert.throws(
-    () => joinBridgeDocuments([dartDocument, rustCaller]),
+    () => joinBridgeDocuments([dartDocument, rustEmpty]),
     /one receiver platform \(swift, kotlin\) document/,
+  );
+  assert.throws(
+    () => joinBridgeDocuments([swiftDocument, rustEmpty]),
+    /one caller platform \(dart, js\) document/,
+  );
+  // 호출·수신이 갖춰진 입력에서는 rust 문서가 조인을 막지 않는다.
+  const result = joinBridgeDocuments([dartDocument, swiftDocument, rustEmpty]);
+  assert.equal(result.deferred, false);
+  assert.ok(result.matchedChannels.length > 0);
+});
+
+test('rust persistence 문서는 sql 선언과 조인된다', () => {
+  // rust는 go와 같은 호출 측 생산자다 — 파싱만 되고 조인에서 빠지면
+  // 생산자 통합이 무의미하므로 실제 매칭까지 고정한다.
+  const rustCaller = persistenceDocument('rust', [
+    { kind: 'relation-use', channel: 'users' },
+    { kind: 'relation-use', channel: 'missing_t' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.unused_t', symbol: 'public.unused_t' },
+  ]);
+
+  const result = joinBridgeDocuments([rustCaller, schema]);
+
+  assert.equal(result.matchedRelations.length, 1);
+  assert.equal(result.matchedRelations[0]?.channel, 'public.users');
+  assert.equal(
+    result.relationUsesWithoutDecls.some((r) => r.channel === 'missing_t'),
+    true,
   );
 });
 
