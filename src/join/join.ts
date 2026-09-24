@@ -334,8 +334,10 @@ function validateProjects(documents: readonly BridgeFactsDocument[]): void {
 function validatePlatformComposition(
   documents: readonly BridgeFactsDocument[],
 ): void {
+  // 사실이 없는 sql 문서(target null)는 persistence 도메인을 만들지 않는다 —
+  // 선언이 없는 카탈로그가 bridge-only 조인을 막는 일이 없게 한다.
   const hasPersistenceDomain = documents.some(
-    (document) => document.platform === 'sql' || document.target === 'persistence',
+    (document) => document.target === 'persistence',
   );
   const hasBridgeDomain = documents.some(
     (document) =>

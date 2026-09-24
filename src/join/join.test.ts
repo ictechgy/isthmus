@@ -1787,3 +1787,73 @@ test('bridge와 persistence 입력이 섞여도 두 도메인을 각각 조인�
   assert.equal(result.matchedChannels.length, 1);
   assert.equal(result.matchedRelations.length, 1);
 });
+
+test('사실이 없는 sql 문서는 persistence 도메인을 만들지 않는다', () => {
+  // 빈 카탈로그 수확(target null)이 bridge-only 입력을 persistence 구성
+  // 오류로 밀지 않는다 — 분석된 사실이 없으면 도메인 요건도 없다.
+  const emptySchema = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'schemagraph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'sql',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+
+  const result = joinBridgeDocuments([dartDocument, swiftDocument, emptySchema]);
+  assert.equal(result.deferred, false);
+  assert.ok(result.matchedChannels.length > 0);
+  assert.equal(result.matchedRelations.length, 0);
+});
+
+test('target이 null인 수신 측 문서도 혼합 입력의 bridge 수신 측으로 인정된다', () => {
+  // 사실이 없는 kotlin 문서는 "수신 측이 분석됐다"는 근거다 — persistence
+  // 필터가 null-target 문서를 bridge 측에서 제외하면 수신 측이 사라진다.
+  const kotlinEmpty = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'kartograph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'kotlin',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([dartDocument, kotlinEmpty, caller, schema]);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('js 호출 측도 혼합 입력에서 bridge·persistence를 함께 조인한다', () => {
+  // 빈 호출 측 문서는 target null이다 — "분석됐다"는 근거로 호출 측 요건을 채운다.
+  const jsCaller = parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'isthmus', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform: 'js',
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+  const caller = persistenceDocument('go', [
+    { kind: 'relation-use', channel: 'users' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+
+  const result = joinBridgeDocuments([jsCaller, swiftDocument, caller, schema]);
+  assert.equal(result.matchedRelations.length, 1);
+});
