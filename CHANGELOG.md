@@ -19,6 +19,12 @@
 
 ### Changed
 
+- persistence 도메인의 호출 측 생산자에 dartograph `schema`(`platform: "dart"`)를 추가했다.
+  조인 로직은 이미 비sql `target: "persistence"` 문서를 받으므로 코드 변경은 없고, dart
+  persistence 문서가 bridge 호출 측 요건을 채우지 않는다는 불변식과 persistence 단독·혼합
+  입력 조인을 테스트로 고정했다. GRAPH-EXCHANGE 생산자 표·kind 표와 README 의존 관계도를
+  다섯 개 코드 생산자(Go·Rust·Kotlin·Swift·Dart)에 맞췄다.
+
 - RN iOS용 release/Codegen 하네스와 명시적 fmt consteval 우회 옵션을 추가했다.
   성공·실패 로그와 원본/수정 의존성 근거를 보존하고 소유한 시뮬레이터만 정리한다.
 - 현재 저장소의 호환 producer pin을 kartograph 0.14.0으로 갱신했다. npm 0.9.0의

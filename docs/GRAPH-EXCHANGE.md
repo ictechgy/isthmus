@@ -250,7 +250,8 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
 생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph,
-`platform: "kotlin"`의 kartograph, `platform: "swift"`의 cartograph 등),
+`platform: "kotlin"`의 kartograph, `platform: "swift"`의 cartograph,
+`platform: "dart"`의 dartograph 등),
 수신 측은 스키마 카탈로그를 읽는 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
@@ -320,7 +321,7 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
-| `relation-use` | sql 외 (v1: Go·Rust·Kotlin) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
@@ -499,6 +500,7 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 | rustograph | `schema` | Rust 코드의 관계·컬럼 참조 — sqlx 계열 리터럴·`table!` 매크로·`table_name` 어트리뷰트 (`platform: "rust"`, `target: "persistence"`) | (없음) |
 | kartograph | `schema` | Kotlin/Java 소스의 관계·컬럼 참조 — Room 어노테이션·JDBC 호출·Exposed DSL·jOOQ·SQL 리터럴·`.sq`/`.sqm` (`platform: "kotlin"`, `target: "persistence"`) | (없음) |
 | cartograph | `schema` | Swift 소스의 관계·컬럼 참조 — sqlite3 인자·GRDB `sql:`·`Table`·`databaseTableName`·SQLite.swift·Fluent·SQL 리터럴 (`platform: "swift"`, `target: "persistence"`) | (없음) |
+| dartograph | `schema --format json` | Dart 소스의 관계·컬럼 참조 — sqflite SQL·테이블·컬럼 인자·sqlite3/postgres SQL·drift `Table`·custom 쿼리·`.drift`·floor `@Entity`/`@DatabaseView`/`@Query`·대문자 SQL 리터럴 (`platform: "dart"`, `target: "persistence"`) | (없음) |
 
 **bridge facts 생산의 첫 구현은 cartograph다.** PR #11에서 SwiftSyntax 스캐너와 `bridges --format json`이 버전 1로 구현됐다.
 
