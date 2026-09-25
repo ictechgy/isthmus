@@ -740,6 +740,12 @@ const kotlinPersistenceDocument = {
   target: 'persistence',
 };
 
+const dartPersistenceDocument = {
+  ...emptyDocument,
+  platform: 'dart',
+  target: 'persistence',
+};
+
 const validRelationDecl = {
   kind: 'relation-decl',
   channel: 'public.users',
@@ -892,6 +898,29 @@ test('kotlin 문서도 persistence target에서 relation-use를 싣는다', () =
     }),
     /Fact kind is not valid for platform/,
   );
+});
+
+test('dart 문서도 persistence target에서 relation-use만 싣는다', () => {
+  // dart는 bridge 호출 측이면서 persistence 호출 측 생산자(dartograph
+  // `schema`)다 — target이 역할을 가르므로 bridge kind는 이 target에서 거부된다.
+  const parsed = parseBridgeFactsDocument({
+    ...dartPersistenceDocument,
+    facts: [
+      validRelationUse,
+      { ...validRelationUse, channel: 'orders', dynamic: true, channelPrefix: 'DELETE FROM ' },
+    ],
+  });
+  assert.equal(parsed.platform, 'dart');
+  assert.equal(parsed.facts.length, 2);
+  for (const invalid of [
+    { ...validRelationDecl },
+    { ...validRelationUse, kind: 'method-invoke', method: 'm' },
+  ]) {
+    assert.throws(
+      () => parseBridgeFactsDocument({ ...dartPersistenceDocument, facts: [invalid] }),
+      /Fact kind is not valid for platform/,
+    );
+  }
 });
 
 test('rust 문서도 사실이 없을 때만 target을 null로 싣는다', () => {
