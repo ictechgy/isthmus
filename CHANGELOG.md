@@ -14,6 +14,10 @@
 - `query relation:<name>`이 persistence 조인 규칙(한정 이름 정확 일치, 비한정 이름은 마지막
   세그먼트가 유일할 때만, 여럿이면 `ambiguous`)으로 관계 하나의 사용·선언·컬럼별 증거·진단을
   기존 query 외피(`level: "persistence"`)로 낸다. 미발견은 기존처럼 `notFound`와 64다.
+  이름 자체가 `relation:`으로 시작하는 bridge 채널·메서드는 같은 이름의 관계가 없으면 이전처럼
+  그 이름으로 찾는다. 관계와 겹치면 관계가 우선하므로 그 bridge 키는 qualifiedName
+  (예: `flutter:relation%3Afoo`)으로 질의한다. `relation:`만 있는 이름은 사용 오류(64)다.
+  MCP `query` 도구도 같은 경로라 `name`에 `relation:<name>`을 받는다.
 - [persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md) 문서: `--pairs`의 사용 `symbol.usr`를
   kartograph·cartograph impact에, 선언 VertexId를 `schemagraph impact`에 넘기는 절차와
   생산자별 usr 부착 현황. 이 연결은 아직 자동화하지 않았다.

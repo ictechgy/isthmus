@@ -250,6 +250,31 @@ test('relation 주체의 미발견·모호·빈 이름은 기존 64 의미와 �
   }
 });
 
+test('이름이 relation:으로 시작하는 bridge 채널은 같은 이름의 관계가 없으면 이전처럼 찾는다', async () => {
+  // 접두사 도입 전에는 이 이름이 bridge 채널 이름 그대로 질의됐다(MCP query도 같은 경로).
+  const channelDocument = (platform: 'dart' | 'swift') => JSON.stringify({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-26T00:00:00Z', platform, target: 'flutter', project: '/fixture', limitations: [],
+    facts: [{
+      kind: platform === 'dart' ? 'channel-create' : 'channel-register', channel: 'relation:foo', dynamic: false,
+      location: { path: platform === 'dart' ? 'lib/a.dart' : 'ios/A.swift', line: 1, column: 1 },
+    }],
+  });
+  const files = new Map([['d.json', channelDocument('dart')], ['s.json', channelDocument('swift')]]);
+  const read = async (path: string) => files.get(path) ?? assert.fail(`unexpected read ${path}`);
+  const result = await runQueryCommand(['query', 'relation:foo', 'd.json', 's.json'], read);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.standardError, '');
+  const document = JSON.parse(result.standardOutput);
+  assert.deepEqual([document.status, document.level, document.result.subject.kind, document.result.subject.name],
+    ['found', 'bridge', 'channel', 'relation:foo']);
+
+  const missing = await runQueryCommand(['query', 'relation:bar', 'd.json', 's.json'], read);
+  assert.equal(missing.exitCode, 64);
+  assert.equal(JSON.parse(missing.standardOutput).level, 'persistence');
+  assert.match(missing.standardError, /^No persistence relation matches the requested name;/);
+});
+
 test('relation 접두사가 없는 이름은 bridge 질의 그대로다', async () => {
   const result = await runQueryCommand(['query', 'users', ...relationInputs], readRelationFixture);
   assert.equal(result.exitCode, 64);

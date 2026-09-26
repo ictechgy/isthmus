@@ -288,7 +288,10 @@ without the flag. `--pairs` is valid only with the default `--format json` (with
 fail with exit code 2 instead of a partial list. `query relation:<name>` resolves one relation with
 the same join rules (qualified names exactly, unqualified names by their last segment only when one
 declaration matches, several candidates reported as `ambiguous`) and returns its uses,
-declarations, per-column evidence, and check issues. See the
+declarations, per-column evidence, and check issues. A bridge channel or method whose own name
+starts with `relation:` is still found by that name when no relation of that name exists; when a
+relation also matches, the relation wins and the bridge key is queried by its qualifiedName (for
+example `flutter:relation%3Afoo`). See the
 [manual persistence round trip](docs/PERSISTENCE-TRACE.md) for feeding these ids to
 kartograph/cartograph `impact` and `schemagraph impact`; that chaining is not automated yet.
 

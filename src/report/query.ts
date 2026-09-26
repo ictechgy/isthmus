@@ -24,8 +24,9 @@ import { encodeSortedJson } from './sorted-json.ts';
 /**
  * persistence 관계 주체를 요청하는 접두사다(`relation:users`, `relation:public.users`).
  *
- * bridge 주체와 이름 공간을 나눈다. 이름이 `relation:`으로 시작하는 bridge 채널은
- * 인코딩된 qualifiedName(`flutter:relation%3A…`)으로 계속 질의할 수 있다.
+ * bridge 주체와 이름 공간을 나눈다. 이름이 `relation:`으로 시작하는 bridge 키는 같은 이름의
+ * 관계가 없을 때 이전처럼 그 이름으로 찾고(`createRelationPrefixedQuery`), 관계와 겹치면
+ * 인코딩된 qualifiedName(`flutter:relation%3A…`)으로 질의한다.
  */
 export const RELATION_SUBJECT_PREFIX = 'relation:';
 
@@ -117,6 +118,29 @@ export function createBridgeQuery(
     level: 'bridge',
     limitations,
   };
+}
+
+/**
+ * `relation:` 접두사로 요청한 주체를 질의한다.
+ *
+ * 먼저 persistence 관계로 해석하고, 관계가 선언으로도 사용으로도 없을(notFound) 때만 요청
+ * 문자열 그대로를 bridge 키(채널·메서드·모듈·컴포넌트·메시지)로 찾는다. 접두사가 생기기
+ * 전에는 `relation:foo` 같은 이름이 bridge 이름 그대로 질의됐으므로, 그런 bridge 키를 가진
+ * 기존 입력(과 MCP `query` 호출)의 결과를 바꾸지 않기 위해서다. 문자열이 정확히 같은
+ * 키만 찾으므로 추측한 연결이 아니다. 관계가 찾아지거나 모호하면 접두사를 명시한 관계가
+ * 이기고, 그 bridge 키는 인코딩된 qualifiedName으로 질의한다. 둘 다 없으면 요청한 이름
+ * 공간인 persistence의 notFound를 돌려준다.
+ */
+export function createRelationPrefixedQuery(
+  joined: BridgeJoinResult,
+  resolver: RelationResolver,
+  requested: string,
+  messages?: MessageBridgeJoin,
+): BridgeQueryDocument {
+  const relationQuery = createRelationQuery(joined, resolver, requested);
+  if (relationQuery.status !== 'notFound') return relationQuery;
+  const literalBridgeQuery = createBridgeQuery(joined, requested, messages);
+  return literalBridgeQuery.status === 'notFound' ? relationQuery : literalBridgeQuery;
 }
 
 /**

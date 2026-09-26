@@ -263,9 +263,11 @@ isthmus query relation:users code-facts.json sql-facts.json
 오류, 종료 코드 64), 사용·선언 끝점이 100,000개를 넘으면 부분 목록 대신 종료 코드 2로
 실패한다. `query relation:<name>`은 같은 조인 규칙(한정 이름은 정확히, 비한정 이름은 마지막
 세그먼트가 같은 선언이 하나일 때만, 후보가 여럿이면 `ambiguous`)으로 관계 하나를 찾아 사용·
-선언·컬럼별 증거·check 진단을 낸다. 이 id들을 kartograph/cartograph `impact`와
-`schemagraph impact`에 넘기는 방법은 [persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을
-본다. 이 연결은 아직 자동화되지 않았다.
+선언·컬럼별 증거·check 진단을 낸다. 이름 자체가 `relation:`으로 시작하는 bridge 채널·메서드는
+같은 이름의 관계가 없으면 이전처럼 그 이름으로 찾는다. 관계도 일치하면 관계가 우선하므로 그
+bridge 키는 qualifiedName(예: `flutter:relation%3Afoo`)으로 질의한다. 이 id들을
+kartograph/cartograph `impact`와 `schemagraph impact`에 넘기는 방법은
+[persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을 본다. 이 연결은 아직 자동화되지 않았다.
 
 ### 베이스라인
 

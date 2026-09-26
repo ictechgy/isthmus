@@ -30,6 +30,7 @@ verifyQuery();
 verifyMissingQuery();
 verifyPersistencePairs();
 verifyRelationQuery();
+verifyRelationPrefixedBridgeQuery();
 verifyGraph();
 verifyDiff();
 verifyImpact();
@@ -311,6 +312,34 @@ function verifyRelationQuery() {
   const missing = run(['query', 'relation:payments', ...inputs]);
   verify(missing.status === 64 && JSON.parse(missing.stdout).status === 'notFound', 'relation query notFound');
   verify(run(['help', 'query']).stdout.includes('relation:<name>'), 'relation query help');
+}
+
+/**
+ * 이름이 `relation:`으로 시작하는 bridge 채널을 같은 이름의 관계가 없을 때 이전처럼 찾는지 검증한다.
+ * relation 주체 도입 전에는 이 이름이 bridge 채널 이름 그대로 질의됐다.
+ */
+function verifyRelationPrefixedBridgeQuery() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-relation-channel-'));
+  try {
+    const channelFacts = (platform) => JSON.stringify({
+      format: 'bridge-facts', version: 1, platform, target: 'flutter', project: '/app',
+      generatedAt: '2026-09-26T00:00:00Z', tool: { name: 'fixture', version: 'test' }, limitations: [],
+      facts: [{
+        kind: platform === 'dart' ? 'channel-create' : 'channel-register', channel: 'relation:foo',
+        dynamic: false, location: { path: platform === 'dart' ? 'lib/a.dart' : 'ios/A.swift', line: 1, column: 1 },
+      }],
+    });
+    const dart = join(directory, 'dart.json');
+    const swift = join(directory, 'swift.json');
+    writeFileSync(dart, channelFacts('dart'));
+    writeFileSync(swift, channelFacts('swift'));
+    const result = run(['query', 'relation:foo', dart, swift]);
+    const document = JSON.parse(result.stdout);
+    verify(result.status === 0 && document.level === 'bridge' && document.result.subject.name === 'relation:foo',
+      'relation-prefixed bridge channel query');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** graph가 요청한 Mermaid 문서를 내는지 검증한다. */

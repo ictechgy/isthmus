@@ -7,7 +7,12 @@ import {
   type BridgeFactsDocument,
 } from '../exchange/parse.ts';
 import { createRelationResolver, joinBridgeDocuments } from '../join/join.ts';
-import { createBridgeQuery, createRelationQuery, encodeBridgeQuery } from './query.ts';
+import {
+  createBridgeQuery,
+  createRelationPrefixedQuery,
+  createRelationQuery,
+  encodeBridgeQuery,
+} from './query.ts';
 
 const dartDocument = await loadDocument(
   '../../experiments/phase-0/expected/dart.json',
@@ -690,4 +695,52 @@ test('모호한 relation 질의는 후보의 다시 질의할 수 있는 이름�
   assert.deepEqual(chosen.result?.issues?.map(({ code: issueCode }) => issueCode),
     ['ambiguous-relation-use', 'relation-decl-without-use']);
   assert.ok(encodeBridgeQuery(chosen).includes('"kind": "relation"'));
+});
+
+/** 이름이 `relation:`으로 시작하는 Flutter 채널 하나를 만들거나 등록하는 문서다. */
+function relationNamedChannelDocument(platform: 'dart' | 'swift'): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-26T00:00:00Z', platform, target: 'flutter', project: '/fixture',
+    facts: [{
+      kind: platform === 'dart' ? 'channel-create' : 'channel-register', channel: 'relation:foo', dynamic: false,
+      location: { path: platform === 'dart' ? 'lib/a.dart' : 'ios/A.swift', line: 1, column: 1 },
+    }],
+    limitations: [],
+  });
+}
+
+test('relation 접두사 질의는 같은 이름의 관계가 없을 때만 그 문자열의 bridge 키를 찾는다', () => {
+  const bridges = [relationNamedChannelDocument('dart'), relationNamedChannelDocument('swift')];
+  // bridge 전용 입력: 접두사 도입 전과 같은 bridge 문서를 바이트 단위로 돌려준다.
+  const bridgeJoined = joinBridgeDocuments(bridges);
+  const legacy = createBridgeQuery(bridgeJoined, 'relation:foo');
+  assert.equal(legacy.status, 'found');
+  assert.equal(
+    encodeBridgeQuery(createRelationPrefixedQuery(bridgeJoined, createRelationResolver(bridges), 'relation:foo')),
+    encodeBridgeQuery(legacy),
+  );
+
+  // 같은 이름의 관계가 있으면 접두사를 명시한 관계가 이기고, 채널은 qualifiedName으로 찾는다.
+  const code = relationDocument('go', [{ kind: 'relation-use', channel: 'foo' }]);
+  const declared = [...bridges, code, relationDocument('sql', [{ kind: 'relation-decl', channel: 'public.foo' }])];
+  const declaredJoined = joinBridgeDocuments(declared);
+  const relation = createRelationPrefixedQuery(declaredJoined, createRelationResolver(declared), 'relation:foo');
+  assert.equal(relation.level, 'persistence');
+  assert.equal(relation.result?.subject.qualifiedName, 'relation:public.foo');
+  const channel = createBridgeQuery(declaredJoined, legacy.result!.subject.qualifiedName);
+  assert.deepEqual([channel.status, channel.result?.subject.name], ['found', 'relation:foo']);
+
+  // 관계가 모호해도 bridge 키로 넘어가지 않는다 — 모호함은 그대로 알린다.
+  const ambiguous = [...bridges, code, relationDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.foo' },
+    { kind: 'relation-decl', channel: 'audit.foo' },
+  ])];
+  const ambiguousQuery = createRelationPrefixedQuery(
+    joinBridgeDocuments(ambiguous), createRelationResolver(ambiguous), 'relation:foo');
+  assert.deepEqual([ambiguousQuery.level, ambiguousQuery.status], ['persistence', 'ambiguous']);
+
+  // 관계도 bridge 키도 없으면 요청한 이름 공간(persistence)의 notFound다.
+  const missing = createRelationPrefixedQuery(declaredJoined, createRelationResolver(declared), 'relation:bar');
+  assert.deepEqual([missing.level, missing.status], ['persistence', 'notFound']);
 });

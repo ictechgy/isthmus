@@ -99,7 +99,9 @@ schemagraph facts --document catalog.json --project "$PROJECT" -o sql-facts.json
    (`status`·`requested`·`level: "persistence"`·`limitations`·`result`)를 쓰며, `result`에
    관계 수준 사용(`usedBy`)·선언(`dependsOn`)·컬럼별 증거(`columns`)·이 관계의 check 진단
    (`issues`)을 싣는다. 선언이 없어도 같은 이름의 사용이 관찰됐으면 선언 없는 관계로 찾고,
-   선언도 사용도 없으면 기존처럼 `notFound`와 종료 코드 64다.
+   선언도 사용도 없으면 기존처럼 `notFound`와 종료 코드 64다. 이름 자체가 `relation:`으로
+   시작하는 bridge 채널·메서드는 같은 이름의 관계가 없으면 이전처럼 그 이름으로 찾고(`level:
+   "bridge"`), 관계와 겹치면 관계가 우선하므로 qualifiedName(예: `flutter:relation%3Afoo`)으로 묻는다.
 
 ## 해석할 때
 

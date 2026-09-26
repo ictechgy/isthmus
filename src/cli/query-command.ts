@@ -8,7 +8,7 @@ import {
 import { joinMessageBridges } from '../join/messages.ts';
 import {
   createBridgeQuery,
-  createRelationQuery,
+  createRelationPrefixedQuery,
   encodeBridgeQuery,
   RELATION_SUBJECT_PREFIX,
 } from '../report/query.ts';
@@ -55,9 +55,10 @@ export async function runQueryCommand(
     const messageJoin = messages.length > 0
       ? joinMessageBridges(messages, project)
       : undefined;
-    // relation 주체는 persistence 조인 규칙으로 해석한다. 메시지 입력은 관계와 무관하다.
+    // relation 주체는 persistence 조인 규칙으로 해석한다. 같은 이름의 관계가 없으면 이전처럼
+    // 요청 문자열 그대로의 bridge 키를 찾으므로 메시지 조인도 함께 넘긴다.
     const query = relationRequested
-      ? createRelationQuery(joined, createRelationResolver(bridges), requested)
+      ? createRelationPrefixedQuery(joined, createRelationResolver(bridges), requested, messageJoin)
       : createBridgeQuery(joined, requested, messageJoin);
     return {
       standardOutput: encodeBridgeQuery(query),
