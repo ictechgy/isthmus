@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `check --pairs`(기본 `--format json` 전용)가 최상위 `matches`에 persistence 사용↔선언 쌍을
+  싣는다. 키는 조인이 해석한 선언 관계(와 컬럼)이고, 끝점은 사실의 platform·location·symbol을
+  그대로 복사한다. 플래그 없는 출력과 요약·이슈·베이스라인·`--strict` 판정은 바이트 단위로
+  같다. `sarif`·`codequality`와 함께 쓰면 사용 오류(64), 끝점이 100,000개를 넘으면 부분 목록
+  없이 종료 코드 2다. MCP `check` 도구에는 노출하지 않는다.
+- `query relation:<name>`이 persistence 조인 규칙(한정 이름 정확 일치, 비한정 이름은 마지막
+  세그먼트가 유일할 때만, 여럿이면 `ambiguous`)으로 관계 하나의 사용·선언·컬럼별 증거·진단을
+  기존 query 외피(`level: "persistence"`)로 낸다. 미발견은 기존처럼 `notFound`와 64다.
+- [persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md) 문서: `--pairs`의 사용 `symbol.usr`를
+  kartograph·cartograph impact에, 선언 VertexId를 `schemagraph impact`에 넘기는 절차와
+  생산자별 usr 부착 현황. 이 연결은 아직 자동화하지 않았다.
+
 ### Verified
 
 - RN 새 아키텍처 후속 하네스에서 Android 에뮬레이터 31개 검사와 강제 종료 후 31개,

@@ -90,6 +90,7 @@ sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸�
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
+| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | `check --pairs`로 코드 → 테이블 → DB 의존자를 잇는 수동 왕복 절차(아직 자동화 안 됨) |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | 고정 공개 플러그인·앱 정밀도 코퍼스(TP/FN/FP 계수) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
 
@@ -242,6 +243,29 @@ isthmus check dart-bridges.json swift-bridges.json --format codequality > gl-cod
 
 `--strict`·`--baseline`·`--update-baseline`은 모든 형식과 조합되고 문서화된 종료
 코드 동작을 유지한다.
+
+### persistence 쌍
+
+`check`는 기본적으로 매치된 관계·컬럼의 개수만 내고, 어느 코드 사용이 어느 카탈로그
+선언과 만났는지는 싣지 않는다. `--pairs`는 그 목록을 최상위 `matches` 배열로 더한다.
+
+```bash
+isthmus check code-facts.json sql-facts.json --pairs
+isthmus query relation:users code-facts.json sql-facts.json
+```
+
+매치 하나는 `{domain: "persistence", key: {relation, column?}, uses, decls}`다. `key.relation`은
+조인이 해석한 선언 이름이라, 같은 테이블로 해석되는 비한정 `users`와 한정 `public.users`는
+한 매치로 합쳐진다. 끝점은 사실의 `platform`·`location`·`symbol`을 그대로 복사한다(사용의
+`symbol.usr`는 생산자의 impact id, 선언의 `symbol.qualifiedName`은 schemagraph 정점 id).
+요약·이슈·베이스라인 억제·`--strict` 판정 등 나머지 문서는 플래그 없는 실행과 바이트 단위로
+같다. `--pairs`는 기본 `--format json`에서만 쓸 수 있고(`sarif`·`codequality`와 함께면 사용
+오류, 종료 코드 64), 사용·선언 끝점이 100,000개를 넘으면 부분 목록 대신 종료 코드 2로
+실패한다. `query relation:<name>`은 같은 조인 규칙(한정 이름은 정확히, 비한정 이름은 마지막
+세그먼트가 같은 선언이 하나일 때만, 후보가 여럿이면 `ambiguous`)으로 관계 하나를 찾아 사용·
+선언·컬럼별 증거·check 진단을 낸다. 이 id들을 kartograph/cartograph `impact`와
+`schemagraph impact`에 넘기는 방법은 [persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을
+본다. 이 연결은 아직 자동화되지 않았다.
 
 ### 베이스라인
 
@@ -453,7 +477,7 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
 | `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
-| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거 등 도구 실패. stderr가 원인을 구분 |
+| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목·persistence 쌍 끝점), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
 
 저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크와 clean build를 실행하고 제품 코드 90% 커버리지를

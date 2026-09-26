@@ -101,6 +101,7 @@ measured.
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
+| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` (not automated yet) |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
 
@@ -265,6 +266,31 @@ can present those accepted issues as "fixed" by the merge request.
 
 `--strict`, `--baseline`, and `--update-baseline` combine with any format and keep their
 documented exit-code behavior.
+
+### Persistence pairs
+
+`check` counts matched relations and columns but, by default, does not list which code use
+met which catalog declaration. `--pairs` adds that list as a top-level `matches` array:
+
+```bash
+isthmus check code-facts.json sql-facts.json --pairs
+isthmus query relation:users code-facts.json sql-facts.json
+```
+
+Each match is `{domain: "persistence", key: {relation, column?}, uses, decls}`. `key.relation` is
+the declaration the join resolved to, so an unqualified `users` and a qualified `public.users`
+that resolve to the same table merge into one match; endpoints copy the fact's `platform`,
+`location`, and `symbol` unchanged (a use's `symbol.usr` is the producer's impact id, a
+declaration's `symbol.qualifiedName` is the schemagraph vertex id). Everything else in the report —
+summary, issues, baseline suppression, and the `--strict` decision — is byte-identical to a run
+without the flag. `--pairs` is valid only with the default `--format json` (with `sarif` or
+`codequality` it is a usage error, exit 64), and more than 100,000 use and declaration endpoints
+fail with exit code 2 instead of a partial list. `query relation:<name>` resolves one relation with
+the same join rules (qualified names exactly, unqualified names by their last segment only when one
+declaration matches, several candidates reported as `ambiguous`) and returns its uses,
+declarations, per-column evidence, and check issues. See the
+[manual persistence round trip](docs/PERSISTENCE-TRACE.md) for feeding these ids to
+kartograph/cartograph `impact` and `schemagraph impact`; that chaining is not automated yet.
 
 ### Baselines
 
@@ -490,7 +516,7 @@ unattributed is counted as dynamic only.
 |---|---|
 | `0` | Success. In default mode, issues are reported but do not fail the run |
 | `1` | `--strict` found error issues (for `diff`: newly observed errors only). `-unverified` warnings and baseline-suppressed errors do not fail |
-| `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries), baseline file or write errors, retention evidence that cannot be built. stderr distinguishes the cause |
+| `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries, persistence pair endpoints), baseline file or write errors, retention evidence that cannot be built. stderr distinguishes the cause |
 | `64` | Bad command, option, or input count; or `query` `notFound`/`ambiguous` |
 
 For development from a checkout, run `npm ci` first. Development verification runs the type

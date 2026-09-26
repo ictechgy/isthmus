@@ -36,6 +36,7 @@
     "docs/PREFLIGHT.md",
     "docs/RUNTIME.md",
     "docs/IMPACT.md",
+    "docs/PERSISTENCE-TRACE.md",
     "docs/BRIDGE-MESSAGES.md",
     "docs/BRIDGE-EVENTS.md",
     "docs/BRIDGE-RN-EVENTS.md",
