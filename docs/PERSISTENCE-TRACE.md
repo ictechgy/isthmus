@@ -19,9 +19,9 @@
 |---|---|---|---|
 | cartograph (Swift) | `cartograph schema` | 인덱스 스토어가 있으면 감싸는 선언의 Swift USR(`s:…`)을 `usr`에 싣는다. 파일 범위 사실은 symbol이 없다 | `cartograph impact '<usr>' --format json` (선택자는 이름·한정 이름·USR을 받는다) |
 | kartograph (Kotlin/Java) | `kartograph schema --project <dir> --format json --graph-file <snapshot>` | 조건부. 스냅샷을 주고, 사실이 함수·메서드 본문 안에 있을 때만 JVM id(`method:owner#name desc` 형태)를 `usr`에 싣는다. 스냅샷은 `snapshot --include-paths`로 캡처해야 소스 위치가 맞는다 | `kartograph impact '<usr>' --graph-file <snapshot>` |
-| dartograph (Dart) | `dartograph schema --format json` | `qualifiedName`(`Class.method`)만 있고 `usr`는 없다. dartograph impact id(`<package:…\|project:…>::Class.member`)와 문자열이 달라 자동으로 잇지 못한다 | 위치(`location.path`)와 `qualifiedName`으로 사람이 찾는다 |
-| gartograph (Go) | `gartograph schema` | 없다 | 위치(파일·줄)로만 찾는다 |
-| rustograph (Rust) | `rustograph schema` | 없다 | 위치(파일·줄)로만 찾는다 |
+| dartograph (Dart) | `dartograph schema --format json [--project <root>] <package-root>` (패키지 루트는 필수, 예: `.`) | `qualifiedName`(`Class.method`)만 있고 `usr`는 없다. dartograph impact id(`<package:…\|project:…>::Class.member`)와 문자열이 달라 자동으로 잇지 못한다 | 위치(`location.path`)와 `qualifiedName`으로 사람이 찾는다 |
+| gartograph (Go) | `gartograph schema [--dir <module-root>]` (기본은 현재 디렉터리) | 없다 | 위치(파일·줄)로만 찾는다 |
+| rustograph (Rust) | `rustograph schema [--dir <crate-root>]` (기본은 현재 디렉터리) | 없다 | 위치(파일·줄)로만 찾는다 |
 | schemagraph (카탈로그) | `schemagraph facts --document catalog.json --project <root> -o sql-facts.json` | `relation-decl`의 `qualifiedName`이 그래프 정점 id(VertexId, 예: `main.users`, `main.users.id`)다. `usr`에도 같은 값을 싣는 변경이 계획돼 있으나 이 문서 시점에는 확인하지 않았다 | `schemagraph impact <VertexId> --graph graph.json` |
 
 schemagraph의 그래프와 사실은 같은 카탈로그 문서에서 만들어야 정점 id가 일치한다.
