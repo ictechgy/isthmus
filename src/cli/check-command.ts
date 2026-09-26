@@ -24,9 +24,14 @@ import {
   encodeCodeQualityReport,
 } from '../report/codequality.ts';
 import {
+  createPersistenceMatches,
+  PersistencePairsLimitError,
+} from '../report/pairs.ts';
+import {
   createSarifLog,
   encodeSarifLog,
 } from '../report/sarif.ts';
+import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
   bridgeJoinDeferredError,
   inputFailure,
@@ -58,7 +63,7 @@ export async function runCheckCommand(
   if (arguments_[0] !== 'check') return usageError();
   const options = parseCheckOptions(arguments_.slice(1));
   if (options === undefined) return usageError();
-  const { strict, format, baselinePath, updateBaselinePath, inputPaths } = options;
+  const { strict, format, pairs, baselinePath, updateBaselinePath, inputPaths } = options;
   if (inputPaths.length < 2 || inputPaths.length > MAX_DOCUMENTS_PER_JOIN) {
     return usageError();
   }
@@ -84,13 +89,18 @@ export async function runCheckCommand(
       const baseline = await readBaselineDocument(baselinePath, readTextFile);
       report = applyBaseline(report, baseline.entries);
     }
+    // --pairs는 기본 json 문서에 matches만 덧붙인다. 요약·이슈·베이스라인·strict
+    // 판정은 그대로라 플래그 없는 출력과 바이트 단위로 같다. 상한 초과는 베이스라인을
+    // 쓰기 전에 실패해 부분 산출물을 남기지 않는다.
     const standardOutput = format === 'sarif'
       ? encodeSarifLog(createSarifLog(report, producerVersion, issueFingerprint))
       : format === 'codequality'
         ? encodeCodeQualityReport(
             createCodeQualityFindings(report, issueFingerprint),
           )
-        : encodeCheckReport(report);
+        : pairs
+          ? encodeSortedJson({ ...report, matches: createPersistenceMatches(joined) })
+          : encodeCheckReport(report);
     if (updateBaselinePath !== undefined && writeTextFile !== undefined) {
       await writeBaselineDocument(
         updateBaselinePath,
@@ -105,6 +115,9 @@ export async function runCheckCommand(
       exitCode: strict && report.summary.errors > 0 ? 1 : 0,
     };
   } catch (error) {
+    if (error instanceof PersistencePairsLimitError) {
+      return inputFailure(`${error.message}\n`);
+    }
     return inputFailureResult(error) ?? baselineFailureResult(error)
       ?? internalError();
   }
@@ -116,6 +129,7 @@ function parseCheckOptions(
 ): {
   strict: boolean;
   format: CheckOutputFormat;
+  pairs: boolean;
   baselinePath: string | undefined;
   updateBaselinePath: string | undefined;
   inputPaths: string[];
@@ -123,7 +137,7 @@ function parseCheckOptions(
   const parsed = parseCommandArguments(
     rest,
     ['--format', '--baseline', '--update-baseline'],
-    ['--strict'],
+    ['--strict', '--pairs'],
   );
   if (parsed === undefined) return undefined;
   const format = parsed.valueFlags.get('--format');
@@ -138,9 +152,14 @@ function parseCheckOptions(
   if (baselinePath !== undefined && updateBaselinePath !== undefined) {
     return undefined;
   }
+  // 쌍 목록은 isthmus-check JSON에만 싣는다. SARIF·Code Quality에는 담을 자리가 없어
+  // 조용히 버리면 요청을 무시한 것이 되므로 사용 오류로 거부한다.
+  const pairs = parsed.booleanFlags.has('--pairs');
+  if (pairs && format !== undefined && format !== 'json') return undefined;
   return {
     strict: parsed.booleanFlags.has('--strict'),
     format: format ?? 'json',
+    pairs,
     baselinePath,
     updateBaselinePath,
     inputPaths: [...parsed.positionals],
@@ -291,7 +310,7 @@ function usageError(): CommandResult {
 /** check 명령의 한 줄 사용법이다. */
 export const checkUsage =
   'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-  + '[more...] [--strict] [--format json|sarif|codequality] '
+  + '[more...] [--strict] [--format json|sarif|codequality] [--pairs] '
   + '[--baseline <isthmus-baseline.json>] '
   + '[--update-baseline <isthmus-baseline.json>]';
 

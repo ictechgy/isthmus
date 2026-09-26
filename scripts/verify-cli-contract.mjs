@@ -28,6 +28,7 @@ verifyBaselineRoundtrip();
 verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
+verifyPersistencePairs();
 verifyGraph();
 verifyDiff();
 verifyImpact();
@@ -276,6 +277,27 @@ function verifyMissingQuery() {
     'missing query stderr',
   );
   verify(JSON.parse(result.stdout).status === 'notFound', 'missing query JSON');
+}
+
+/** persistence 쌍·관계 질의 검사가 함께 쓰는 고정 입력(kotlin 사용 + sql 선언)이다. */
+function persistenceInputs() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/domain-composition/${name}`, import.meta.url));
+  return [fixture('kotlin-persistence.json'), fixture('sql.json')];
+}
+
+/** 빌드된 CLI가 persistence 쌍(check --pairs)을 기본 문서에 덧붙이는 계약을 지키는지 검증한다. */
+function verifyPersistencePairs() {
+  const inputs = persistenceInputs();
+  const plain = run(['check', ...inputs]);
+  const paired = run(['check', ...inputs, '--pairs']);
+  verify(paired.status === plain.status && paired.stderr === '', 'check pairs exit code');
+  const { matches, ...rest } = JSON.parse(paired.stdout);
+  verify(JSON.stringify(rest) === JSON.stringify(JSON.parse(plain.stdout)), 'check pairs additive');
+  verify(matches.length === 2 && matches.every(({ domain }) => domain === 'persistence'), 'check pairs matches');
+  verify(matches[0].uses[0].symbol.usr === 'com.example.Repo#find()V', 'check pairs keeps use symbol');
+  verify(matches[0].decls[0].symbol.qualifiedName === 'public.users', 'check pairs keeps decl symbol');
+  verify(run(['check', ...inputs, '--pairs', '--format', 'sarif']).status === 64, 'check pairs sarif usage');
+  verify(run(['help', 'check']).stdout.includes('[--pairs]'), 'check pairs help');
 }
 
 /** graph가 요청한 Mermaid 문서를 내는지 검증한다. */

@@ -6,6 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { runCheckCommand } from './check-command.ts';
+import { encodeSortedJson } from '../report/sorted-json.ts';
 
 const dartPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/dart.json', import.meta.url),
@@ -54,7 +55,7 @@ test('하위 명령이 없으면 사용법과 종료 코드 64를 반환한다',
     standardOutput: '',
     standardError:
       'Usage: isthmus check <bridge-facts.json> <bridge-facts.json> '
-      + '[more...] [--strict] [--format json|sarif|codequality] '
+      + '[more...] [--strict] [--format json|sarif|codequality] [--pairs] '
       + '[--baseline <isthmus-baseline.json>] '
       + '[--update-baseline <isthmus-baseline.json>]\n',
     exitCode: 64,
@@ -1242,4 +1243,86 @@ test('check --format sarif는 v2 Event 진단도 규칙과 함께 싣는다', as
   assert.equal(result.exitCode, 0);
   const sarif = JSON.parse(result.standardOutput);
   assert.equal(sarif.runs[0].results[0].ruleId, 'unhandled-stream-listen');
+});
+
+/** persistence 쌍 검사용 입력이다. 경로 대신 이름으로 메모리에서 읽는다. */
+const pairsFixture = new URL('../../fixtures/domain-composition/', import.meta.url);
+const readPairsFixture = (path: string): Promise<string> => readFile(new URL(path, pairsFixture), 'utf8');
+const mixedPersistence = ['dart.json', 'swift.json', 'kotlin-persistence.json', 'go-persistence.json', 'sql.json'];
+
+test('check --pairs는 기본 json 문서에 matches만 덧붙이고 요약·종료 코드는 그대로다', async () => {
+  for (const extra of [[], ['--strict']]) {
+    const plain = await runCheckCommand(['check', ...mixedPersistence, ...extra], readPairsFixture);
+    const paired = await runCheckCommand(['check', '--pairs', ...mixedPersistence, ...extra], readPairsFixture);
+    assert.equal(paired.exitCode, plain.exitCode);
+    assert.equal(paired.standardError, '');
+    const { matches, ...rest } = JSON.parse(paired.standardOutput);
+    assert.deepEqual(rest, JSON.parse(plain.standardOutput));
+    // 같은 정렬 인코더로 matches만 더한 바이트와 같다 — 다른 키의 순서·공백이 흔들리지 않는다.
+    assert.equal(paired.standardOutput, encodeSortedJson({ ...JSON.parse(plain.standardOutput), matches }));
+    assert.deepEqual(matches.map(({ key }: { key: { relation: string; column?: string } }) => key), [
+      { relation: 'public.users' }, { relation: 'public.users', column: 'email' },
+    ]);
+  }
+  // 명시적 --format json과 함께 써도 같다.
+  const explicit = await runCheckCommand(['check', ...mixedPersistence, '--format', 'json', '--pairs'], readPairsFixture);
+  assert.equal(explicit.standardOutput,
+    (await runCheckCommand(['check', ...mixedPersistence, '--pairs'], readPairsFixture)).standardOutput);
+});
+
+test('check --pairs는 sarif·codequality와 함께 쓰면 입력을 읽기 전에 64로 거부한다', async () => {
+  for (const format of ['sarif', 'codequality']) {
+    const result = await runCheckCommand(['check', ...mixedPersistence, '--format', format, '--pairs'],
+      async () => assert.fail('must not read inputs'));
+    assert.equal(result.exitCode, 64);
+    assert.equal(result.standardOutput, '');
+    assert.match(result.standardError, /^Usage: isthmus check /);
+  }
+});
+
+test('check --pairs는 베이스라인 기록·억제와 strict 판정을 바꾸지 않는다', async () => {
+  const written = new Map<string, string>();
+  const write = async (path: string, text: string) => { written.set(path, text); };
+  const clock = () => new Date('2026-09-26T00:00:00.000Z');
+  await runCheckCommand(['check', ...mixedPersistence, '--update-baseline', 'plain'], readPairsFixture, write, clock);
+  await runCheckCommand(['check', ...mixedPersistence, '--update-baseline', 'paired', '--pairs'],
+    readPairsFixture, write, clock);
+  assert.equal(written.get('paired'), written.get('plain'));
+  const read = (path: string) => path === 'baseline' ? Promise.resolve(written.get('plain')!) : readPairsFixture(path);
+  const plain = await runCheckCommand(['check', ...mixedPersistence, '--baseline', 'baseline', '--strict'], read);
+  const paired = await runCheckCommand(['check', ...mixedPersistence, '--baseline', 'baseline', '--strict', '--pairs'], read);
+  assert.equal(plain.exitCode, 0);
+  assert.equal(paired.exitCode, 0);
+  const { matches, ...rest } = JSON.parse(paired.standardOutput);
+  assert.deepEqual(rest, JSON.parse(plain.standardOutput));
+  assert.ok(matches.length > 0);
+});
+
+test('쌍 끝점이 상한을 넘으면 부분 목록 없이 코드 2로 실패하고 베이스라인을 쓰지 않는다', async () => {
+  // 문서당 사실 상한보다 작게 나눠 조인 입력 한계가 아닌 쌍 상한에 걸리게 한다.
+  const perDocument = 34_000;
+  const caller = (index: number) => JSON.stringify({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-26T00:00:00Z', platform: 'go', target: 'persistence', project: '/fixture',
+    facts: Array.from({ length: perDocument }, (_, line) => ({
+      kind: 'relation-use', channel: 'public.users', dynamic: false,
+      location: { path: `db/part${index}.go`, line: line + 1, column: 1 },
+    })),
+    limitations: [],
+  });
+  const documents = new Map([
+    ['a.json', caller(0)], ['b.json', caller(1)], ['c.json', caller(2)],
+    ['sql.json', await readPairsFixture('sql.json')],
+  ]);
+  const written: string[] = [];
+  const result = await runCheckCommand(
+    ['check', ...documents.keys(), '--pairs', '--update-baseline', 'baseline.json'],
+    async (path) => documents.get(path)!, async (path) => { written.push(path); });
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.match(result.standardError, /^Cannot produce persistence pairs with more than 100000 use and declaration endpoints; narrow the check inputs/);
+  assert.deepEqual(written, []);
+  // 같은 입력의 기본 check는 상한과 무관하게 성공한다.
+  const plain = await runCheckCommand(['check', ...documents.keys()], async (path) => documents.get(path)!);
+  assert.equal(plain.exitCode, 0);
 });
