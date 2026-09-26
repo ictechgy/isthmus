@@ -90,6 +90,20 @@ export const checkIssueCodes = [
 /** check가 보고하는 안정적인 진단 종류다. */
 export type CheckIssueCode = (typeof checkIssueCodes)[number];
 
+/**
+ * channel에 선언 측 이름(해석된 선언의 철자)을 싣는 persistence 진단 코드다.
+ *
+ * 나머지 persistence 진단(`relation-use-without-decl*`, `ambiguous-relation-use`)은
+ * 생산자가 쓴 사용 측 이름을 싣는다. 선택한 사실과 진단을 같은 관계로 대조하는
+ * 소비자(impact)는 어느 쪽 이름인지 알아야 조인과 같은 해석 규칙을 적용할 수 있다.
+ */
+export const declNamedPersistenceIssueCodes: ReadonlySet<CheckIssueCode> = new Set<CheckIssueCode>([
+  'column-use-without-decl',
+  'column-use-without-decl-unverified',
+  'relation-decl-without-use',
+  'relation-decl-without-use-unverified',
+]);
+
 /** 삭제 판정 없이 경계 불일치 사실과 증거만 전달한다. */
 export interface CheckIssue {
   readonly severity: 'error' | 'warning';

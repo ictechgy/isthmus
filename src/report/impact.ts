@@ -3,9 +3,9 @@ import type { BridgeFact, BridgeFactsDocument, BridgeTarget } from '../exchange/
 import { isBridgeDomainDocument } from '../exchange/parse.ts';
 import type { ImpactSelection } from '../exchange/impact-selection.ts';
 import { parseImpactSelection } from '../exchange/impact-selection.ts';
-import { BridgeJoinValidationError, joinBridgeDocuments } from '../join/join.ts';
-import type { BridgeEndpoint, JoinLimitation, MatchedChannel, MatchedMethod } from '../join/join.ts';
-import { createCheckReport } from './check-report.ts';
+import { BridgeJoinValidationError, createRelationResolver, joinBridgeDocuments } from '../join/join.ts';
+import type { BridgeEndpoint, JoinLimitation, MatchedChannel, MatchedMethod, RelationResolver } from '../join/join.ts';
+import { createCheckReport, declNamedPersistenceIssueCodes } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 import { collectRuntimeImpact, hasRuntimeImpactGaps } from './runtime-impact.ts';
@@ -85,10 +85,16 @@ export function createBridgeImpact(
   const channelKeys = new Set<string>();
   const wiringKeys = new Set<string>();
   const methodKeys = new Set<string>();
+  const persistenceFacts: PersistenceSelectedFact[] = [];
   let unresolvedSelectedFacts = 0;
   for (const fact of selectedFacts) {
     if (fact.dynamic || fact.channel === null || fact.target === null) {
       unresolvedSelectedFacts++;
+      continue;
+    }
+    // persistence 사실은 원문 채널이 아니라 조인이 해석한 관계로 진단과 대조한다.
+    if (fact.target === 'persistence') {
+      persistenceFacts.push({ ...fact, channel: fact.channel });
       continue;
     }
     const key = channelKey(fact.target, fact.channel);
@@ -142,10 +148,14 @@ export function createBridgeImpact(
         ? item.registrations.filter(({ platform }) => platform === runtimeNative) : item.registrations };
     })
     .sort(compareLogicalKeys);
-  const issues = createCheckReport(joined).issues.filter(({ target, channel, method }) =>
-    channelKeys.has(channelKey(target, channel)) &&
-    (method === undefined || wiringKeys.has(channelKey(target, channel)) ||
-      methodKeys.has(methodKey(target, channel, method)) || runtimeMethodKeys.has(methodKey(target, channel, method))));
+  const persistence = collectPersistenceSelection(documents, persistenceFacts);
+  const issues = createCheckReport(joined).issues.filter((issue) => {
+    const { target, channel, method } = issue;
+    if (target === 'persistence') return isSelectedPersistenceIssue(issue, persistence);
+    return channelKeys.has(channelKey(target, channel)) &&
+      (method === undefined || wiringKeys.has(channelKey(target, channel)) ||
+        methodKeys.has(methodKey(target, channel, method)) || runtimeMethodKeys.has(methodKey(target, channel, method)));
+  });
   const reviewFiles = [...new Set([
     ...selectedFacts,
     ...channels.flatMap(({ creations, registrations }) => [...creations, ...registrations]),
@@ -180,11 +190,18 @@ export function createBridgeImpact(
   };
 }
 
-/** 0을 전체 안전 판정으로 해석하지 않고, 관련 오류·공백을 CI 실패 조건으로 계산한다. */
+/**
+ * 0을 전체 안전 판정으로 해석하지 않고, 관련 오류·공백을 CI 실패 조건으로 계산한다.
+ *
+ * 선택한 persistence 사실에 걸린 진단은 심각도와 무관하게 blocker다. impact는
+ * bridge 채널·메서드만 확장하고 관계의 DB 내부 의존자나 다른 사용처는 계산하지
+ * 않으므로(`scope: 'bridge'`), 경고(모호한 비한정 사용, 미사용 선언)를 통과시키면
+ * 검토가 필요한 스키마 변경이 조용한 성공으로 보인다.
+ */
 export function hasImpactBlockers(report: BridgeImpactReport): boolean {
   return report.summary.errors > 0 || report.summary.unresolvedSelectedFacts > 0 ||
     report.summary.unmatchedSelectors > 0 || report.relevantLimitations.length > 0 ||
-    report.issues.some(({ code }) => code.endsWith('-unverified')) ||
+    report.issues.some(({ code, target }) => code.endsWith('-unverified') || target === 'persistence') ||
     (report.runtime !== undefined && hasRuntimeImpactGaps(report.runtime));
 }
 
@@ -221,6 +238,52 @@ function selectFacts(documents: readonly BridgeFactsDocument[], selection: Impac
       symbols: selection.symbols.filter((name) => !foundSymbols.has(name)),
     },
   };
+}
+
+/** 채널이 확정된 선택 persistence 사실이다. */
+type PersistenceSelectedFact = SelectedBridgeFact & { readonly channel: string };
+
+/** 선택한 persistence 사실이 가리키는 논리 관계·(관계, 컬럼) 키와 그 해석기다. */
+interface PersistenceSelection {
+  readonly resolver: RelationResolver;
+  readonly relations: ReadonlySet<string>;
+  readonly columns: ReadonlySet<string>;
+}
+
+/**
+ * 선택한 persistence 사실을 조인과 같은 해석 규칙의 관계 키로 바꾼다.
+ * 선택이 없으면 해석기를 만들지 않는다 — bridge만 고른 실행에 비용을 더하지 않는다.
+ */
+function collectPersistenceSelection(
+  documents: readonly BridgeFactsDocument[], facts: readonly PersistenceSelectedFact[],
+): PersistenceSelection | undefined {
+  if (facts.length === 0) return undefined;
+  const resolver = createRelationResolver(documents);
+  const relations = new Set<string>();
+  const columns = new Set<string>();
+  for (const fact of facts) {
+    const key = fact.kind === 'relation-decl' ? resolver.declKey : resolver.useKey;
+    relations.add(key(fact.channel));
+    if (fact.method !== undefined) columns.add(key(fact.channel, fact.method));
+  }
+  return { resolver, relations, columns };
+}
+
+/**
+ * persistence 진단이 선택한 관계에 속하는지 원문이 아니라 해석된 관계로 판정한다.
+ *
+ * 원문 문자열을 비교하면 비한정 사용('users')이 닿는 한정 선언 이름('public.users')을
+ * 싣는 컬럼 진단이 빠진다. 관계 수준 진단은 관계가 선택되면, 컬럼 진단은 같은
+ * (관계, 컬럼)이 선택되면 싣는다 — bridge의 채널·메서드 규칙과 같다. 모호한 사용은
+ * 후보 선언 중 하나가 선택돼도 관련 진단이다.
+ */
+function isSelectedPersistenceIssue(issue: CheckIssue, selection: PersistenceSelection | undefined): boolean {
+  if (selection === undefined) return false;
+  const { resolver, relations, columns } = selection;
+  const key = declNamedPersistenceIssueCodes.has(issue.code) ? resolver.declKey : resolver.useKey;
+  const relationSelected = relations.has(key(issue.channel)) ||
+    (issue.candidates ?? []).some((candidate) => relations.has(resolver.declKey(candidate)));
+  return relationSelected && (issue.method === undefined || columns.has(key(issue.channel, issue.method)));
 }
 
 /** 구분 문자 포함 이름도 서로 충돌하지 않는 채널 키다. */

@@ -6,7 +6,7 @@ import {
   parseBridgeFactsDocument,
   type BridgeFactsDocument,
 } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from './join.ts';
+import { createRelationResolver, joinBridgeDocuments } from './join.ts';
 
 const dartDocument = await loadDocument(
   '../../experiments/phase-0/expected/dart.json',
@@ -1969,4 +1969,46 @@ test('사실 0건 bridge 플랫폼 문서만 있는 persistence 입력은 target
     () => joinBridgeDocuments([emptyDocument('dart'), emptyDocument('go')]),
     (error: Error) => error.message.endsWith('run a producer for the missing side.'),
   );
+});
+
+test('관계 해석기는 조인과 같은 규칙으로 한정·비한정·모호·미선언을 가린다', () => {
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.Users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.orders', symbol: 'public.orders' },
+    { kind: 'relation-decl', channel: 'audit.orders', symbol: 'audit.orders' },
+    { kind: 'relation-decl', channel: 'public.a%2Eb', symbol: 'public.a.b' },
+  ]);
+  const caller = persistenceDocument('go', [{ kind: 'relation-use', channel: 'users' }]);
+  const resolver = createRelationResolver([caller, schema]);
+
+  // 비한정 이름은 마지막 세그먼트로, 대소문자를 접어 유일한 선언을 찾는다.
+  assert.deepEqual(resolver.resolveUse('USERS'), { status: 'resolved', channel: 'public.Users' });
+  assert.deepEqual(resolver.resolveUse('public.users'), { status: 'resolved', channel: 'public.Users' });
+  // 후보가 여럿이면 추측하지 않고 생산자 철자 후보를 정렬해 돌려준다.
+  assert.deepEqual(resolver.resolveUse('orders'), {
+    status: 'ambiguous', candidates: ['audit.orders', 'public.orders'],
+  });
+  // 한정 이름은 정확히 같은 선언만 찾는다 — 다른 스키마로 넘어가지 않는다.
+  assert.deepEqual(resolver.resolveUse('sales.users'), { status: 'missing' });
+  assert.deepEqual(resolver.resolveUse('payments'), { status: 'missing' });
+  // escape된 점은 한정자가 아니라 이름의 일부다.
+  assert.deepEqual(resolver.resolveUse('a%2Eb'), { status: 'resolved', channel: 'public.a%2Eb' });
+  assert.deepEqual(resolver.resolveUse('a.b'), { status: 'missing' });
+
+  // 유일하게 해석된 사용은 그 선언과 같은 관계 키를, 컬럼 키도 같게 받는다.
+  assert.equal(resolver.useKey('users'), resolver.declKey('public.Users'));
+  assert.equal(resolver.useKey('Users', 'Email'), resolver.declKey('public.users', 'email'));
+  assert.notEqual(resolver.useKey('users', 'email'), resolver.useKey('users'));
+  // 미해석·모호 사용은 같은 사용 버킷끼리만 같고 선언 키와 섞이지 않는다.
+  assert.equal(resolver.useKey('orders'), resolver.useKey('ORDERS'));
+  assert.notEqual(resolver.useKey('orders'), resolver.declKey('public.orders'));
+  assert.notEqual(resolver.useKey('sales.users'), resolver.useKey('users'));
+  // 같은 해석 결과를 다시 물어도 같다(캐시 경로).
+  assert.deepEqual(resolver.resolveUse('orders'), resolver.resolveUse('Orders'));
+});
+
+test('관계 해석기는 persistence 선언이 없으면 모든 사용을 미선언으로 본다', () => {
+  const resolver = createRelationResolver([dartDocument, swiftDocument]);
+  assert.deepEqual(resolver.resolveUse('users'), { status: 'missing' });
+  assert.deepEqual(resolver.resolveUse('missing'), { status: 'missing' });
 });

@@ -46,6 +46,12 @@ isthmus impact --changes changes.json dart.json swift.json --strict
   넓힌다(`channel-wiring`). 메서드 변경은 해당 논리 키만 선택한다(`method`).
 - `reviewFiles`: 선택 지점, 관련 호출·핸들러·배선 파일의 중복 없는 목록.
 - `issues`: 기존 check 정책으로 계산한 관련 진단. 다른 채널의 진단은 섞지 않는다.
+  persistence 사실(`relation-use`·`relation-decl`)을 선택하면 원문 이름이 아니라 조인과
+  같은 규칙(대소문자 접기, 한정 이름은 정확히, 비한정 이름은 마지막 세그먼트로 유일할
+  때만)으로 해석한 관계로 진단을 귀속한다. 그래서 비한정 사용 `users`가 닿는
+  `public.users`의 `column-use-without-decl`도 싣는다. 관계 수준 진단은 관계를 고르면,
+  컬럼 진단은 같은 (관계, 컬럼)을 고르면 싣고, 모호한 비한정 사용은 후보 선언 중 하나를
+  골라도 관련 진단이다. persistence 선택은 `channels`·`methods`를 넓히지 않는다.
 - `limitations` / `relevantLimitations`: 전체 한계와 선택에 관련된 한계. 스코프 없는 한계는
   해당 target 전체에 적용한다. 미관찰·미해석 선택은 범위를 좁힐 수 없어 전체 한계를 보존한다.
 - `inputs`: 생산 도구·버전·플랫폼·target·생성 시각. 파일 입력 순서와 무관하게 정렬한다.
@@ -56,11 +62,14 @@ isthmus impact --changes changes.json dart.json swift.json --strict
 | 코드 | 의미 |
 |---|---|
 | 0 | 보고서 생성 성공. `unobserved`도 기본 모드에서는 보고한다. |
-| 1 | `--strict`에서 관련 error·미검증 진단·관련 분석 한계·미해석 선택·미관찰 선택이 남음. |
+| 1 | `--strict`에서 관련 error·미검증 진단·선택한 persistence 사실의 진단(경고 포함)·관련 분석 한계·미해석 선택·미관찰 선택이 남음. |
 | 2 | 읽기·JSON·교환 계약·입력 예산·조인 보류 등 실행 실패. 부분 보고서 없음. |
 | 64 | 인수 또는 직접 입력한 파일/심볼 선택 오류. |
 
 이 명령의 strict는 check strict보다 분석 공백에 엄격하다. 기존 check/diff 동작은 유지한다.
+persistence 진단은 경고(`ambiguous-relation-use`, `relation-decl-without-use`)도 blocker다.
+impact는 관계의 다른 사용처나 DB 내부 의존자(뷰·FK)를 계산하지 않으므로, 경고를 통과시키면
+검토가 필요한 스키마 변경이 조용한 성공으로 보이기 때문이다.
 
 ## 런타임 관찰 연결
 
@@ -79,7 +88,8 @@ CI/호출자가 같은 소스에서 사실을 생산했다는 문맥을 제공�
 합성하지 않고 `runtime` 필드에 별도 근거를 둔다. 정적 미해석 수와 기존 진단은 그대로 남는다.
 
 런타임 run의 platform이 ios/macos이고 transport가 MethodChannel인 경우에만 현재 Swift
-정적 핸들러 후보를 찾는다. native 심볼이나 엔진이 실제 실행됐다고 확정하지 않는다.
+정적 핸들러 후보를 찾는다(android는 Kotlin). 후보 플랫폼은 bridge 도메인 문서가 분석한
+플랫폼만 인정하며, 같은 플랫폼의 persistence 문서만 있으면 `unsupported`다. native 심볼이나 엔진이 실제 실행됐다고 확정하지 않는다.
 BasicMessageChannel과 다른 OS는 `unsupported`, 정적 후보가 없으면 `unobserved`다.
 revision이 오래되면 이벤트를 연결하지 않고 `stale`로 보존한다.
 
@@ -90,7 +100,8 @@ revision이 오래되면 이벤트를 연결하지 않고 `stale`로 보존한�
 ## 현재 경계
 
 `scope: "bridge"`, `complete: false`는 항상 명시한다. 현재 기능은 브리지에 직접 등장한
-코드의 변경 범위를 찾는다. 언어 내부 helper→handler→Dart 화면으로 이어지는 전이 경로,
+코드의 변경 범위를 찾는다. persistence 사실은 선택 근거와 관련 진단까지만 싣고, 관계를
+쓰는 다른 코드나 DB 내부 의존자로 범위를 넓히지 않는다. 언어 내부 helper→handler→Dart 화면으로 이어지는 전이 경로,
 실제 엔진·등록 수명과 테스트 시나리오의 포괄성은 아직 검증하지 않는다. 런타임 관찰은
 위 방식으로 후보를 넓히는 근거이며, 전체 의존성의 완전성이나 실제 핸들러 실행 증명은 아니다.
 이들은 [전체 목표](COMPETITIVENESS.md)의 남은 구현이며 이 명령의 존재로 완료 처리하지 않는다.

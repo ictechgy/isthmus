@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { createBridgeImpact, encodeBridgeImpact } from './impact.ts';
+import { createBridgeImpact, encodeBridgeImpact, hasImpactBlockers } from './impact.ts';
 import { parseImpactSelection } from '../exchange/impact-selection.ts';
 
 const location = (path: string, line: number) => ({ path, line, column: 1 });
@@ -142,4 +142,77 @@ test('컴팩트 출력은 공백만 줄이고 근거와 한계는 같은 JSON으
   const compact = encodeBridgeImpact(report, true);
   assert.deepEqual(JSON.parse(compact), JSON.parse(encodeBridgeImpact(report)));
   assert.ok(compact.length < encodeBridgeImpact(report).length);
+});
+
+/** persistence 사실 하나다. 선언은 카탈로그라 위치 없이 심볼만 싣는다. */
+const relation = (kind: 'relation-use' | 'relation-decl', channel: string, method?: string, path?: string, name?: string) => ({
+  kind, channel, dynamic: false,
+  ...(method === undefined ? {} : { method }),
+  ...(path === undefined ? {} : { location: location(path, 1) }),
+  ...(name === undefined ? {} : { symbol: { qualifiedName: name } }),
+});
+const persistence = (platform: string, facts: unknown[]) => parseBridgeFactsDocument({
+  format: 'bridge-facts', version: 1, tool: { name: platform, version: '1.0.0' },
+  generatedAt: '2026-09-14T00:00:00Z', project: '/project', platform, target: 'persistence',
+  facts, limitations: [],
+});
+const repository = persistence('kotlin', [
+  relation('relation-use', 'Users', undefined, 'src/Users.kt', 'Users.find'),
+  relation('relation-use', 'users', 'nickname', 'src/Users.kt', 'Users.find'),
+  relation('relation-use', 'users', 'email', 'src/Mail.kt', 'Mail.send'),
+  relation('relation-use', 'orders', undefined, 'src/Orders.kt', 'Orders.list'),
+  relation('relation-use', 'events', undefined, 'src/Events.kt', 'Events.list'),
+]);
+const catalog = persistence('sql', [
+  relation('relation-decl', 'public.users', undefined, undefined, 'public.users'),
+  relation('relation-decl', 'public.users', 'email', undefined, 'public.users.email'),
+  relation('relation-decl', 'public.events', undefined, undefined, 'public.events'),
+  relation('relation-decl', 'audit.events', undefined, undefined, 'audit.events'),
+]);
+const issueKeys = (report: ReturnType<typeof createBridgeImpact>) =>
+  report.issues.map(({ code, channel, method }) => [code, channel, method ?? null]);
+
+test('비한정·대소문자 변형 사용도 해석된 한정 선언의 컬럼 진단으로 귀속한다', () => {
+  const report = createBridgeImpact([repository, catalog], select(['src/Users.kt']));
+  // 'users'.nickname의 진단 채널은 선언 측 'public.users'다 — 원문 비교면 빠진다.
+  assert.deepEqual(issueKeys(report), [['column-use-without-decl', 'public.users', 'nickname']]);
+  assert.equal(report.summary.errors, 1);
+  assert.equal(hasImpactBlockers(report), true);
+  // bridge 확장 대상은 아니다.
+  assert.deepEqual(report.channels, []);
+  assert.deepEqual(report.methods, []);
+});
+
+test('관계만 고른 선택은 그 관계의 다른 컬럼 진단까지 넓히지 않는다', () => {
+  const onlyRelation = persistence('kotlin', [relation('relation-use', 'USERS', undefined, 'src/Other.kt')]);
+  const report = createBridgeImpact([repository, onlyRelation, catalog], select(['src/Other.kt']));
+  assert.deepEqual(issueKeys(report), []);
+  assert.equal(hasImpactBlockers(report), false);
+  // 매치된 컬럼만 고르면 진단도 blocker도 없다.
+  const matched = createBridgeImpact([repository, catalog], select(['src/Mail.kt']));
+  assert.deepEqual(issueKeys(matched), []);
+  assert.equal(hasImpactBlockers(matched), false);
+});
+
+test('모호한 비한정 사용과 미사용 선언 경고도 선택되면 --strict blocker다', () => {
+  const ambiguous = createBridgeImpact([repository, catalog], select(['src/Events.kt']));
+  assert.deepEqual(issueKeys(ambiguous), [['ambiguous-relation-use', 'events', null]]);
+  assert.equal(ambiguous.summary.errors, 0);
+  assert.equal(hasImpactBlockers(ambiguous), true);
+  // 모호한 사용의 후보 선언을 고르면 그 모호성도 관련 진단이다.
+  const candidate = createBridgeImpact([repository, catalog], select([], ['audit.events']));
+  assert.deepEqual(issueKeys(candidate), [
+    ['ambiguous-relation-use', 'events', null],
+    ['relation-decl-without-use', 'audit.events', null],
+  ]);
+  assert.equal(hasImpactBlockers(candidate), true);
+});
+
+test('선언이 없는 관계 사용은 사용 측 이름 그대로 귀속하고 bridge 선택과 섞지 않는다', () => {
+  const report = createBridgeImpact([dart, swift, repository, catalog], select(['src/Orders.kt', 'lib/photo.dart']));
+  assert.deepEqual(issueKeys(report), [['relation-use-without-decl', 'orders', null]]);
+  assert.deepEqual(report.methods.map(({ method }) => method), ['takePhoto']);
+  // bridge만 고르면 persistence 진단은 싣지 않는다.
+  const bridgeOnly = createBridgeImpact([dart, swift, repository, catalog], select(['lib/photo.dart']));
+  assert.deepEqual(bridgeOnly.issues.filter(({ target }) => target === 'persistence'), []);
 });

@@ -44,6 +44,9 @@
 - `diff`가 persistence 문서나 sql 문서를 받으면 일반 스냅샷 구성 문구 대신 persistence 비교를
   아직 지원하지 않는다는 원인 문구로 거부한다(종료 코드 2는 같다). preflight context도
   persistence 문서를 조인 실패 문구 대신 원인 문구로 거부한다.
+- `impact`가 persistence 진단을 원문 채널 문자열로 걸러, 비한정 사용(`users`)이 닿는 한정
+  선언(`public.users`)의 `column-use-without-decl`을 빠뜨리던 결함을 고쳤다. 조인과 같은
+  해석 규칙으로 귀속하며, 선택한 persistence 사실의 진단은 경고도 `--strict` blocker다.
 - 관계 사용이 0건인 kotlin·swift·dart persistence 문서(`target: null`)만 bridge 쪽에 남은
   persistence 입력은 target null이 bridge 문서로 세진다는 원인을 오류 문구에 밝힌다.
 

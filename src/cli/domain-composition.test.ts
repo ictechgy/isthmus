@@ -104,6 +104,24 @@ test('retentions --for kartograph는 kotlin persistence 문서를 수신 측 근
   assert.match(result.standardError, /persistence documents are not bridge receiver evidence/);
 });
 
+test('impact는 비한정 사용이 닿는 한정 선언의 컬럼 진단을 놓치지 않고 --strict에서 막는다', async () => {
+  const result = await run(['impact', '--file', 'src/Repo.kt', 'kotlin-persistence.json', 'sql.json', '--strict']);
+  assert.equal(result.exitCode, 1);
+  const report = JSON.parse(result.standardOutput);
+  assert.deepEqual(report.issues.map(({ code, channel, method }: { code: string; channel: string; method?: string }) =>
+    [code, channel, method]), [['column-use-without-decl', 'public.users', 'nickname']]);
+  assert.equal(report.summary.errors, 1);
+});
+
+test('impact --strict는 선택한 persistence 사실의 경고 진단도 blocker로 센다', async () => {
+  const result = await run(['impact', '--symbol', 'public.audit', 'kotlin-persistence.json', 'sql.json', '--strict']);
+  assert.equal(result.exitCode, 1);
+  const report = JSON.parse(result.standardOutput);
+  assert.deepEqual(report.issues.map(({ code, severity }: { code: string; severity: string }) => [code, severity]),
+    [['relation-decl-without-use', 'warning']]);
+  assert.equal(report.summary.errors, 0);
+});
+
 test('preflight context는 persistence 문서를 원인 문구로 거부한다', async () => {
   const context = JSON.parse(await read('../preflight/context.json'));
   const persistence = JSON.parse(await read('kotlin-persistence.json'));
