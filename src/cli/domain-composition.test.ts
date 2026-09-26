@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { runCheckCommand } from './check-command.ts';
@@ -19,11 +19,26 @@ import { runRetentionsCommand } from './retentions-command.ts';
  * persistence 전용, 혼합, 사실 0건 bridge 문서 입력마다 stdout 바이트(SHA-256)와 stderr,
  * 종료 코드를 비교한다. 의도한 동작 변경(원인 문구, 새 거부, impact 이슈 귀속)은 이 표에
  * 넣지 않고 아래 개별 테스트로 기대값을 적는다.
+ *
+ * 다시 캡처하기: 이 표의 명령 출력을 의도적으로 바꿨다면
+ * `UPDATE_DOMAIN_COMPOSITION=1 node --test src/cli/domain-composition.test.ts`로 각 항목의
+ * `args`를 현재 코드로 다시 실행해 `expected.json`을 덮어쓴다. 표는 불변 근거이므로 커밋 전에
+ * `git diff fixtures/domain-composition/expected.json`의 모든 변경이 의도한 것인지 검토하고,
+ * 입력 구성(bridge 판정)과 무관한 변경이 섞였는지 확인한다. 시나리오를 새로 넣을 때는
+ * `name`·`args`만 가진 항목을 추가한 뒤 같은 명령으로 나머지 필드를 채운다.
  */
 const fixtureRoot = new URL('../../fixtures/domain-composition/', import.meta.url);
 const read = (path: string): Promise<string> => readFile(new URL(path, fixtureRoot), 'utf8');
 const clock = (): Date => new Date('2026-09-26T00:00:00.000Z');
 const version = '0.0.0-fixture';
+
+/**
+ * 1이면 비교하지 않고 표를 현재 출력으로 다시 캡처한다.
+ *
+ * 캡처 도구를 저장소 밖에 두면 의도한 출력 변경마다 파싱본과 해시를 손으로 고쳐야 하므로,
+ * 표를 만든 절차를 테스트와 같은 실행 경로(`run`)로 남긴다.
+ */
+const shouldUpdatePinnedScenarios = process.env.UPDATE_DOMAIN_COMPOSITION === '1';
 
 /** origin/main에서 캡처한 시나리오 한 건이다. stdout은 JSON이면 파싱본, 아니면 원문이다. */
 interface PinnedScenario {
@@ -36,6 +51,26 @@ interface PinnedScenario {
 }
 
 const scenarios = JSON.parse(await read('expected.json')) as PinnedScenario[];
+
+/**
+ * 명령 결과를 표 항목으로 바꾼다. 키 순서는 표 파일과 같다.
+ *
+ * JSON 문서(객체·codequality 배열)는 실패 시 차이를 읽기 쉽게 파싱본으로, 그 밖(mermaid,
+ * 실패 시 빈 stdout)은 원문으로 싣는다. `{`·`[`로 시작하는데 JSON이 아니면 파싱이 던져
+ * 캡처가 실패한다 — 깨진 출력을 원문으로 조용히 고정하지 않기 위해서다.
+ */
+function toPinnedScenario(name: string, args: readonly string[], result: CommandResult): PinnedScenario {
+  const output = result.standardOutput;
+  const isJsonDocument = output.startsWith('{') || output.startsWith('[');
+  return {
+    name,
+    args,
+    exitCode: result.exitCode,
+    stderr: result.standardError,
+    stdoutSha256: createHash('sha256').update(output).digest('hex'),
+    stdout: isJsonDocument ? JSON.parse(output) as unknown : output,
+  };
+}
 
 /** 시나리오 인자를 CLI와 같은 명령 함수로 보낸다. 시각·버전은 캡처 때와 같게 고정한다. */
 function run(args: readonly string[]): Promise<CommandResult> {
@@ -57,7 +92,15 @@ test('고정 시나리오 표가 네 가지 입력 구성을 모두 덮는다', 
   assert.equal(new Set(scenarios.map(({ name }) => name)).size, scenarios.length);
 });
 
-for (const scenario of scenarios) {
+if (shouldUpdatePinnedScenarios) {
+  test('고정 시나리오 표를 현재 출력으로 다시 캡처한다', async () => {
+    const captured: PinnedScenario[] = [];
+    for (const { name, args } of scenarios) captured.push(toPinnedScenario(name, args, await run(args)));
+    await writeFile(new URL('expected.json', fixtureRoot), `${JSON.stringify(captured, null, 2)}\n`);
+  });
+}
+
+for (const scenario of shouldUpdatePinnedScenarios ? [] : scenarios) {
   test(`입력 구성 불변: ${scenario.name}`, async () => {
     const result = await run(scenario.args);
     assert.equal(result.exitCode, scenario.exitCode);
@@ -72,6 +115,8 @@ for (const scenario of scenarios) {
       createHash('sha256').update(result.standardOutput).digest('hex'),
       scenario.stdoutSha256,
     );
+    // 다시 캡처하는 직렬화가 표 형식(파싱 여부·키)과 어긋나면 재생성 절차가 표를 바꿔 버린다.
+    assert.deepEqual(toPinnedScenario(scenario.name, scenario.args, result), scenario);
   });
 }
 
