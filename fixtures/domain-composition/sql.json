@@ -1,0 +1,40 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "schemagraph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "sql",
+  "target": "persistence",
+  "project": "/fixture",
+  "facts": [
+    {
+      "kind": "relation-decl",
+      "channel": "public.users",
+      "dynamic": false,
+      "symbol": {
+        "qualifiedName": "public.users"
+      }
+    },
+    {
+      "kind": "relation-decl",
+      "channel": "public.users",
+      "method": "email",
+      "dynamic": false,
+      "symbol": {
+        "qualifiedName": "public.users.email"
+      }
+    },
+    {
+      "kind": "relation-decl",
+      "channel": "public.audit",
+      "dynamic": false,
+      "symbol": {
+        "qualifiedName": "public.audit"
+      }
+    }
+  ],
+  "limitations": []
+}

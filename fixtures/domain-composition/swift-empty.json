@@ -1,0 +1,16 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "cartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "swift",
+  "target": null,
+  "project": "/fixture",
+  "facts": [],
+  "limitations": [
+    "source-coverage: 0 files"
+  ]
+}

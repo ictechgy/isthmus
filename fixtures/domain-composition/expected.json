@@ -1,0 +1,4586 @@
+[
+  {
+    "name": "bridge/check",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "1912aa6cec9e73373691591bb21746fc6a5fdf9a024ff4bfaf2a71e6b944b575",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 1,
+        "matchedChannels": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 1,
+        "matchedModules": 0,
+        "observedFacts": 6,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/check-strict",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "--strict"
+    ],
+    "exitCode": 1,
+    "stderr": "",
+    "stdoutSha256": "1912aa6cec9e73373691591bb21746fc6a5fdf9a024ff4bfaf2a71e6b944b575",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 1,
+        "matchedChannels": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 1,
+        "matchedModules": 0,
+        "observedFacts": 6,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/check-sarif",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "--format",
+      "sarif"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "b94dd7233dd3cb3c361b54a046c8bbd747802f827c01630c18daf10d4bb0e861",
+    "stdout": {
+      "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+      "runs": [
+        {
+          "results": [
+            {
+              "level": "error",
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "lib/camera.dart"
+                    },
+                    "region": {
+                      "startColumn": 10,
+                      "startLine": 7
+                    }
+                  }
+                }
+              ],
+              "message": {
+                "text": "unhandled-invocation on channel 'dev.isthmus/camera' for method 'zoom'"
+              },
+              "partialFingerprints": {
+                "isthmusIssueV1": "3b3e19eacec7d3b89681d40c29828cea9ec0ce1fe46e7371bf10726e39e760c3"
+              },
+              "properties": {
+                "channel": "dev.isthmus/camera",
+                "method": "zoom",
+                "target": "flutter"
+              },
+              "ruleId": "unhandled-invocation",
+              "ruleIndex": 25
+            },
+            {
+              "level": "warning",
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "ios/Runner/CameraPlugin.swift"
+                    },
+                    "region": {
+                      "startColumn": 12,
+                      "startLine": 18
+                    }
+                  }
+                }
+              ],
+              "message": {
+                "text": "handler-without-invocation on channel 'dev.isthmus/camera' for method 'flash'"
+              },
+              "partialFingerprints": {
+                "isthmusIssueV1": "99ddfbbd0e826bc11c0b08c66230d5652c0d94120ee5e58102f1977832a39f6a"
+              },
+              "properties": {
+                "channel": "dev.isthmus/camera",
+                "method": "flash",
+                "target": "flutter"
+              },
+              "ruleId": "handler-without-invocation",
+              "ruleIndex": 11
+            }
+          ],
+          "tool": {
+            "driver": {
+              "informationUri": "https://github.com/ictechgy/isthmus",
+              "name": "isthmus",
+              "rules": [
+                {
+                  "id": "ambiguous-relation-use",
+                  "shortDescription": {
+                    "text": "An unqualified code-side relation reference matches more than one declared relation, so it could not be joined."
+                  }
+                },
+                {
+                  "id": "column-use-without-decl",
+                  "shortDescription": {
+                    "text": "A code-side column reference has no matching column declaration on the resolved relation."
+                  }
+                },
+                {
+                  "id": "column-use-without-decl-unverified",
+                  "shortDescription": {
+                    "text": "A code-side column reference has no matching column declaration, and the schema catalog coverage is known to be incomplete."
+                  }
+                },
+                {
+                  "id": "component-export-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A receiver-side native component export matches a require name, but the observed requires resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "component-export-without-require",
+                  "shortDescription": {
+                    "text": "A receiver-side native component export has no matching caller-side require."
+                  }
+                },
+                {
+                  "id": "component-require-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A caller-side native component require matches an export name, but the observed exports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "component-require-without-export",
+                  "shortDescription": {
+                    "text": "A caller-side native component require has no matching export on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "component-require-without-export-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side native component require has no matching export, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "event-emit-without-listen",
+                  "shortDescription": {
+                    "text": "A native React Native event emission has no observed JavaScript subscription with the same global event name."
+                  }
+                },
+                {
+                  "id": "event-listen-without-emit",
+                  "shortDescription": {
+                    "text": "A JavaScript React Native event subscription has no observed native emission with the same global event name."
+                  }
+                },
+                {
+                  "id": "event-listen-without-emit-unverified",
+                  "shortDescription": {
+                    "text": "A JavaScript React Native event subscription has no observed native emission, and native analysis gaps may hide it."
+                  }
+                },
+                {
+                  "id": "handler-without-invocation",
+                  "shortDescription": {
+                    "text": "A receiver-side bridge method handler has no matching caller-side invocation."
+                  }
+                },
+                {
+                  "id": "message-handler-without-send",
+                  "shortDescription": {
+                    "text": "A native BasicMessageChannel handler has no matching Dart send."
+                  }
+                },
+                {
+                  "id": "module-export-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A receiver-side native module export matches an import name, but the observed imports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "module-export-without-import",
+                  "shortDescription": {
+                    "text": "A receiver-side native module export has no matching caller-side import."
+                  }
+                },
+                {
+                  "id": "module-import-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "module-import-without-export",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "module-import-without-export-optional",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export, but every observed caller tolerates absence by receiving null."
+                  }
+                },
+                {
+                  "id": "module-import-without-export-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "registration-without-creation",
+                  "shortDescription": {
+                    "text": "A receiver-side channel registration has no matching caller-side channel creation."
+                  }
+                },
+                {
+                  "id": "relation-decl-without-use",
+                  "shortDescription": {
+                    "text": "A schema relation declaration has no observed code-side reference; it is a dead-schema candidate, not a deletion verdict."
+                  }
+                },
+                {
+                  "id": "relation-decl-without-use-unverified",
+                  "shortDescription": {
+                    "text": "A schema relation declaration has no observed code-side reference, and dynamic relation uses may be hiding it."
+                  }
+                },
+                {
+                  "id": "relation-use-without-decl",
+                  "shortDescription": {
+                    "text": "A code-side relation reference has no matching declaration in the observed schema catalog."
+                  }
+                },
+                {
+                  "id": "relation-use-without-decl-unverified",
+                  "shortDescription": {
+                    "text": "A code-side relation reference has no matching declaration, and the schema catalog coverage is known to be incomplete."
+                  }
+                },
+                {
+                  "id": "stream-handler-without-listen",
+                  "shortDescription": {
+                    "text": "A native EventChannel stream handler has no matching Dart stream listener."
+                  }
+                },
+                {
+                  "id": "unhandled-invocation",
+                  "shortDescription": {
+                    "text": "A caller-side bridge method invocation has no matching handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-invocation-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side bridge method invocation has no matching handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unhandled-message-send",
+                  "shortDescription": {
+                    "text": "A Dart BasicMessageChannel send has no matching native message handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-message-send-unverified",
+                  "shortDescription": {
+                    "text": "A Dart BasicMessageChannel send has no matching native message handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unhandled-stream-listen",
+                  "shortDescription": {
+                    "text": "A Dart EventChannel stream listener has no matching native stream handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-stream-listen-unverified",
+                  "shortDescription": {
+                    "text": "A Dart EventChannel stream listener has no matching native stream handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unregistered-channel-creation",
+                  "shortDescription": {
+                    "text": "A caller-side bridge channel creation has no matching registration on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unregistered-channel-creation-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side bridge channel creation has no matching registration, and a receiver-side analysis gap may be hiding it."
+                  }
+                }
+              ],
+              "version": "0.0.0-fixture"
+            }
+          }
+        }
+      ],
+      "version": "2.1.0"
+    }
+  },
+  {
+    "name": "bridge/check-codequality",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "--format",
+      "codequality"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "80b85c11969bd0809074759e02a71b63002d54c78e1ce690dd5a94b63a3dbd2a",
+    "stdout": [
+      {
+        "check_name": "isthmus:unhandled-invocation",
+        "description": "A caller-side bridge method invocation has no matching handler on any receiver-side document. Channel 'dev.isthmus/camera', method 'zoom' (target: flutter)",
+        "fingerprint": "3b3e19eacec7d3b89681d40c29828cea9ec0ce1fe46e7371bf10726e39e760c3",
+        "location": {
+          "lines": {
+            "begin": 7
+          },
+          "path": "lib/camera.dart"
+        },
+        "severity": "major"
+      },
+      {
+        "check_name": "isthmus:handler-without-invocation",
+        "description": "A receiver-side bridge method handler has no matching caller-side invocation. Channel 'dev.isthmus/camera', method 'flash' (target: flutter)",
+        "fingerprint": "99ddfbbd0e826bc11c0b08c66230d5652c0d94120ee5e58102f1977832a39f6a",
+        "location": {
+          "lines": {
+            "begin": 18
+          },
+          "path": "ios/Runner/CameraPlugin.swift"
+        },
+        "severity": "minor"
+      }
+    ]
+  },
+  {
+    "name": "bridge/query-method",
+    "args": [
+      "query",
+      "capture",
+      "dart.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "b0db2d91f83a44aa0db1708ffe8debda0adacd0703e0ac2b729833f691128677",
+    "stdout": {
+      "level": "bridge",
+      "limitations": [],
+      "requested": "capture",
+      "result": {
+        "dependsOn": [
+          {
+            "location": {
+              "column": 12,
+              "line": 14,
+              "path": "ios/Runner/CameraPlugin.swift"
+            },
+            "platform": "swift",
+            "symbol": {
+              "qualifiedName": "CameraPlugin.capture",
+              "usr": "s:12CameraPlugin7captureyyF"
+            }
+          }
+        ],
+        "subject": {
+          "kind": "method",
+          "name": "capture",
+          "qualifiedName": "flutter:dev.isthmus/camera#capture"
+        },
+        "usedBy": [
+          {
+            "location": {
+              "column": 10,
+              "line": 5,
+              "path": "lib/camera.dart"
+            },
+            "platform": "dart",
+            "symbol": {
+              "qualifiedName": "CameraBridge.capture"
+            }
+          }
+        ]
+      },
+      "status": "found"
+    }
+  },
+  {
+    "name": "bridge/graph",
+    "args": [
+      "graph",
+      "dart.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "1fa75abb055606aa907464ee78e734029910b0cafaf504e26cf1b36a6a28abf3",
+    "stdout": {
+      "edges": [
+        {
+          "channel": "dev.isthmus/camera",
+          "from": "dart:lib/camera.dart:3:23",
+          "kind": "channel",
+          "target": "flutter",
+          "to": "swift:ios/Runner/CameraPlugin.swift:11:17"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "from": "dart:lib/camera.dart:5:10",
+          "kind": "method",
+          "method": "capture",
+          "target": "flutter",
+          "to": "swift:ios/Runner/CameraPlugin.swift:14:12"
+        }
+      ],
+      "format": "isthmus-graph",
+      "limitations": [],
+      "nodes": [
+        {
+          "id": "dart:lib/camera.dart:3:23",
+          "location": {
+            "column": 23,
+            "line": 3,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart"
+        },
+        {
+          "id": "dart:lib/camera.dart:5:10",
+          "location": {
+            "column": 10,
+            "line": 5,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.capture"
+          }
+        },
+        {
+          "id": "swift:ios/Runner/CameraPlugin.swift:11:17",
+          "location": {
+            "column": 17,
+            "line": 11,
+            "path": "ios/Runner/CameraPlugin.swift"
+          },
+          "platform": "swift"
+        },
+        {
+          "id": "swift:ios/Runner/CameraPlugin.swift:14:12",
+          "location": {
+            "column": 12,
+            "line": 14,
+            "path": "ios/Runner/CameraPlugin.swift"
+          },
+          "platform": "swift",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.capture",
+            "usr": "s:12CameraPlugin7captureyyF"
+          }
+        }
+      ],
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/graph-mermaid",
+    "args": [
+      "graph",
+      "dart.json",
+      "swift.json",
+      "--format",
+      "mermaid"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "525693386a8362a55aad1ee54976ecf633753bfe00aa1b5ae130d37f9133fadc",
+    "stdout": "flowchart LR\n  n0[\"dart<br/>lib/camera.dart:3:23\"]\n  n1[\"dart<br/>lib/camera.dart:5:10\"]\n  n2[\"swift<br/>ios/Runner/CameraPlugin.swift:11:17\"]\n  n3[\"swift<br/>ios/Runner/CameraPlugin.swift:14:12\"]\n  n0 -->|\"channel dev.isthmus/camera\"| n2\n  n1 -->|\"method dev.isthmus/camera#capture\"| n3\n"
+  },
+  {
+    "name": "bridge/impact-file",
+    "args": [
+      "impact",
+      "--file",
+      "lib/camera.dart",
+      "dart.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "74a76b5f8752a3d7561606fc4d78e310ed8acf56b038c66f5489ed7a5df12d55",
+    "stdout": {
+      "channels": [
+        {
+          "channel": "dev.isthmus/camera",
+          "creations": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "reason": "channel-wiring",
+          "registrations": [
+            {
+              "location": {
+                "column": 17,
+                "line": 11,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift"
+            }
+          ],
+          "target": "flutter"
+        }
+      ],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "dart",
+          "target": "flutter",
+          "tool": {
+            "name": "dartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "swift",
+          "target": "flutter",
+          "tool": {
+            "name": "cartograph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "methods": [
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [
+            {
+              "location": {
+                "column": 12,
+                "line": 14,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.capture",
+                "usr": "s:12CameraPlugin7captureyyF"
+              }
+            }
+          ],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "invocations": [],
+          "method": "flash",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        }
+      ],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "ios/Runner/CameraPlugin.swift",
+        "lib/camera.dart"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "channel-create",
+          "location": {
+            "column": 23,
+            "line": 3,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 5,
+            "path": "lib/camera.dart"
+          },
+          "method": "capture",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.capture"
+          },
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 7,
+            "path": "lib/camera.dart"
+          },
+          "method": "zoom",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.zoom"
+          },
+          "target": "flutter"
+        }
+      ],
+      "selection": {
+        "files": [
+          "lib/camera.dart"
+        ],
+        "symbols": []
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 1,
+        "affectedMethods": 3,
+        "errors": 1,
+        "observedFacts": 6,
+        "reviewFiles": 2,
+        "selectedFacts": 3,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 1
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/impact-symbol-strict",
+    "args": [
+      "impact",
+      "--symbol",
+      "CameraPlugin.flash",
+      "dart.json",
+      "swift.json",
+      "--strict"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "009db618c7298479b8811664043891bc1bdc4ff3ba720ee1baa45e8c69f96116",
+    "stdout": {
+      "channels": [
+        {
+          "channel": "dev.isthmus/camera",
+          "creations": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "reason": "method",
+          "registrations": [
+            {
+              "location": {
+                "column": 17,
+                "line": 11,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift"
+            }
+          ],
+          "target": "flutter"
+        }
+      ],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "dart",
+          "target": "flutter",
+          "tool": {
+            "name": "dartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "swift",
+          "target": "flutter",
+          "tool": {
+            "name": "cartograph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "methods": [
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "invocations": [],
+          "method": "flash",
+          "reason": "method",
+          "target": "flutter"
+        }
+      ],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "ios/Runner/CameraPlugin.swift",
+        "lib/camera.dart"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-handle",
+          "location": {
+            "column": 12,
+            "line": 18,
+            "path": "ios/Runner/CameraPlugin.swift"
+          },
+          "method": "flash",
+          "platform": "swift",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.flash",
+            "usr": "s:12CameraPlugin5flashyyF"
+          },
+          "target": "flutter"
+        }
+      ],
+      "selection": {
+        "files": [],
+        "symbols": [
+          "CameraPlugin.flash"
+        ]
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 1,
+        "affectedMethods": 1,
+        "errors": 0,
+        "observedFacts": 6,
+        "reviewFiles": 2,
+        "selectedFacts": 1,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 1
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/retentions-cartograph",
+    "args": [
+      "retentions",
+      "dart.json",
+      "swift.json",
+      "--for",
+      "cartograph"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "06f3ed645ae386e43ef5b0ad0ba9f5deb25ec4fca0cde1f5c82624dde730e5e4",
+    "stdout": {
+      "format": "external-retentions",
+      "generatedAt": "2026-09-26T00:00:00.000Z",
+      "producedBy": {
+        "name": "isthmus",
+        "version": "0.0.0-fixture"
+      },
+      "retentions": [
+        {
+          "evidence": {
+            "caller": {
+              "line": 5,
+              "path": "lib/camera.dart",
+              "platform": "dart"
+            },
+            "channel": "dev.isthmus/camera",
+            "method": "capture"
+          },
+          "reason": "bridge",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.capture",
+            "usr": "s:12CameraPlugin7captureyyF"
+          }
+        }
+      ],
+      "version": 0
+    }
+  },
+  {
+    "name": "bridge/retentions-kartograph",
+    "args": [
+      "retentions",
+      "dart.json",
+      "kotlin.json",
+      "--for",
+      "kartograph"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "15e2d9909d1564ca96744e427af95066d16deff8668cdd764bbddbfaba468b8e",
+    "stdout": {
+      "format": "external-retentions",
+      "generatedAt": "2026-09-26T00:00:00.000Z",
+      "producedBy": {
+        "name": "isthmus",
+        "version": "0.0.0-fixture"
+      },
+      "retentions": [
+        {
+          "evidence": {
+            "caller": {
+              "line": 5,
+              "path": "lib/camera.dart",
+              "platform": "dart"
+            },
+            "channel": "dev.isthmus/camera",
+            "method": "capture"
+          },
+          "reason": "bridge",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.capture",
+            "usr": "com.example.CameraPlugin#capture()V"
+          }
+        }
+      ],
+      "version": 0
+    }
+  },
+  {
+    "name": "bridge/diff",
+    "args": [
+      "diff",
+      "--before",
+      "dart.json",
+      "swift.json",
+      "--after",
+      "dart.json",
+      "swift.json",
+      "--strict"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "100ee93c36b6f15db07a81af2a2359d05a41afa03a460b0bb91abd0526ce34a5",
+    "stdout": {
+      "addedComponents": [],
+      "addedMethods": [],
+      "addedModules": [],
+      "format": "isthmus-diff",
+      "introducedIssues": [],
+      "limitations": {
+        "added": [],
+        "after": [],
+        "before": [],
+        "removed": []
+      },
+      "producers": {
+        "after": [
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "dartograph",
+            "platform": "dart",
+            "version": "0.1.0"
+          },
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "cartograph",
+            "platform": "swift",
+            "version": "0.1.0"
+          }
+        ],
+        "before": [
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "dartograph",
+            "platform": "dart",
+            "version": "0.1.0"
+          },
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "cartograph",
+            "platform": "swift",
+            "version": "0.1.0"
+          }
+        ]
+      },
+      "removedComponents": [],
+      "removedMethods": [],
+      "removedModules": [],
+      "resolvedIssues": [],
+      "summary": {
+        "addedComponents": 0,
+        "addedMethods": 0,
+        "addedModules": 0,
+        "introducedErrors": 0,
+        "introducedWarnings": 0,
+        "removedComponents": 0,
+        "removedMethods": 0,
+        "removedModules": 0,
+        "resolvedIssues": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/preflight-strict",
+    "args": [
+      "preflight",
+      "../preflight/context.json",
+      "--strict"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "9a50fbc5cbc0456230b34da3239b486c439b9c693d977f984f2266d570dd7f52",
+    "stdout": {
+      "affected": [
+        {
+          "depth": 1,
+          "relations": [
+            {
+              "analysis": "swift-initial",
+              "kind": "language",
+              "relationships": [
+                "call"
+              ]
+            }
+          ],
+          "subject": {
+            "key": "[\"swift\",\"s:handler\"]",
+            "kind": "symbol",
+            "platform": "swift",
+            "symbol": {
+              "id": "s:handler",
+              "location": {
+                "column": 1,
+                "line": 1,
+                "path": "ios/Handler.swift"
+              },
+              "qualifiedName": "Handler.handle"
+            }
+          },
+          "via": "[\"swift\",\"s:helper\"]"
+        },
+        {
+          "depth": 2,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 3,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-registration"
+            },
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 4,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-handler"
+            }
+          ],
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+            "kind": "bridge",
+            "method": "photo",
+            "target": "flutter"
+          },
+          "via": "[\"swift\",\"s:handler\"]"
+        },
+        {
+          "depth": 2,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 3,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-registration"
+            }
+          ],
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",null]",
+            "kind": "bridge",
+            "target": "flutter"
+          },
+          "via": "[\"swift\",\"s:handler\"]"
+        },
+        {
+          "depth": 3,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 4,
+                  "path": "lib/bridge.dart"
+                },
+                "platform": "dart",
+                "symbol": {
+                  "qualifiedName": "Bridge.photo"
+                }
+              },
+              "kind": "bridge-invocation"
+            }
+          ],
+          "subject": {
+            "key": "[\"dart\",\"dart:photo\"]",
+            "kind": "symbol",
+            "platform": "dart",
+            "symbol": {
+              "id": "dart:photo",
+              "location": {
+                "column": 1,
+                "line": 2,
+                "path": "lib/bridge.dart"
+              },
+              "qualifiedName": "Bridge.photo"
+            }
+          },
+          "via": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]"
+        },
+        {
+          "depth": 4,
+          "relations": [
+            {
+              "analysis": "dart-continuation",
+              "kind": "language",
+              "relationships": [
+                "call"
+              ]
+            }
+          ],
+          "subject": {
+            "key": "[\"dart\",\"dart:screen\"]",
+            "kind": "symbol",
+            "platform": "dart",
+            "symbol": {
+              "id": "dart:screen",
+              "location": {
+                "column": 1,
+                "line": 5,
+                "path": "lib/screen.dart"
+              },
+              "qualifiedName": "Screen.capture"
+            }
+          },
+          "via": "[\"dart\",\"dart:photo\"]"
+        }
+      ],
+      "boundaries": [
+        {
+          "callers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 4,
+                "path": "lib/bridge.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "Bridge.photo"
+              }
+            }
+          ],
+          "receivers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 4,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            },
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            }
+          ],
+          "relationship": "consumer",
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+            "kind": "bridge",
+            "method": "photo",
+            "target": "flutter"
+          }
+        },
+        {
+          "callers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "lib/bridge.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "Bridge.photo"
+              }
+            }
+          ],
+          "receivers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            }
+          ],
+          "relationship": "consumer",
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",null]",
+            "kind": "bridge",
+            "target": "flutter"
+          }
+        }
+      ],
+      "bridgeLimitations": [],
+      "complete": false,
+      "format": "isthmus-preflight",
+      "issues": [],
+      "limitations": [],
+      "producers": [
+        {
+          "analysis": "dart-continuation",
+          "platform": "dart",
+          "tool": {
+            "name": "fixture-dart",
+            "version": "1"
+          },
+          "truncated": false
+        },
+        {
+          "analysis": "swift-initial",
+          "platform": "swift",
+          "tool": {
+            "name": "fixture-swift",
+            "version": "1"
+          },
+          "truncated": false
+        }
+      ],
+      "project": "/fixture",
+      "reviewFiles": [
+        "ios/Handler.swift",
+        "ios/Helper.swift",
+        "lib/bridge.dart",
+        "lib/screen.dart"
+      ],
+      "revision": "fixture-revision",
+      "roots": [
+        {
+          "key": "[\"swift\",\"s:helper\"]",
+          "kind": "symbol",
+          "platform": "swift",
+          "symbol": {
+            "id": "s:helper",
+            "location": {
+              "column": 1,
+              "line": 1,
+              "path": "ios/Helper.swift"
+            },
+            "qualifiedName": "Helper.read"
+          }
+        }
+      ],
+      "scope": "cross-language-impact",
+      "selection": {
+        "swift": {
+          "files": [
+            "ios/Helper.swift"
+          ],
+          "symbols": []
+        }
+      },
+      "status": "observed",
+      "summary": {
+        "affectedSymbols": 3,
+        "bridgeBoundaries": 2,
+        "errors": 0,
+        "evidenceGaps": 0,
+        "reviewFiles": 4,
+        "selectedSymbols": 1,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/preflight-summary",
+    "args": [
+      "preflight",
+      "../preflight/context.json",
+      "--summary",
+      "--limit",
+      "5"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "4dadf93a87a2ba814b1040b8b530037c5a53deb326634c6e72a49e76bf576b3c",
+    "stdout": {
+      "affected": {
+        "items": [
+          {
+            "depth": 1,
+            "subject": {
+              "key": "[\"swift\",\"s:handler\"]",
+              "kind": "symbol",
+              "platform": "swift",
+              "symbol": {
+                "id": "s:handler",
+                "location": {
+                  "column": 1,
+                  "line": 1,
+                  "path": "ios/Handler.swift"
+                },
+                "qualifiedName": "Handler.handle"
+              }
+            }
+          },
+          {
+            "depth": 2,
+            "subject": {
+              "channel": "camera",
+              "key": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+              "kind": "bridge",
+              "method": "photo",
+              "target": "flutter"
+            }
+          },
+          {
+            "depth": 2,
+            "subject": {
+              "channel": "camera",
+              "key": "[\"bridge\",\"flutter\",\"camera\",null]",
+              "kind": "bridge",
+              "target": "flutter"
+            }
+          },
+          {
+            "depth": 3,
+            "subject": {
+              "key": "[\"dart\",\"dart:photo\"]",
+              "kind": "symbol",
+              "platform": "dart",
+              "symbol": {
+                "id": "dart:photo",
+                "location": {
+                  "column": 1,
+                  "line": 2,
+                  "path": "lib/bridge.dart"
+                },
+                "qualifiedName": "Bridge.photo"
+              }
+            }
+          },
+          {
+            "depth": 4,
+            "subject": {
+              "key": "[\"dart\",\"dart:screen\"]",
+              "kind": "symbol",
+              "platform": "dart",
+              "symbol": {
+                "id": "dart:screen",
+                "location": {
+                  "column": 1,
+                  "line": 5,
+                  "path": "lib/screen.dart"
+                },
+                "qualifiedName": "Screen.capture"
+              }
+            }
+          }
+        ],
+        "omitted": 0,
+        "total": 5
+      },
+      "bridgeLimitations": {
+        "items": [],
+        "omitted": 0,
+        "total": 0
+      },
+      "complete": false,
+      "format": "isthmus-preflight-summary",
+      "issues": {
+        "items": [],
+        "omitted": 0,
+        "total": 0
+      },
+      "limitations": {
+        "items": [],
+        "omitted": 0,
+        "total": 0
+      },
+      "producers": {
+        "items": [
+          {
+            "analysis": "dart-continuation",
+            "platform": "dart",
+            "tool": {
+              "name": "fixture-dart",
+              "version": "1"
+            },
+            "truncated": false
+          },
+          {
+            "analysis": "swift-initial",
+            "platform": "swift",
+            "tool": {
+              "name": "fixture-swift",
+              "version": "1"
+            },
+            "truncated": false
+          }
+        ],
+        "omitted": 0,
+        "total": 2
+      },
+      "project": "/fixture",
+      "requiresReview": false,
+      "reviewFiles": {
+        "items": [
+          "ios/Handler.swift",
+          "ios/Helper.swift",
+          "lib/bridge.dart",
+          "lib/screen.dart"
+        ],
+        "omitted": 0,
+        "total": 4
+      },
+      "revision": "fixture-revision",
+      "roots": {
+        "items": [
+          {
+            "depth": 0,
+            "subject": {
+              "key": "[\"swift\",\"s:helper\"]",
+              "kind": "symbol",
+              "platform": "swift",
+              "symbol": {
+                "id": "s:helper",
+                "location": {
+                  "column": 1,
+                  "line": 1,
+                  "path": "ios/Helper.swift"
+                },
+                "qualifiedName": "Helper.read"
+              }
+            }
+          }
+        ],
+        "omitted": 0,
+        "total": 1
+      },
+      "scope": "cross-language-impact",
+      "status": "observed",
+      "summary": {
+        "affectedSymbols": 3,
+        "bridgeBoundaries": 2,
+        "errors": 0,
+        "evidenceGaps": 0,
+        "reviewFiles": 4,
+        "selectedSymbols": 1,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "bridge/preflight-runtime",
+    "args": [
+      "preflight",
+      "../preflight/context.json",
+      "../preflight/runtime.json",
+      "--expectations",
+      "../preflight/expectations.json",
+      "--strict",
+      "--compact"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "26e98422ab2fdb63555885ea925a88a5a425bb2b16d45601af8ce869f3e487c4",
+    "stdout": {
+      "affected": [
+        {
+          "depth": 1,
+          "relations": [
+            {
+              "analysis": "swift-initial",
+              "kind": "language",
+              "relationships": [
+                "call"
+              ]
+            }
+          ],
+          "subject": {
+            "key": "[\"swift\",\"s:handler\"]",
+            "kind": "symbol",
+            "platform": "swift",
+            "symbol": {
+              "id": "s:handler",
+              "location": {
+                "column": 1,
+                "line": 1,
+                "path": "ios/Handler.swift"
+              },
+              "qualifiedName": "Handler.handle"
+            }
+          },
+          "via": "[\"swift\",\"s:helper\"]"
+        },
+        {
+          "depth": 2,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 3,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-registration"
+            },
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 4,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-handler"
+            }
+          ],
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+            "kind": "bridge",
+            "method": "photo",
+            "target": "flutter"
+          },
+          "via": "[\"swift\",\"s:handler\"]"
+        },
+        {
+          "depth": 2,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 3,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              },
+              "kind": "bridge-registration"
+            }
+          ],
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",null]",
+            "kind": "bridge",
+            "target": "flutter"
+          },
+          "via": "[\"swift\",\"s:handler\"]"
+        },
+        {
+          "depth": 3,
+          "relations": [
+            {
+              "evidence": {
+                "location": {
+                  "column": 1,
+                  "line": 4,
+                  "path": "lib/bridge.dart"
+                },
+                "platform": "dart",
+                "symbol": {
+                  "qualifiedName": "Bridge.photo"
+                }
+              },
+              "kind": "bridge-invocation"
+            }
+          ],
+          "subject": {
+            "key": "[\"dart\",\"dart:photo\"]",
+            "kind": "symbol",
+            "platform": "dart",
+            "symbol": {
+              "id": "dart:photo",
+              "location": {
+                "column": 1,
+                "line": 2,
+                "path": "lib/bridge.dart"
+              },
+              "qualifiedName": "Bridge.photo"
+            }
+          },
+          "via": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]"
+        },
+        {
+          "depth": 4,
+          "relations": [
+            {
+              "analysis": "dart-continuation",
+              "kind": "language",
+              "relationships": [
+                "call"
+              ]
+            }
+          ],
+          "subject": {
+            "key": "[\"dart\",\"dart:screen\"]",
+            "kind": "symbol",
+            "platform": "dart",
+            "symbol": {
+              "id": "dart:screen",
+              "location": {
+                "column": 1,
+                "line": 5,
+                "path": "lib/screen.dart"
+              },
+              "qualifiedName": "Screen.capture"
+            }
+          },
+          "via": "[\"dart\",\"dart:photo\"]"
+        }
+      ],
+      "boundaries": [
+        {
+          "callers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 4,
+                "path": "lib/bridge.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "Bridge.photo"
+              }
+            }
+          ],
+          "receivers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 4,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            },
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            }
+          ],
+          "relationship": "consumer",
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+            "kind": "bridge",
+            "method": "photo",
+            "target": "flutter"
+          }
+        },
+        {
+          "callers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "lib/bridge.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "Bridge.photo"
+              }
+            }
+          ],
+          "receivers": [
+            {
+              "location": {
+                "column": 1,
+                "line": 3,
+                "path": "ios/Handler.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "Handler.handle",
+                "usr": "s:handler"
+              }
+            }
+          ],
+          "relationship": "consumer",
+          "subject": {
+            "channel": "camera",
+            "key": "[\"bridge\",\"flutter\",\"camera\",null]",
+            "kind": "bridge",
+            "target": "flutter"
+          }
+        }
+      ],
+      "bridgeLimitations": [],
+      "complete": false,
+      "format": "isthmus-preflight",
+      "issues": [],
+      "limitations": [],
+      "producers": [
+        {
+          "analysis": "dart-continuation",
+          "platform": "dart",
+          "tool": {
+            "name": "fixture-dart",
+            "version": "1"
+          },
+          "truncated": false
+        },
+        {
+          "analysis": "swift-initial",
+          "platform": "swift",
+          "tool": {
+            "name": "fixture-swift",
+            "version": "1"
+          },
+          "truncated": false
+        }
+      ],
+      "project": "/fixture",
+      "reviewFiles": [
+        "ios/Handler.swift",
+        "ios/Helper.swift",
+        "lib/bridge.dart",
+        "lib/screen.dart"
+      ],
+      "revision": "fixture-revision",
+      "roots": [
+        {
+          "key": "[\"swift\",\"s:helper\"]",
+          "kind": "symbol",
+          "platform": "swift",
+          "symbol": {
+            "id": "s:helper",
+            "location": {
+              "column": 1,
+              "line": 1,
+              "path": "ios/Helper.swift"
+            },
+            "qualifiedName": "Helper.read"
+          }
+        }
+      ],
+      "runtime": {
+        "aligned": true,
+        "candidates": [
+          {
+            "channel": "camera",
+            "handlers": [
+              {
+                "location": {
+                  "column": 1,
+                  "line": 4,
+                  "path": "ios/Handler.swift"
+                },
+                "platform": "swift",
+                "symbol": {
+                  "qualifiedName": "Handler.handle",
+                  "usr": "s:handler"
+                }
+              }
+            ],
+            "handlersOmitted": 0,
+            "key": "[\"camera\",\"photo\"]",
+            "method": "photo"
+          }
+        ],
+        "routes": [
+          {
+            "boundaryKeys": [
+              "[\"bridge\",\"flutter\",\"camera\",\"photo\"]",
+              "[\"bridge\",\"flutter\",\"camera\",null]"
+            ],
+            "callers": [
+              {
+                "column": 1,
+                "line": 4,
+                "path": "lib/bridge.dart"
+              }
+            ],
+            "callersOmitted": 0,
+            "candidateKey": "[\"camera\",\"photo\"]",
+            "channel": "camera",
+            "instance": "main",
+            "method": "photo",
+            "observedCalls": 1,
+            "outcomes": {
+              "error": 0,
+              "missing-handler": 0,
+              "pending": 0,
+              "success": 1,
+              "timeout": 0
+            },
+            "platform": "macos",
+            "runId": "capture",
+            "scenario": "capture",
+            "selectionReasons": [
+              "caller-file",
+              "route"
+            ],
+            "staticStatus": "candidates",
+            "transport": "method-channel"
+          }
+        ],
+        "uncoveredBoundaries": [],
+        "unobservedBoundaries": [],
+        "verification": {
+          "checks": [
+            {
+              "evidence": [
+                {
+                  "caller": {
+                    "column": 1,
+                    "line": 4,
+                    "path": "lib/bridge.dart"
+                  },
+                  "instance": "main",
+                  "outcome": "success",
+                  "runId": "capture",
+                  "sequence": 1
+                }
+              ],
+              "evidenceOmitted": 0,
+              "expected": {
+                "allowedOutcomes": [
+                  "success"
+                ],
+                "channel": "camera",
+                "id": "photo",
+                "method": "photo",
+                "platform": "macos",
+                "scenario": "capture",
+                "transport": "method-channel"
+              },
+              "observedCalls": 1,
+              "status": "passed"
+            }
+          ],
+          "complete": false,
+          "failures": [],
+          "format": "isthmus-runtime-check",
+          "project": "/fixture",
+          "revision": "fixture-revision",
+          "runs": [
+            {
+              "droppedEvents": 0,
+              "observedEvents": 1,
+              "revision": "fixture-revision",
+              "run": {
+                "finishedAt": "2026-09-14T00:00:01Z",
+                "id": "capture",
+                "platform": "macos",
+                "scenario": "capture",
+                "startedAt": "2026-09-14T00:00:00Z",
+                "status": "completed"
+              },
+              "stale": false,
+              "tool": {
+                "name": "fixture-recorder",
+                "version": "1"
+              }
+            }
+          ],
+          "scope": "declared-scenarios",
+          "status": "passed",
+          "summary": {
+            "droppedEvents": 0,
+            "expectedFailedCalls": 0,
+            "failedCalls": 0,
+            "failedChecks": 0,
+            "incompleteChecks": 0,
+            "incompleteRuns": 0,
+            "passedChecks": 1,
+            "pendingCalls": 0,
+            "runs": 1,
+            "staleRuns": 0,
+            "unexpectedFailedCalls": 0,
+            "unobservedChecks": 0
+          },
+          "version": 1
+        }
+      },
+      "scope": "cross-language-impact",
+      "selection": {
+        "swift": {
+          "files": [
+            "ios/Helper.swift"
+          ],
+          "symbols": []
+        }
+      },
+      "status": "observed",
+      "summary": {
+        "affectedSymbols": 3,
+        "bridgeBoundaries": 2,
+        "errors": 0,
+        "evidenceGaps": 0,
+        "reviewFiles": 4,
+        "selectedSymbols": 1,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/check-empty-receiver",
+    "args": [
+      "check",
+      "dart.json",
+      "swift-empty.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "775e6dbf1678049b63ffe6bb83a5732eb069f9072d4ec27b4136c9a0ad5f6ccd",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unregistered-channel-creation",
+          "evidence": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "severity": "error",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "swift",
+          "target": null,
+          "tool": "cartograph"
+        }
+      ],
+      "summary": {
+        "errors": 3,
+        "matchedChannels": 0,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "observedFacts": 3,
+        "observedLimitations": 1,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/check-empty-caller",
+    "args": [
+      "check",
+      "dart-empty.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "404be192e32b9d7e77d37e71a34251e5c16b82fa55d84f7188d027e469086281",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "registration-without-creation",
+          "evidence": [
+            {
+              "location": {
+                "column": 17,
+                "line": 11,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift"
+            }
+          ],
+          "severity": "warning",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 14,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.capture",
+                "usr": "s:12CameraPlugin7captureyyF"
+              }
+            }
+          ],
+          "method": "capture",
+          "severity": "warning",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "dart",
+          "target": null,
+          "tool": "dartograph"
+        }
+      ],
+      "summary": {
+        "errors": 0,
+        "matchedChannels": 0,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "observedFacts": 3,
+        "observedLimitations": 1,
+        "warnings": 3
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/check-empty-kotlin",
+    "args": [
+      "check",
+      "dart.json",
+      "kotlin-empty.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "9b8cc3f190997a67f381c653021d93f613b909bdfe0297872a75518374a637d0",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unregistered-channel-creation",
+          "evidence": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "severity": "error",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 3,
+        "matchedChannels": 0,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "observedFacts": 3,
+        "observedLimitations": 0,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/check-both-empty",
+    "args": [
+      "check",
+      "dart-empty.json",
+      "swift-empty.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "61c20f871798c36e14d48d9b837da00d6063880f17dbc1e4805bbcb64838c485",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [],
+      "limitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "dart",
+          "target": null,
+          "tool": "dartograph"
+        },
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "swift",
+          "target": null,
+          "tool": "cartograph"
+        }
+      ],
+      "summary": {
+        "errors": 0,
+        "matchedChannels": 0,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "observedFacts": 0,
+        "observedLimitations": 2,
+        "warnings": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/retentions-kartograph",
+    "args": [
+      "retentions",
+      "dart.json",
+      "kotlin-empty.json",
+      "--for",
+      "kartograph"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "bf019529a38318d45c84ad01b7248fe3eba4bdb29d1288f405a0974face545d7",
+    "stdout": {
+      "format": "external-retentions",
+      "generatedAt": "2026-09-26T00:00:00.000Z",
+      "producedBy": {
+        "name": "isthmus",
+        "version": "0.0.0-fixture"
+      },
+      "retentions": [],
+      "version": 0
+    }
+  },
+  {
+    "name": "zero-fact/impact-strict",
+    "args": [
+      "impact",
+      "--file",
+      "lib/camera.dart",
+      "dart.json",
+      "swift-empty.json",
+      "--strict"
+    ],
+    "exitCode": 1,
+    "stderr": "Change preflight requires review: related errors, analysis gaps, or unobserved selectors remain.\n",
+    "stdoutSha256": "d1a474c83a9914c3841aa953a83563f3a45c21a2073277ab5288a9712d595a61",
+    "stdout": {
+      "channels": [
+        {
+          "channel": "dev.isthmus/camera",
+          "creations": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "reason": "channel-wiring",
+          "registrations": [],
+          "target": "flutter"
+        }
+      ],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "dart",
+          "target": "flutter",
+          "tool": {
+            "name": "dartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "swift",
+          "target": null,
+          "tool": {
+            "name": "cartograph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unregistered-channel-creation",
+          "evidence": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "severity": "error",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "swift",
+          "target": null,
+          "tool": "cartograph"
+        }
+      ],
+      "methods": [
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        }
+      ],
+      "project": "/fixture",
+      "relevantLimitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "swift",
+          "target": null,
+          "tool": "cartograph"
+        }
+      ],
+      "reviewFiles": [
+        "lib/camera.dart"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "channel-create",
+          "location": {
+            "column": 23,
+            "line": 3,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 5,
+            "path": "lib/camera.dart"
+          },
+          "method": "capture",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.capture"
+          },
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 7,
+            "path": "lib/camera.dart"
+          },
+          "method": "zoom",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.zoom"
+          },
+          "target": "flutter"
+        }
+      ],
+      "selection": {
+        "files": [
+          "lib/camera.dart"
+        ],
+        "symbols": []
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 1,
+        "affectedMethods": 2,
+        "errors": 3,
+        "observedFacts": 3,
+        "reviewFiles": 1,
+        "selectedFacts": 3,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 0
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/diff",
+    "args": [
+      "diff",
+      "--before",
+      "dart.json",
+      "swift-empty.json",
+      "--after",
+      "dart.json",
+      "swift-empty.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "c54645a60bbb7de8f339e36b3370e7101a0789f3b65e6153819ddca2876d6377",
+    "stdout": {
+      "addedComponents": [],
+      "addedMethods": [],
+      "addedModules": [],
+      "format": "isthmus-diff",
+      "introducedIssues": [],
+      "limitations": {
+        "added": [],
+        "after": [
+          {
+            "message": "source-coverage: 0 files",
+            "platform": "swift",
+            "target": null,
+            "tool": "cartograph"
+          }
+        ],
+        "before": [
+          {
+            "message": "source-coverage: 0 files",
+            "platform": "swift",
+            "target": null,
+            "tool": "cartograph"
+          }
+        ],
+        "removed": []
+      },
+      "producers": {
+        "after": [
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "dartograph",
+            "platform": "dart",
+            "version": "0.1.0"
+          },
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "cartograph",
+            "platform": "swift",
+            "version": "0.1.0"
+          }
+        ],
+        "before": [
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "dartograph",
+            "platform": "dart",
+            "version": "0.1.0"
+          },
+          {
+            "generatedAt": "2026-09-26T00:00:00Z",
+            "name": "cartograph",
+            "platform": "swift",
+            "version": "0.1.0"
+          }
+        ]
+      },
+      "removedComponents": [],
+      "removedMethods": [],
+      "removedModules": [],
+      "resolvedIssues": [],
+      "summary": {
+        "addedComponents": 0,
+        "addedMethods": 0,
+        "addedModules": 0,
+        "introducedErrors": 0,
+        "introducedWarnings": 0,
+        "removedComponents": 0,
+        "removedMethods": 0,
+        "removedModules": 0,
+        "resolvedIssues": 0
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "zero-fact/graph",
+    "args": [
+      "graph",
+      "dart-empty.json",
+      "swift.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "ff76d2f947c13e5e6d17bb77a2afb59434aba1df1f08cef9be98471192ef3dce",
+    "stdout": {
+      "edges": [],
+      "format": "isthmus-graph",
+      "limitations": [
+        {
+          "message": "source-coverage: 0 files",
+          "platform": "dart",
+          "target": null,
+          "tool": "dartograph"
+        }
+      ],
+      "nodes": [],
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/check-kotlin",
+    "args": [
+      "check",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "07edf48b800edae485824db5f5d94a6e3fa4e9d751bd84070742bc4a778438e8",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "orders",
+          "code": "relation-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 7,
+                "path": "src/Orders.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Orders.list",
+                "usr": "com.example.Orders#list()V"
+              }
+            }
+          ],
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.users",
+          "code": "column-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 5,
+                "path": "src/Repo.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Repo.find",
+                "usr": "com.example.Repo#find()V"
+              }
+            }
+          ],
+          "method": "nickname",
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.audit",
+          "code": "relation-decl-without-use",
+          "evidence": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "public.audit"
+              }
+            }
+          ],
+          "severity": "warning",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 2,
+        "matchedChannels": 0,
+        "matchedColumns": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "matchedRelations": 1,
+        "observedFacts": 7,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/check-kotlin-strict",
+    "args": [
+      "check",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--strict"
+    ],
+    "exitCode": 1,
+    "stderr": "",
+    "stdoutSha256": "07edf48b800edae485824db5f5d94a6e3fa4e9d751bd84070742bc4a778438e8",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "orders",
+          "code": "relation-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 7,
+                "path": "src/Orders.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Orders.list",
+                "usr": "com.example.Orders#list()V"
+              }
+            }
+          ],
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.users",
+          "code": "column-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 5,
+                "path": "src/Repo.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Repo.find",
+                "usr": "com.example.Repo#find()V"
+              }
+            }
+          ],
+          "method": "nickname",
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.audit",
+          "code": "relation-decl-without-use",
+          "evidence": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "public.audit"
+              }
+            }
+          ],
+          "severity": "warning",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 2,
+        "matchedChannels": 0,
+        "matchedColumns": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "matchedRelations": 1,
+        "observedFacts": 7,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/check-go",
+    "args": [
+      "check",
+      "go-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "4f4adbee6ba0da26789f0ad947ba85b28663495288ca89825617880c649e2522",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "public.audit",
+          "code": "relation-decl-without-use",
+          "evidence": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "public.audit"
+              }
+            }
+          ],
+          "severity": "warning",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 0,
+        "matchedChannels": 0,
+        "matchedColumns": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "matchedRelations": 1,
+        "observedFacts": 5,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/check-sarif",
+    "args": [
+      "check",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--format",
+      "sarif"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "5cb9abc7a419cea1462be0b73543a319f9090840e3f728217360d5a8e41e047e",
+    "stdout": {
+      "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+      "runs": [
+        {
+          "results": [
+            {
+              "level": "error",
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "src/Orders.kt"
+                    },
+                    "region": {
+                      "startColumn": 1,
+                      "startLine": 7
+                    }
+                  }
+                }
+              ],
+              "message": {
+                "text": "relation-use-without-decl on channel 'orders'"
+              },
+              "partialFingerprints": {
+                "isthmusIssueV1": "bbb246aa1ed9e669b68a69df5b0eeeaf0073a5fbb9f5d796b4654788968d7f6b"
+              },
+              "properties": {
+                "channel": "orders",
+                "target": "persistence"
+              },
+              "ruleId": "relation-use-without-decl",
+              "ruleIndex": 22
+            },
+            {
+              "level": "error",
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "src/Repo.kt"
+                    },
+                    "region": {
+                      "startColumn": 1,
+                      "startLine": 5
+                    }
+                  }
+                }
+              ],
+              "message": {
+                "text": "column-use-without-decl on channel 'public.users' for method 'nickname'"
+              },
+              "partialFingerprints": {
+                "isthmusIssueV1": "39956a575f85a58436ea002ad5a978fffccf27e2265dadf3baa42d48aa91ad80"
+              },
+              "properties": {
+                "channel": "public.users",
+                "method": "nickname",
+                "target": "persistence"
+              },
+              "ruleId": "column-use-without-decl",
+              "ruleIndex": 1
+            },
+            {
+              "level": "warning",
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "public.audit"
+                }
+              ],
+              "message": {
+                "text": "relation-decl-without-use on channel 'public.audit'"
+              },
+              "partialFingerprints": {
+                "isthmusIssueV1": "c7e995eba705e3c003a55aa0724b4a35a381df84186c88a7433b76ff89e30152"
+              },
+              "properties": {
+                "channel": "public.audit",
+                "target": "persistence"
+              },
+              "ruleId": "relation-decl-without-use",
+              "ruleIndex": 20
+            }
+          ],
+          "tool": {
+            "driver": {
+              "informationUri": "https://github.com/ictechgy/isthmus",
+              "name": "isthmus",
+              "rules": [
+                {
+                  "id": "ambiguous-relation-use",
+                  "shortDescription": {
+                    "text": "An unqualified code-side relation reference matches more than one declared relation, so it could not be joined."
+                  }
+                },
+                {
+                  "id": "column-use-without-decl",
+                  "shortDescription": {
+                    "text": "A code-side column reference has no matching column declaration on the resolved relation."
+                  }
+                },
+                {
+                  "id": "column-use-without-decl-unverified",
+                  "shortDescription": {
+                    "text": "A code-side column reference has no matching column declaration, and the schema catalog coverage is known to be incomplete."
+                  }
+                },
+                {
+                  "id": "component-export-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A receiver-side native component export matches a require name, but the observed requires resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "component-export-without-require",
+                  "shortDescription": {
+                    "text": "A receiver-side native component export has no matching caller-side require."
+                  }
+                },
+                {
+                  "id": "component-require-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A caller-side native component require matches an export name, but the observed exports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "component-require-without-export",
+                  "shortDescription": {
+                    "text": "A caller-side native component require has no matching export on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "component-require-without-export-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side native component require has no matching export, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "event-emit-without-listen",
+                  "shortDescription": {
+                    "text": "A native React Native event emission has no observed JavaScript subscription with the same global event name."
+                  }
+                },
+                {
+                  "id": "event-listen-without-emit",
+                  "shortDescription": {
+                    "text": "A JavaScript React Native event subscription has no observed native emission with the same global event name."
+                  }
+                },
+                {
+                  "id": "event-listen-without-emit-unverified",
+                  "shortDescription": {
+                    "text": "A JavaScript React Native event subscription has no observed native emission, and native analysis gaps may hide it."
+                  }
+                },
+                {
+                  "id": "handler-without-invocation",
+                  "shortDescription": {
+                    "text": "A receiver-side bridge method handler has no matching caller-side invocation."
+                  }
+                },
+                {
+                  "id": "message-handler-without-send",
+                  "shortDescription": {
+                    "text": "A native BasicMessageChannel handler has no matching Dart send."
+                  }
+                },
+                {
+                  "id": "module-export-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A receiver-side native module export matches an import name, but the observed imports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "module-export-without-import",
+                  "shortDescription": {
+                    "text": "A receiver-side native module export has no matching caller-side import."
+                  }
+                },
+                {
+                  "id": "module-import-mechanism-mismatch",
+                  "shortDescription": {
+                    "text": "A caller-side native module import matches an export name, but the observed exports resolve through a different bridge mechanism."
+                  }
+                },
+                {
+                  "id": "module-import-without-export",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "module-import-without-export-optional",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export, but every observed caller tolerates absence by receiving null."
+                  }
+                },
+                {
+                  "id": "module-import-without-export-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side native module import has no matching export, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "registration-without-creation",
+                  "shortDescription": {
+                    "text": "A receiver-side channel registration has no matching caller-side channel creation."
+                  }
+                },
+                {
+                  "id": "relation-decl-without-use",
+                  "shortDescription": {
+                    "text": "A schema relation declaration has no observed code-side reference; it is a dead-schema candidate, not a deletion verdict."
+                  }
+                },
+                {
+                  "id": "relation-decl-without-use-unverified",
+                  "shortDescription": {
+                    "text": "A schema relation declaration has no observed code-side reference, and dynamic relation uses may be hiding it."
+                  }
+                },
+                {
+                  "id": "relation-use-without-decl",
+                  "shortDescription": {
+                    "text": "A code-side relation reference has no matching declaration in the observed schema catalog."
+                  }
+                },
+                {
+                  "id": "relation-use-without-decl-unverified",
+                  "shortDescription": {
+                    "text": "A code-side relation reference has no matching declaration, and the schema catalog coverage is known to be incomplete."
+                  }
+                },
+                {
+                  "id": "stream-handler-without-listen",
+                  "shortDescription": {
+                    "text": "A native EventChannel stream handler has no matching Dart stream listener."
+                  }
+                },
+                {
+                  "id": "unhandled-invocation",
+                  "shortDescription": {
+                    "text": "A caller-side bridge method invocation has no matching handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-invocation-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side bridge method invocation has no matching handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unhandled-message-send",
+                  "shortDescription": {
+                    "text": "A Dart BasicMessageChannel send has no matching native message handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-message-send-unverified",
+                  "shortDescription": {
+                    "text": "A Dart BasicMessageChannel send has no matching native message handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unhandled-stream-listen",
+                  "shortDescription": {
+                    "text": "A Dart EventChannel stream listener has no matching native stream handler on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unhandled-stream-listen-unverified",
+                  "shortDescription": {
+                    "text": "A Dart EventChannel stream listener has no matching native stream handler, and a receiver-side analysis gap may be hiding it."
+                  }
+                },
+                {
+                  "id": "unregistered-channel-creation",
+                  "shortDescription": {
+                    "text": "A caller-side bridge channel creation has no matching registration on any receiver-side document."
+                  }
+                },
+                {
+                  "id": "unregistered-channel-creation-unverified",
+                  "shortDescription": {
+                    "text": "A caller-side bridge channel creation has no matching registration, and a receiver-side analysis gap may be hiding it."
+                  }
+                }
+              ],
+              "version": "0.0.0-fixture"
+            }
+          }
+        }
+      ],
+      "version": "2.1.0"
+    }
+  },
+  {
+    "name": "persistence/check-codequality",
+    "args": [
+      "check",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--format",
+      "codequality"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "89be5df81c9004d751a55dfac3dab406a998ded436b677b9527220b3cce186fd",
+    "stdout": [
+      {
+        "check_name": "isthmus:relation-use-without-decl",
+        "description": "A code-side relation reference has no matching declaration in the observed schema catalog. Channel 'orders' (target: persistence)",
+        "fingerprint": "bbb246aa1ed9e669b68a69df5b0eeeaf0073a5fbb9f5d796b4654788968d7f6b",
+        "location": {
+          "lines": {
+            "begin": 7
+          },
+          "path": "src/Orders.kt"
+        },
+        "severity": "major"
+      },
+      {
+        "check_name": "isthmus:column-use-without-decl",
+        "description": "A code-side column reference has no matching column declaration on the resolved relation. Channel 'public.users', method 'nickname' (target: persistence)",
+        "fingerprint": "39956a575f85a58436ea002ad5a978fffccf27e2265dadf3baa42d48aa91ad80",
+        "location": {
+          "lines": {
+            "begin": 5
+          },
+          "path": "src/Repo.kt"
+        },
+        "severity": "major"
+      }
+    ]
+  },
+  {
+    "name": "persistence/graph",
+    "args": [
+      "graph",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "1b2aa81c9092584231a9fd3469d8abfb120addd3ff4280cb91b627e5a1671cbf",
+    "stdout": {
+      "edges": [],
+      "format": "isthmus-graph",
+      "limitations": [],
+      "nodes": [],
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/query-not-found",
+    "args": [
+      "query",
+      "users",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 64,
+    "stderr": "No bridge channel or method matches the requested name; query a channel or method name that the inputs observed.\n",
+    "stdoutSha256": "1a809c92c29a99d91c0b0833fd86cbdb47a61848730525f9e67ce6b022c1e944",
+    "stdout": {
+      "level": "bridge",
+      "limitations": [],
+      "requested": "users",
+      "status": "notFound"
+    }
+  },
+  {
+    "name": "persistence/impact-matched-strict",
+    "args": [
+      "impact",
+      "--file",
+      "db/users.go",
+      "go-persistence.json",
+      "sql.json",
+      "--strict"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "d01d83a32c3e768b1e0448ffec6ba29dce72f86d104202f9bb72967ca87f197a",
+    "stdout": {
+      "channels": [],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "go",
+          "target": "persistence",
+          "tool": {
+            "name": "gartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "sql",
+          "target": "persistence",
+          "tool": {
+            "name": "schemagraph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [],
+      "limitations": [],
+      "methods": [],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "db/users.go"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "public.users",
+          "dynamic": false,
+          "kind": "relation-use",
+          "location": {
+            "column": 5,
+            "line": 12,
+            "path": "db/users.go"
+          },
+          "platform": "go",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.users",
+          "dynamic": false,
+          "kind": "relation-use",
+          "location": {
+            "column": 5,
+            "line": 13,
+            "path": "db/users.go"
+          },
+          "method": "email",
+          "platform": "go",
+          "target": "persistence"
+        }
+      ],
+      "selection": {
+        "files": [
+          "db/users.go"
+        ],
+        "symbols": []
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 0,
+        "affectedMethods": 0,
+        "errors": 0,
+        "observedFacts": 5,
+        "reviewFiles": 1,
+        "selectedFacts": 2,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 0
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/impact-undeclared-strict",
+    "args": [
+      "impact",
+      "--symbol",
+      "Orders.list",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--strict"
+    ],
+    "exitCode": 1,
+    "stderr": "Change preflight requires review: related errors, analysis gaps, or unobserved selectors remain.\n",
+    "stdoutSha256": "7730818047038d94b446afa48aef523f36538f6ac42238dc0216528af1bc0c70",
+    "stdout": {
+      "channels": [],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "kotlin",
+          "target": "persistence",
+          "tool": {
+            "name": "kartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "sql",
+          "target": "persistence",
+          "tool": {
+            "name": "schemagraph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "channel": "orders",
+          "code": "relation-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 7,
+                "path": "src/Orders.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Orders.list",
+                "usr": "com.example.Orders#list()V"
+              }
+            }
+          ],
+          "severity": "error",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "methods": [],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "src/Orders.kt"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "orders",
+          "dynamic": false,
+          "kind": "relation-use",
+          "location": {
+            "column": 1,
+            "line": 7,
+            "path": "src/Orders.kt"
+          },
+          "platform": "kotlin",
+          "symbol": {
+            "qualifiedName": "Orders.list",
+            "usr": "com.example.Orders#list()V"
+          },
+          "target": "persistence"
+        }
+      ],
+      "selection": {
+        "files": [],
+        "symbols": [
+          "Orders.list"
+        ]
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 0,
+        "affectedMethods": 0,
+        "errors": 1,
+        "observedFacts": 7,
+        "reviewFiles": 1,
+        "selectedFacts": 1,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 0
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "persistence/retentions-cartograph",
+    "args": [
+      "retentions",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--for",
+      "cartograph"
+    ],
+    "exitCode": 2,
+    "stderr": "Retentions for cartograph require at least one swift bridge facts document; run a swift producer for the receiver side.\n",
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout": ""
+  },
+  {
+    "name": "mixed/check",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "e19357b258cae5ddd42e12d3654905106611a67727ed16904239af83e063256e",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        },
+        {
+          "channel": "orders",
+          "code": "relation-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 7,
+                "path": "src/Orders.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Orders.list",
+                "usr": "com.example.Orders#list()V"
+              }
+            }
+          ],
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.users",
+          "code": "column-use-without-decl",
+          "evidence": [
+            {
+              "location": {
+                "column": 1,
+                "line": 5,
+                "path": "src/Repo.kt"
+              },
+              "platform": "kotlin",
+              "symbol": {
+                "qualifiedName": "Repo.find",
+                "usr": "com.example.Repo#find()V"
+              }
+            }
+          ],
+          "method": "nickname",
+          "severity": "error",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.audit",
+          "code": "relation-decl-without-use",
+          "evidence": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "public.audit"
+              }
+            }
+          ],
+          "severity": "warning",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 3,
+        "matchedChannels": 1,
+        "matchedColumns": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 1,
+        "matchedModules": 0,
+        "matchedRelations": 1,
+        "observedFacts": 13,
+        "observedLimitations": 0,
+        "warnings": 2
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "mixed/check-codequality",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--format",
+      "codequality"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "7f1b3f62a2439b67b15764215c7662fc9e4d7c94782b7de722adca625219c085",
+    "stdout": [
+      {
+        "check_name": "isthmus:unhandled-invocation",
+        "description": "A caller-side bridge method invocation has no matching handler on any receiver-side document. Channel 'dev.isthmus/camera', method 'zoom' (target: flutter)",
+        "fingerprint": "3b3e19eacec7d3b89681d40c29828cea9ec0ce1fe46e7371bf10726e39e760c3",
+        "location": {
+          "lines": {
+            "begin": 7
+          },
+          "path": "lib/camera.dart"
+        },
+        "severity": "major"
+      },
+      {
+        "check_name": "isthmus:handler-without-invocation",
+        "description": "A receiver-side bridge method handler has no matching caller-side invocation. Channel 'dev.isthmus/camera', method 'flash' (target: flutter)",
+        "fingerprint": "99ddfbbd0e826bc11c0b08c66230d5652c0d94120ee5e58102f1977832a39f6a",
+        "location": {
+          "lines": {
+            "begin": 18
+          },
+          "path": "ios/Runner/CameraPlugin.swift"
+        },
+        "severity": "minor"
+      },
+      {
+        "check_name": "isthmus:relation-use-without-decl",
+        "description": "A code-side relation reference has no matching declaration in the observed schema catalog. Channel 'orders' (target: persistence)",
+        "fingerprint": "bbb246aa1ed9e669b68a69df5b0eeeaf0073a5fbb9f5d796b4654788968d7f6b",
+        "location": {
+          "lines": {
+            "begin": 7
+          },
+          "path": "src/Orders.kt"
+        },
+        "severity": "major"
+      },
+      {
+        "check_name": "isthmus:column-use-without-decl",
+        "description": "A code-side column reference has no matching column declaration on the resolved relation. Channel 'public.users', method 'nickname' (target: persistence)",
+        "fingerprint": "39956a575f85a58436ea002ad5a978fffccf27e2265dadf3baa42d48aa91ad80",
+        "location": {
+          "lines": {
+            "begin": 5
+          },
+          "path": "src/Repo.kt"
+        },
+        "severity": "major"
+      }
+    ]
+  },
+  {
+    "name": "mixed/graph",
+    "args": [
+      "graph",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "1fa75abb055606aa907464ee78e734029910b0cafaf504e26cf1b36a6a28abf3",
+    "stdout": {
+      "edges": [
+        {
+          "channel": "dev.isthmus/camera",
+          "from": "dart:lib/camera.dart:3:23",
+          "kind": "channel",
+          "target": "flutter",
+          "to": "swift:ios/Runner/CameraPlugin.swift:11:17"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "from": "dart:lib/camera.dart:5:10",
+          "kind": "method",
+          "method": "capture",
+          "target": "flutter",
+          "to": "swift:ios/Runner/CameraPlugin.swift:14:12"
+        }
+      ],
+      "format": "isthmus-graph",
+      "limitations": [],
+      "nodes": [
+        {
+          "id": "dart:lib/camera.dart:3:23",
+          "location": {
+            "column": 23,
+            "line": 3,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart"
+        },
+        {
+          "id": "dart:lib/camera.dart:5:10",
+          "location": {
+            "column": 10,
+            "line": 5,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.capture"
+          }
+        },
+        {
+          "id": "swift:ios/Runner/CameraPlugin.swift:11:17",
+          "location": {
+            "column": 17,
+            "line": 11,
+            "path": "ios/Runner/CameraPlugin.swift"
+          },
+          "platform": "swift"
+        },
+        {
+          "id": "swift:ios/Runner/CameraPlugin.swift:14:12",
+          "location": {
+            "column": 12,
+            "line": 14,
+            "path": "ios/Runner/CameraPlugin.swift"
+          },
+          "platform": "swift",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.capture",
+            "usr": "s:12CameraPlugin7captureyyF"
+          }
+        }
+      ],
+      "version": 1
+    }
+  },
+  {
+    "name": "mixed/query-method",
+    "args": [
+      "query",
+      "capture",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "b0db2d91f83a44aa0db1708ffe8debda0adacd0703e0ac2b729833f691128677",
+    "stdout": {
+      "level": "bridge",
+      "limitations": [],
+      "requested": "capture",
+      "result": {
+        "dependsOn": [
+          {
+            "location": {
+              "column": 12,
+              "line": 14,
+              "path": "ios/Runner/CameraPlugin.swift"
+            },
+            "platform": "swift",
+            "symbol": {
+              "qualifiedName": "CameraPlugin.capture",
+              "usr": "s:12CameraPlugin7captureyyF"
+            }
+          }
+        ],
+        "subject": {
+          "kind": "method",
+          "name": "capture",
+          "qualifiedName": "flutter:dev.isthmus/camera#capture"
+        },
+        "usedBy": [
+          {
+            "location": {
+              "column": 10,
+              "line": 5,
+              "path": "lib/camera.dart"
+            },
+            "platform": "dart",
+            "symbol": {
+              "qualifiedName": "CameraBridge.capture"
+            }
+          }
+        ]
+      },
+      "status": "found"
+    }
+  },
+  {
+    "name": "mixed/impact-bridge-file",
+    "args": [
+      "impact",
+      "--file",
+      "lib/camera.dart",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "155838ca7a9c1a9bbd5fb55ff6f407bc03d4ff2bac52c2f7b960de91fa5276c9",
+    "stdout": {
+      "channels": [
+        {
+          "channel": "dev.isthmus/camera",
+          "creations": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "reason": "channel-wiring",
+          "registrations": [
+            {
+              "location": {
+                "column": 17,
+                "line": 11,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift"
+            }
+          ],
+          "target": "flutter"
+        }
+      ],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "dart",
+          "target": "flutter",
+          "tool": {
+            "name": "dartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "kotlin",
+          "target": "persistence",
+          "tool": {
+            "name": "kartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "sql",
+          "target": "persistence",
+          "tool": {
+            "name": "schemagraph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "swift",
+          "target": "flutter",
+          "tool": {
+            "name": "cartograph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "handler-without-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "method": "flash",
+          "severity": "warning",
+          "target": "flutter"
+        }
+      ],
+      "limitations": [],
+      "methods": [
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [
+            {
+              "location": {
+                "column": 12,
+                "line": 14,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.capture",
+                "usr": "s:12CameraPlugin7captureyyF"
+              }
+            }
+          ],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [
+            {
+              "location": {
+                "column": 12,
+                "line": 18,
+                "path": "ios/Runner/CameraPlugin.swift"
+              },
+              "platform": "swift",
+              "symbol": {
+                "qualifiedName": "CameraPlugin.flash",
+                "usr": "s:12CameraPlugin5flashyyF"
+              }
+            }
+          ],
+          "invocations": [],
+          "method": "flash",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "handlers": [],
+          "invocations": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "reason": "channel-wiring",
+          "target": "flutter"
+        }
+      ],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "ios/Runner/CameraPlugin.swift",
+        "lib/camera.dart"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "channel-create",
+          "location": {
+            "column": 23,
+            "line": 3,
+            "path": "lib/camera.dart"
+          },
+          "platform": "dart",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 5,
+            "path": "lib/camera.dart"
+          },
+          "method": "capture",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.capture"
+          },
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "dynamic": false,
+          "kind": "method-invoke",
+          "location": {
+            "column": 10,
+            "line": 7,
+            "path": "lib/camera.dart"
+          },
+          "method": "zoom",
+          "platform": "dart",
+          "symbol": {
+            "qualifiedName": "CameraBridge.zoom"
+          },
+          "target": "flutter"
+        }
+      ],
+      "selection": {
+        "files": [
+          "lib/camera.dart"
+        ],
+        "symbols": []
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 1,
+        "affectedMethods": 3,
+        "errors": 1,
+        "observedFacts": 13,
+        "reviewFiles": 2,
+        "selectedFacts": 3,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 1
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "mixed/impact-persistence-matched-strict",
+    "args": [
+      "impact",
+      "--file",
+      "db/users.go",
+      "dart.json",
+      "swift.json",
+      "go-persistence.json",
+      "sql.json",
+      "--strict"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "740e63d91bfc66cc392ff4fedd2ce1a47d80e67bdc8693854963f036a35199bb",
+    "stdout": {
+      "channels": [],
+      "complete": false,
+      "format": "isthmus-impact",
+      "inputs": [
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "dart",
+          "target": "flutter",
+          "tool": {
+            "name": "dartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "go",
+          "target": "persistence",
+          "tool": {
+            "name": "gartograph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "sql",
+          "target": "persistence",
+          "tool": {
+            "name": "schemagraph",
+            "version": "0.1.0"
+          }
+        },
+        {
+          "generatedAt": "2026-09-26T00:00:00Z",
+          "platform": "swift",
+          "target": "flutter",
+          "tool": {
+            "name": "cartograph",
+            "version": "0.1.0"
+          }
+        }
+      ],
+      "issues": [],
+      "limitations": [],
+      "methods": [],
+      "project": "/fixture",
+      "relevantLimitations": [],
+      "reviewFiles": [
+        "db/users.go"
+      ],
+      "scope": "bridge",
+      "selectedFacts": [
+        {
+          "channel": "public.users",
+          "dynamic": false,
+          "kind": "relation-use",
+          "location": {
+            "column": 5,
+            "line": 12,
+            "path": "db/users.go"
+          },
+          "platform": "go",
+          "target": "persistence"
+        },
+        {
+          "channel": "public.users",
+          "dynamic": false,
+          "kind": "relation-use",
+          "location": {
+            "column": 5,
+            "line": 13,
+            "path": "db/users.go"
+          },
+          "method": "email",
+          "platform": "go",
+          "target": "persistence"
+        }
+      ],
+      "selection": {
+        "files": [
+          "db/users.go"
+        ],
+        "symbols": []
+      },
+      "status": "observed",
+      "summary": {
+        "affectedChannels": 0,
+        "affectedMethods": 0,
+        "errors": 0,
+        "observedFacts": 11,
+        "reviewFiles": 1,
+        "selectedFacts": 2,
+        "unmatchedSelectors": 0,
+        "unresolvedSelectedFacts": 0,
+        "warnings": 0
+      },
+      "unmatchedSelectors": {
+        "files": [],
+        "symbols": []
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "mixed/retentions-cartograph",
+    "args": [
+      "retentions",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json",
+      "sql.json",
+      "--for",
+      "cartograph"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "06f3ed645ae386e43ef5b0ad0ba9f5deb25ec4fca0cde1f5c82624dde730e5e4",
+    "stdout": {
+      "format": "external-retentions",
+      "generatedAt": "2026-09-26T00:00:00.000Z",
+      "producedBy": {
+        "name": "isthmus",
+        "version": "0.0.0-fixture"
+      },
+      "retentions": [
+        {
+          "evidence": {
+            "caller": {
+              "line": 5,
+              "path": "lib/camera.dart",
+              "platform": "dart"
+            },
+            "channel": "dev.isthmus/camera",
+            "method": "capture"
+          },
+          "reason": "bridge",
+          "symbol": {
+            "qualifiedName": "CameraPlugin.capture",
+            "usr": "s:12CameraPlugin7captureyyF"
+          }
+        }
+      ],
+      "version": 0
+    }
+  },
+  {
+    "name": "mixed/check-empty-kotlin-receiver",
+    "args": [
+      "check",
+      "dart.json",
+      "kotlin-empty.json",
+      "go-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdoutSha256": "20c4cddd256246c939f7a2eca7b7d18e9d7563e4298e3a2bbdff742453559056",
+    "stdout": {
+      "format": "isthmus-check",
+      "issues": [
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 5,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.capture"
+              }
+            }
+          ],
+          "method": "capture",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unhandled-invocation",
+          "evidence": [
+            {
+              "location": {
+                "column": 10,
+                "line": 7,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart",
+              "symbol": {
+                "qualifiedName": "CameraBridge.zoom"
+              }
+            }
+          ],
+          "method": "zoom",
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "dev.isthmus/camera",
+          "code": "unregistered-channel-creation",
+          "evidence": [
+            {
+              "location": {
+                "column": 23,
+                "line": 3,
+                "path": "lib/camera.dart"
+              },
+              "platform": "dart"
+            }
+          ],
+          "severity": "error",
+          "target": "flutter"
+        },
+        {
+          "channel": "public.audit",
+          "code": "relation-decl-without-use",
+          "evidence": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "public.audit"
+              }
+            }
+          ],
+          "severity": "warning",
+          "target": "persistence"
+        }
+      ],
+      "limitations": [],
+      "summary": {
+        "errors": 3,
+        "matchedChannels": 0,
+        "matchedColumns": 1,
+        "matchedComponents": 0,
+        "matchedMethods": 0,
+        "matchedModules": 0,
+        "matchedRelations": 1,
+        "observedFacts": 8,
+        "observedLimitations": 0,
+        "warnings": 1
+      },
+      "version": 1
+    }
+  },
+  {
+    "name": "mixed/check-missing-receiver",
+    "args": [
+      "check",
+      "dart.json",
+      "kotlin-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 2,
+    "stderr": "Bridge documents must include at least one caller platform (dart, js) document and one receiver platform (swift, kotlin) document; run a producer for the missing side.\n",
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout": ""
+  },
+  {
+    "name": "mixed/check-missing-caller",
+    "args": [
+      "check",
+      "swift.json",
+      "go-persistence.json",
+      "sql.json"
+    ],
+    "exitCode": 2,
+    "stderr": "Bridge documents must include at least one caller platform (dart, js) document and one receiver platform (swift, kotlin) document; run a producer for the missing side.\n",
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout": ""
+  },
+  {
+    "name": "mixed/check-missing-sql",
+    "args": [
+      "check",
+      "dart.json",
+      "swift.json",
+      "kotlin-persistence.json"
+    ],
+    "exitCode": 2,
+    "stderr": "Persistence documents must include at least one sql declaration document and one non-sql caller document with the persistence target; run a producer for the missing side.\n",
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout": ""
+  }
+]

@@ -1,0 +1,40 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "kartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "kotlin",
+  "target": "flutter",
+  "project": "/fixture",
+  "facts": [
+    {
+      "kind": "channel-register",
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "location": {
+        "path": "android/app/src/main/kotlin/CameraPlugin.kt",
+        "line": 9,
+        "column": 5
+      }
+    },
+    {
+      "kind": "method-handle",
+      "channel": "dev.isthmus/camera",
+      "method": "capture",
+      "dynamic": false,
+      "location": {
+        "path": "android/app/src/main/kotlin/CameraPlugin.kt",
+        "line": 12,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "CameraPlugin.capture",
+        "usr": "com.example.CameraPlugin#capture()V"
+      }
+    }
+  ],
+  "limitations": []
+}

@@ -1,0 +1,53 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "dartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "dart",
+  "target": "flutter",
+  "project": "/fixture",
+  "facts": [
+    {
+      "kind": "channel-create",
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "location": {
+        "path": "lib/camera.dart",
+        "line": 3,
+        "column": 23
+      }
+    },
+    {
+      "kind": "method-invoke",
+      "channel": "dev.isthmus/camera",
+      "method": "capture",
+      "dynamic": false,
+      "location": {
+        "path": "lib/camera.dart",
+        "line": 5,
+        "column": 10
+      },
+      "symbol": {
+        "qualifiedName": "CameraBridge.capture"
+      }
+    },
+    {
+      "kind": "method-invoke",
+      "channel": "dev.isthmus/camera",
+      "method": "zoom",
+      "dynamic": false,
+      "location": {
+        "path": "lib/camera.dart",
+        "line": 7,
+        "column": 10
+      },
+      "symbol": {
+        "qualifiedName": "CameraBridge.zoom"
+      }
+    }
+  ],
+  "limitations": []
+}
