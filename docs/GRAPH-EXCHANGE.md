@@ -643,7 +643,7 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 
 ```text
 template    = "/" segment *( "/" segment )    ; 빈 세그먼트 허용(중복·끝 슬래시 보존)
-segment     = "{**}" / *( pchar-lit / "{}" )
+segment     = "{**}" / *pchar-lit [ "{}" *pchar-lit ]   ; 부분 세그먼트의 `{}`는 세그먼트당 하나
 pchar-lit   = unreserved / pct-encoded / sub-delims / ":" / "@"   ; RFC 3986 pchar
 pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unreserved 문자는 인코딩하지 않음
 ```
@@ -653,7 +653,9 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - percent-encoding은 대문자 hex로 쓰고 unreserved 문자는 디코드한다. 리터럴 중괄호는
   `%7B`·`%7D`다.
 - 세그먼트 전체가 파라미터면 `{}`로 쓰고, 이름·정규식·변환기는 `paramConstraints`와 증거로만
-  남긴다. 세그먼트 일부만 파라미터면 리터럴 골격을 남긴다(`/files/{}.json`).
+  남긴다. 세그먼트 일부만 파라미터면 리터럴 골격을 남긴다(`/files/{}.json`). 한 세그먼트에
+  파라미터가 둘 이상이면(`/v{}.n{}`) 골격을 만들지 않는다. decl은 그 템플릿을 dynamic과
+  `route-coverage:`로, call은 dynamic으로 낸다.
 - `{**}`는 **마지막 세그먼트 전체**에만 올 수 있는 끝 catch-all이며, **세그먼트 1개 이상**과
   맞는다.
 - **0세그먼트 catch-all**: catch-all 앞 경로 자체(`/files`)도 받는 프레임워크가 있다(Spring
@@ -666,7 +668,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - 펼친 접두사 decl에는 `catchAllPrefix: true`를 단다. 목록 엔드포인트 `/files`와
   `/files/{*path}`가 함께 있는 흔한 구성에서 명시적 decl과 구분하기 위해서다.
   - `method`·`symbol`·`location`은 원본 catch-all decl과 같다. 같은 문서에 원본 decl(같은
-    method와 `symbol.usr`, 템플릿 = 접두사 + `/{**}`)이 없으면 입력 오류다.
+    method와 `symbol.usr`, 템플릿은 접두사가 `/`이면 `/{**}`, 아니면 접두사 + `/{**}`)이 없으면
+    입력 오류다.
   - specificity 문서에서는 원본 `{**}` decl과 같은 순위로 본다. 그래서 같은 키의 명시적
     decl이 있으면 항상 명시적 decl이 match다. 매칭 품질은 `catch-all`이다.
   - registration-order 문서에서는 원본 decl의 `order`를 그대로 물려받는다.
@@ -713,6 +716,12 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - method는 정확히 같아야 한다. 예외는 decl `ANY`(`any-method`), call HEAD ↔ decl
   GET(`head-as-get`), call OPTIONS ↔ 같은 경로의 decl(`options-any`)이다. `methodDynamic` call은
   경로만으로 잇되 error 근거가 되지 않는다.
+- 부분 세그먼트 `p{}s`(p·s는 리터럴, 둘 중 하나는 비어도 됨):
+  - decl의 `p{}s`는 call 리터럴 세그먼트가 p로 시작하고 s로 끝나며 그 사이가 비어 있지 않을
+    때 맞는다. 품질은 `param-to-literal`이고 구체성 순위는 "부분 세그먼트"다.
+  - call의 `p{}s`는 같은 골격의 decl과 정확 매칭이고, decl의 세그먼트 전체 `{}`와도 맞는다.
+    decl 리터럴 세그먼트와는 증명할 수 없으므로 `param-to-literal` 후보로만 잇고 error 근거로
+    쓰지 않는다.
 - 끝 슬래시만 다르면 `route-trailing-slash-mismatch`(decl이 `trailingSlash: "optional"`이면
   match), 대소문자만 다르면 `route-case-mismatch`(decl이 `caseInsensitive`면 match)다.
 - pathAnchor 조합은 넷이다. decl 자리의 contract(서버 변수를 해석하지 못해 base인 contract
@@ -763,6 +772,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   경우를 위한 사용자 선언이며, 선언으로 귀속한 증거에는 declared 출처를 표시한다.
 - 매니페스트가 없으면 call의 유효 service가 선언 측 문서의 service(문서 값이나 그 문서 사실의
   유효 service)와 정확히 같을 때만 자동 귀속한다. 이때 그 선언 측 문서들이 아래 "서버 측"이다.
+- 매니페스트가 없고 call에 유효 service가 없으면, 입력의 어떤 선언 측 문서·사실도 service를
+  선언하지 않았을 때만(단일 서비스 입력) 그 선언 측 문서 전체에 귀속한다. 한쪽에만 service가
+  있으면 귀속하지 않는다. 서비스가 둘 이상일 수 있는 입력에서 이름 없는 호출을 추측해 잇지
+  않기 위해서다.
 - 귀속되지 않은 호출은 판정 전제에서 빼고 `unjoined-unbound-route-calls`로 개수만 센다. host
   휴리스틱으로 귀속하지 않는다.
 
@@ -795,7 +808,8 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 구성의 귀속된 root 호출이 전부 거짓 error가 되는 것을 막기 위해서다.
 
 진단 신원: http 진단은 기존 code·target·channel·method에 5번째 원소 `scope`(link 이름,
-매니페스트가 없으면 service 문자열)를 더한다. 두 link가 같은 (method, template)에 진단을 내도
+매니페스트가 없으면 service 문자열, service도 없는 단일 서비스 입력이면 고정값 `"default"`)를
+더한다. 선언 측 진단(`route-decl-conflict`·`route-decl-shadowed`)도 같은 규칙을 쓴다. 두 link가 같은 (method, template)에 진단을 내도
 baseline 억제와 codequality 지문이 섞이지 않게 하기 위해서다. scope가 없는 기존 키는 바이트
 단위로 유지한다.
 
@@ -856,6 +870,9 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   마스킹하고 `maskedSegments`에 수를 싣는다. 고엔트로피 기준(길이, 문자 종류 수 등)은 url-compose
   벡터로 고정해 생산자 사이에서 같게 읽는다. 마스킹된 세그먼트는 파라미터처럼 취급되어 error
   근거가 되지 않는다.
+- 위 제거·마스킹은 `channel`뿐 아니라 리터럴 경로 문자열을 싣는 모든 필드에 똑같이 적용한다:
+  `channelPrefix`, 클라이언트 측 문서의 `limitationScopes`(`templates`·`templatePrefixes`·
+  `templateSuffixes`), limitation 문구. 한 필드에서 가린 세그먼트가 다른 필드로 새면 안 된다.
 - 선택 옵션 `--route-call-hosts <목록>`을 주면, 목록 밖 authority의 호출은 사실 대신
   `unbound-route-calls-omitted:` 개수로만 낸다.
 - 귀속은 소비자가 매니페스트로 판정하므로 생산자는 어떤 호출이 귀속될지 모른다. 그래서
