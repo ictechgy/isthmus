@@ -77,7 +77,9 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
         name: {
           type: 'string',
           minLength: 1,
-          description: 'Channel, method, or qualifiedName to look up.',
+          description:
+            'Channel, method, or qualifiedName to look up, or relation:<name> for a '
+            + 'persistence relation.',
         },
         documents: DOCUMENTS_PROPERTY,
       },

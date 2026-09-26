@@ -147,6 +147,27 @@ test('tools/call query의 notFound는 문서를 실은 정상 응답이다', asy
   assert.equal(query.status, 'notFound');
 });
 
+test('tools/call query는 relation:<name>을 CLI와 같은 persistence 관계 질의로 답한다', async () => {
+  const fixture = (name: string) =>
+    fileURLToPath(new URL(`../../fixtures/domain-composition/${name}`, import.meta.url));
+  const response = JSON.parse(
+    (await session.handleLine(
+      request(61, 'tools/call', {
+        name: 'query',
+        arguments: {
+          name: 'relation:users',
+          documents: [fixture('kotlin-persistence.json'), fixture('sql.json')],
+        },
+      }),
+    ))!,
+  );
+
+  assert.equal(response.result.isError, false);
+  const query = JSON.parse(response.result.content[0].text);
+  assert.deepEqual([query.status, query.level, query.result.subject.qualifiedName],
+    ['found', 'persistence', 'relation:public.users']);
+});
+
 test('tools/call의 잘못된 인자는 -32602를 돌려준다', async () => {
   const response = JSON.parse(
     (await session.handleLine(
