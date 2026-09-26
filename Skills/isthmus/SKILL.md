@@ -118,6 +118,10 @@ If inputs are missing, identify the required files and proceed with independent 
 - Trace callers: `isthmus query <channel-or-method> <dart.json> <swift.json>`.
   Read `usedBy`, `dependsOn`, symbol evidence, and `limitations`.
   `ambiguous` returns qualified-name candidates; disambiguate from context or ask when necessary.
+- Persistence pairs (development builds): `isthmus check <code.json> <sql.json> --pairs` adds
+  `matches` (code uses ↔ catalog declarations with their symbols) to the JSON report only;
+  `isthmus query relation:<name> <code.json> <sql.json>` answers one relation. Chaining those ids to
+  producer and `schemagraph impact` is manual; follow `docs/PERSISTENCE-TRACE.md`.
 - Review a change: `isthmus diff --before <old-dart.json> <old-swift.json> --after <new-dart.json> <new-swift.json> --strict`.
   Inspect added/removed logical methods, introduced/resolved issues, both sets of limitations,
   and producer versions/timestamps. Revisions come from the caller's before/after choice.

@@ -11,6 +11,7 @@ import { runImpactCommand } from './impact-command.ts';
 import { runPreflightCommand } from './preflight-command.ts';
 import { runQueryCommand } from './query-command.ts';
 import { runRetentionsCommand } from './retentions-command.ts';
+import { encodeSortedJson } from '../report/sorted-json.ts';
 
 /**
  * bridge 도메인 판정을 명시 규칙으로 바꾼 뒤에도 기존 입력 구성의 출력이 그대로인지 고정한다.
@@ -119,6 +120,29 @@ for (const scenario of shouldUpdatePinnedScenarios ? [] : scenarios) {
     assert.deepEqual(toPinnedScenario(scenario.name, scenario.args, result), scenario);
   });
 }
+
+test('check --pairs는 고정된 기본 출력에 matches만 더하고 종료 코드·오류는 그대로다', async () => {
+  // 플래그 없는 check가 --pairs 도입 전(origin/main) 바이트와 같은지는 위 표가 확인한다.
+  // 여기서는 같은 시나리오에 --pairs를 붙여도 matches 외의 바이트가 흔들리지 않음을 본다.
+  const checks = scenarios.filter(({ args }) => args[0] === 'check' && !args.includes('--format'));
+  assert.ok(checks.length >= 10);
+  for (const scenario of checks) {
+    const paired = await run([...scenario.args, '--pairs']);
+    assert.equal(paired.exitCode, scenario.exitCode, scenario.name);
+    assert.equal(paired.standardError, scenario.stderr, scenario.name);
+    if (scenario.exitCode === 2) {
+      assert.equal(paired.standardOutput, '', scenario.name);
+      continue;
+    }
+    const { matches, ...rest } = JSON.parse(paired.standardOutput);
+    assert.deepEqual(rest, scenario.stdout, scenario.name);
+    assert.equal(paired.standardOutput, encodeSortedJson({ ...(scenario.stdout as object), matches }), scenario.name);
+    // bridge 전용 입력은 persistence 매치가 없다.
+    if (scenario.name.startsWith('bridge/') || scenario.name.startsWith('zero-fact/')) {
+      assert.deepEqual(matches, [], scenario.name);
+    }
+  }
+});
 
 // 아래는 platform만 보던 역할 판정이 만들던 결함을 고친 의도한 변경이다.
 

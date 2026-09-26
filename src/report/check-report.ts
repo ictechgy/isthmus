@@ -6,6 +6,7 @@ import type {
   BridgeEndpoint,
   BridgeJoinResult,
   JoinLimitation,
+  RelationResolver,
 } from '../join/join.ts';
 import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
@@ -97,12 +98,37 @@ export type CheckIssueCode = (typeof checkIssueCodes)[number];
  * 생산자가 쓴 사용 측 이름을 싣는다. 선택한 사실과 진단을 같은 관계로 대조하는
  * 소비자(impact)는 어느 쪽 이름인지 알아야 조인과 같은 해석 규칙을 적용할 수 있다.
  */
-export const declNamedPersistenceIssueCodes: ReadonlySet<CheckIssueCode> = new Set<CheckIssueCode>([
+const declNamedPersistenceIssueCodes: ReadonlySet<CheckIssueCode> = new Set<CheckIssueCode>([
   'column-use-without-decl',
   'column-use-without-decl-unverified',
   'relation-decl-without-use',
   'relation-decl-without-use-unverified',
 ]);
+
+/** persistence 진단 하나가 속한 논리 관계 키와 (컬럼 진단이면) (관계, 컬럼) 키다. */
+export interface PersistenceIssueKeys {
+  /** 진단 채널의 관계 키. 모호한 사용이면 후보 선언들의 키도 뒤에 붙는다. */
+  readonly relations: readonly string[];
+  readonly column?: string;
+}
+
+/**
+ * persistence 진단을 조인과 같은 해석 규칙의 관계 키로 바꾼다.
+ *
+ * 선택한 사실(impact)이나 질의한 관계(query)와 진단을 원문 문자열로 대조하면
+ * 비한정 사용 'users'와 한정 선언 이름 'public.users'가 서로 다른 관계로 보인다.
+ * 채널이 선언 측 이름인지 사용 측 이름인지에 따라 같은 해석기의 다른 키를 쓴다.
+ */
+export function persistenceIssueKeys(
+  issue: CheckIssue,
+  resolver: RelationResolver,
+): PersistenceIssueKeys {
+  const key = declNamedPersistenceIssueCodes.has(issue.code) ? resolver.declKey : resolver.useKey;
+  return {
+    relations: [key(issue.channel), ...(issue.candidates ?? []).map((candidate) => resolver.declKey(candidate))],
+    ...(issue.method === undefined ? {} : { column: key(issue.channel, issue.method) }),
+  };
+}
 
 /** 삭제 판정 없이 경계 불일치 사실과 증거만 전달한다. */
 export interface CheckIssue {

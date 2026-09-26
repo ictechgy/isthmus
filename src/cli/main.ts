@@ -46,7 +46,7 @@ const rootHelp = `Usage: isthmus <command> [options]
 
 Commands:
   check        Report unmatched bridge calls and handlers
-  query        Find both sides of a channel or method
+  query        Find both sides of a channel, method, or relation:<name>
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
   verify-runtime  Verify recorded calls against scenario expectations

@@ -48,6 +48,7 @@ for (const requiredPath of [
   'docs/PREFLIGHT.md',
   'docs/BRIDGE-MESSAGES.md',
   'docs/IMPACT.md',
+  'docs/PERSISTENCE-TRACE.md',
   'docs/GRAPH-EXCHANGE.md',
   'compatibility.json',
   'package.json',

@@ -1,11 +1,17 @@
 import {
+  createRelationResolver,
   emptyBridgeJoinResult,
   isBridgeJoinDeferred,
   joinBridgeDocuments,
   MAX_DOCUMENTS_PER_JOIN,
 } from '../join/join.ts';
 import { joinMessageBridges } from '../join/messages.ts';
-import { createBridgeQuery, encodeBridgeQuery } from '../report/query.ts';
+import {
+  createBridgeQuery,
+  createRelationPrefixedQuery,
+  encodeBridgeQuery,
+  RELATION_SUBJECT_PREFIX,
+} from '../report/query.ts';
 import type { BridgeQueryDocument } from '../report/query.ts';
 import {
   bridgeJoinDeferredError,
@@ -26,9 +32,12 @@ export async function runQueryCommand(
   if (parsed === undefined) return queryUsageError();
   const requested = parsed.positionals[0];
   const inputPaths = parsed.positionals.slice(1);
+  const relationRequested = requested?.startsWith(RELATION_SUBJECT_PREFIX) ?? false;
   if (
     requested === undefined ||
     requested.trim().length === 0 ||
+    // 접두사만 있고 관계 이름이 비면 질의할 이름이 없는 호출 오류다.
+    (relationRequested && requested.slice(RELATION_SUBJECT_PREFIX.length).trim().length === 0) ||
     inputPaths.length < 2 ||
     inputPaths.length > MAX_DOCUMENTS_PER_JOIN
   ) {
@@ -46,7 +55,11 @@ export async function runQueryCommand(
     const messageJoin = messages.length > 0
       ? joinMessageBridges(messages, project)
       : undefined;
-    const query = createBridgeQuery(joined, requested, messageJoin);
+    // relation 주체는 persistence 조인 규칙으로 해석한다. 같은 이름의 관계가 없으면 이전처럼
+    // 요청 문자열 그대로의 bridge 키를 찾으므로 메시지 조인도 함께 넘긴다.
+    const query = relationRequested
+      ? createRelationPrefixedQuery(joined, createRelationResolver(bridges), requested, messageJoin)
+      : createBridgeQuery(joined, requested, messageJoin);
     return {
       standardOutput: encodeBridgeQuery(query),
       standardError: queryStatusHint(query),
@@ -66,6 +79,13 @@ export async function runQueryCommand(
  */
 function queryStatusHint(query: BridgeQueryDocument): string {
   if (query.status === 'found') return '';
+  if (query.level === 'persistence') {
+    return query.status === 'ambiguous'
+      ? `The requested relation name matches ${query.candidates?.length ?? 0} declarations; `
+        + 'repeat the query with a qualifiedName from candidates.\n'
+      : 'No persistence relation matches the requested name; query a relation that the '
+        + 'inputs declare or use, for example relation:schema.table.\n';
+  }
   if (query.status === 'ambiguous') {
     return `The requested name matches ${query.candidates?.length ?? 0} bridge keys; `
       + 'repeat the query with a qualifiedName from candidates.\n';
@@ -85,5 +105,5 @@ function queryUsageError(): CommandResult {
 
 /** query 명령의 한 줄 사용법이다. */
 export const queryUsage =
-  'Usage: isthmus query <channel-or-method> <bridge-facts.json> '
+  'Usage: isthmus query <channel-or-method|relation:<name>> <bridge-facts.json> '
   + '<bridge-facts.json> [more...]';

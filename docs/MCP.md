@@ -35,7 +35,7 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 | 도구 | 대응 명령 | 선택 인자 |
 |---|---|---|
 | `check` | `isthmus check` | `strict` |
-| `query` | `isthmus query` | `name`(필수) |
+| `query` | `isthmus query` | `name`(필수, `relation:<name>`이면 persistence 관계 질의) |
 | `graph` | `isthmus graph` | `format: json\|dot\|mermaid` |
 | `diff` | `isthmus diff` | `before`/`after`(필수), `strict` |
 | `impact` | `isthmus impact` | `file`·`symbol`·`changes` 중 정확히 하나(필수), `runtime`, `revision`, `strict`, `compact` |

@@ -5,33 +5,65 @@ import type {
   BridgeJoinResult,
   JoinLimitation,
   MatchedBoundaryName,
+  RelationResolver,
   UnexportedBoundaryName,
   UnrequiredBoundaryName,
 } from '../join/join.ts';
-import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
+import {
+  compareEndpoints,
+  compareLimitations,
+  isBridgeJoinDeferred,
+  relationDeclKey,
+} from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
 import { messageTarget } from '../exchange/messages.ts';
+import type { CheckIssue } from './check-report.ts';
+import { createCheckReport, persistenceIssueKeys } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
-/** query가 식별한 채널·메서드·모듈·컴포넌트·메시지·스트림 키다. */
+/**
+ * persistence 관계 주체를 요청하는 접두사다(`relation:users`, `relation:public.users`).
+ *
+ * bridge 주체와 이름 공간을 나눈다. 이름이 `relation:`으로 시작하는 bridge 키는 같은 이름의
+ * 관계가 없을 때 이전처럼 그 이름으로 찾고(`createRelationPrefixedQuery`), 관계와 겹치면
+ * 인코딩된 qualifiedName(`flutter:relation%3A…`)으로 질의한다.
+ */
+export const RELATION_SUBJECT_PREFIX = 'relation:';
+
+/** query가 식별한 채널·메서드·모듈·컴포넌트·메시지·스트림·관계 키다. */
 export interface BridgeQuerySubject {
   readonly name: string;
   readonly qualifiedName: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event' | 'relation';
 }
 
-/** 한 브리지 키에서 본 호출 측과 수신 측 증거다. */
+/** relation 주체의 컬럼 하나에서 본 사용·선언 증거다. 사용이 관찰된 컬럼만 싣는다. */
+export interface RelationQueryColumn {
+  readonly column: string;
+  readonly usedBy: readonly BridgeEndpoint[];
+  readonly dependsOn: readonly BridgeEndpoint[];
+}
+
+/**
+ * 한 브리지 키에서 본 호출 측과 수신 측 증거다.
+ *
+ * relation 주체에서 `usedBy`는 관계 수준 코드 사용, `dependsOn`은 카탈로그 선언이다.
+ * `columns`와 `issues`는 relation 주체에만 실린다 — bridge 주체의 출력은 그대로다.
+ */
 export interface BridgeQueryResult {
   readonly subject: BridgeQuerySubject;
   readonly usedBy: readonly BridgeEndpoint[];
   readonly dependsOn: readonly BridgeEndpoint[];
+  readonly columns?: readonly RelationQueryColumn[];
+  readonly issues?: readonly CheckIssue[];
 }
 
 /** cartograph query와 같은 상태 외피를 쓰는 브리지 질의 문서다. */
 export interface BridgeQueryDocument {
   readonly status: 'found' | 'ambiguous' | 'notFound';
   readonly requested: string;
-  readonly level: 'bridge';
+  /** bridge 주체는 `bridge`, relation 주체는 `persistence`다. */
+  readonly level: 'bridge' | 'persistence';
   readonly limitations: readonly JoinLimitation[];
   readonly result?: BridgeQueryResult;
   readonly candidates?: ReadonlyArray<{
@@ -86,6 +118,135 @@ export function createBridgeQuery(
     level: 'bridge',
     limitations,
   };
+}
+
+/**
+ * `relation:` 접두사로 요청한 주체를 질의한다.
+ *
+ * 먼저 persistence 관계로 해석하고, 관계가 선언으로도 사용으로도 없을(notFound) 때만 요청
+ * 문자열 그대로를 bridge 키(채널·메서드·모듈·컴포넌트·메시지)로 찾는다. 접두사가 생기기
+ * 전에는 `relation:foo` 같은 이름이 bridge 이름 그대로 질의됐으므로, 그런 bridge 키를 가진
+ * 기존 입력(과 MCP `query` 호출)의 결과를 바꾸지 않기 위해서다. 문자열이 정확히 같은
+ * 키만 찾으므로 추측한 연결이 아니다. 관계가 찾아지거나 모호하면 접두사를 명시한 관계가
+ * 이기고, 그 bridge 키는 인코딩된 qualifiedName으로 질의한다. 둘 다 없으면 요청한 이름
+ * 공간인 persistence의 notFound를 돌려준다.
+ */
+export function createRelationPrefixedQuery(
+  joined: BridgeJoinResult,
+  resolver: RelationResolver,
+  requested: string,
+  messages?: MessageBridgeJoin,
+): BridgeQueryDocument {
+  const relationQuery = createRelationQuery(joined, resolver, requested);
+  if (relationQuery.status !== 'notFound') return relationQuery;
+  const literalBridgeQuery = createBridgeQuery(joined, requested, messages);
+  return literalBridgeQuery.status === 'notFound' ? relationQuery : literalBridgeQuery;
+}
+
+/**
+ * persistence 관계 하나를 조인과 같은 해석 규칙으로 질의한다.
+ *
+ * 한정 이름은 정확히 같은 선언만, 비한정 이름은 마지막 세그먼트가 같은 선언이 하나일
+ * 때만 찾고, 여럿이면 추측하지 않고 후보 선언으로 모호함을 돌려준다. 선언이 없어도 같은
+ * 이름의 코드 사용이 관찰됐으면 선언 없는 관계로 찾는다(`relation-use-without-decl`).
+ * 선언도 사용도 없으면 notFound다. 진단은 check 정책 그대로 이 관계에 속한 것만 싣는다.
+ */
+export function createRelationQuery(
+  joined: BridgeJoinResult,
+  resolver: RelationResolver,
+  requested: string,
+): BridgeQueryDocument {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot query a deferred bridge join.');
+  }
+  const name = requested.slice(RELATION_SUBJECT_PREFIX.length);
+  const envelope = { requested, level: 'persistence' as const, limitations: joined.limitations };
+  const resolution = resolver.resolveUse(name);
+  if (resolution.status === 'ambiguous') {
+    return {
+      status: 'ambiguous', ...envelope,
+      candidates: resolution.candidates.map((candidate) => ({
+        qualifiedName: `${RELATION_SUBJECT_PREFIX}${candidate}`,
+      })),
+    };
+  }
+  const identity = resolver.useKey(name);
+  const issues = createCheckReport(joined).issues.filter((issue) => issue.target === 'persistence' &&
+    persistenceIssueKeys(issue, resolver).relations.includes(identity));
+  const result = resolution.status === 'resolved'
+    ? declaredRelationResult(joined, name, resolution.channel, issues)
+    : undeclaredRelationResult(joined, resolver, name, identity, issues);
+  return result === undefined ? { status: 'notFound', ...envelope } : { status: 'found', ...envelope, result };
+}
+
+/** 선언으로 해석된 관계의 관계·컬럼 사용과 선언을 모은다. 여러 사용 버킷을 합친다. */
+function declaredRelationResult(
+  joined: BridgeJoinResult,
+  name: string,
+  declChannel: string,
+  issues: readonly CheckIssue[],
+): BridgeQueryResult {
+  const matched = joined.matchedRelations.filter(({ channel }) => channel === declChannel);
+  const decls = matched[0]?.decls ??
+    joined.relationDeclsWithoutUses.find(({ channel }) => channel === declChannel)?.decls ?? [];
+  const columns = new Map<string, { column: string; usedBy: BridgeEndpoint[]; dependsOn: BridgeEndpoint[] }>();
+  const columnEvidence = [
+    ...joined.matchedColumns,
+    ...joined.columnUsesWithoutDecls.map((item) => ({ ...item, decls: [] })),
+  ].filter(({ channel }) => channel === declChannel);
+  for (const { column, uses, decls: columnDecls } of columnEvidence) {
+    // 대소문자만 다른 컬럼 철자는 조인과 같이 한 컬럼으로 합치고 최소 철자를 보고한다.
+    const key = relationDeclKey(declChannel, column);
+    const entry = columns.get(key) ?? { column, usedBy: [], dependsOn: [] };
+    if (compareStrings(column, entry.column) < 0) entry.column = column;
+    entry.usedBy.push(...uses);
+    entry.dependsOn.push(...columnDecls);
+    columns.set(key, entry);
+  }
+  return {
+    subject: relationSubject(name, declChannel),
+    usedBy: uniqueSortedEndpoints(matched.flatMap(({ uses }) => uses)),
+    dependsOn: uniqueSortedEndpoints(decls),
+    columns: [...columns.values()]
+      .map(({ column, usedBy, dependsOn }) => ({
+        column, usedBy: uniqueSortedEndpoints(usedBy), dependsOn: uniqueSortedEndpoints(dependsOn),
+      }))
+      .sort((left, right) => compareStrings(left.column, right.column)),
+    issues,
+  };
+}
+
+/** 선언이 없는 이름이 코드에서 관찰됐으면 그 사용을 결과로, 아니면 undefined를 돌려준다. */
+function undeclaredRelationResult(
+  joined: BridgeJoinResult,
+  resolver: RelationResolver,
+  name: string,
+  identity: string,
+  issues: readonly CheckIssue[],
+): BridgeQueryResult | undefined {
+  // 사용 버킷(한정 여부 + 접은 이름)이 같은 항목은 조인 결과에 하나뿐이다.
+  const undeclared = joined.relationUsesWithoutDecls
+    .find(({ channel }) => resolver.useKey(channel) === identity);
+  if (undeclared === undefined) return undefined;
+  return {
+    subject: relationSubject(name, undeclared.channel),
+    usedBy: uniqueSortedEndpoints(undeclared.uses),
+    dependsOn: [],
+    columns: [],
+    issues,
+  };
+}
+
+/** relation 주체다. qualifiedName은 그대로 다시 질의하면 같은 관계로 해석되는 형태다. */
+function relationSubject(name: string, channel: string): BridgeQuerySubject {
+  return { name, qualifiedName: `${RELATION_SUBJECT_PREFIX}${channel}`, kind: 'relation' };
+}
+
+/** 여러 조인 항목에서 모은 끝점을 조인과 같은 순서로 정렬하고 중복을 없앤다. */
+function uniqueSortedEndpoints(endpoints: readonly BridgeEndpoint[]): BridgeEndpoint[] {
+  const sorted = [...endpoints].sort(compareEndpoints);
+  return sorted.filter((endpoint, index) =>
+    index === 0 || compareEndpoints(sorted[index - 1]!, endpoint) !== 0);
 }
 
 /** 유일하게 식별된 논리 키와 증거를 found 문서로 감싼다. */

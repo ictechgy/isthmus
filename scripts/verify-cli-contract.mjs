@@ -28,6 +28,9 @@ verifyBaselineRoundtrip();
 verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
+verifyPersistencePairs();
+verifyRelationQuery();
+verifyRelationPrefixedBridgeQuery();
 verifyGraph();
 verifyDiff();
 verifyImpact();
@@ -276,6 +279,67 @@ function verifyMissingQuery() {
     'missing query stderr',
   );
   verify(JSON.parse(result.stdout).status === 'notFound', 'missing query JSON');
+}
+
+/** persistence 쌍·관계 질의 검사가 함께 쓰는 고정 입력(kotlin 사용 + sql 선언)이다. */
+function persistenceInputs() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/domain-composition/${name}`, import.meta.url));
+  return [fixture('kotlin-persistence.json'), fixture('sql.json')];
+}
+
+/** 빌드된 CLI가 persistence 쌍(check --pairs)을 기본 문서에 덧붙이는 계약을 지키는지 검증한다. */
+function verifyPersistencePairs() {
+  const inputs = persistenceInputs();
+  const plain = run(['check', ...inputs]);
+  const paired = run(['check', ...inputs, '--pairs']);
+  verify(paired.status === plain.status && paired.stderr === '', 'check pairs exit code');
+  const { matches, ...rest } = JSON.parse(paired.stdout);
+  verify(JSON.stringify(rest) === JSON.stringify(JSON.parse(plain.stdout)), 'check pairs additive');
+  verify(matches.length === 2 && matches.every(({ domain }) => domain === 'persistence'), 'check pairs matches');
+  verify(matches[0].uses[0].symbol.usr === 'com.example.Repo#find()V', 'check pairs keeps use symbol');
+  verify(matches[0].decls[0].symbol.qualifiedName === 'public.users', 'check pairs keeps decl symbol');
+  verify(run(['check', ...inputs, '--pairs', '--format', 'sarif']).status === 64, 'check pairs sarif usage');
+  verify(run(['help', 'check']).stdout.includes('[--pairs]'), 'check pairs help');
+}
+
+/** 빌드된 CLI가 relation 주체 query를 persistence 조인 규칙과 64 의미로 내는지 검증한다. */
+function verifyRelationQuery() {
+  const inputs = persistenceInputs();
+  const relation = run(['query', 'relation:users', ...inputs]);
+  const relationDocument = JSON.parse(relation.stdout);
+  verify(relation.status === 0 && relationDocument.level === 'persistence', 'relation query exit code');
+  verify(relationDocument.result.subject.qualifiedName === 'relation:public.users', 'relation query subject');
+  const missing = run(['query', 'relation:payments', ...inputs]);
+  verify(missing.status === 64 && JSON.parse(missing.stdout).status === 'notFound', 'relation query notFound');
+  verify(run(['help', 'query']).stdout.includes('relation:<name>'), 'relation query help');
+}
+
+/**
+ * 이름이 `relation:`으로 시작하는 bridge 채널을 같은 이름의 관계가 없을 때 이전처럼 찾는지 검증한다.
+ * relation 주체 도입 전에는 이 이름이 bridge 채널 이름 그대로 질의됐다.
+ */
+function verifyRelationPrefixedBridgeQuery() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-relation-channel-'));
+  try {
+    const channelFacts = (platform) => JSON.stringify({
+      format: 'bridge-facts', version: 1, platform, target: 'flutter', project: '/app',
+      generatedAt: '2026-09-26T00:00:00Z', tool: { name: 'fixture', version: 'test' }, limitations: [],
+      facts: [{
+        kind: platform === 'dart' ? 'channel-create' : 'channel-register', channel: 'relation:foo',
+        dynamic: false, location: { path: platform === 'dart' ? 'lib/a.dart' : 'ios/A.swift', line: 1, column: 1 },
+      }],
+    });
+    const dart = join(directory, 'dart.json');
+    const swift = join(directory, 'swift.json');
+    writeFileSync(dart, channelFacts('dart'));
+    writeFileSync(swift, channelFacts('swift'));
+    const result = run(['query', 'relation:foo', dart, swift]);
+    const document = JSON.parse(result.stdout);
+    verify(result.status === 0 && document.level === 'bridge' && document.result.subject.name === 'relation:foo',
+      'relation-prefixed bridge channel query');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** graph가 요청한 Mermaid 문서를 내는지 검증한다. */
