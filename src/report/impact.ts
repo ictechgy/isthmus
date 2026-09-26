@@ -5,7 +5,7 @@ import type { ImpactSelection } from '../exchange/impact-selection.ts';
 import { parseImpactSelection } from '../exchange/impact-selection.ts';
 import { BridgeJoinValidationError, createRelationResolver, joinBridgeDocuments } from '../join/join.ts';
 import type { BridgeEndpoint, JoinLimitation, MatchedChannel, MatchedMethod, RelationResolver } from '../join/join.ts';
-import { createCheckReport, declNamedPersistenceIssueCodes } from './check-report.ts';
+import { createCheckReport, persistenceIssueKeys } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 import { collectRuntimeImpact, hasRuntimeImpactGaps } from './runtime-impact.ts';
@@ -279,11 +279,9 @@ function collectPersistenceSelection(
  */
 function isSelectedPersistenceIssue(issue: CheckIssue, selection: PersistenceSelection | undefined): boolean {
   if (selection === undefined) return false;
-  const { resolver, relations, columns } = selection;
-  const key = declNamedPersistenceIssueCodes.has(issue.code) ? resolver.declKey : resolver.useKey;
-  const relationSelected = relations.has(key(issue.channel)) ||
-    (issue.candidates ?? []).some((candidate) => relations.has(resolver.declKey(candidate)));
-  return relationSelected && (issue.method === undefined || columns.has(key(issue.channel, issue.method)));
+  const keys = persistenceIssueKeys(issue, selection.resolver);
+  return keys.relations.some((key) => selection.relations.has(key)) &&
+    (keys.column === undefined || selection.columns.has(keys.column));
 }
 
 /** 구분 문자 포함 이름도 서로 충돌하지 않는 채널 키다. */

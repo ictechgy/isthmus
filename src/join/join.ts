@@ -766,8 +766,11 @@ function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
   endpoints.length = writeIndex;
 }
 
-/** 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다. */
-function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
+/**
+ * 증거 위치와 선택 심볼을 완전한 결정 순서로 비교한다.
+ * 보고 층이 조인 결과를 다시 묶을 때(`check --pairs`)도 같은 순서를 쓰도록 노출한다.
+ */
+export function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): number {
   const platformOrder = compareStrings(left.platform, right.platform);
   if (platformOrder !== 0) return platformOrder;
   // 카탈로그 선언처럼 위치가 없는 증거는 있는 증거 뒤에 두고, 둘 다 없으면
@@ -1296,8 +1299,8 @@ export function createRelationResolver(
     cache.set(bucketKey, cached);
     return cached;
   };
-  const relationKey = (identity: readonly string[], column: string | undefined): string =>
-    JSON.stringify(column === undefined ? identity : [...identity, normalizeIdentifier(column)]);
+  const useRelationKey = (bucketKey: string, column: string | undefined): string =>
+    JSON.stringify(column === undefined ? ['use', bucketKey] : ['use', bucketKey, normalizeIdentifier(column)]);
   return {
     resolveUse: (channel) => {
       const outcome = resolveBucket(relationUseBucketKey(channel));
@@ -1308,10 +1311,25 @@ export function createRelationResolver(
     useKey: (channel, column) => {
       const bucketKey = relationUseBucketKey(channel);
       const outcome = resolveBucket(bucketKey);
-      return relationKey(outcome.status === 'resolved' ? ['decl', outcome.key] : ['use', bucketKey], column);
+      // 유일하게 해석된 사용은 그 선언과 같은 키를 받는다 — 선언 키의 정규화는
+      // 버킷 키의 정규화와 같은 함수(`normalizeRelationKey`)라 문자열이 일치한다.
+      return outcome.status === 'resolved'
+        ? relationDeclKey(index.objectDecls.get(outcome.key)!.channel, column)
+        : useRelationKey(bucketKey, column);
     },
-    declKey: (channel, column) => relationKey(['decl', normalizeRelationKey(channel)], column),
+    declKey: relationDeclKey,
   };
+}
+
+/**
+ * 선언 측 한정 이름(과 선택적 컬럼)의 논리 관계 키다. `RelationResolver.declKey`와 같다.
+ *
+ * 선언 이름은 해석이 필요 없으므로 입력 문서 없이 계산한다 — 조인 결과의 같은 선언을
+ * 가리키는 항목(대소문자만 다른 컬럼 철자 포함)을 다시 합칠 때 쓴다.
+ */
+export function relationDeclKey(channel: string, column?: string): string {
+  const identity = ['decl', normalizeRelationKey(channel)];
+  return JSON.stringify(column === undefined ? identity : [...identity, normalizeIdentifier(column)]);
 }
 
 /** persistence 선언 측 인덱스다 — 조인과 관계 해석기가 같은 규칙을 공유한다. */
