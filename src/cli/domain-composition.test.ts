@@ -74,3 +74,48 @@ for (const scenario of scenarios) {
     );
   });
 }
+
+// 아래는 platform만 보던 역할 판정이 만들던 결함을 고친 의도한 변경이다.
+
+test('diff는 persistence 문서를 일반 스냅샷 문구가 아니라 원인 문구로 거부한다', async () => {
+  const cases = [
+    ['diff', '--before', 'dart.json', 'swift.json', 'kotlin-persistence.json', 'sql.json',
+      '--after', 'dart.json', 'swift.json', 'kotlin-persistence.json', 'sql.json'],
+    ['diff', '--before', 'go-persistence.json', 'sql.json', '--after', 'go-persistence.json', 'sql.json'],
+  ];
+  for (const args of cases) {
+    const result = await run(args);
+    assert.equal(result.exitCode, 2);
+    assert.equal(result.standardOutput, '');
+    assert.match(result.standardError, /^Diff does not support persistence documents yet;/);
+  }
+  // bridge 문서만 다른 경우는 기존 일반 문구를 유지한다.
+  const bridgeOnly = await run(['diff', '--before', 'dart.json', 'swift.json', '--after', 'dart.json', 'kotlin.json']);
+  assert.equal(bridgeOnly.exitCode, 2);
+  assert.match(bridgeOnly.standardError, /^Diff requires the same project/);
+});
+
+test('retentions --for kartograph는 kotlin persistence 문서를 수신 측 근거로 세지 않는다', async () => {
+  const result = await run(['retentions', 'dart.json', 'swift.json', 'kotlin-persistence.json', 'sql.json',
+    '--for', 'kartograph']);
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.match(result.standardError, /require at least one kotlin bridge facts document/);
+  assert.match(result.standardError, /persistence documents are not bridge receiver evidence/);
+});
+
+test('preflight context는 persistence 문서를 원인 문구로 거부한다', async () => {
+  const context = JSON.parse(await read('../preflight/context.json'));
+  const persistence = JSON.parse(await read('kotlin-persistence.json'));
+  context.bridges.push({ ...persistence, project: context.project });
+  const result = await runPreflightCommand(['preflight', 'context.json'], async () => JSON.stringify(context));
+  assert.equal(result.exitCode, 2);
+  assert.match(result.standardError, /Preflight context supports only bridge documents/);
+});
+
+test('사실 없는 bridge 플랫폼 문서만 있는 persistence 입력은 target null 원인을 알린다', async () => {
+  const result = await run(['check', 'kotlin-empty.json', 'sql.json']);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.standardError, /one receiver platform \(swift, kotlin\) document/);
+  assert.match(result.standardError, /carries a null target/);
+});

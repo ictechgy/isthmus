@@ -11,7 +11,11 @@ import type {
   BridgeTarget,
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
-import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
+import {
+  isBridgeCallerDocument,
+  isBridgeDomainDocument,
+  isBridgeReceiverDocument,
+} from '../exchange/parse.ts';
 
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
@@ -341,43 +345,15 @@ function validatePlatformComposition(
   const hasPersistenceDomain = documents.some(
     (document) => document.target === 'persistence',
   );
-  const hasBridgeDomain = documents.some(
-    (document) =>
-      document.target !== 'persistence' &&
-      (isCallerPlatform(document.platform) || isReceiverPlatform(document.platform)),
-  );
-  if (!hasPersistenceDomain) {
-    // bridge만 있는 입력은 기존 호출·수신 구성 규칙을 그대로 적용한다.
-    const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
-    const hasReceiver = documents.some(({ platform }) =>
-      isReceiverPlatform(platform),
-    );
-    if (!hasCaller || !hasReceiver) {
-      throw new BridgeJoinValidationError(
-        'Bridge documents must include at least one caller platform (dart, js) document '
-        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
-      );
-    }
-    return;
+  // bridge 역할은 platform이 아니라 명시 규칙(`isBridgeDomainDocument`)으로 정한다 —
+  // kotlin·swift·dart persistence 문서가 bridge 호출·수신 요건을 채우지 못하게 한다.
+  const bridgeDocuments = documents.filter(isBridgeDomainDocument);
+  // persistence 도메인이 없으면(도메인이 하나도 성립하지 않는 입력 포함) bridge 구성
+  // 규칙을 그대로 적용하고, 혼합 입력이면 bridge 문서가 있을 때만 적용한다.
+  if (!hasPersistenceDomain || bridgeDocuments.length > 0) {
+    validateBridgeComposition(bridgeDocuments, hasPersistenceDomain);
   }
-  if (hasBridgeDomain) {
-    // persistence target 문서는 bridge 도메인의 어느 쪽도 아니다 — kotlin처럼
-    // bridge 수신 측인 플랫폼이 persistence 호출 측 사실만 실으면 수신 측
-    // 요건을 채우지 못하게 target으로 걸러낸다.
-    const hasCaller = documents.some(
-      (document) => document.target !== 'persistence' && isCallerPlatform(document.platform),
-    );
-    const hasReceiver = documents.some(
-      (document) =>
-        document.target !== 'persistence' && isReceiverPlatform(document.platform),
-    );
-    if (!hasCaller || !hasReceiver) {
-      throw new BridgeJoinValidationError(
-        'Bridge documents must include at least one caller platform (dart, js) document '
-        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
-      );
-    }
-  }
+  if (!hasPersistenceDomain) return;
   // persistence 도메인: sql 선언 문서 하나와, 이 경계를 실제로 스캔한
   // (target이 persistence인) 비sql 호출 측 문서 하나를 요구한다. target이
   // null인 문서는 이 도메인의 호출 측으로 세지 않는다 — 스키마 경계를
@@ -392,6 +368,33 @@ function validatePlatformComposition(
       + 'and one non-sql caller document with the persistence target; run a producer for the missing side.',
     );
   }
+}
+
+/**
+ * bridge 도메인 문서에 호출 측과 수신 측이 각각 하나 이상 있는지 검사한다.
+ *
+ * persistence 입력과 섞였는데 bridge 문서가 모두 사실 0건(target null)이면, 대개
+ * kartograph·cartograph·dartograph `schema`가 관계 사용을 하나도 찾지 못한 문서다.
+ * 사실이 없으면 target을 실을 수 없어 bridge 문서와 구분되지 않으므로, 일반 문구
+ * 대신 그 원인을 알려 빈 문서를 빼거나 빠진 bridge 쪽을 생산하게 한다.
+ */
+function validateBridgeComposition(
+  bridgeDocuments: readonly BridgeFactsDocument[],
+  hasPersistenceDomain: boolean,
+): void {
+  const hasCaller = bridgeDocuments.some(isBridgeCallerDocument);
+  const hasReceiver = bridgeDocuments.some(isBridgeReceiverDocument);
+  if (hasCaller && hasReceiver) return;
+  const requirement = 'Bridge documents must include at least one caller platform (dart, js) document '
+    + 'and one receiver platform (swift, kotlin) document; ';
+  if (hasPersistenceDomain && bridgeDocuments.every(({ target }) => target === null)) {
+    throw new BridgeJoinValidationError(
+      `${requirement}every bridge-platform document here has no facts, and a document without facts `
+      + 'carries a null target that counts as a bridge document even when a persistence producer wrote it. '
+      + 'Remove the empty document or run a producer for the missing bridge side.',
+    );
+  }
+  throw new BridgeJoinValidationError(`${requirement}run a producer for the missing side.`);
 }
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */

@@ -1,5 +1,6 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeFact, BridgeFactsDocument, BridgeTarget } from '../exchange/parse.ts';
+import { isBridgeDomainDocument } from '../exchange/parse.ts';
 import type { ImpactSelection } from '../exchange/impact-selection.ts';
 import { parseImpactSelection } from '../exchange/impact-selection.ts';
 import { BridgeJoinValidationError, joinBridgeDocuments } from '../join/join.ts';
@@ -101,7 +102,9 @@ export function createBridgeImpact(
   const staticChannelKeys = new Set(channelKeys);
   const runtime = runtimeInput === undefined ? undefined
     : collectRuntimeImpact(joined, documents[0]?.project, selection, selectedFacts, runtimeInput,
-      new Set(documents.map(({ platform }) => platform)));
+      // 런타임 주소의 정적 후보는 bridge 문서가 분석한 플랫폼만 인정한다 — 같은 플랫폼의
+      // persistence 문서가 있다고 네이티브 핸들러를 분석했다고 읽으면 안 된다.
+      new Set(documents.filter(isBridgeDomainDocument).map(({ platform }) => platform)));
   const runtimeNative = runtimeInput?.document.run.platform === 'android' ? 'kotlin' : 'swift';
   const runtimeMethodKeys = new Set<string>();
   for (const route of runtime?.routes ?? []) {

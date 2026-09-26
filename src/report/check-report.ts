@@ -1,5 +1,5 @@
 import type { BridgeTarget } from '../exchange/parse.ts';
-import { isReceiverPlatform } from '../exchange/parse.ts';
+import { isBridgeReceiverDocument, isReceiverPlatform } from '../exchange/parse.ts';
 import type { BridgeMessageTransport } from '../exchange/messages.ts';
 import { messageTarget } from '../exchange/messages.ts';
 import type {
@@ -529,9 +529,10 @@ function receiverCoverageGaps(
   limitations: readonly JoinLimitation[],
 ): ReceiverCoverageGaps {
   // persistence 도메인의 수신 측은 sql이다 — sql 문서가 스스로 신고한
-  // 카탈로그 공백도 수신 측 한계로 모은다.
-  const receiverLimitations = limitations.filter(({ platform }) =>
-    isReceiverPlatform(platform) || platform === 'sql',
+  // 카탈로그 공백도 수신 측 한계로 모은다. bridge 수신 측은 명시 규칙으로 가려
+  // kotlin·swift persistence 문서의 한계가 bridge 수신 공백으로 읽히지 않게 한다.
+  const receiverLimitations = limitations.filter((limitation) =>
+    isBridgeReceiverDocument(limitation) || limitation.platform === 'sql',
   );
   const memoized = new Map<BridgeTarget, {
     allHandlers: boolean; allRegistrations: boolean; allExports: boolean;

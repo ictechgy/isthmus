@@ -1928,3 +1928,45 @@ test('빈 sql 문서만 있는 입력은 조용히 통과하지 않는다', () =
     /caller platform/,
   );
 });
+
+/** 사실이 없어 target이 null인 문서다 — 어느 생산자가 냈는지는 구분할 수 없다. */
+function emptyDocument(platform: 'dart' | 'js' | 'swift' | 'kotlin' | 'go' | 'sql'): BridgeFactsDocument {
+  return parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform,
+    target: null,
+    project: '/fixture',
+    facts: [],
+    limitations: [],
+  });
+}
+
+test('사실 0건 bridge 플랫폼 문서만 있는 persistence 입력은 target null 원인을 알린다', () => {
+  // kartograph `schema`가 관계 사용을 하나도 못 찾으면 target null kotlin 문서가 된다 —
+  // 규칙상 bridge 문서로 세지므로 일반 bridge 문구 대신 그 원인을 알려야 한다.
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+  for (const empty of [emptyDocument('kotlin'), emptyDocument('dart'), emptyDocument('swift')]) {
+    assert.throws(
+      () => joinBridgeDocuments([empty, schema]),
+      (error: Error) => /one receiver platform \(swift, kotlin\) document; every bridge-platform document here has no facts/.test(error.message) &&
+        /carries a null target/.test(error.message),
+    );
+  }
+  // bridge 문서에 사실이 하나라도 있으면 원래 일반 문구를 유지한다.
+  const caller = persistenceDocument('go', [{ kind: 'relation-use', channel: 'users' }]);
+  assert.throws(
+    () => joinBridgeDocuments([dartDocument, caller, schema]),
+    (error: Error) => error.message.endsWith('run a producer for the missing side.') &&
+      !error.message.includes('null target'),
+  );
+  // persistence 도메인이 없는 사실 0건 bridge 입력은 기존 일반 문구 그대로다.
+  assert.throws(
+    () => joinBridgeDocuments([emptyDocument('dart'), emptyDocument('go')]),
+    (error: Error) => error.message.endsWith('run a producer for the missing side.'),
+  );
+});

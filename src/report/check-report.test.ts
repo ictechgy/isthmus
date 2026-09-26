@@ -1147,6 +1147,29 @@ test('optional 호출자에 mechanism 불일치 export가 관찰되면 불일치
   ]);
 });
 
+test('persistence 문서의 수신 공백 신고는 bridge 핸들러 진단을 무르지 않는다', () => {
+  // kotlin은 bridge 수신 측이면서 persistence 호출 측 생산자다 — persistence 문서가 낸
+  // 한계를 bridge 수신 공백으로 읽으면 확정 error가 -unverified로 약해진다.
+  const kotlin = (target: 'persistence' | null) => parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'kartograph', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z', platform: 'kotlin', target, project: '/fixture',
+    facts: target === null ? [] : [{ kind: 'relation-use', channel: 'public.users', dynamic: false,
+      location: { path: 'src/Repo.kt', line: 3, column: 1 } }],
+    limitations: ['objective-c-sources: 1 source file was not analyzed'],
+  });
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+  ]);
+  const unhandled = (documents: readonly BridgeFactsDocument[]) => createCheckReport(joinBridgeDocuments(documents))
+    .issues.find(({ method }) => method === 'takePhotos')?.code;
+
+  assert.equal(unhandled([dartDocument, fullyObservedSwiftDocument, kotlin('persistence'), schema]),
+    'unhandled-invocation');
+  // 사실이 없는 kotlin 문서(target null)는 bridge 수신 문서라 같은 신고가 진단을 무른다.
+  assert.equal(unhandled([dartDocument, fullyObservedSwiftDocument, kotlin(null)]),
+    'unhandled-invocation-unverified');
+});
+
 /** persistence 도메인 문서를 만드는 테스트 조립기다. */
 function persistenceDocument(
   platform: 'go' | 'sql',

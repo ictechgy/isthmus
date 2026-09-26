@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseBridgeFactsDocument } from './parse.ts';
+import {
+  isBridgeCallerDocument,
+  isBridgeDomainDocument,
+  isBridgeReceiverDocument,
+  parseBridgeFactsDocument,
+} from './parse.ts';
 
 const emptyDocument = {
   format: 'bridge-facts',
@@ -974,4 +979,35 @@ test('컬럼 사실은 method를 컬럼 이름으로 싣는다', () => {
     facts: [{ ...validRelationUse, method: 'email' }],
   });
   assert.equal(useParsed.facts[0]?.method, 'email');
+});
+
+test('bridge 도메인은 target과 사실 0건 bridge 플랫폼으로만 판정한다', () => {
+  // 표의 기대값은 명시 규칙을 손으로 옮긴 것이다: bridge target이거나
+  // target null + dart·js·swift·kotlin. persistence target은 플랫폼과 무관하게 아니다.
+  const cases: ReadonlyArray<[string, 'flutter' | 'react-native' | 'capacitor' | 'persistence' | null, boolean, boolean, boolean]> = [
+    ['dart', 'flutter', true, true, false],
+    ['js', 'react-native', true, true, false],
+    ['swift', 'capacitor', true, false, true],
+    ['kotlin', 'flutter', true, false, true],
+    ['dart', null, true, true, false],
+    ['js', null, true, true, false],
+    ['swift', null, true, false, true],
+    ['kotlin', null, true, false, true],
+    ['dart', 'persistence', false, false, false],
+    ['swift', 'persistence', false, false, false],
+    ['kotlin', 'persistence', false, false, false],
+    ['go', 'persistence', false, false, false],
+    ['go', null, false, false, false],
+    ['rust', null, false, false, false],
+    ['sql', null, false, false, false],
+    ['sql', 'persistence', false, false, false],
+    // 소비자가 센 교차 입력 한계도 같은 구조로 판정된다.
+    ['cross-platform', null, false, false, false],
+  ];
+  for (const [platform, target, domain, caller, receiver] of cases) {
+    const candidate = { platform, target };
+    assert.equal(isBridgeDomainDocument(candidate), domain, `${platform}/${target} domain`);
+    assert.equal(isBridgeCallerDocument(candidate), caller, `${platform}/${target} caller`);
+    assert.equal(isBridgeReceiverDocument(candidate), receiver, `${platform}/${target} receiver`);
+  }
 });

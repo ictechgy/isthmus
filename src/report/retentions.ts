@@ -4,6 +4,7 @@ import type {
   BridgePlatform,
   BridgeSymbol,
 } from '../exchange/parse.ts';
+import { isBridgeReceiverDocument } from '../exchange/parse.ts';
 import type { BridgeMessageDocument } from '../exchange/messages.ts';
 import {
   isBridgeJoinDeferred,
@@ -90,6 +91,8 @@ export class RetentionValidationError extends Error {
  * cartograph는 Swift 심볼만 보존한다. Swift 문서가 없는 입력은 조인 자체는
  * 성공하므로, 검증하지 않으면 보존할 근거가 없다는 사실이 빈 목록과 코드 0으로
  * 사라진다. 사실이 없는 Swift 문서도 그 플랫폼을 분석했다는 근거로 인정한다.
+ * 수신 측 근거는 bridge 도메인 문서만이다 — 같은 플랫폼의 persistence 문서(예:
+ * kartograph `schema`)는 핸들러를 분석하지 않았으므로 근거로 세면 빈 목록이 샌다.
  */
 export function validateRetentionInputs(
   documents: readonly BridgeFactsDocument[],
@@ -97,11 +100,15 @@ export function validateRetentionInputs(
   target: RetentionTarget = 'cartograph',
 ): void {
   const receiver = target === 'cartograph' ? 'swift' : 'kotlin';
-  if (documents.some(({ platform }) => platform === receiver)) return;
+  if (documents.some((document) =>
+    document.platform === receiver && isBridgeReceiverDocument(document))) return;
   if (messageDocuments?.some(({ platform }) => platform === receiver)) return;
+  // 같은 플랫폼 문서가 persistence 문서뿐이었다면 그 사실을 원인으로 덧붙인다.
+  const persistenceOnly = documents.some(({ platform }) => platform === receiver);
   throw new RetentionValidationError(
     `Retentions for ${target} require at least one ${receiver} bridge facts document; `
-    + `run a ${receiver} producer for the receiver side.`,
+    + `run a ${receiver} producer for the receiver side.`
+    + (persistenceOnly ? ` The ${receiver} persistence documents are not bridge receiver evidence.` : ''),
   );
 }
 

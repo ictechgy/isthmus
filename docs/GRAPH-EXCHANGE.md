@@ -396,12 +396,26 @@ require에는 싣지 않는다.
 - 생산자는 `project`를 내보내기 전에 **POSIX realpath**(`realpath(3)`)로 정규화한다. 결과는 항상 symlink·`..`·중복 슬래시가 접힌 절대 경로다. 프로젝트 경로를 해결할 수 없거나 결과가 이 계약이 금지하는 제어 문자(NEL과 U+2028/U+2029 포함)를 포함하면 생산자는 문서를 내보내지 않고 실패한다 — 소비자에게 거부될 문서를 내보내지 않는다. 버전 1은 POSIX를 가정하며, Windows 정규화(드라이브 문자 대소문자, `\\?\` 접두사)는 Windows 지원 시 별도 합의한다. kartograph의 목표 기준은 JVM `Path.toRealPath()`다
 - `project`는 생산자가 선언한 **조인 루트**다. 모든 사실의 `location.path`는 이 루트 기준 상대 경로이며, 모노레포에서 분석 루트와 조인 루트가 다르면 생산자가 위치를 조인 루트 기준으로 재기준화해 내보낸다. 생산 후에 문서의 `project`만 손으로 고쳐 쓰는 것은 조인 루트 선언이 아니다 — `location.path`가 다른 트리를 가리키게 되어 계약 위반이다. 선언 방법은 생산자 옵션이고 우선순위는 명시 옵션 > 자동 감지 > 분석 루트다. dartograph(0.5.0): `--project <shared-root>`는 스캔 범위를 위치 인자로 둔 채 `project`와 `location.path`를 공유 루트 기준으로 재기준화하고, 공유 루트는 realpath 정규화 후 package root를 포함하거나 동일해야 하며(위반은 사용 오류), pub workspace 자동 감지는 스캔 루트 pubspec의 `resolution: workspace` 선언 시 `workspace:` 키를 가진 가장 가까운 조상 pubspec 디렉터리(Melos의 워크스페이스 루트 정의와 동일)를 realpath로 채택한다. 자동 감지 실패(조상 루트 부재·pubspec 파싱 불가)는 분석 루트로 폴백하되 `pub-workspace-root-not-found`·`pub-workspace-pubspec-unparsed` limitation을 실어 조인 기준 어긋남을 조용히 넘기지 않는다 — 둘은 호출 측 한계라 isthmus는 심각도를 바꾸지 않고 그대로 전달한다. cartograph의 `--project`는 분석 루트 자체이므로 realpath 정규화 규칙만으로 이 정의를 만족한다. 조인 가능 여부는 소비자 설치본으로 왕복 실측했다(dartograph#38·#52: 모노레포 2패키지의 `project` 문자열 일치와 isthmus check 조인 성공, 옵션 없는 구행동 문서의 거부까지 양방향)
 - 소비자는 정확한 문자열 일치를 유지하며 경로를 스스로 해결하지 않는다(isthmus는 JSON 파일만 읽는다). 소비자는 정규화 이행 여부를 검증할 수 없다 — 검증 가능한 것은 문서 간 `project` 문자열 일치뿐이고, 정규화 위반은 오직 조인 입력 오류로만 관측된다. realpath가 수렴시키는 것은 symlink·`..`·슬래시 축뿐이다. Unicode NFC/NFD 표기 차이, 대소문자 무시 파일시스템의 표기 차이, 마운트 별칭은 같은 디렉터리에 다른 문자열로 남고 불일치로 거부된다(안전하지만 디버깅이 필요하다). 근거: 같은 정규화가 없으면 macOS의 `/tmp`↔`/private/tmp`처럼 같은 디렉터리가 도구마다 다른 문자열이 된다(isthmus에서 재현). cartograph는 Foundation의 `resolvingSymlinksInPath().standardizedFileURL.path`가 `/private/tmp`을 `/tmp`으로 출력함을 실측하고 주입된 POSIX realpath를 채택했고(cartograph#73, 0.10.1 — 실측 입출력 쌍은 그 PR 본문 참조), dartograph의 `Directory.resolveSymbolicLinks()`는 POSIX에서 같은 기준을 만족한다
-- 조인 입력 구성 요건은 도메인별로 적용한다. bridge 도메인 문서(target이
-  브리지 메커니즘이거나 플랫폼이 dart·js·swift·kotlin인 문서)가 있으면 호출 측
-  플랫폼(dart·js) 문서와 수신 측 플랫폼(swift·kotlin) 문서가 각각 최소 하나
-  있어야 한다. 한쪽만 있는 입력은 한쪽 관찰을 경계 불일치로 오독할 수 있으므로
-  소비자는 입력 오류로 거부한다. 사실이 없는 문서도 해당 플랫폼이 분석됐다는
-  근거로 인정한다. persistence 도메인의 구성 요건은 위 persistence 절을 따른다
+- 조인 입력 구성 요건은 도메인별로 적용한다. bridge 도메인 문서는 명시 규칙으로
+  판정한다: `target`이 `flutter`·`react-native`·`capacitor`이거나, `target`이
+  `null`이고 `platform`이 dart·js·swift·kotlin인 문서다. `persistence` target
+  문서는 플랫폼이 kotlin·swift·dart여도 bridge 문서가 아니다 — 이 플랫폼들은 여러
+  도메인의 생산자라 platform만으로 역할을 정하면 다른 도메인 문서가 bridge 근거로
+  샌다. bridge 도메인 문서가 있으면 그중 호출 측 플랫폼(dart·js) 문서와 수신 측
+  플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 한쪽만 있는 입력은 한쪽
+  관찰을 경계 불일치로 오독할 수 있으므로 소비자는 입력 오류로 거부한다. 사실이
+  없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다. 그래서 관계 사용을 하나도
+  찾지 못한 kotlin·swift·dart persistence 생산 결과(사실 0건, `target: null`)도
+  bridge 문서로 세지며, persistence 입력에 이런 문서만 bridge 쪽으로 남아 요건을
+  못 채우면 isthmus는 그 원인(null target)을 오류 문구에 밝힌다. persistence 도메인의
+  구성 요건은 위 persistence 절을 따른다
+- 같은 판정이 조인 밖에서 bridge 역할을 묻는 곳에도 그대로 적용된다(isthmus 구현
+  기준): `retentions`의 수신 측 문서 요건(같은 플랫폼의 persistence 문서는 근거가
+  아니라 종료 코드 2), 수신 측 공백 한계의 완화 근거, `impact --runtime`의 정적 후보
+  플랫폼, preflight context의 bridge 문서(persistence 문서는 원인 문구로 거부),
+  `diff`의 스냅샷 구성. `diff`는 아직 persistence 비교를 지원하지 않으므로
+  `persistence` target 문서나 sql 문서가 한 스냅샷에라도 있으면 일반 구성 문구가 아닌
+  원인 문구로 거부한다
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 

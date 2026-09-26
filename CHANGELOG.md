@@ -31,6 +31,21 @@
   원본 아카이브와 발행 당시 kartograph 0.13.0 manifest는 유지한다.
 - iOS 하네스에 `--physical --release`와 선택적 `--team`, RN 하네스에 `--new-architecture`·
   `--new-emulator`를 추가했다. RN은 설치 전에 입력과 APK를 보존하고 소유한 앱·AVD 정리 실패를 전달한다.
+- bridge 역할 판정을 platform 대신 한 가지 명시 규칙으로 통일했다: `target`이
+  flutter·react-native·capacitor이거나, `target: null`이고 platform이 dart·js·swift·kotlin인
+  문서만 bridge 문서다. 조인 구성, diff 스냅샷, retentions 수신 측, 수신 공백 완화,
+  preflight context, impact runtime 후보가 같은 판정을 쓴다. bridge 전용·persistence 전용·
+  혼합·사실 0건 bridge 문서 입력의 기존 출력과 종료 코드는 바이트 단위로 고정했다.
+
+### Fixed
+
+- `retentions --for kartograph|cartograph`가 같은 플랫폼의 persistence 문서만 있는 입력을
+  수신 측 근거로 세어 빈 목록과 종료 코드 0을 내던 결함을 고쳤다. 이제 종료 코드 2와 원인 문구다.
+- `diff`가 persistence 문서나 sql 문서를 받으면 일반 스냅샷 구성 문구 대신 persistence 비교를
+  아직 지원하지 않는다는 원인 문구로 거부한다(종료 코드 2는 같다). preflight context도
+  persistence 문서를 조인 실패 문구 대신 원인 문구로 거부한다.
+- 관계 사용이 0건인 kotlin·swift·dart persistence 문서(`target: null`)만 bridge 쪽에 남은
+  persistence 입력은 target null이 bridge 문서로 세진다는 원인을 오류 문구에 밝힌다.
 
 ## [0.9.0] - 2026-09-20
 

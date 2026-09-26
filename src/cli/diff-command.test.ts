@@ -296,6 +296,18 @@ test('큰 입력은 다음 파일을 읽지 않는다', async () => {
   assert.equal(reads, 1);
 });
 
+test('사실 없는 sql 카탈로그도 persistence 문서로 보고 원인 문구로 거부한다', async () => {
+  const emptyCatalog = { ...document('dart'), platform: 'sql', target: null, facts: [],
+    tool: { name: 'schemagraph', version: '1.0.0' } };
+  const snapshot = [document('dart'), document('swift'), emptyCatalog];
+  const contents = new Map(['b1', 'b2', 'b3', 'a1', 'a2', 'a3']
+    .map((path, index) => [path, JSON.stringify([...snapshot, ...snapshot][index])]));
+  const result = await runDiffCommand(['diff', '--before', 'b1', 'b2', 'b3', '--after', 'a1', 'a2', 'a3'],
+    async (path) => contents.get(path)!);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.standardError, /^Diff does not support persistence documents yet;/);
+});
+
 function document(platform: 'dart' | 'swift', handler = true) {
   return {
     format: 'bridge-facts', version: 1, platform, target: 'flutter', project: '/fixture',
