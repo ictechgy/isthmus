@@ -34,7 +34,7 @@ test('query 입력 파일이 두 개보다 적으면 사용법과 64를 반환�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Usage: isthmus query <channel-or-method> <bridge-facts.json> '
+      'Usage: isthmus query <channel-or-method|relation:<name>> <bridge-facts.json> '
       + '<bridge-facts.json> [more...]\n',
     exitCode: 64,
   });
@@ -199,4 +199,61 @@ test('mixed-targets로 전체 조인이 보류되면 query를 실행하지 않�
       + 'The inputs observed 10 facts across 2 documents.\n',
     exitCode: 2,
   });
+});
+
+/** persistence 관계 질의용 고정 입력이다. */
+const relationFixture = new URL('../../fixtures/domain-composition/', import.meta.url);
+const readRelationFixture = (path: string): Promise<string> => readFile(new URL(path, relationFixture), 'utf8');
+const relationInputs = ['kotlin-persistence.json', 'go-persistence.json', 'sql.json'];
+
+test('relation 주체는 persistence 조인 규칙으로 찾아 사용·선언·진단을 싣는다', async () => {
+  const result = await runQueryCommand(['query', 'relation:USERS', ...relationInputs], readRelationFixture);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.standardError, '');
+  const document = JSON.parse(result.standardOutput);
+  assert.equal(document.level, 'persistence');
+  assert.deepEqual(document.result.subject, { name: 'USERS', qualifiedName: 'relation:public.users', kind: 'relation' });
+  // 비한정 kotlin 사용과 한정 go 사용이 같은 선언으로 모인다.
+  assert.deepEqual(document.result.usedBy.map(({ platform }: { platform: string }) => platform), ['go', 'kotlin']);
+  assert.deepEqual(document.result.columns.map(({ column }: { column: string }) => column), ['email', 'nickname']);
+  assert.deepEqual(document.result.issues.map(({ code }: { code: string }) => code), ['column-use-without-decl']);
+  // qualifiedName을 그대로 다시 물으면 같은 관계다.
+  const again = await runQueryCommand(['query', document.result.subject.qualifiedName, ...relationInputs], readRelationFixture);
+  assert.deepEqual(JSON.parse(again.standardOutput).result.subject.qualifiedName, 'relation:public.users');
+});
+
+test('relation 주체의 미발견·모호·빈 이름은 기존 64 의미와 원인 문구를 따른다', async () => {
+  const missing = await runQueryCommand(['query', 'relation:payments', ...relationInputs], readRelationFixture);
+  assert.equal(missing.exitCode, 64);
+  assert.equal(JSON.parse(missing.standardOutput).status, 'notFound');
+  assert.match(missing.standardError, /^No persistence relation matches the requested name;/);
+
+  const ambiguousCatalog = JSON.stringify({
+    format: 'bridge-facts', version: 1, tool: { name: 'schemagraph', version: '0.1.0' },
+    generatedAt: '2026-09-26T00:00:00Z', platform: 'sql', target: 'persistence', project: '/fixture',
+    facts: ['public.users', 'audit.users'].map((channel) => ({
+      kind: 'relation-decl', channel, dynamic: false, symbol: { qualifiedName: channel },
+    })),
+    limitations: [],
+  });
+  const read = (path: string) => path === 'sql.json' ? Promise.resolve(ambiguousCatalog) : readRelationFixture(path);
+  const ambiguous = await runQueryCommand(['query', 'relation:users', ...relationInputs], read);
+  assert.equal(ambiguous.exitCode, 64);
+  assert.deepEqual(JSON.parse(ambiguous.standardOutput).candidates,
+    [{ qualifiedName: 'relation:audit.users' }, { qualifiedName: 'relation:public.users' }]);
+  assert.match(ambiguous.standardError, /^The requested relation name matches 2 declarations;/);
+
+  for (const requested of ['relation:', 'relation:  ']) {
+    const usage = await runQueryCommand(['query', requested, ...relationInputs], async () => assert.fail('must not read'));
+    assert.equal(usage.exitCode, 64);
+    assert.match(usage.standardError, /^Usage: isthmus query /);
+  }
+});
+
+test('relation 접두사가 없는 이름은 bridge 질의 그대로다', async () => {
+  const result = await runQueryCommand(['query', 'users', ...relationInputs], readRelationFixture);
+  assert.equal(result.exitCode, 64);
+  const document = JSON.parse(result.standardOutput);
+  assert.equal(document.level, 'bridge');
+  assert.match(result.standardError, /^No bridge channel or method matches/);
 });

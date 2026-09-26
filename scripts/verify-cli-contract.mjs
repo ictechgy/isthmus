@@ -29,6 +29,7 @@ verifyRetentions();
 verifyQuery();
 verifyMissingQuery();
 verifyPersistencePairs();
+verifyRelationQuery();
 verifyGraph();
 verifyDiff();
 verifyImpact();
@@ -298,6 +299,18 @@ function verifyPersistencePairs() {
   verify(matches[0].decls[0].symbol.qualifiedName === 'public.users', 'check pairs keeps decl symbol');
   verify(run(['check', ...inputs, '--pairs', '--format', 'sarif']).status === 64, 'check pairs sarif usage');
   verify(run(['help', 'check']).stdout.includes('[--pairs]'), 'check pairs help');
+}
+
+/** 빌드된 CLI가 relation 주체 query를 persistence 조인 규칙과 64 의미로 내는지 검증한다. */
+function verifyRelationQuery() {
+  const inputs = persistenceInputs();
+  const relation = run(['query', 'relation:users', ...inputs]);
+  const relationDocument = JSON.parse(relation.stdout);
+  verify(relation.status === 0 && relationDocument.level === 'persistence', 'relation query exit code');
+  verify(relationDocument.result.subject.qualifiedName === 'relation:public.users', 'relation query subject');
+  const missing = run(['query', 'relation:payments', ...inputs]);
+  verify(missing.status === 64 && JSON.parse(missing.stdout).status === 'notFound', 'relation query notFound');
+  verify(run(['help', 'query']).stdout.includes('relation:<name>'), 'relation query help');
 }
 
 /** graph가 요청한 Mermaid 문서를 내는지 검증한다. */
