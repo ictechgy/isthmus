@@ -87,6 +87,7 @@ sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸�
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | 무엇을 · 누구를 위해 · 어디까지 |
 | [`docs/PLAN.md`](docs/PLAN.md) | 단계별 계획. **cartograph와 dartograph에 선행 작업이 있다** |
+| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | 새 HTTP 경계 도메인으로 API 변경 영향(API → DB 테이블, API → 클라이언트 호출부)을 추적하는 승인된 계획. 아직 구현 전 |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |

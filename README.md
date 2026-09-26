@@ -98,6 +98,7 @@ measured.
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | What, for whom, how far |
 | [`docs/PLAN.md`](docs/PLAN.md) | Step-by-step plan. **cartograph and dartograph have prerequisite work** |
+| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | Approved plan for API-change impact (API → DB tables, API → client call sites) over a new HTTP boundary domain — planned, not implemented |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
