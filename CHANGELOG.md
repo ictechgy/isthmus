@@ -35,7 +35,8 @@
   flutter·react-native·capacitor이거나, `target: null`이고 platform이 dart·js·swift·kotlin인
   문서만 bridge 문서다. 조인 구성, diff 스냅샷, retentions 수신 측, 수신 공백 완화,
   preflight context, impact runtime 후보가 같은 판정을 쓴다. bridge 전용·persistence 전용·
-  혼합·사실 0건 bridge 문서 입력의 기존 출력과 종료 코드는 바이트 단위로 고정했다.
+  혼합·사실 0건 bridge 문서 입력의 대표 명령 출력과 종료 코드는 바이트 단위로 고정했고
+  (`UPDATE_DOMAIN_COMPOSITION=1`로 다시 캡처), 의도해서 달라진 동작은 아래 Fixed에 적었다.
 
 ### Fixed
 
@@ -47,6 +48,10 @@
 - `impact`가 persistence 진단을 원문 채널 문자열로 걸러, 비한정 사용(`users`)이 닿는 한정
   선언(`public.users`)의 `column-use-without-decl`을 빠뜨리던 결함을 고쳤다. 조인과 같은
   해석 규칙으로 귀속하며, 선택한 persistence 사실의 진단은 경고도 `--strict` blocker다.
+- `impact --runtime`이 같은 플랫폼의 persistence 문서만 있는 native 플랫폼(예: android run에서
+  kotlin persistence 문서만 있을 때)을 분석한 것으로 세어, 정적 핸들러를 찾지 않았는데도
+  주소의 `staticStatus`를 `unobserved`(정적 핸들러 없음)로 내던 결함을 고쳤다. 이제
+  `unsupported`다. 두 값 모두 런타임 공백이라 `--strict` 종료 코드는 같다.
 - 관계 사용이 0건인 kotlin·swift·dart persistence 문서(`target: null`)만 bridge 쪽에 남은
   persistence 입력은 target null이 bridge 문서로 세진다는 원인을 오류 문구에 밝힌다.
 
