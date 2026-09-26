@@ -67,7 +67,9 @@ Bridge·Event 문서를 직접 소비해 transport별 진단을 낸다.
 `gartograph schema`가 Go 측 `relation-use` 사실(타입이 확인된
 `database/sql`·sqlx·gorm 호출, SQL 리터럴, `TableName()` 바인딩,
 `db`/`sql`/`gorm` 컬럼 태그)을 보내고 `schemagraph facts`가 카탈로그
-`relation-decl` 사실을 보낸다. `check`는 선언 없는 사용, 모호한 비한정
+`relation-decl` 사실을 보낸다. `rustograph schema`·`kartograph schema`·
+`cartograph schema`·`dartograph schema`도 Rust·Kotlin/Java·Swift·Dart(sqflite·
+sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸다. `check`는 선언 없는 사용, 모호한 비한정
 이름, 카탈로그에 없는 컬럼 참조, 어느 코드도 참조하지 않는 선언을 보고한다 —
 생산자가 스키마 전체를 보지 못했을 때는 `catalog-coverage:`·
 `unjoined-dynamic-relations:` limitation이 진단을 `*-unverified`로 내린다.
@@ -98,8 +100,10 @@ cartograph  ──bridges──┐
 kartograph  ──bridges──┼──▶ isthmus ──▶ 경계 간선 · 불일치 보고 · 보존 근거
 dartograph  ──bridges──┤
 JS/TS 추출기 ─bridges──┘
-gartograph   ──persistence──┐
-schemagraph  ──persistence──┘
+gartograph · rustograph ─────┐
+kartograph · cartograph ─────┼─persistence─▶ isthmus
+dartograph ──────────────────┤
+schemagraph (SQL 카탈로그) ──┘
 ```
 
 isthmus 자체는 작다. 무거운 일(각 언어의 해석)은 자매 도구가 한다.

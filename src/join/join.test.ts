@@ -1453,7 +1453,7 @@ test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는
 
 /** persistence 도메인 사실을 문서로 만드는 테스트 조립기다. */
 function persistenceDocument(
-  platform: 'go' | 'rust' | 'kotlin' | 'swift' | 'sql',
+  platform: 'go' | 'rust' | 'kotlin' | 'swift' | 'dart' | 'sql',
   facts: ReadonlyArray<{
     kind: 'relation-use' | 'relation-decl';
     channel: string | null;
@@ -1788,6 +1788,35 @@ test('swift persistence 문서는 bridge 수신 측 요건을 채우지 않는�
   );
   const result = joinBridgeDocuments([
     dartDocument, swiftDocument, swiftPersistence, schema,
+  ]);
+  assert.equal(result.matchedChannels.length, 1);
+  assert.equal(result.matchedRelations.length, 1);
+});
+
+test('dart persistence 문서는 bridge 호출 측 요건을 채우지 않는다', () => {
+  // dart는 bridge 도메인의 호출 측이면서 persistence 호출 측 생산자다 —
+  // dartograph `schema` 문서를 호출 문서로 세면 호출자 없는 bridge 입력이
+  // 통과해 수신 측 핸들러 전부가 거짓 미사용으로 보고된다.
+  const dartPersistence = persistenceDocument('dart', [
+    { kind: 'relation-use', channel: 'users' },
+    { kind: 'relation-use', channel: 'users', method: 'email' },
+  ]);
+  const schema = persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.users', method: 'email', symbol: 'public.users.email' },
+  ]);
+
+  assert.throws(
+    () => joinBridgeDocuments([swiftDocument, dartPersistence, schema]),
+    /one caller platform/,
+  );
+  // persistence만 있는 입력에서는 dart 문서가 호출 측으로 조인된다.
+  const persistenceOnly = joinBridgeDocuments([dartPersistence, schema]);
+  assert.equal(persistenceOnly.matchedRelations.length, 1);
+  assert.equal(persistenceOnly.matchedColumns.length, 1);
+  // 같은 플랫폼의 bridge 문서가 함께 오면 두 도메인을 각각 조인한다.
+  const result = joinBridgeDocuments([
+    dartDocument, swiftDocument, dartPersistence, schema,
   ]);
   assert.equal(result.matchedChannels.length, 1);
   assert.equal(result.matchedRelations.length, 1);

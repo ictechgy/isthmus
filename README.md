@@ -75,6 +75,9 @@ A second join domain, `persistence`, connects code to database schemas:
 `gartograph schema` exports Go-side `relation-use` facts (typed `database/sql`,
 sqlx, and gorm calls; SQL literals; `TableName()` bindings; `db`/`sql`/`gorm`
 column tags) and `schemagraph facts` exports catalog `relation-decl` facts.
+`rustograph schema`, `kartograph schema`, `cartograph schema`, and
+`dartograph schema` export the same `relation-use` facts for Rust,
+Kotlin/Java, Swift, and Dart (sqflite, sqlite3, postgres, drift, floor).
 `check` then reports uses without declarations, ambiguous unqualified names,
 column references missing from the catalog, and declarations no code references —
 with `catalog-coverage:` and `unjoined-dynamic-relations:` limitations
@@ -110,8 +113,10 @@ cartograph    ──bridges──┐
 kartograph    ──bridges──┼──▶ isthmus ──▶ boundary edges · mismatch reports · retention evidence
 dartograph    ──bridges──┤
 JS/TS extractor ─bridges─┘
-gartograph    ──persistence──┐
-schemagraph   ──persistence──┘
+gartograph · rustograph ─────┐
+kartograph · cartograph ─────┼─persistence─▶ isthmus
+dartograph ──────────────────┤
+schemagraph (SQL catalog) ───┘
 ```
 
 isthmus itself is small. The heavy lifting — interpreting each language — falls to the
