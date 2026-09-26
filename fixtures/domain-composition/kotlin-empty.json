@@ -1,0 +1,14 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "kartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "kotlin",
+  "target": null,
+  "project": "/fixture",
+  "facts": [],
+  "limitations": []
+}

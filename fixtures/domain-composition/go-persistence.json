@@ -1,0 +1,36 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "gartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "go",
+  "target": "persistence",
+  "project": "/fixture",
+  "facts": [
+    {
+      "kind": "relation-use",
+      "channel": "public.users",
+      "dynamic": false,
+      "location": {
+        "path": "db/users.go",
+        "line": 12,
+        "column": 5
+      }
+    },
+    {
+      "kind": "relation-use",
+      "channel": "public.users",
+      "method": "email",
+      "dynamic": false,
+      "location": {
+        "path": "db/users.go",
+        "line": 13,
+        "column": 5
+      }
+    }
+  ],
+  "limitations": []
+}

@@ -1,0 +1,55 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "cartograph",
+    "version": "0.1.0"
+  },
+  "generatedAt": "2026-09-26T00:00:00Z",
+  "platform": "swift",
+  "target": "flutter",
+  "project": "/fixture",
+  "facts": [
+    {
+      "kind": "channel-register",
+      "channel": "dev.isthmus/camera",
+      "dynamic": false,
+      "location": {
+        "path": "ios/Runner/CameraPlugin.swift",
+        "line": 11,
+        "column": 17
+      }
+    },
+    {
+      "kind": "method-handle",
+      "channel": "dev.isthmus/camera",
+      "method": "capture",
+      "dynamic": false,
+      "location": {
+        "path": "ios/Runner/CameraPlugin.swift",
+        "line": 14,
+        "column": 12
+      },
+      "symbol": {
+        "qualifiedName": "CameraPlugin.capture",
+        "usr": "s:12CameraPlugin7captureyyF"
+      }
+    },
+    {
+      "kind": "method-handle",
+      "channel": "dev.isthmus/camera",
+      "method": "flash",
+      "dynamic": false,
+      "location": {
+        "path": "ios/Runner/CameraPlugin.swift",
+        "line": 18,
+        "column": 12
+      },
+      "symbol": {
+        "qualifiedName": "CameraPlugin.flash",
+        "usr": "s:12CameraPlugin5flashyyF"
+      }
+    }
+  ],
+  "limitations": []
+}

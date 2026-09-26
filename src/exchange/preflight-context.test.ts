@@ -61,6 +61,27 @@ test('rejects unknown selection platforms, mixed targets, and foreign projects',
   ] })), PreflightValidationError);
 });
 
+test('persistence 문서는 bridge 플랫폼이어도 원인 문구로 거부하고 사실 0건 bridge 문서는 받는다', () => {
+  const persistenceDocument = (platform: 'dart' | 'swift' | 'kotlin') => ({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '1.0.0' },
+    generatedAt: '2026-09-14T00:00:00Z', platform, target: 'persistence', project: '/project',
+    facts: [{ kind: 'relation-use', channel: 'users', dynamic: false,
+      location: { path: 'src/Repo.kt', line: 3, column: 1 } }],
+    limitations: [],
+  });
+  for (const platform of ['dart', 'swift', 'kotlin'] as const) {
+    assert.throws(
+      () => parsePreflightContext(context({ bridges: [...context().bridges, persistenceDocument(platform)] })),
+      (error: unknown) => error instanceof PreflightValidationError &&
+        error.message === 'Preflight context supports only bridge documents; remove persistence documents from the context.',
+    );
+  }
+  // 사실이 없는 kotlin 문서(target null)는 규칙상 bridge 문서라 그대로 받는다.
+  const parsed = parsePreflightContext(context({ bridges: [...context().bridges,
+    { ...bridge('swift', []), platform: 'kotlin', tool: { name: 'kartograph', version: '1.0.0' } }] }));
+  assert.equal(parsed.bridges.length, 3);
+});
+
 test('validates continuation triggers and parent-safe affected paths', () => {
   const initial = context({
     selection: { dart: { files: ['lib/camera.dart'], symbols: [] } },

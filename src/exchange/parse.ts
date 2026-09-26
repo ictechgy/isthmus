@@ -488,6 +488,41 @@ export function isReceiverPlatform(
   return platform === 'swift' || platform === 'kotlin';
 }
 
+/**
+ * bridge 도메인 판정에 필요한 문서(또는 그 문서가 낸 한계)의 두 필드다.
+ * `JoinLimitation`처럼 문서에서 파생된 값도 같은 규칙으로 판정할 수 있게 구조 타입으로 둔다.
+ */
+export interface BridgeDomainCandidate {
+  readonly platform: string;
+  readonly target: BridgeTarget | null;
+}
+
+/**
+ * 문서가 bridge 도메인(Flutter·React Native·Capacitor 경계)에 속하는지 판정한다.
+ *
+ * 규칙: target이 bridge target(flutter·react-native·capacitor)이거나, target이 null이고
+ * platform이 bridge 플랫폼(dart·js·swift·kotlin)인 문서다. 사실이 없는 문서는 target을
+ * 가질 수 없으므로(`target null ⟺ facts 빈`) 그 플랫폼을 분석했다는 근거로 인정하던
+ * 기존 규칙을 보존한다. persistence target 문서(과 앞으로 추가될 다른 도메인 문서)는
+ * platform이 같아도 bridge 호출·수신 어느 쪽 요건도 채우지 못한다 — kotlin·swift·dart는
+ * 여러 도메인의 생산자라서 platform만으로 역할을 정하면 다른 도메인 문서가 bridge 근거로 샌다.
+ * 역할 판정은 모두 이 함수와 아래 두 파생 함수를 거쳐야 한다.
+ */
+export function isBridgeDomainDocument(document: BridgeDomainCandidate): boolean {
+  if (document.target !== null) return bridgeDomainTargets.has(document.target);
+  return isCallerPlatform(document.platform) || isReceiverPlatform(document.platform);
+}
+
+/** bridge 도메인 문서이면서 호출 측(dart·js) 플랫폼인지 확인한다. */
+export function isBridgeCallerDocument(document: BridgeDomainCandidate): boolean {
+  return isBridgeDomainDocument(document) && isCallerPlatform(document.platform);
+}
+
+/** bridge 도메인 문서이면서 수신 측(swift·kotlin) 플랫폼인지 확인한다. */
+export function isBridgeReceiverDocument(document: BridgeDomainCandidate): boolean {
+  return isBridgeDomainDocument(document) && isReceiverPlatform(document.platform);
+}
+
 /** 값이 계약이 정한 브리지 메커니즘 이름인지 확인한다. */
 export function isBridgeTarget(value: unknown): value is BridgeTarget {
   return bridgeTargets.has(value);
@@ -624,6 +659,13 @@ const bridgeTargets = new Set<unknown>([
   'react-native',
   'capacitor',
   'persistence',
+]);
+
+/** bridge 도메인에 속하는 target이다. persistence는 코드↔스키마라 여기에 없다. */
+const bridgeDomainTargets = new Set<BridgeTarget>([
+  'flutter',
+  'react-native',
+  'capacitor',
 ]);
 
 /** 버전 1이 정의한 사실 종류 집합이다. */

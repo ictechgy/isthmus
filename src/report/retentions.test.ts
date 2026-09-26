@@ -390,6 +390,33 @@ test('cartograph 보존은 수신 측 Swift 문서를 요구한다', () => {
   );
 });
 
+test('같은 플랫폼의 persistence 문서는 보존 대상 수신 측 근거가 아니다', () => {
+  const persistence = (platform: 'kotlin' | 'swift') => parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z', platform, target: 'persistence', project: dartDocument.project,
+    facts: [{ kind: 'relation-use', channel: 'users', dynamic: false,
+      location: { path: 'src/Repo.kt', line: 3, column: 1 } }],
+    limitations: [],
+  });
+  const empty = (platform: 'kotlin' | 'swift') => parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'fixture', version: '0.1.0' },
+    generatedAt: '2026-09-04T12:00:00Z', platform, target: null, project: dartDocument.project,
+    facts: [], limitations: [],
+  });
+  // persistence 문서뿐이면 원인 문구를 덧붙여 거부한다 — 빈 보존 목록과 코드 0으로 새면 안 된다.
+  assert.throws(
+    () => validateRetentionInputs([dartDocument, swiftDocument, persistence('kotlin')], undefined, 'kartograph'),
+    /^RetentionValidationError: Retentions for kartograph require at least one kotlin bridge facts document; run a kotlin producer for the receiver side\. The kotlin persistence documents are not bridge receiver evidence\.$/,
+  );
+  assert.throws(
+    () => validateRetentionInputs([dartDocument, persistence('swift')]),
+    /The swift persistence documents are not bridge receiver evidence\./,
+  );
+  // 사실이 없는 수신 문서(target null)는 그 플랫폼을 분석했다는 근거로 계속 인정한다.
+  assert.equal(validateRetentionInputs([dartDocument, empty('kotlin')], undefined, 'kartograph'), undefined);
+  assert.equal(validateRetentionInputs([dartDocument, empty('swift'), persistence('swift')]), undefined);
+});
+
 /** 저장된 교환 JSON을 제품 파서로 검증한다. */
 async function loadDocument(relativePath: string): Promise<BridgeFactsDocument> {
   const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');

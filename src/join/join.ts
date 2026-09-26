@@ -11,7 +11,11 @@ import type {
   BridgeTarget,
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
-import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
+import {
+  isBridgeCallerDocument,
+  isBridgeDomainDocument,
+  isBridgeReceiverDocument,
+} from '../exchange/parse.ts';
 
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
@@ -341,43 +345,15 @@ function validatePlatformComposition(
   const hasPersistenceDomain = documents.some(
     (document) => document.target === 'persistence',
   );
-  const hasBridgeDomain = documents.some(
-    (document) =>
-      document.target !== 'persistence' &&
-      (isCallerPlatform(document.platform) || isReceiverPlatform(document.platform)),
-  );
-  if (!hasPersistenceDomain) {
-    // bridge만 있는 입력은 기존 호출·수신 구성 규칙을 그대로 적용한다.
-    const hasCaller = documents.some(({ platform }) => isCallerPlatform(platform));
-    const hasReceiver = documents.some(({ platform }) =>
-      isReceiverPlatform(platform),
-    );
-    if (!hasCaller || !hasReceiver) {
-      throw new BridgeJoinValidationError(
-        'Bridge documents must include at least one caller platform (dart, js) document '
-        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
-      );
-    }
-    return;
+  // bridge 역할은 platform이 아니라 명시 규칙(`isBridgeDomainDocument`)으로 정한다 —
+  // kotlin·swift·dart persistence 문서가 bridge 호출·수신 요건을 채우지 못하게 한다.
+  const bridgeDocuments = documents.filter(isBridgeDomainDocument);
+  // persistence 도메인이 없으면(도메인이 하나도 성립하지 않는 입력 포함) bridge 구성
+  // 규칙을 그대로 적용하고, 혼합 입력이면 bridge 문서가 있을 때만 적용한다.
+  if (!hasPersistenceDomain || bridgeDocuments.length > 0) {
+    validateBridgeComposition(bridgeDocuments, hasPersistenceDomain);
   }
-  if (hasBridgeDomain) {
-    // persistence target 문서는 bridge 도메인의 어느 쪽도 아니다 — kotlin처럼
-    // bridge 수신 측인 플랫폼이 persistence 호출 측 사실만 실으면 수신 측
-    // 요건을 채우지 못하게 target으로 걸러낸다.
-    const hasCaller = documents.some(
-      (document) => document.target !== 'persistence' && isCallerPlatform(document.platform),
-    );
-    const hasReceiver = documents.some(
-      (document) =>
-        document.target !== 'persistence' && isReceiverPlatform(document.platform),
-    );
-    if (!hasCaller || !hasReceiver) {
-      throw new BridgeJoinValidationError(
-        'Bridge documents must include at least one caller platform (dart, js) document '
-        + 'and one receiver platform (swift, kotlin) document; run a producer for the missing side.',
-      );
-    }
-  }
+  if (!hasPersistenceDomain) return;
   // persistence 도메인: sql 선언 문서 하나와, 이 경계를 실제로 스캔한
   // (target이 persistence인) 비sql 호출 측 문서 하나를 요구한다. target이
   // null인 문서는 이 도메인의 호출 측으로 세지 않는다 — 스키마 경계를
@@ -392,6 +368,33 @@ function validatePlatformComposition(
       + 'and one non-sql caller document with the persistence target; run a producer for the missing side.',
     );
   }
+}
+
+/**
+ * bridge 도메인 문서에 호출 측과 수신 측이 각각 하나 이상 있는지 검사한다.
+ *
+ * persistence 입력과 섞였는데 bridge 문서가 모두 사실 0건(target null)이면, 대개
+ * kartograph·cartograph·dartograph `schema`가 관계 사용을 하나도 찾지 못한 문서다.
+ * 사실이 없으면 target을 실을 수 없어 bridge 문서와 구분되지 않으므로, 일반 문구
+ * 대신 그 원인을 알려 빈 문서를 빼거나 빠진 bridge 쪽을 생산하게 한다.
+ */
+function validateBridgeComposition(
+  bridgeDocuments: readonly BridgeFactsDocument[],
+  hasPersistenceDomain: boolean,
+): void {
+  const hasCaller = bridgeDocuments.some(isBridgeCallerDocument);
+  const hasReceiver = bridgeDocuments.some(isBridgeReceiverDocument);
+  if (hasCaller && hasReceiver) return;
+  const requirement = 'Bridge documents must include at least one caller platform (dart, js) document '
+    + 'and one receiver platform (swift, kotlin) document; ';
+  if (hasPersistenceDomain && bridgeDocuments.every(({ target }) => target === null)) {
+    throw new BridgeJoinValidationError(
+      `${requirement}every bridge-platform document here has no facts, and a document without facts `
+      + 'carries a null target that counts as a bridge document even when a persistence producer wrote it. '
+      + 'Remove the empty document or run a producer for the missing bridge side.',
+    );
+  }
+  throw new BridgeJoinValidationError(`${requirement}run a producer for the missing side.`);
 }
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */
@@ -1099,14 +1102,14 @@ interface RelationJoinResult {
  * 선언 측(sql)은 항상 `schema.name` 한정 이름을 내고 사용 측은 코드에 쓰인
  * 그대로 낸다. 비한정 사용은 마지막 세그먼트로 선언을 찾되 후보가 둘 이상이면
  * 어느 쪽인지 추측하지 않고 모호함으로 보고한다. 컬럼 사용은 관계가 유일하게
- * 해석된 뒤에만 (관계, 컬럼) 쌍으로 판정한다.
+ * 해석된 뒤에만 (관계, 컬럼) 쌍으로 판정한다. 선언 인덱스와 해석 규칙은
+ * `createRelationResolver`와 공유한다.
  */
 function joinRelationFacts(
   documents: readonly BridgeFactsDocument[],
 ): RelationJoinResult {
-  const objectDecls = new Map<string, MutableRelationDeclGroup>();
-  const lastSegmentIndex = new Map<string, Set<string>>();
-  const columnDecls = new Map<string, BridgeEndpoint[]>();
+  const declIndex = collectRelationDecls(documents);
+  const { objectDecls, columnDecls } = declIndex;
   // 사용 측은 버킷 키(한정 여부 + 정규화 키) 아래 원문 채널과 끝점을 모은다 —
   // 보고는 생산자가 쓴 원문 이름으로 해야 한다.
   const relationUses = new Map<string, { channel: string; uses: BridgeEndpoint[] }>();
@@ -1116,75 +1119,42 @@ function joinRelationFacts(
   for (const document of documents) {
     if (document.target !== 'persistence') continue;
     for (const fact of document.facts) {
-      if (fact.dynamic || typeof fact.channel !== 'string') continue;
+      if (fact.kind !== 'relation-use' || fact.dynamic || typeof fact.channel !== 'string') continue;
       const endpoint = toEndpoint(document.platform, fact);
-      if (fact.kind === 'relation-decl') {
-        collectRelationDecl(fact, endpoint, objectDecls, columnDecls, lastSegmentIndex);
-      } else if (fact.kind === 'relation-use') {
-        const useKey = normalizeRelationKey(fact.channel);
-        // 한정 여부는 원문의 escape되지 않은 `.`로 판정한다 — `%2E`는
-        // 한정자가 아니라 식별자 안의 점이라 정규화 키가 이를 보존하지 않는다.
-        const bucketKey = `${fact.channel.includes('.') ? '1' : '0'}${useKey}`;
-        if (fact.method === undefined) {
-          const entry = relationUses.get(bucketKey) ?? { channel: fact.channel, uses: [] };
-          // 대소문자가 다른 철자는 같은 키로 묶인다 — 보고 채널은 최소 철자로
-          // 고정해 입력 순서와 무관한 출력을 보장한다.
-          if (compareStrings(fact.channel, entry.channel) < 0) {
-            entry.channel = fact.channel;
-          }
-          entry.uses.push(endpoint);
-          relationUses.set(bucketKey, entry);
-        } else {
-          const column = normalizeIdentifier(fact.method);
-          const key = `${bucketKey}${COLUMN_KEY_SEPARATOR}${column}`;
-          const entry = columnUses.get(key) ??
-            { channel: fact.channel, column: fact.method, uses: [] };
-          if (compareStrings(fact.channel, entry.channel) < 0) {
-            entry.channel = fact.channel;
-          }
-          if (compareStrings(fact.method, entry.column) < 0) {
-            entry.column = fact.method;
-          }
-          entry.uses.push(endpoint);
-          columnUses.set(key, entry);
+      const bucketKey = relationUseBucketKey(fact.channel);
+      if (fact.method === undefined) {
+        const entry = relationUses.get(bucketKey) ?? { channel: fact.channel, uses: [] };
+        // 대소문자가 다른 철자는 같은 키로 묶인다 — 보고 채널은 최소 철자로
+        // 고정해 입력 순서와 무관한 출력을 보장한다.
+        if (compareStrings(fact.channel, entry.channel) < 0) {
+          entry.channel = fact.channel;
         }
+        entry.uses.push(endpoint);
+        relationUses.set(bucketKey, entry);
+      } else {
+        const column = normalizeIdentifier(fact.method);
+        const key = `${bucketKey}${COLUMN_KEY_SEPARATOR}${column}`;
+        const entry = columnUses.get(key) ??
+          { channel: fact.channel, column: fact.method, uses: [] };
+        if (compareStrings(fact.channel, entry.channel) < 0) {
+          entry.channel = fact.channel;
+        }
+        if (compareStrings(fact.method, entry.column) < 0) {
+          entry.column = fact.method;
+        }
+        entry.uses.push(endpoint);
+        columnUses.set(key, entry);
       }
     }
   }
-  // 선언 증거도 사용 증거와 같이 정렬·중복 제거한다 — 입력 문서 순서가
-  // evidence 배열에 새면 같은 입력이 다른 보고서를 만든다.
-  for (const group of objectDecls.values()) sortUniqueEndpoints(group.decls);
-  for (const list of columnDecls.values()) sortUniqueEndpoints(list);
 
-  // 비한정 사용 키 하나가 어느 선언에 닿는지 한 번만 해석한다 —
-  // 컬럼 수준 판정도 같은 해석을 재사용한다. 버킷 키 앞 한 글자가 한정 여부다.
-  const resolution = new Map<string, string | 'missing' | 'ambiguous'>();
-  const ambiguousCandidates = new Map<string, string[]>();
-  const resolveUse = (bucketKey: string): string | 'missing' | 'ambiguous' => {
+  // 사용 버킷 하나가 어느 선언에 닿는지 한 번만 해석한다 — 컬럼 수준 판정도
+  // 같은 해석을 재사용한다.
+  const resolution = new Map<string, RelationBucketOutcome>();
+  const resolveUse = (bucketKey: string): RelationBucketOutcome => {
     const cached = resolution.get(bucketKey);
     if (cached !== undefined) return cached;
-    const useKey = bucketKey.slice(1);
-    let outcome: string | 'missing' | 'ambiguous';
-    if (bucketKey[0] === '1') {
-      outcome = objectDecls.has(useKey) ? useKey : 'missing';
-    } else {
-      const candidates = [...(lastSegmentIndex.get(useKey) ?? [])].sort(compareStrings);
-      if (candidates.length === 1) {
-        outcome = candidates[0]!;
-      } else if (candidates.length === 0) {
-        outcome = 'missing';
-      } else {
-        outcome = 'ambiguous';
-        // 후보 보고는 정규화 키가 아니라 생산자가 쓴 한정 이름으로 한다.
-        // 키 순과 철자 순이 어긋날 수 있으므로 매핑 뒤에 다시 정렬한다.
-        ambiguousCandidates.set(
-          bucketKey,
-          candidates
-            .map((key) => objectDecls.get(key)!.channel)
-            .sort(compareStrings),
-        );
-      }
-    }
+    const outcome = resolveRelationBucket(declIndex, bucketKey);
     resolution.set(bucketKey, outcome);
     return outcome;
   };
@@ -1196,18 +1166,18 @@ function joinRelationFacts(
   for (const [bucketKey, { channel, uses }] of relationUses) {
     sortUniqueEndpoints(uses);
     const outcome = resolveUse(bucketKey);
-    if (outcome === 'missing') {
+    if (outcome.status === 'missing') {
       relationUsesWithoutDecls.push({ target: 'persistence', channel, uses });
-    } else if (outcome === 'ambiguous') {
+    } else if (outcome.status === 'ambiguous') {
       ambiguousRelationUses.push({
         target: 'persistence',
         channel,
         uses,
-        candidates: ambiguousCandidates.get(bucketKey)!,
+        candidates: outcome.candidates,
       });
     } else {
-      usedDeclKeys.add(outcome);
-      const group = objectDecls.get(outcome)!;
+      usedDeclKeys.add(outcome.key);
+      const group = objectDecls.get(outcome.key)!;
       matchedRelations.push({
         target: 'persistence',
         channel: group.channel,
@@ -1237,7 +1207,7 @@ function joinRelationFacts(
     const bucketKey = columnKey.slice(0, separator);
     const normalizedColumn = columnKey.slice(separator + COLUMN_KEY_SEPARATOR.length);
     const outcome = resolveUse(bucketKey);
-    if (outcome === 'ambiguous' || outcome === 'missing') {
+    if (outcome.status !== 'resolved') {
       if (!relationUses.has(bucketKey)) {
         const entry = columnOnlyUses.get(bucketKey) ?? { channel, uses: [] };
         if (compareStrings(channel, entry.channel) < 0) {
@@ -1248,9 +1218,9 @@ function joinRelationFacts(
       }
       continue;
     }
-    const declChannel = objectDecls.get(outcome)!.channel;
+    const declChannel = objectDecls.get(outcome.key)!.channel;
     const decls = columnDecls.get(
-      `${outcome}${COLUMN_KEY_SEPARATOR}${normalizedColumn}`,
+      `${outcome.key}${COLUMN_KEY_SEPARATOR}${normalizedColumn}`,
     ) ?? [];
     if (decls.length > 0) {
       matchedColumns.push({
@@ -1265,14 +1235,14 @@ function joinRelationFacts(
   for (const [bucketKey, { channel, uses }] of columnOnlyUses) {
     sortUniqueEndpoints(uses);
     const outcome = resolveUse(bucketKey);
-    if (outcome === 'missing') {
+    if (outcome.status === 'missing') {
       relationUsesWithoutDecls.push({ target: 'persistence', channel, uses });
-    } else if (outcome === 'ambiguous') {
+    } else if (outcome.status === 'ambiguous') {
       ambiguousRelationUses.push({
         target: 'persistence',
         channel,
         uses,
-        candidates: ambiguousCandidates.get(bucketKey)!,
+        candidates: outcome.candidates,
       });
     }
   }
@@ -1284,6 +1254,128 @@ function joinRelationFacts(
     relationDeclsWithoutUses: relationDeclsWithoutUses.sort(compareRelationKeys),
     matchedColumns: matchedColumns.sort(compareColumnKeys),
     columnUsesWithoutDecls: columnUsesWithoutDecls.sort(compareColumnKeys),
+  };
+}
+
+/** persistence 관계 이름 하나를 조인과 같은 규칙으로 해석한 결과다. channel은 선언 측 철자다. */
+export type RelationResolution =
+  | { readonly status: 'resolved'; readonly channel: string }
+  | { readonly status: 'missing' }
+  | { readonly status: 'ambiguous'; readonly candidates: readonly string[] };
+
+/**
+ * persistence 입력의 선언 인덱스로 관계 이름을 조인과 같은 규칙으로 해석한다.
+ *
+ * 조인 결과는 보고용 철자만 남기므로, 선택한 사실(impact)이나 질의한 이름을 조인
+ * 진단과 대조하려면 같은 정규화·해석 규칙이 필요하다. 규칙을 복제하면 두 경로가
+ * 어긋나므로 조인이 쓰는 선언 인덱스와 버킷 해석 함수를 그대로 재사용한다.
+ */
+export interface RelationResolver {
+  /**
+   * 사용 측 이름을 해석한다. 한정 이름은 정확히, 비한정 이름은 마지막 세그먼트로
+   * 찾으며 후보가 여럿이면 추측하지 않고 모호함을 돌려준다.
+   */
+  resolveUse(channel: string): RelationResolution;
+  /**
+   * 사용 측 이름(과 선택적 컬럼)의 논리 관계 키다. 유일하게 해석되면 그 선언의
+   * `declKey`와 같고, 미해석·모호하면 같은 사용 버킷(한정 여부 + 정규화 이름)끼리만 같다.
+   */
+  useKey(channel: string, column?: string): string;
+  /** 선언 측 한정 이름(과 선택적 컬럼)의 논리 관계 키다. */
+  declKey(channel: string, column?: string): string;
+}
+
+/** 입력 문서의 persistence 선언으로 관계 해석기를 만든다. 선언이 없으면 모든 사용이 missing이다. */
+export function createRelationResolver(
+  documents: readonly BridgeFactsDocument[],
+): RelationResolver {
+  const index = collectRelationDecls(documents);
+  const cache = new Map<string, RelationBucketOutcome>();
+  const resolveBucket = (bucketKey: string): RelationBucketOutcome => {
+    const cached = cache.get(bucketKey) ?? resolveRelationBucket(index, bucketKey);
+    cache.set(bucketKey, cached);
+    return cached;
+  };
+  const relationKey = (identity: readonly string[], column: string | undefined): string =>
+    JSON.stringify(column === undefined ? identity : [...identity, normalizeIdentifier(column)]);
+  return {
+    resolveUse: (channel) => {
+      const outcome = resolveBucket(relationUseBucketKey(channel));
+      return outcome.status === 'resolved'
+        ? { status: 'resolved', channel: index.objectDecls.get(outcome.key)!.channel }
+        : outcome;
+    },
+    useKey: (channel, column) => {
+      const bucketKey = relationUseBucketKey(channel);
+      const outcome = resolveBucket(bucketKey);
+      return relationKey(outcome.status === 'resolved' ? ['decl', outcome.key] : ['use', bucketKey], column);
+    },
+    declKey: (channel, column) => relationKey(['decl', normalizeRelationKey(channel)], column),
+  };
+}
+
+/** persistence 선언 측 인덱스다 — 조인과 관계 해석기가 같은 규칙을 공유한다. */
+interface RelationDeclIndex {
+  /** 정규화된 한정 키별 관계 수준 선언 그룹이다. */
+  readonly objectDecls: Map<string, MutableRelationDeclGroup>;
+  /** 정규화된 (관계 키, 컬럼) 키별 컬럼 선언 증거다. */
+  readonly columnDecls: Map<string, BridgeEndpoint[]>;
+  /** 마지막 세그먼트별로 그 세그먼트로 끝나는 한정 키 집합이다 — 비한정 사용이 여기로 잇는다. */
+  readonly lastSegmentIndex: Map<string, Set<string>>;
+}
+
+/**
+ * 사용 버킷 하나를 선언으로 해석한 내부 결과다.
+ * 문자열 표식 대신 판별 유니온을 써서 'missing' 같은 이름의 관계와 충돌하지 않게 한다.
+ */
+type RelationBucketOutcome =
+  | { readonly status: 'resolved'; readonly key: string }
+  | { readonly status: 'missing' }
+  | { readonly status: 'ambiguous'; readonly candidates: readonly string[] };
+
+/** persistence 문서의 정적 선언을 관계·컬럼 인덱스로 모으고 증거를 정렬·중복 제거한다. */
+function collectRelationDecls(documents: readonly BridgeFactsDocument[]): RelationDeclIndex {
+  const index: RelationDeclIndex = {
+    objectDecls: new Map(), columnDecls: new Map(), lastSegmentIndex: new Map(),
+  };
+  for (const document of documents) {
+    if (document.target !== 'persistence') continue;
+    for (const fact of document.facts) {
+      if (fact.kind !== 'relation-decl' || fact.dynamic || typeof fact.channel !== 'string') continue;
+      collectRelationDecl(fact, toEndpoint(document.platform, fact), index.objectDecls,
+        index.columnDecls, index.lastSegmentIndex);
+    }
+  }
+  // 선언 증거도 사용 증거와 같이 정렬·중복 제거한다 — 입력 문서 순서가
+  // evidence 배열에 새면 같은 입력이 다른 보고서를 만든다.
+  for (const group of index.objectDecls.values()) sortUniqueEndpoints(group.decls);
+  for (const list of index.columnDecls.values()) sortUniqueEndpoints(list);
+  return index;
+}
+
+/**
+ * 사용 측 이름의 버킷 키다. 앞 한 글자가 한정 여부, 나머지가 정규화 키다.
+ * 한정 여부는 원문의 escape되지 않은 `.`로 판정한다 — `%2E`는 한정자가 아니라
+ * 식별자 안의 점이라 정규화 키가 이를 보존하지 않는다.
+ */
+function relationUseBucketKey(channel: string): string {
+  return `${channel.includes('.') ? '1' : '0'}${normalizeRelationKey(channel)}`;
+}
+
+/** 사용 버킷 하나가 어느 선언에 닿는지 조인 규칙대로 해석한다. */
+function resolveRelationBucket(index: RelationDeclIndex, bucketKey: string): RelationBucketOutcome {
+  const useKey = bucketKey.slice(1);
+  if (bucketKey[0] === '1') {
+    return index.objectDecls.has(useKey) ? { status: 'resolved', key: useKey } : { status: 'missing' };
+  }
+  const candidates = [...(index.lastSegmentIndex.get(useKey) ?? [])].sort(compareStrings);
+  if (candidates.length === 1) return { status: 'resolved', key: candidates[0]! };
+  if (candidates.length === 0) return { status: 'missing' };
+  // 후보 보고는 정규화 키가 아니라 생산자가 쓴 한정 이름으로 한다.
+  // 키 순과 철자 순이 어긋날 수 있으므로 매핑 뒤에 다시 정렬한다.
+  return {
+    status: 'ambiguous',
+    candidates: candidates.map((key) => index.objectDecls.get(key)!.channel).sort(compareStrings),
   };
 }
 

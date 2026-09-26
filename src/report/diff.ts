@@ -1,5 +1,9 @@
 import type { BridgeFactsDocument, BridgeTarget } from '../exchange/parse.ts';
-import { isCallerPlatform, isReceiverPlatform } from '../exchange/parse.ts';
+import {
+  isBridgeCallerDocument,
+  isBridgeDomainDocument,
+  isBridgeReceiverDocument,
+} from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import type {
   BridgeJoinResult,
@@ -205,13 +209,22 @@ function validateMessageSnapshots(
 /** 플랫폼 누락이나 다른 프로젝트를 코드 삭제로 오해하지 않도록 입력 구성을 고정한다. */
 function validateSnapshots(before: readonly BridgeFactsDocument[], after: readonly BridgeFactsDocument[]): void {
   const all = [...before, ...after];
+  // diff는 bridge 논리 연결(메서드·모듈·컴포넌트)만 비교한다. persistence 문서를 받으면
+  // 관계·컬럼 차이는 보고되지 않은 채 빈 차이로 읽히므로, 일반 구성 문구가 아니라
+  // 원인을 밝혀 거부한다. sql 문서는 target과 무관하게 persistence 도메인에만 있다.
+  if (all.some((doc) => doc.target === 'persistence' || doc.platform === 'sql')) {
+    throw new BridgeJoinValidationError(
+      'Diff does not support persistence documents yet; remove persistence-target and sql '
+      + 'documents from both snapshots and compare the bridge documents only.',
+    );
+  }
   if (new Set(all.map((doc) => doc.project)).size !== 1 ||
-    new Set(all.filter((doc) => isReceiverPlatform(doc.platform)).map((doc) => doc.platform)).size !== 1 ||
-    ![before, after].every((docs) => docs.some((doc) => isCallerPlatform(doc.platform)) &&
-      docs.some((doc) => isReceiverPlatform(doc.platform))) ||
+    new Set(all.filter(isBridgeReceiverDocument).map((doc) => doc.platform)).size !== 1 ||
+    ![before, after].every((docs) => docs.some(isBridgeCallerDocument) &&
+      docs.some(isBridgeReceiverDocument)) ||
     JSON.stringify(producerInventory(before)) !== JSON.stringify(producerInventory(after)) ||
     JSON.stringify(snapshotTargets(before)) !== JSON.stringify(snapshotTargets(after)) ||
-    all.some((doc) => !isCallerPlatform(doc.platform) && !isReceiverPlatform(doc.platform))) {
+    all.some((doc) => !isBridgeDomainDocument(doc))) {
     throw new BridgeJoinValidationError(
       'Diff requires the same project, the same bridge targets, and matching '
       + 'caller/native producer inventories in both snapshots; rebuild both '

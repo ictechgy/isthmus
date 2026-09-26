@@ -1,6 +1,7 @@
 import { compareStrings } from '../compare.ts';
-import { isReceiverPlatform } from '../exchange/parse.ts';
+import { isBridgeReceiverDocument } from '../exchange/parse.ts';
 import type { BridgeEndpoint, JoinLimitation } from '../join/join.ts';
+import type { CheckIssue } from './check-report.ts';
 import { hasPreflightBlockers, PreflightGraphError, type PreflightAffected, type PreflightRelation, type PreflightReport, type PreflightSubject } from './preflight.ts';
 import type { RuntimeCheckResult } from './runtime.ts';
 import type { RuntimeVerificationReport } from './runtime.ts';
@@ -241,9 +242,14 @@ function runtimeRoutePreview(route: NonNullable<PreflightReport['runtime']>['rou
   };
 }
 
-/** 증거 위치가 수신 측(네이티브) 플랫폼에서 온 것인지 구분한다. */
-function isReceiverEndpoint(endpoint: BridgeEndpoint): boolean {
-  return isReceiverPlatform(endpoint.platform);
+/**
+ * 증거 위치가 bridge 수신 측(네이티브) 문서에서 온 것인지 구분한다.
+ *
+ * 끝점에는 target이 없으므로 진단의 target을 함께 넘겨 명시 규칙으로 판정한다 —
+ * platform만 보면 persistence 도메인의 kotlin·swift 증거도 수신 측으로 읽힌다.
+ */
+function isReceiverEndpoint(endpoint: BridgeEndpoint, target: CheckIssue['target']): boolean {
+  return isBridgeReceiverDocument({ platform: endpoint.platform, target });
 }
 
 function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssuePreview {
@@ -263,7 +269,7 @@ function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssueP
               : issue.code === 'component-require-without-export' || issue.code === 'component-require-without-export-unverified'
               // Expo require가 코어 export만 관찰된 경우 error 코드지만
               // 원인은 mechanism 불일치다 — 없다는 문구는 틀리다.
-              ? issue.evidence.some(isReceiverEndpoint)
+              ? issue.evidence.some((endpoint) => isReceiverEndpoint(endpoint, issue.target))
                 ? `Observed component exports for ${route} resolve through a different bridge mechanism.`
                 : `No native component export was verified for ${route}.`
               : issue.code === 'component-require-mechanism-mismatch'

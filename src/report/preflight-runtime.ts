@@ -1,4 +1,5 @@
 import { compareStrings } from '../compare.ts';
+import { isBridgeReceiverDocument, isReceiverPlatform } from '../exchange/parse.ts';
 import type { BridgeLocation } from '../exchange/parse.ts';
 import type { PreflightContext } from '../exchange/preflight-context.ts';
 import type { BridgeRuntimeDocument, RuntimeExpectations, RuntimeOutcome, RuntimePlatform, RuntimeRoute } from '../exchange/runtime.ts';
@@ -61,11 +62,16 @@ export function attachPreflightRuntime(
   const files = new Set(report.reviewFiles);
   const addedFiles = new Set<string>();
   const byRoute = new Map<string, string[]>();
-  const nativePlatforms = new Set([...context.bridges, ...(context.messages ?? [])]
-    .flatMap(({ platform }) => platform === 'swift' || platform === 'kotlin' ? [platform] : []));
+  // 수신 측 판정은 bridge 도메인 명시 규칙을 따른다. v2 메시지 문서는 형식 자체가
+  // bridge 경계라 플랫폼만으로 수신 측이다.
+  const nativePlatforms = new Set([
+    ...context.bridges.filter(isBridgeReceiverDocument).map(({ platform }) => platform),
+    ...(context.messages ?? []).flatMap(({ platform }) => isReceiverPlatform(platform) ? [platform] : []),
+  ]);
   const messagePlatforms = new Set((context.messages ?? []).map(({ platform }) => platform));
   const boundaryPlatforms = new Map(report.boundaries.map(({ subject, receivers }) => {
-    const platforms = new Set(receivers.flatMap(({ platform }) => platform === 'swift' || platform === 'kotlin' ? [platform] : []));
+    const platforms = new Set(receivers.flatMap(({ platform }) =>
+      isBridgeReceiverDocument({ platform, target: subject.target }) ? [platform] : []));
     return [subject.key, platforms.size > 0 ? platforms : nativePlatforms];
   }));
   const messageBoundaries = new MessageAddressIndex<string>();

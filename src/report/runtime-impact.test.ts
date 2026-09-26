@@ -73,6 +73,23 @@ test('Android 기록이나 Basic 메시지를 Swift MethodChannel 핸들러로 �
   }
 });
 
+test('같은 플랫폼의 persistence 문서는 Android 런타임 주소의 정적 후보 근거가 아니다', () => {
+  // kotlin persistence 문서는 핸들러를 분석하지 않았다 — 있으면 kotlin을 분석했다고 읽어
+  // 'unobserved'(정적 핸들러 없음 관찰)로 내면, 분석하지 않은 것을 없다고 말하게 된다.
+  const kotlinPersistence = parseBridgeFactsDocument({ format: 'bridge-facts', version: 1, project: '/app',
+    tool: { name: 'kartograph', version: '1' }, generatedAt: '2026-09-14T00:00:00Z', platform: 'kotlin',
+    target: 'persistence', limitations: [], facts: [{ kind: 'relation-use', channel: 'users', dynamic: false,
+      location: { path: 'android/Repo.kt', line: 3, column: 1 } }] });
+  const schema = parseBridgeFactsDocument({ format: 'bridge-facts', version: 1, project: '/app',
+    tool: { name: 'schemagraph', version: '1' }, generatedAt: '2026-09-14T00:00:00Z', platform: 'sql',
+    target: 'persistence', limitations: [], facts: [{ kind: 'relation-decl', channel: 'public.users',
+      dynamic: false, symbol: { qualifiedName: 'public.users' } }] });
+  const report = createBridgeImpact([dart, swift, kotlinPersistence, schema],
+    { files: ['lib/dynamic.dart'], symbols: [] }, runtime({ ...raw, run: { ...raw.run, platform: 'android' } }));
+  assert.equal(report.runtime?.routes[0]?.staticStatus, 'unsupported');
+  assert.deepEqual(report.methods, []);
+});
+
 test('근거 없는 라우팅·실패·중단·유실은 런타임 영향 공백으로 남는다', () => {
   const report = createBridgeImpact([dart, swift], { files: ['lib/dynamic.dart'], symbols: [] }, runtime({
     ...raw, droppedEvents: 1, run: { ...raw.run, status: 'incomplete' },
