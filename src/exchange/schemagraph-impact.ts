@@ -59,7 +59,9 @@ function adaptLegacyImpact(raw: unknown): TraversalGraph {
   validateTraversalGraph(roots, reached, { rootsTruncated: false, truncated: raw.truncated });
   return {
     source: 'schemagraph-impact', platform: 'sql', direction: 'dependents', roots, reached,
-    rootsTruncated: false, rootProvenance: 'complete', truncated: raw.truncated,
+    rootsTruncated: false, rootProvenance: 'complete',
+    // 옛 보고서는 근거 등급·잇지 못한 호출을 싣지 않는다. sql 간선은 소비자가 direct로 본다(reachedEvidence).
+    evidenceReported: false, unresolvedCallsReported: false, truncated: raw.truncated,
     truncationReasons: [...new Set(truncationReasons)].sort(compareStrings), limitations,
   };
 }

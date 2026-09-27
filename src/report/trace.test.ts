@@ -72,8 +72,20 @@ test('route 선택은 핸들러→정방향→relation-use→VertexId→DB 의�
   assert.deepEqual(route?.calls.map(({ call, side, quality, affected }) =>
     [call.symbol?.usr, side, quality, affected.map(({ usr, depth }) => [usr, depth])]),
   [['kt:UsersApi.get', 'decl', 'exact', [['kt:UsersRepository.load', 1], ['kt:ProfileViewModel.refresh', 2]]]]);
+  // relation-use 도달 2건(dispatch 선언 문서)과 DB 의존자 3건(sql)은 direct, 등급을 분류하지 않는 kotlin 역방향
+  // 문서의 클라이언트 영향 2건은 unassessed다.
   assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
-    databaseDependents: 3, calls: 1, clientSymbols: 2, gaps: 0 });
+    databaseDependents: 3, calls: 1, clientSymbols: 2, gaps: 0,
+    evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 2 } });
+  assert.deepEqual(chain?.relationUses.map(({ reachedFrom }) => reachedFrom[0]?.evidence), ['direct', 'direct']);
+  assert.deepEqual(route?.calls[0]?.affected.map(({ evidence }) => evidence), ['unassessed', 'unassessed']);
+  assert.deepEqual(result.analyses.map(({ id, dispatch, evidenceReported, unresolvedCallsReported }) =>
+    [id, dispatch, evidenceReported, unresolvedCallsReported]), [
+    ['android-reverse', undefined, false, false],
+    ['db', undefined, false, false],
+    ['server-forward', 'direct', true, true],
+    ['server-reverse', 'direct', true, true],
+  ]);
 });
 
 test('relation 선택은 사용 심볼에서 역방향으로 핸들러·route·클라이언트까지 잇고 다른 root의 목격을 표시한다', () => {
@@ -458,4 +470,167 @@ test('다른 project·bridge 문서·mixed-targets 입력은 거부한다', () =
   const empty = parseBridgeFactsDocument({ format: 'bridge-facts', version: 1, tool: { name: 't', version: '0' },
     generatedAt: '2026-09-27T00:00:00Z', platform: 'kotlin', target: null, project: '/work/trace-example', limitations: [], facts: [] });
   assert.deepEqual(createTraceReport({ ...input, documents: [...input.documents, empty] }).gaps, []);
+});
+
+/** 순회 문서에서 usr의 도달 정점을 찾는다. */
+const row = (graph: any, usr: string) => graph.reached.find(({ symbol }: any) => symbol.usr === usr);
+
+test('근거 등급은 hop마다 실리고 candidate만 candidate-dispatch gap이며 bound는 품질로만 보인다', () => {
+  const bound = report((value) => {
+    const forward = value.analyses['server-forward'];
+    forward.dispatch = 'bound';
+    row(forward, 'ts:service/users.load').evidence = 'bound';
+    row(forward, 'ts:repo/users.findById').evidence = 'bound';
+  });
+  assert.deepEqual(bound.gaps, []);
+  assert.deepEqual(bound.chains[0]!.relationUses.map(({ reachedFrom }) => reachedFrom[0]?.evidence), ['bound', 'bound']);
+  assert.equal(bound.summary.evidence.bound, 2);
+  const candidate = report((value) => {
+    const forward = value.analyses['server-forward'];
+    forward.dispatch = 'candidates';
+    row(forward, 'ts:service/users.load').evidence = 'bound';
+    row(forward, 'ts:repo/users.findById').evidence = 'candidate';
+  });
+  const chain = candidate.chains[0]!;
+  // hop은 빼지 않고 등급을 표시한다.
+  assert.deepEqual(chain.relationUses.map(({ column, reachedFrom }) => [column, reachedFrom[0]?.evidence, reachedFrom[0]?.path]), [
+    [undefined, 'candidate', ['ts:api/users.get', 'ts:service/users.load', 'ts:repo/users.findById']],
+    ['email', 'candidate', ['ts:api/users.get', 'ts:service/users.load', 'ts:repo/users.findById']],
+  ]);
+  assert.deepEqual(candidate.gaps.map(({ code, analysis, symbol, evidence }) => [code, analysis, symbol, evidence?.location?.line]), [
+    ['candidate-dispatch', 'server-forward', { platform: 'js', usr: 'ts:api/users.get' }, 5],
+    ['candidate-dispatch', 'server-forward', { platform: 'js', usr: 'ts:api/users.get' }, 6],
+  ]);
+  assert.deepEqual(candidate.summary.evidence, { direct: 3, bound: 0, candidate: 2, unassessed: 2 });
+  assert.equal(hasTraceGaps(candidate), true);
+});
+
+test('클라이언트·DB 영향 목록의 candidate 정점은 시작 심볼·분석별 개수와 예시로 묶는다', () => {
+  const result = report((value) => {
+    const android = value.analyses['android-reverse'];
+    android.dispatch = 'candidates';
+    row(android, 'kt:UsersRepository.load').evidence = 'candidate';
+    row(android, 'kt:ProfileViewModel.refresh').evidence = 'candidate';
+    row(value.analyses.db, 'main.orders').evidence = 'candidate';
+  });
+  const [client, database] = ['kt:UsersApi.get', 'main.users'].map((usr) =>
+    result.gaps.find(({ code, symbol }) => code === 'candidate-dispatch' && symbol?.usr === usr)!);
+  assert.equal(result.gaps.length, 2);
+  assert.deepEqual(client?.route, { scope: 'default', method: 'GET', template: '/api/users/{}' });
+  assert.equal(client?.analysis, 'android-reverse');
+  assert.equal(client?.evidence?.symbol?.usr, 'kt:UsersApi.get');
+  assert.match(client!.detail, /^2 client symbol\(s\) .*\(e\.g\. kt:UsersRepository\.load, kt:ProfileViewModel\.refresh\)\.$/);
+  assert.equal(database?.analysis, 'db');
+  assert.match(database!.detail, /^1 database symbol\(s\) .*\(e\.g\. main\.orders\)\.$/);
+  // android 문서가 dispatch를 선언하므로 등급 없는 정점도 없고, DB는 sql이라 direct다.
+  assert.deepEqual(result.summary.evidence, { direct: 4, bound: 0, candidate: 3, unassessed: 0 });
+});
+
+test('역방향 핸들러 도달이 candidate면 hop마다 gap이고, 더 강한 근거의 분석이 있으면 그 근거를 쓴다', () => {
+  const candidateReverse = (value: Fixture) => {
+    row(value.analyses['server-reverse'], 'ts:api/users.get').evidence = 'candidate';
+    value.context.selection = { relations: ['users'] };
+  };
+  const result = report(candidateReverse);
+  const get = result.chains[0]!.handlers.find(({ usr }) => usr === 'ts:api/users.get')!;
+  assert.deepEqual(get.reachedFrom.map(({ from, evidence }) => [from, evidence]), [['ts:repo/users.findById', 'candidate']]);
+  assert.deepEqual(result.gaps.map(({ code, symbol }) => [code, symbol?.usr]), [['candidate-dispatch', 'ts:api/users.get']]);
+  assert.match(result.gaps[0]!.detail, /from ts:repo\/users\.findById only through possible-implementation/);
+  // 같은 root의 다른 분석이 direct로 닿으면 그 hop은 candidate에만 기대지 않는다.
+  const merged = report((value) => {
+    candidateReverse(value);
+    value.analyses['z-server-reverse'] = structuredClone(fixture.analyses['server-reverse']);
+    value.context.analyses.push({ id: 'z-server-reverse', platform: 'js', role: 'reverse', path: 'z.json' });
+  });
+  const mergedGet = merged.chains[0]!.handlers.find(({ usr }) => usr === 'ts:api/users.get')!;
+  assert.deepEqual(mergedGet.reachedFrom.map(({ analysis, evidence }) => [analysis, evidence]), [['z-server-reverse', 'direct']]);
+  assert.deepEqual(merged.gaps, []);
+});
+
+test('핸들러 root나 그 도달 정점에 잇지 못한 호출이 있으면 reach-possibly-incomplete다', () => {
+  const result = report((value) => {
+    const forward = value.analyses['server-forward'];
+    forward.roots[1].unresolvedCalls = 2;
+    row(forward, 'ts:service/users.load').unresolvedCalls = 3;
+    // POST 핸들러에서만 닿는 정점은 GET 체인의 공백이 아니다.
+    row(forward, 'ts:repo/audit.write').unresolvedCalls = 7;
+  });
+  assert.deepEqual(result.gaps.map(({ code, analysis, symbol }) => [code, analysis, symbol]),
+    [['reach-possibly-incomplete', 'server-forward', { platform: 'js', usr: 'ts:api/users.get' }]]);
+  assert.equal(result.gaps[0]!.detail, '5 outgoing call site(s) in 2 symbol(s) reachable from this handler could not be '
+    + 'linked by the producer, so relation uses behind them may be missing (e.g. ts:api/users.get, ts:service/users.load).');
+  // 체인 hop은 그대로다.
+  assert.equal(result.chains[0]!.relationUses.length, 2);
+  // 예시는 핸들러, 그다음 문서의 (depth, usr) 순으로 5개까지다.
+  const many = report((value) => {
+    const forward = value.analyses['server-forward'];
+    const extra = Array.from({ length: 6 }, (_, index) => ({ symbol: { usr: `ts:lib/x${index}` }, via: 'ts:repo/users.findById',
+      depth: 3, roots: [0, 1], unresolvedCalls: 1 }));
+    forward.reached.push(...extra);
+    row(forward, 'ts:repo/users.findById').unresolvedCalls = 1;
+  });
+  assert.match(many.gaps[0]!.detail, /^7 outgoing call site\(s\) in 7 symbol\(s\) .*\(e\.g\. ts:repo\/users\.findById, ts:lib\/x0, ts:lib\/x1, ts:lib\/x2, ts:lib\/x3, and 2 more\)\.$/);
+});
+
+test('잇지 못한 호출을 신고하지 않는 정방향 분석은 reach-completeness-unknown이다', () => {
+  const unknown = report((value) => { delete value.analyses['server-forward'].dispatch; });
+  assert.deepEqual(unknown.gaps.map(({ code, analysis, selector }) => [code, analysis, selector]),
+    [['reach-completeness-unknown', 'server-forward', { route: { method: 'GET', template: '/api/users/{}' } }]]);
+  // dispatch도 등급도 없으면 relation-use hop은 unassessed다(gap 없음).
+  assert.deepEqual(unknown.chains[0]!.relationUses.map(({ reachedFrom }) => reachedFrom[0]?.evidence), ['unassessed', 'unassessed']);
+  assert.equal(unknown.analyses.find(({ id }) => id === 'server-forward')?.unresolvedCallsReported, false);
+  // dispatch가 없어도 어느 정점이든 unresolvedCalls를 실으면 신고하는 문서다. 이 핸들러에서 닿지 않으면 gap이 없다.
+  const inferred = report((value) => {
+    const forward = value.analyses['server-forward'];
+    delete forward.dispatch;
+    row(forward, 'ts:repo/audit.write').unresolvedCalls = 1;
+  });
+  assert.deepEqual(inferred.gaps, []);
+  // 역방향·DB 분석은 신고하지 않아도 이 gap을 만들지 않는다(fixture의 android·db 문서).
+  assert.deepEqual(report().gaps, []);
+  // 핸들러가 둘인 route 선택도 분석별 gap 하나다.
+  const twoHandlers = report((value) => {
+    delete value.analyses['server-forward'].dispatch;
+    value.docs.server.facts.push({ ...value.docs.server.facts.find((fact: any) => fact.channel === '/api/users/{}'),
+      location: { path: 'server/api/users-v2.ts', line: 1, column: 1 },
+      symbol: { qualifiedName: 'users.create', usr: 'ts:api/users.create' } });
+  });
+  assert.equal(twoHandlers.gaps.filter(({ code }) => code === 'reach-completeness-unknown').length, 1);
+});
+
+test('근거 등급·완전성 gap이 있는 출력도 입력 순서와 무관하게 바이트 단위로 같다', () => {
+  const mutate = (value: Fixture) => {
+    const forward = value.analyses['server-forward'];
+    forward.roots[1].unresolvedCalls = 2;
+    row(forward, 'ts:repo/users.findById').evidence = 'candidate';
+    row(value.analyses['android-reverse'], 'kt:ProfileViewModel.refresh').evidence = 'bound';
+    value.analyses['z-forward'] = structuredClone(fixture.analyses['server-forward']);
+    delete value.analyses['z-forward'].dispatch;
+    value.context.analyses.push({ id: 'z-forward', platform: 'js', role: 'forward', path: 'z.json' });
+  };
+  const input = build(mutate);
+  const first = encodeSortedJson(createTraceReport(input));
+  assert.equal(encodeSortedJson(createTraceReport({ ...input, analyses: [...input.analyses].reverse(),
+    documents: [...input.documents].reverse() })), first);
+  const result = createTraceReport(input);
+  // z-forward는 direct가 아니라 unassessed이므로 relation-use hop은 server-forward의 candidate를 고른다.
+  assert.deepEqual(codes(result), ['candidate-dispatch', 'reach-completeness-unknown', 'reach-possibly-incomplete']);
+});
+
+test('같은 핸들러를 root로 한 분석 중 신고하지 않는 쪽이 있으면 신고하는 쪽이 깨끗해도 completeness gap이다', () => {
+  // 합친 hop은 신고하지 않는 분석에서만 올 수 있다. 여기서는 z-forward만 GET 핸들러에서 audit.write에 닿으므로,
+  // server-forward의 "잇지 못한 호출 0"은 그 hop의 완전성을 보증하지 않는다.
+  const result = report((value) => {
+    const legacy = structuredClone(value.analyses['server-forward']);
+    delete legacy.dispatch;
+    row(legacy, 'ts:repo/audit.write').roots = [0, 1];
+    value.analyses['z-forward'] = legacy;
+    value.context.analyses.push({ id: 'z-forward', platform: 'js', role: 'forward', path: 'z.json' });
+  });
+  // audit_log 사용이 새로 닿아 그 VertexId의 DB 분석이 없다는 gap도 함께 남는다(fixture의 DB 분석은 users만 root).
+  assert.deepEqual(result.gaps.map(({ code, analysis, symbol }) => [code, analysis ?? symbol?.usr]),
+    [['reach-completeness-unknown', 'z-forward'], ['analysis-missing', 'main.audit_log']]);
+  const audit = result.chains[0]!.relationUses.find(({ relation }) => relation === 'audit_log')!;
+  assert.deepEqual(audit.reachedFrom.map(({ analysis, evidence }) => [analysis, evidence]), [['z-forward', 'unassessed']]);
+  assert.equal(hasTraceGaps(result), true);
 });

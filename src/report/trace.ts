@@ -3,7 +3,9 @@ import type { BridgeFact, BridgeFactsDocument, BridgePlatform } from '../exchang
 import { isBridgeDomainDocument } from '../exchange/parse.ts';
 import {
   MAX_ROOTS_PER_REACHED,
+  reachedEvidence,
   traversalWitness,
+  type TraversalEvidenceQuality,
   type TraversalLocation,
   type TraversalPlatform,
   type TraversalReached,
@@ -67,6 +69,12 @@ export interface TraceRouteKey {
   readonly template: string;
 }
 
+/**
+ * hop의 근거 등급이다(`direct`·`bound`·`candidate`, 생산자가 분류하지 않았으면 `unassessed`).
+ * 도달 정점의 등급이며 목격 경로에서 가장 약한 등급과 같다. `candidate`는 `candidate-dispatch` gap을 동반한다.
+ */
+export type TraceEvidence = TraversalEvidenceQuality;
+
 /** 순회가 닿은 정점이다. `path`는 생산자 via 목격을 따른 root부터 이 정점까지의 id다. */
 export interface TraceAffected {
   readonly platform: TraversalPlatform;
@@ -78,6 +86,7 @@ export interface TraceAffected {
   readonly analysis: string;
   readonly depth: number;
   readonly path: readonly string[];
+  readonly evidence: TraceEvidence;
   /** 목격 경로가 이 hop의 시작 root가 아닌 다른 root에서 시작하면 그 root id다. */
   readonly witnessRoot?: string;
   /** root 항목의 목격이 그 root 자신으로 돌아와 경로 앞부분을 알 수 없다(`witness-partial` gap). */
@@ -93,6 +102,8 @@ export interface TraceReach {
   readonly analysis?: string;
   readonly depth: number;
   readonly path: readonly string[];
+  /** 시작점 자신(depth 0)은 간선이 없으므로 `direct`다. */
+  readonly evidence: TraceEvidence;
   readonly witnessRoot?: string;
   readonly witnessPartial?: true;
 }
@@ -169,12 +180,20 @@ export interface TraceAnalysisSummary {
   readonly tool?: Readonly<{ name: string; version: string }>;
   readonly revision?: string;
   readonly graphRevision?: string;
+  readonly dispatch?: string;
   readonly truncated: boolean;
   readonly rootsTruncated: boolean;
   readonly rootProvenance: 'complete' | 'witness';
+  /** 분석이 근거 등급을 분류하는지다. 거짓이면 언어 hop은 `unassessed`(sql은 `direct`)다. */
+  readonly evidenceReported: boolean;
+  /** 분석이 잇지 못한 호출 수를 신고하는지다. 거짓인 정방향 분석은 `reach-completeness-unknown`이다. */
+  readonly unresolvedCallsReported: boolean;
   readonly roots: number;
   readonly reached: number;
 }
+
+/** 등급별 도달 근거 수다. */
+export type TraceEvidenceCounts = Readonly<Record<TraceEvidence, number>>;
 
 /** `isthmus-trace` v1 보고서다. */
 export interface TraceReport {
@@ -193,6 +212,8 @@ export interface TraceReport {
   readonly summary: Readonly<{
     chains: number; routes: number; handlers: number; relationUses: number; databaseVertices: number;
     databaseDependents: number; calls: number; clientSymbols: number; gaps: number;
+    /** 보고서의 모든 도달 근거(relation-use·핸들러 reachedFrom, 클라이언트 affected, DB dependents)의 등급별 수다. */
+    evidence: TraceEvidenceCounts;
   }>;
 }
 
@@ -207,6 +228,9 @@ export class TraceInputError extends Error {
 
 /** 보고서가 실을 수 있는 hop·정점·gap 총상한이다. 넘으면 부분 결과 대신 실패한다. */
 export const MAX_TRACE_OUTPUT_ITEMS = 1_000_000;
+
+/** 개수를 싣는 gap이 문구에 함께 드는 예시 id 수 상한이다. 문구가 무한정 길어지지 않게 한다. */
+export const MAX_GAP_EXAMPLES = 5;
 
 /** trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다. */
 export function createTraceReport(input: TraceInput): TraceReport {
@@ -429,7 +453,7 @@ class TraceBuilder {
     const handlers = new Map<string, TraceHandlerHop>();
     const routes = new Map<string, TraceRouteKey>();
     for (const start of starts) {
-      const reach = new Map<string, TraceReach>([[start.usr, { from: start.usr, depth: 0, path: [start.usr] }]]);
+      const reach = new Map<string, TraceReach>([[start.usr, selfReach(start.usr)]]);
       for (const { analysis, rows } of this.rootedRows(selector, 'reverse', start.platform, start.usr)) {
         for (const row of rows) keepNearest(reach, row.symbol.usr, reachOf(start.usr, analysis, row));
       }
@@ -541,9 +565,10 @@ class TraceBuilder {
 
   /** 핸들러에서 정방향으로 닿은 relation-use를 모은다. 핸들러 자신의 사실도 포함한다. */
   private forwardUses(selector: TraceSelector, platform: BridgePlatform, handler: string, uses: Map<string, MutableUse>): void {
-    const reach = new Map<string, TraceReach>([[handler, { from: handler, depth: 0, path: [handler] }]]);
-    for (const { analysis, rows } of this.rootedRows(selector, 'forward', platform, handler)) {
+    const reach = new Map<string, TraceReach>([[handler, selfReach(handler)]]);
+    for (const { analysis, rootIndex, rows } of this.rootedRows(selector, 'forward', platform, handler)) {
       for (const row of rows) keepNearest(reach, row.symbol.usr, reachOf(handler, analysis, row));
+      this.completenessGap(selector, platform, handler, analysis, rootIndex, rows);
     }
     for (const [usr, via] of reach) {
       for (const use of this.usesBySymbol.get(symbolKey(platform, usr)) ?? []) {
@@ -552,6 +577,31 @@ class TraceBuilder {
         this.useOutcomeGap(selector, use);
       }
     }
+  }
+
+  /**
+   * 핸들러에서 시작한 정방향 도달이 끊겼을 수 있는지 밝힌다.
+   *
+   * 핸들러 자신이나 핸들러에서 닿은 정점에 생산자가 잇지 못한 호출이 있으면 그 너머의 relation-use가 빠졌을 수
+   * 있다(`reach-possibly-incomplete`). 분석이 잇지 못한 호출을 아예 신고하지 않으면 0인지 모르므로 거친 변형
+   * (`reach-completeness-unknown`)을 남긴다 — 어느 쪽이든 완전성을 주장하지 않는다.
+   */
+  private completenessGap(selector: TraceSelector, platform: BridgePlatform, handler: string, analysis: TraceAnalysis,
+    rootIndex: number, rows: readonly TraversalReached[]): void {
+    const { graph } = analysis;
+    if (!graph.unresolvedCallsReported) {
+      this.gap({ code: 'reach-completeness-unknown', selector, analysis: analysis.id,
+        detail: 'This forward analysis does not report unresolved call sites, so relation uses behind unlinked calls '
+          + '(dynamic dispatch, callbacks, unresolved imports) may be missing without any signal.' });
+      return;
+    }
+    const cut = [{ usr: handler, count: graph.roots[rootIndex]!.unresolvedCalls ?? 0 },
+      ...rows.map((row) => ({ usr: row.symbol.usr, count: row.unresolvedCalls ?? 0 }))].filter(({ count }) => count > 0);
+    if (cut.length === 0) return;
+    const total = cut.reduce((sum, { count }) => sum + count, 0);
+    this.gap({ code: 'reach-possibly-incomplete', selector, analysis: analysis.id, symbol: { platform, usr: handler },
+      detail: `${total} outgoing call site(s) in ${cut.length} symbol(s) reachable from this handler could not be linked `
+        + `by the producer, so relation uses behind them may be missing (e.g. ${examples(cut.map(({ usr }) => usr))}).` });
   }
 
   /** 조인하지 못한 relation-use를 gap으로 남긴다. */
@@ -591,7 +641,7 @@ class TraceBuilder {
    * 분석이 없으면 `analysis-missing`, 잘렸거나 root 귀속이 부분적이면 해당 gap을 남긴다.
    */
   private rootedRows(selector: TraceSelector, role: TraceAnalysisRole, platform: BridgePlatform | 'sql', id: string):
-    Array<{ analysis: TraceAnalysis; root: string; rows: TraversalReached[] }> {
+    Array<{ analysis: TraceAnalysis; root: string; rootIndex: number; rows: TraversalReached[] }> {
     const hits = this.roots.get(JSON.stringify([role, platform, id])) ?? [];
     if (hits.length === 0) {
       this.gap({ code: 'analysis-missing', selector, symbol: { platform, usr: id },
@@ -615,7 +665,7 @@ class TraceBuilder {
           detail: 'This multi-root analysis records only one witness root per symbol; symbols also reached from this root '
             + 'through another root may be missing. Emit language-traversal v1 to preserve every root.' });
       }
-      return { analysis, root: id, rows: this.rowsByRoot.get(analysis)!.get(rootIndex) ?? [] };
+      return { analysis, root: id, rootIndex, rows: this.rowsByRoot.get(analysis)!.get(rootIndex) ?? [] };
     });
   }
 
@@ -747,6 +797,7 @@ class TraceBuilder {
   /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. */
   private count(chain: TraceChain): TraceChain {
     this.witnessGaps(chain);
+    this.candidateGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
       route.calls.length + affected(route.calls), 0) + chain.handlers.length + chain.relationUses.length +
@@ -771,6 +822,59 @@ class TraceBuilder {
       for (const reach of use.reachedFrom) {
         if (reach.witnessPartial) partial(reach.analysis, use.use.platform, reach.path[reach.path.length - 1]!);
       }
+    }
+  }
+
+  /**
+   * 가능성만 있는 구현 간선(`candidate`)으로만 뒷받침되는 hop마다 gap을 남긴다. hop은 그대로 싣고 등급을 표시한다.
+   * relation-use·핸들러 도달은 hop마다, 클라이언트·DB 영향 목록은 시작 심볼과 분석별로 개수와 예시를 묶는다.
+   * `bound`는 품질로만 보이고 gap을 만들지 않는다.
+   */
+  private candidateGaps(chain: TraceChain): void {
+    const { selector } = chain;
+    for (const use of chain.relationUses) {
+      for (const reach of use.reachedFrom) {
+        if (reach.evidence !== 'candidate') continue;
+        this.gap({ code: 'candidate-dispatch', selector, ...optionalAnalysis(reach.analysis),
+          symbol: { platform: use.use.platform, usr: reach.from }, evidence: use.use,
+          detail: 'This relation use is reached from the handler only through possible-implementation dispatch edges '
+            + '(candidate evidence); the handler may not actually reach it.' });
+      }
+    }
+    for (const handler of chain.handlers) {
+      for (const reach of handler.reachedFrom) {
+        if (reach.evidence !== 'candidate') continue;
+        this.gap({ code: 'candidate-dispatch', selector, ...optionalAnalysis(reach.analysis),
+          symbol: { platform: handler.platform, usr: handler.usr },
+          detail: `This handler is reached from ${reach.from} only through possible-implementation dispatch edges `
+            + '(candidate evidence); the route may not actually be affected.' });
+      }
+    }
+    for (const route of chain.routes) {
+      const key = routeKey(route.scope, route.method, route.template);
+      for (const call of route.calls) {
+        const usr = call.call.symbol?.usr;
+        if (usr === undefined) continue;
+        this.candidateListGaps(call.affected, (analysis, detail) => this.gap({ code: 'candidate-dispatch', selector,
+          route: key, analysis, symbol: { platform: call.call.platform, usr }, evidence: call.call, detail }), 'client');
+      }
+    }
+    for (const hop of chain.database) {
+      this.candidateListGaps(hop.dependents, (analysis, detail) => this.gap({ code: 'candidate-dispatch', selector,
+        analysis, symbol: { platform: 'sql', usr: hop.vertex }, detail }), 'database');
+    }
+  }
+
+  /** 영향 목록의 candidate 정점을 분석별로 묶어 개수와 예시를 싣는다. */
+  private candidateListGaps(rows: readonly TraceAffected[], emit: (analysis: string, detail: string) => void,
+    noun: 'client' | 'database'): void {
+    const byAnalysis = new Map<string, string[]>();
+    for (const row of rows) {
+      if (row.evidence === 'candidate') byAnalysis.set(row.analysis, [...(byAnalysis.get(row.analysis) ?? []), row.usr]);
+    }
+    for (const [analysis, usrs] of [...byAnalysis.entries()].sort(([left], [right]) => compareStrings(left, right))) {
+      emit(analysis, `${usrs.length} ${noun} symbol(s) are reached from this root only through possible-implementation `
+        + `dispatch edges (candidate evidence) and may not actually be affected (e.g. ${examples(usrs)}).`);
     }
   }
 
@@ -844,17 +948,37 @@ function keepNearest(target: Map<string, TraceReach>, key: string, reach: TraceR
 }
 
 /**
- * 도달 근거의 우선순위다. 시작점 자신의 경로(`witnessRoot` 없음)가 다른 root의 목격보다 앞서고,
- * 그다음 depth, 분석 id 순이다.
+ * 도달 근거의 우선순위다. 더 강한 근거 등급(direct, bound, candidate, unassessed 순)이 먼저다 — 한 분석이라도
+ * 더 강한 근거로 닿으면 그 hop은 약한 근거에만 기대지 않기 때문이다. 그다음 시작점 자신의 경로(`witnessRoot`
+ * 없음)가 다른 root의 목격보다 앞서고, depth, 분석 id 순이다.
  */
 function compareNearness(left: NearnessKey, right: NearnessKey): number {
   const indirect = (reach: NearnessKey) => Number(reach.witnessRoot !== undefined || reach.witnessPartial === true);
-  return indirect(left) - indirect(right) || left.depth - right.depth ||
-    compareStrings(left.analysis ?? '', right.analysis ?? '');
+  return evidenceRank[left.evidence] - evidenceRank[right.evidence] || indirect(left) - indirect(right) ||
+    left.depth - right.depth || compareStrings(left.analysis ?? '', right.analysis ?? '');
 }
 
+/** 근거 등급의 강한 순서다. `unassessed`는 분류되지 않았으므로 알려진 등급 뒤에 둔다. */
+const evidenceRank: Readonly<Record<TraceEvidence, number>> = { direct: 0, bound: 1, candidate: 2, unassessed: 3 };
+
 /** 도달 근거 비교에 쓰는 필드다. */
-type NearnessKey = Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot' | 'witnessPartial'>;
+type NearnessKey = Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot' | 'witnessPartial' | 'evidence'>;
+
+/** 체인 시작점 자신의 도달 근거다. 간선이 없으므로 depth 0, `direct`다. */
+function selfReach(usr: string): TraceReach {
+  return { from: usr, depth: 0, path: [usr], evidence: 'direct' };
+}
+
+/** gap 문구에 싣는 예시 id 목록이다. 상한을 넘으면 나머지 수를 덧붙인다. */
+function examples(usrs: readonly string[]): string {
+  const shown = usrs.slice(0, MAX_GAP_EXAMPLES).join(', ');
+  return usrs.length > MAX_GAP_EXAMPLES ? `${shown}, and ${usrs.length - MAX_GAP_EXAMPLES} more` : shown;
+}
+
+/** 분석 id가 있을 때만 gap 필드로 싣는다. */
+function optionalAnalysis(analysis: string | undefined): { analysis?: string } {
+  return analysis === undefined ? {} : { analysis };
+}
 
 /**
  * 생산자 via 목격으로 도달 근거를 만든다.
@@ -864,7 +988,7 @@ type NearnessKey = Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot' | 'witn
  */
 function reachOf(from: string, analysis: TraceAnalysis, row: TraversalReached): TraceReach {
   const { path, partial } = traversalWitness(analysis.graph, row.symbol.usr);
-  return { from, analysis: analysis.id, depth: row.depth, path,
+  return { from, analysis: analysis.id, depth: row.depth, path, evidence: reachedEvidence(analysis.graph, row),
     ...(partial ? { witnessPartial: true as const } : path[0] === from ? {} : { witnessRoot: path[0]! }) };
 }
 
@@ -874,14 +998,14 @@ function affectedRows(hits: ReadonlyArray<{ analysis: TraceAnalysis; root: strin
   const best = new Map<string, TraceAffected>();
   for (const { analysis, root, rows } of hits) {
     for (const row of rows) {
-      const { path, witnessRoot, witnessPartial } = reachOf(root, analysis, row);
+      const { path, evidence, witnessRoot, witnessPartial } = reachOf(root, analysis, row);
       const candidate: TraceAffected = {
         platform: analysis.platform, usr: row.symbol.usr,
         ...(row.symbol.qualifiedName === undefined ? {} : { qualifiedName: row.symbol.qualifiedName }),
         ...(row.symbol.kind === undefined ? {} : { kind: row.symbol.kind }),
         ...(row.symbol.location === undefined ? {} : { location: row.symbol.location }),
         ...(row.relationships === undefined ? {} : { relationships: row.relationships }),
-        analysis: analysis.id, depth: row.depth, path, ...(witnessRoot === undefined ? {} : { witnessRoot }),
+        analysis: analysis.id, depth: row.depth, path, evidence, ...(witnessRoot === undefined ? {} : { witnessRoot }),
         ...(witnessPartial === undefined ? {} : { witnessPartial }),
       };
       const current = best.get(row.symbol.usr);
@@ -917,7 +1041,9 @@ function summarizeAnalysis({ id, platform, role, graph }: TraceAnalysis): TraceA
     ...(graph.tool === undefined ? {} : { tool: graph.tool }),
     ...(graph.revision === undefined ? {} : { revision: graph.revision }),
     ...(graph.graphRevision === undefined ? {} : { graphRevision: graph.graphRevision }),
+    ...(graph.dispatch === undefined ? {} : { dispatch: graph.dispatch }),
     truncated: graph.truncated, rootsTruncated: graph.rootsTruncated, rootProvenance: graph.rootProvenance,
+    evidenceReported: graph.evidenceReported, unresolvedCallsReported: graph.unresolvedCallsReported,
     roots: graph.roots.length, reached: graph.reached.length,
   };
 }
@@ -935,5 +1061,21 @@ function summarize(chains: readonly TraceChain[], gaps: number): TraceReport['su
     clientSymbols: sum(({ routes }) => routes.reduce((total, route) =>
       total + route.calls.reduce((count, call) => count + call.affected.length, 0), 0)),
     gaps,
+    evidence: countEvidence(chains),
   };
+}
+
+/** 보고서의 모든 도달 근거를 등급별로 센다. 시작점 자신(depth 0)의 relation-use 도달도 `direct`로 센다. */
+function countEvidence(chains: readonly TraceChain[]): TraceEvidenceCounts {
+  const counts: Record<TraceEvidence, number> = { direct: 0, bound: 0, candidate: 0, unassessed: 0 };
+  for (const chain of chains) {
+    const reaches: ReadonlyArray<{ evidence: TraceEvidence }> = [
+      ...chain.relationUses.flatMap(({ reachedFrom }) => reachedFrom),
+      ...chain.handlers.flatMap(({ reachedFrom }) => reachedFrom),
+      ...chain.routes.flatMap(({ calls }) => calls.flatMap(({ affected }) => affected)),
+      ...chain.database.flatMap(({ dependents }) => dependents),
+    ];
+    for (const { evidence } of reaches) counts[evidence] += 1;
+  }
+  return counts;
 }

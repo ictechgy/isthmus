@@ -17,6 +17,19 @@ export type TraversalPlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rus
 /** 순회 방향이다. `dependencies`는 root가 기대는 쪽, `dependents`는 root에 기대는 쪽이다. */
 export type TraversalDirection = 'dependencies' | 'dependents';
 
+/**
+ * 도달 근거의 등급이다. 간선 집합이 `direct ⊂ bound ⊂ candidate`로 포개진다.
+ *
+ * - `direct`: 컴파일러·구문이 해석한 간선만으로 닿는다.
+ * - `bound`: 주입된 구현의 전체 프로그램 흐름으로 해석한 dispatch 간선을 포함한다(인터페이스 자리로 들어오는
+ *   관찰된 흐름이 모두 알려진 프로젝트 구현이다).
+ * - `candidate`: 가능성만 있는 구현 간선을 하나 이상 포함한다.
+ *
+ * 생산자가 dispatch를 해석할수록 경로가 늘어나므로, 소비자가 과장 없이 "확실히 닿는다"와 "닿을 수도 있다"를
+ * 구분하게 하려고 둔다.
+ */
+export type TraversalEvidence = 'direct' | 'bound' | 'candidate';
+
 /** 생산자가 관찰한 소스 위치다. JVM처럼 줄·열이 없을 수 있어 부분 위치를 허용한다. */
 export interface TraversalLocation {
   readonly path: string;
@@ -40,6 +53,8 @@ export interface TraversalSymbol {
 export interface TraversalRoot {
   readonly id: string;
   readonly symbol?: TraversalSymbol;
+  /** root 자신의 나가는 호출 지점 중 생산자가 잇지 못한 수(1 이상, 0이면 생략)다. */
+  readonly unresolvedCalls?: number;
 }
 
 /** 순회가 도달한 정점 하나다. */
@@ -55,6 +70,13 @@ export interface TraversalReached {
    */
   readonly roots: readonly number[];
   readonly relationships?: readonly string[];
+  /**
+   * 나열된 root 각각에서 이 정점에 닿는 가장 강한 등급 중 가장 약한 것이다(root마다 성립하는 하한).
+   * depth·via·roots는 여전히 허용된 전체 그래프 기준이다. 없으면 문서 수준 규칙(`reachedEvidence`)을 따른다.
+   */
+  readonly evidence?: TraversalEvidence;
+  /** 이 정점 자신의 나가는 호출 지점 중 생산자가 잇지 못한 수(1 이상, 0이면 생략)다. */
+  readonly unresolvedCalls?: number;
 }
 
 /** 검증된 `language-traversal` v1 문서다. */
@@ -67,6 +89,11 @@ export interface LanguageTraversal {
   readonly project: string;
   readonly revision?: string;
   readonly graphRevision?: string;
+  /**
+   * 생산자가 정한 dispatch 해석 방식 표식(tsograph는 `direct`·`bound`·`candidates`)이다. isthmus는 값을
+   * 해석하지 않지만, 이 필드가 있으면 문서가 근거 등급을 분류하고 잇지 못한 호출을 신고한다는 선언이다.
+   */
+  readonly dispatch?: string;
   readonly direction: TraversalDirection;
   readonly roots: readonly TraversalRoot[];
   readonly reached: readonly TraversalReached[];
@@ -90,10 +117,21 @@ export interface TraversalGraph {
   readonly tool?: Readonly<{ name: string; version: string }>;
   readonly revision?: string;
   readonly graphRevision?: string;
+  readonly dispatch?: string;
   readonly roots: readonly TraversalRoot[];
   readonly reached: readonly TraversalReached[];
   readonly rootsTruncated: boolean;
   readonly rootProvenance: 'complete' | 'witness';
+  /**
+   * 문서가 근거 등급을 분류하는지다(`dispatch`가 있거나 `evidence`를 실은 정점이 하나라도 있다).
+   * 참이면 `evidence`가 없는 정점은 `direct`다. 거짓이면 생산자가 분류하지 않았다는 뜻이다.
+   */
+  readonly evidenceReported: boolean;
+  /**
+   * 문서가 잇지 못한 호출 수를 신고하는지다(`dispatch`가 있거나 `unresolvedCalls`를 실은 root·정점이 하나라도
+   * 있다). 참이면 없는 값은 0이다. 거짓이면 0인지 모르는 것이므로 소비자가 완전성을 주장하면 안 된다.
+   */
+  readonly unresolvedCallsReported: boolean;
   readonly truncated: boolean;
   readonly truncationReasons: readonly string[];
   readonly limitations: readonly string[];
@@ -122,11 +160,16 @@ export const MAX_TRAVERSAL_DEPTH = 128;
 export const MAX_ROOTS_PER_REACHED = 64;
 /** 정점 하나의 관계 문자열 상한이다. */
 export const MAX_TRAVERSAL_RELATIONSHIPS = 32;
+/** 정점 하나가 신고하는 잇지 못한 호출 수 상한이다. 한 함수의 호출 지점이 이보다 많을 수 없다고 본다. */
+export const MAX_UNRESOLVED_CALLS = 1_000_000;
 
 const platforms = new Set<string>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql']);
 const topKeys = new Set(['format', 'version', 'tool', 'generatedAt', 'platform', 'project', 'revision',
-  'graphRevision', 'direction', 'roots', 'reached', 'rootsTruncated', 'truncated', 'truncationReasons', 'limitations']);
-const reachedKeys = new Set(['symbol', 'via', 'depth', 'roots', 'relationships']);
+  'graphRevision', 'dispatch', 'direction', 'roots', 'reached', 'rootsTruncated', 'truncated', 'truncationReasons',
+  'limitations']);
+const rootKeys = new Set(['id', 'symbol', 'unresolvedCalls']);
+const reachedKeys = new Set(['symbol', 'via', 'depth', 'roots', 'relationships', 'evidence', 'unresolvedCalls']);
+const evidenceTiers = new Set<string>(['direct', 'bound', 'candidate']);
 const symbolKeys = new Set(['usr', 'qualifiedName', 'kind', 'location']);
 
 /** 값이 순회 플랫폼인지 확인한다. */
@@ -150,6 +193,7 @@ export function parseLanguageTraversal(input: unknown): LanguageTraversal {
   const project = safe(value.project, 'Invalid language traversal project.');
   const revision = optionalSafe(value.revision, 'Invalid language traversal revision.');
   const graphRevision = optionalSafe(value.graphRevision, 'Invalid language traversal graphRevision.');
+  const dispatch = optionalSafe(value.dispatch, 'Invalid language traversal dispatch label.');
   if (value.direction !== 'dependencies' && value.direction !== 'dependents') {
     fail('Invalid language traversal direction.');
   }
@@ -171,7 +215,7 @@ export function parseLanguageTraversal(input: unknown): LanguageTraversal {
   return {
     format: 'language-traversal', version: 1, tool, generatedAt: value.generatedAt, platform: value.platform, project,
     ...(revision === undefined ? {} : { revision }), ...(graphRevision === undefined ? {} : { graphRevision }),
-    direction: value.direction, roots, reached,
+    ...(dispatch === undefined ? {} : { dispatch }), direction: value.direction, roots, reached,
     ...(value.rootsTruncated === undefined ? {} : { rootsTruncated: value.rootsTruncated }),
     truncated: value.truncated, ...(truncationReasons === undefined ? {} : { truncationReasons }), limitations,
   };
@@ -183,8 +227,13 @@ export function traversalGraphFromDocument(document: LanguageTraversal): Travers
     source: 'language-traversal', platform: document.platform, direction: document.direction, tool: document.tool,
     ...(document.revision === undefined ? {} : { revision: document.revision }),
     ...(document.graphRevision === undefined ? {} : { graphRevision: document.graphRevision }),
+    ...(document.dispatch === undefined ? {} : { dispatch: document.dispatch }),
     roots: document.roots, reached: document.reached, rootsTruncated: document.rootsTruncated === true,
-    rootProvenance: 'complete', truncated: document.truncated,
+    rootProvenance: 'complete',
+    evidenceReported: document.dispatch !== undefined || document.reached.some(({ evidence }) => evidence !== undefined),
+    unresolvedCallsReported: document.dispatch !== undefined ||
+      [...document.roots, ...document.reached].some(({ unresolvedCalls }) => unresolvedCalls !== undefined),
+    truncated: document.truncated,
     truncationReasons: document.truncationReasons ?? [], limitations: document.limitations,
   };
 }
@@ -212,7 +261,9 @@ export function traversalGraphFromImpact(impact: LanguageImpact, source: Travers
   validateTraversalGraph(roots, reached, { rootsTruncated: false, truncated: impact.truncated });
   return {
     source, platform: impact.platform, direction: 'dependents', roots, reached, rootsTruncated: false,
-    rootProvenance: roots.length > 1 ? 'witness' : 'complete', truncated: impact.truncated,
+    rootProvenance: roots.length > 1 ? 'witness' : 'complete',
+    // 옛 역방향 형식은 근거 등급과 잇지 못한 호출을 신고하지 않는다. 없음을 0·direct로 읽지 않는다.
+    evidenceReported: false, unresolvedCallsReported: false, truncated: impact.truncated,
     truncationReasons: [], limitations: impact.limitations,
   };
 }
@@ -228,6 +279,9 @@ export function traversalGraphFromImpact(impact: LanguageImpact, source: Travers
  * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다.
  * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모에 닿는 root(부모가 root면
  *   그 root와, 그 root가 다른 root에서 닿았다면 그 root들)가 자기 자신을 빼고 모두 자식에 포함된다.
+ * - 다른 root에서 닿은 root 항목의 `unresolvedCalls`는 같은 정점의 `roots[]` 항목 값과 같다(둘 다 없거나 같은 수).
+ *   근거 등급의 via 관계는 검사하지 않는다 — via는 전체 그래프 기준 최단 경로의 목격이고 간선 등급을 싣지 않으므로
+ *   등급별 경로가 via 사슬과 다를 수 있다(생산자 보장으로 문서화한다).
  */
 export function validateTraversalGraph(
   roots: readonly TraversalRoot[],
@@ -253,6 +307,9 @@ export function validateTraversalGraph(
     }
     const own = rootIndex.get(row.symbol.usr);
     if (own !== undefined && row.roots.includes(own)) fail('A reached root must not list its own root index.');
+    if (own !== undefined && row.unresolvedCalls !== roots[own]!.unresolvedCalls) {
+      fail('A reached root must report the same unresolvedCalls as its root entry.');
+    }
     if (row.via === row.symbol.usr) fail('Traversal via must differ from the reached symbol.');
     const viaRoot = rootIndex.get(row.via);
     let inherited: readonly number[];
@@ -336,6 +393,23 @@ export function rowIndex(graph: TraversalGraph): Map<string, TraversalReached> {
   return index;
 }
 
+/** 소비자가 보는 정점의 근거 등급이다. 생산자가 분류하지 않은 언어 그래프는 `unassessed`다. */
+export type TraversalEvidenceQuality = TraversalEvidence | 'unassessed';
+
+/**
+ * 정점의 유효 근거 등급이다.
+ *
+ * - 정점이 `evidence`를 실으면 그 값이다.
+ * - 문서가 등급을 분류하면(`evidenceReported`) 없는 값은 `direct`다.
+ * - sql(schemagraph) 순회는 FK·뷰 정의처럼 스키마에 선언된 간선만 있으므로 없는 값을 `direct`로 본다.
+ * - 그 밖(옛 역방향 어댑터, 분류하지 않는 생산자)은 `unassessed`다 — 가능성 간선이 섞였는지 모르므로
+ *   `direct`로 부풀리지 않는다.
+ */
+export function reachedEvidence(graph: TraversalGraph, row: TraversalReached): TraversalEvidenceQuality {
+  if (row.evidence !== undefined) return row.evidence;
+  return graph.evidenceReported || graph.platform === 'sql' ? 'direct' : 'unassessed';
+}
+
 /** 결정적 도달 정점 순서다: depth, 그다음 usr. */
 export function compareReached(left: TraversalReached, right: TraversalReached): number {
   return left.depth - right.depth || compareStrings(left.symbol.usr, right.symbol.usr);
@@ -367,12 +441,14 @@ function symbolFromImpact(symbol: LanguageImpact['roots'][number]): TraversalSym
 /** root 항목을 검증한다. 심볼 root면 usr가 id와 같아야 한다. */
 function parseRoot(input: unknown): TraversalRoot {
   const value = object(input, 'Invalid traversal root.');
-  onlyKeys(value, new Set(['id', 'symbol']), 'Traversal root has an unknown field.');
+  onlyKeys(value, rootKeys, 'Traversal root has an unknown field.');
   const id = safe(value.id, 'Invalid traversal root id.');
-  if (value.symbol === undefined) return { id };
+  const unresolvedCalls = optionalUnresolvedCalls(value.unresolvedCalls);
+  const extra = unresolvedCalls === undefined ? {} : { unresolvedCalls };
+  if (value.symbol === undefined) return { id, ...extra };
   const symbol = parseTraversalSymbol(value.symbol);
   if (symbol.usr !== id) fail('Traversal root symbol usr must equal the root id.');
-  return { id, symbol };
+  return { id, symbol, ...extra };
 }
 
 /** 도달 정점 항목을 검증한다. 그래프 불변식은 `validateTraversalGraph`가 본다. */
@@ -387,8 +463,23 @@ function parseReached(input: unknown): TraversalReached {
   const roots = array(value.roots, MAX_ROOTS_PER_REACHED, 'Invalid traversal root indices.') as number[];
   const relationships = value.relationships === undefined ? undefined
     : sortedUniqueStrings(value.relationships, MAX_TRAVERSAL_RELATIONSHIPS, 'Invalid traversal relationships.');
+  if (value.evidence !== undefined && (typeof value.evidence !== 'string' || !evidenceTiers.has(value.evidence))) {
+    fail('Traversal evidence must be direct, bound or candidate.');
+  }
+  const unresolvedCalls = optionalUnresolvedCalls(value.unresolvedCalls);
   return { symbol, via, depth: value.depth as number, roots: [...roots],
-    ...(relationships === undefined ? {} : { relationships }) };
+    ...(relationships === undefined ? {} : { relationships }),
+    ...(value.evidence === undefined ? {} : { evidence: value.evidence as TraversalEvidence }),
+    ...(unresolvedCalls === undefined ? {} : { unresolvedCalls }) };
+}
+
+/** 잇지 못한 호출 수를 검증한다. 0은 생략해야 하므로 거부한다(없음과 0을 두 모양으로 쓰지 않는다). */
+function optionalUnresolvedCalls(input: unknown): number | undefined {
+  if (input === undefined) return undefined;
+  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > MAX_UNRESOLVED_CALLS) {
+    fail(`Traversal unresolvedCalls must be an integer between 1 and ${MAX_UNRESOLVED_CALLS}; omit it when zero.`);
+  }
+  return input as number;
 }
 
 /** 순회 심볼을 검증한다. */

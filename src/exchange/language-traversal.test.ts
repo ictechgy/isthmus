@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  MAX_UNRESOLVED_CALLS,
   parseLanguageTraversal,
+  reachedEvidence,
   traversalGraphFromDocument,
   traversalGraphFromImpact,
   traversalPath,
@@ -190,6 +192,85 @@ test('계약 위반을 조용히 고치지 않고 거부한다', () => {
     roots: Array.from({ length: 65 }, () => 0) }], { rootsTruncated: true, truncated: true }));
 });
 
+test('근거 등급·dispatch·잇지 못한 호출을 검증하고 문서 수준 신고 여부를 추론한다', () => {
+  const value = document();
+  value.dispatch = 'candidates';
+  value.roots[0].unresolvedCalls = 2;
+  value.reached[0].evidence = 'bound';
+  value.reached[1].evidence = 'candidate';
+  value.reached[1].unresolvedCalls = MAX_UNRESOLVED_CALLS;
+  const parsed = parseLanguageTraversal(value);
+  assert.equal(parsed.dispatch, 'candidates');
+  assert.equal(parsed.roots[0]?.unresolvedCalls, 2);
+  assert.deepEqual(parsed.reached.map(({ evidence, unresolvedCalls }) => [evidence, unresolvedCalls]),
+    [['bound', undefined], ['candidate', MAX_UNRESOLVED_CALLS]]);
+  const graph = traversalGraphFromDocument(parsed);
+  assert.equal(graph.dispatch, 'candidates');
+  assert.equal(graph.evidenceReported, true);
+  assert.equal(graph.unresolvedCallsReported, true);
+  // dispatch 선언은 등급 분류와 잇지 못한 호출 신고를 함께 선언한다. 등급 없는 정점은 direct다.
+  const declared = traversalGraphFromDocument(parseLanguageTraversal({ ...document(), dispatch: 'direct' }));
+  assert.deepEqual([declared.evidenceReported, declared.unresolvedCallsReported], [true, true]);
+  assert.equal(reachedEvidence(declared, declared.reached[0]!), 'direct');
+  // 필드가 전혀 없는 언어 문서는 분류도 신고도 하지 않은 것이다. 없음을 direct·0으로 읽지 않는다.
+  const legacy = traversalGraphFromDocument(parseLanguageTraversal(document()));
+  assert.deepEqual([legacy.dispatch, legacy.evidenceReported, legacy.unresolvedCallsReported], [undefined, false, false]);
+  assert.equal(reachedEvidence(legacy, legacy.reached[0]!), 'unassessed');
+  // sql 순회는 스키마에 선언된 간선만 있으므로 없는 등급을 direct로 본다.
+  const sql = traversalGraphFromDocument(parseLanguageTraversal({ ...document(), platform: 'sql' }));
+  assert.equal(reachedEvidence(sql, sql.reached[0]!), 'direct');
+  // 정점 하나만 등급이나 잇지 못한 호출을 실어도 그 문서는 신고하는 것으로 본다.
+  const partial = document();
+  partial.reached[1].evidence = 'candidate';
+  partial.reached[0].unresolvedCalls = 1;
+  const inferred = traversalGraphFromDocument(parseLanguageTraversal(partial));
+  assert.deepEqual([inferred.evidenceReported, inferred.unresolvedCallsReported], [true, true]);
+  assert.equal(reachedEvidence(inferred, inferred.reached[0]!), 'direct');
+  const rootOnly = document();
+  rootOnly.roots[1].unresolvedCalls = 4;
+  assert.equal(traversalGraphFromDocument(parseLanguageTraversal(rootOnly)).unresolvedCallsReported, true);
+});
+
+test('다른 root에서 닿은 root 항목은 roots[]와 같은 unresolvedCalls를 싣는다', () => {
+  const value = rootToRoot();
+  value.roots[1].unresolvedCalls = 3;
+  value.reached[0].unresolvedCalls = 3;
+  assert.doesNotThrow(() => parseLanguageTraversal(value));
+  for (const mutate of [
+    (input: any) => { delete input.reached[0].unresolvedCalls; },
+    (input: any) => { input.reached[0].unresolvedCalls = 2; },
+    (input: any) => { delete input.roots[1].unresolvedCalls; },
+  ]) {
+    const invalid = structuredClone(value);
+    mutate(invalid);
+    assert.throws(() => parseLanguageTraversal(invalid), /same unresolvedCalls/);
+  }
+});
+
+test('근거 등급·잇지 못한 호출·dispatch 표식의 계약 위반을 거부한다', () => {
+  const mutations: Array<(value: any) => void> = [
+    (value) => { value.dispatch = ''; },
+    (value) => { value.dispatch = 3; },
+    (value) => { value.reached[0].evidence = 'maybe'; },
+    (value) => { value.reached[0].evidence = 'candidates'; },
+    (value) => { value.reached[0].evidence = 1; },
+    (value) => { value.reached[0].evidence = null; },
+    (value) => { value.reached[0].unresolvedCalls = 0; },
+    (value) => { value.reached[0].unresolvedCalls = -1; },
+    (value) => { value.reached[0].unresolvedCalls = 1.5; },
+    (value) => { value.reached[0].unresolvedCalls = '2'; },
+    (value) => { value.reached[0].unresolvedCalls = MAX_UNRESOLVED_CALLS + 1; },
+    (value) => { value.roots[0].unresolvedCalls = 0; },
+    (value) => { value.roots[1].unresolvedCalls = null; },
+    (value) => { value.roots[0].evidence = 'direct'; },
+  ];
+  for (const mutate of mutations) {
+    const value = document();
+    mutate(value);
+    assert.throws(() => parseLanguageTraversal(value), TraversalValidationError, JSON.stringify(value).slice(0, 80));
+  }
+});
+
 test('옛 역방향 영향은 대표 root 하나로만 출처를 복원하고 root가 여럿이면 witness로 표시한다', () => {
   const impact: LanguageImpact = {
     id: 'k', platform: 'kotlin', tool: { name: 'kartograph', version: '1' }, requested: { files: [], symbols: [] },
@@ -210,6 +291,9 @@ test('옛 역방향 영향은 대표 root 하나로만 출처를 복원하고 ro
   assert.deepEqual(graph.roots[0]?.symbol, { usr: 'a-root', qualifiedName: 'A', kind: 'method', location: { path: 'a.kt', line: 1 } });
   const single = traversalGraphFromImpact({ ...impact, roots: [impact.roots[0]!] }, 'change-impact');
   assert.equal(single.rootProvenance, 'complete');
+  // 옛 형식은 근거 등급·잇지 못한 호출을 신고하지 않는다.
+  assert.deepEqual([graph.evidenceReported, graph.unresolvedCallsReported], [false, false]);
+  assert.equal(reachedEvidence(graph, graph.reached[0]!), 'unassessed');
   assert.throws(() => traversalGraphFromImpact({ ...impact, affected: [{ ...impact.affected[0]!, via: 'loop' }] }, 'change-impact'),
     /root/);
 });

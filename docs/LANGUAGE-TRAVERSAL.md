@@ -20,12 +20,16 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
   "project": "/abs/path",                        // bridge-facts와 같은 POSIX realpath 규칙
   "revision": "<git sha>",                       // 선택: 분석한 소스 revision
   "graphRevision": "<opaque>",                   // 선택: 순회에 쓴 그래프 산출물의 신원
+  "dispatch": "bound",                           // 선택: 생산자가 정한 dispatch 해석 방식 표식
   "direction": "dependencies",                   // dependencies | dependents
-  "roots": [ { "id": "<생산자 id>", "symbol": { "usr": "<같은 id>", "qualifiedName": "…" } } ],
+  "roots": [ { "id": "<생산자 id>", "symbol": { "usr": "<같은 id>", "qualifiedName": "…" },
+               "unresolvedCalls": 2 } ],         // 선택: 1 이상, 0이면 생략
   "reached": [
     { "symbol": { "usr": "<생산자 id>", "qualifiedName": "…", "kind": "method",
                   "location": { "path": "src/a.ts", "line": 3, "column": 1 } },
-      "via": "<부모 usr 또는 root id>", "depth": 1, "roots": [0], "relationships": ["call"] }
+      "via": "<부모 usr 또는 root id>", "depth": 1, "roots": [0], "relationships": ["call"],
+      "evidence": "bound",                       // 선택: direct | bound | candidate
+      "unresolvedCalls": 1 }                     // 선택: 1 이상, 0이면 생략
   ],
   "rootsTruncated": true,                        // 선택: 잘렸을 때만 싣는다
   "truncated": false,
@@ -75,11 +79,64 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
 - `truncated`는 깊이·출력·예산 등으로 순회가 잘렸다는 뜻이다. 잘린 순회의 부재는 아무것도
   증명하지 않는다.
 
+## 근거 등급과 잇지 못한 호출 (선택 필드)
+
+dependency injection·인터페이스 dispatch를 해석하는 생산자(tsograph)는 경로가 늘어나는 만큼 그 경로가 얼마나
+확실한지도 함께 낸다. 모두 선택 필드이며 v1에 더해진 것이다(버전은 그대로 1).
+
+- `dispatch`(문서, 문자열): 생산자가 정한 dispatch 해석 방식 표식이다(tsograph는 `direct`·`bound`·`candidates`).
+  isthmus는 값을 해석하지 않고 출력의 분석 메타데이터에 그대로 싣는다. **이 필드가 있으면 그 문서는 아래
+  두 신고를 한다는 선언이다**: 모든 도달 정점의 근거 등급을 분류하고(`evidence`가 없는 정점은 `direct`),
+  잇지 못한 호출이 1개 이상인 모든 root·도달 정점에 `unresolvedCalls`를 싣는다(없는 값은 0).
+- `reached[].evidence`: `"direct"` | `"bound"` | `"candidate"`. 등급은 간선 집합이 포개진다
+  (`direct ⊂ bound ⊂ candidate`).
+  - `direct` — 컴파일러·구문이 해석한 간선만 쓴다.
+  - `bound` — 주입된 구현의 전체 프로그램 흐름으로 해석한 dispatch 간선을 포함한다. 인터페이스 자리로
+    들어오는 관찰된 흐름이 모두 알려진 프로젝트 구현이어야 한다.
+  - `candidate` — 가능성만 있는 구현 간선을 하나 이상 포함한다.
+
+  값은 **나열된 root 각각에 대해** "그 root에서 이 정점에 닿는 가장 강한 등급"을 구한 뒤 그중 가장 약한
+  것이다. 즉 `evidence: "direct"`는 이 정점에 닿는 모든 root에서 direct 간선만으로 닿는다는 뜻이다(64개 상한으로
+  잘린 목록이면 목록에서 빠진 root도 포함한다). root마다 성립하는 하한이어야 다중 root 문서에서 소비자가
+  특정 root(핸들러 하나)의 hop 등급을 부풀리지 않는다. `depth`·`via`·`roots`는 여전히 허용된 **전체** 그래프
+  (가장 약한 등급까지 포함) 기준이며, 등급별 최단 경로는 via 사슬과 다를 수 있다.
+- `reached[].unresolvedCalls`·`roots[].unresolvedCalls`: 1 이상의 정수(상한 1,000,000). 그 정점 **자신의**
+  나가는 호출 지점 중 생산자가 대상을 잇지 못한 수다. 0이면 생략한다(0을 싣지 않는다). 다른 root에서 닿아
+  `reached`에도 실린 root는 두 곳에 같은 값을 싣는다.
+
+### 필드가 없을 때 (문서 수준 규칙)
+
+없는 선택 필드는 "0"이나 "direct"로 단정하지 않는다. 소비자는 문서 단위로 신고 여부를 정한다.
+
+| 신고 여부 | 판정 | 없는 값의 의미 |
+|---|---|---|
+| 근거 등급 분류 | `dispatch`가 있거나 `evidence`를 실은 정점이 하나라도 있다 | `direct` |
+| 근거 등급 미분류, `platform: "sql"` | schemagraph 간선(FK·뷰 정의 등)은 스키마에 선언된 것이다 | `direct` |
+| 근거 등급 미분류, 언어 그래프 | 생산자가 분류하지 않았다(옛 어댑터 포함) | `unassessed` — 가능성 간선이 섞였는지 모른다 |
+| 잇지 못한 호출 신고 | `dispatch`가 있거나 `unresolvedCalls`를 실은 root·정점이 하나라도 있다 | 0 |
+| 잇지 못한 호출 미신고 | 위가 모두 아니다(옛 어댑터 포함) | 알 수 없음 — 완전성을 주장하지 않는다 |
+
+잇지 못한 호출을 신고하지만 `dispatch`를 내지 않는 생산자가 한 문서에서 잇지 못한 호출이 하나도 없으면 문서만
+보고는 "미신고"와 구별되지 않는다. 그런 생산자는 `dispatch`(예: `"direct"`)를 실어 신고를 선언한다. 선언하지
+않으면 소비자는 보수적으로 "알 수 없음"으로 읽는다.
+
+### 소비자가 검사하는 것과 생산자 보장
+
+- 검사한다: `evidence` 열거값, `unresolvedCalls`의 정수·범위(1~1,000,000, 0 거부), `dispatch`가 안전한 비지 않은
+  문자열인지, 다른 root에서 닿은 root 항목의 `unresolvedCalls`가 `roots[]` 항목과 같은지(둘 다 없거나 같은 수).
+- 검사하지 않는다(생산자 보장): 등급의 포개짐과 "root마다 하한" 정의, via 부모와 자식 사이의 등급 관계.
+  via는 전체 그래프 최단 경로의 목격이고 간선 등급을 싣지 않으므로, 예컨대 via 간선이 candidate여도 더 긴
+  direct 경로가 있으면 자식은 `direct`일 수 있다. 소비자가 via 부모의 등급으로 자식 등급을 제한하면 올바른
+  문서를 거부하게 되므로 이 관계는 강제하지 않는다.
+- 역방향(`dependents`) 문서의 `unresolvedCalls`는 싣되 trace가 쓰지 않는다. 잇지 못한 호출은 순회 밖의 어느
+  정점에서든 이 root로 들어오는 빠진 간선일 수 있어 특정 hop에 귀속할 수 없기 때문이다.
+
 ## 검증 규칙 (소비자, fail-closed)
 
 isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 코드 2)로 거부한다.
 
-- 정의되지 않은 필드(문서·root·reached·symbol·location·tool)는 거부한다. bridge-facts v1은 정의되지
+- 정의되지 않은 필드(문서·root·reached·symbol·location·tool)는 거부한다. `dispatch`·`evidence`·
+  `unresolvedCalls`는 정의된 선택 필드다. bridge-facts v1은 정의되지
   않은 필드를 버리고 읽지만, 이 형식은 v1부터 새 형식이라 의미가 다른 필드가 조용히 무시되는 쪽보다
   거부를 택했다. 필드 추가는 이 문서의 개정과 함께 한다.
 - root id는 서로 유일하고, 도달 usr도 서로 유일하다. 도달 usr가 `roots[i].id`와 같으면 그 항목의
@@ -93,6 +150,8 @@ isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 
   이 규칙은 root 항목에도 적용한다 — via 간선이 실제로 있으므로 via에 닿는 다른 root는 이 root에도 닿는다.
 - `reached`는 (depth, usr) 엄격한 오름차순이다(UTF-16 코드 단위 비교, locale 무관).
 - `truncationReasons`는 정렬된 유일한 문자열이고 `truncated: true`일 때만 비어 있지 않을 수 있다.
+- `evidence`는 `direct`·`bound`·`candidate` 중 하나, `unresolvedCalls`는 1~1,000,000 정수다(0은 생략).
+  다른 root에서 닿은 root 항목의 `unresolvedCalls`는 `roots[]` 항목 값과 같다.
 - 상한: root 10,000개, 도달 정점 100,000개, 정점당 root 인덱스 64개, 관계 32개, depth 128.
 
 ## 옛 형식 어댑터 (trace)
@@ -107,6 +166,9 @@ trace는 새 형식을 우선하고, 이미 배포된 형식은 어댑터로 같
 | `change-impact` v1 | `reverse`(swift) | preflight의 cartograph 어댑터를 공유한다 |
 | dartograph impact v1 | `reverse`(dart) | preflight의 dartograph 어댑터를 공유한다 |
 
+옛 형식에는 근거 등급과 잇지 못한 호출이 없다. 어댑터는 둘 다 "미신고"로 표시한다 — `schemagraph-impact`의
+sql 간선은 `direct`, 옛 언어 역방향 형식은 `unassessed`로 읽힌다.
+
 옛 역방향 형식에는 정점별 root 목록이 없다. 어댑터는 via 사슬의 대표 root 하나만 복원하므로 root가
 둘 이상이면 root 출처가 부분적이다(`rootProvenance: "witness"`). trace는 이 분석을 쓴 hop에
 `roots-provenance-partial` gap을 남긴다. 옛 형식에는 도구 버전·revision이 없어 출력 메타데이터에서
@@ -119,4 +181,8 @@ trace는 새 형식을 우선하고, 이미 배포된 형식은 어댑터로 같
   `missing-route-usrs:`·`missing-relation-usrs:` 같은 체인 전용 한계로 신고한다.
 - 정방향 순회(가칭 `reach`)는 핸들러 전체를 root로, 역방향 순회는 relation-use를 감싼 심볼이나
   route-call을 감싼 심볼을 root로 한 번에 낸다. 다중 root 문서는 `reached[].roots`를 반드시 싣는다.
+- dispatch를 해석하면 `dispatch`를 싣고, 도달 정점마다 root별 하한 등급(`evidence`)과 잇지 못한 호출 수
+  (`unresolvedCalls`, root 포함)를 낸다. dispatch를 해석하지 않고 가능성 간선(override·프로토콜 구현 후보 등)도
+  싣지 않는 생산자가 잇지 못한 호출을 신고할 수 있으면 `dispatch: "direct"`로 신고를 선언한다 — 이 선언은 모든
+  정점이 `direct`라는 주장도 되므로, 가능성 간선을 싣는 생산자는 정점마다 `evidence`를 함께 낸다.
 - 결정적 출력: 같은 입력이면 같은 바이트다. `generatedAt`은 고정 옵션을 제공하는 것이 좋다.

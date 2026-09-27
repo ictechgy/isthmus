@@ -315,7 +315,9 @@ route-decl 핸들러에서 정방향 순회로 닿은 relation-use, persistence 
 반대로 역방향 순회로 route 핸들러를 찾고 route와 클라이언트로 이어 간다. 출력의 모든 id는 생산자가 준
 값이고, 귀속되지 않은 호출은 개수만 싣고, 재실행 출력은 바이트 단위로 같으며, 보고서는 항상
 `complete: false`다. 빠진 심볼·분석, 잘린 순회, 다른 revision, http가 아닌 진입점은 "닿지 않음"이 아니라
-`gaps`로 보고하고, `--strict`는 gap이 남으면 1이다. 단일 project만 받고 workspace 매니페스트는 거부하며
+`gaps`로 보고한다. 도달 근거마다 생산자의 근거 등급(`direct`·`bound`·`candidate`, 분류하지 않았으면
+`unassessed`)을 싣고, 가능성 구현 간선으로만 닿는 hop과 잇지 못한 호출을 지나는(또는 그 신고가 없는) 핸들러의
+정방향 도달도 gap이다. `--strict`는 gap이 남으면 1이다. 단일 project만 받고 workspace 매니페스트는 거부하며
 MCP에는 아직 노출하지 않는다. [`docs/TRACE.md`](docs/TRACE.md)를 본다.
 
 ### 베이스라인
