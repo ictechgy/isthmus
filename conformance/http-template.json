@@ -978,8 +978,10 @@
         }
       },
       "expect": {
-        "status": "missing"
-      }
+        "status": "near-miss",
+        "reason": "trailing-slash"
+      },
+      "note": "Without the expanded catchAllPrefix decl, /files does not match /files/{**}. Adding the trailing slash reaches {**} only through an unproven empty tail, so the result is a trailing-slash warning, never route-call-without-decl."
     },
     {
       "id": "match/catch-all-prefix",

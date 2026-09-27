@@ -104,13 +104,13 @@ test('/files는 명시적 decl이 있으면 명시적 decl에, 없으면 catch-a
     document('kotlin', ['client'], [call('GET', '/files')]),
   ).scopes[0]!;
   assert.equal(describe(declOutcome(onlyCatchAll, '/files', 'GET')), 'matched:catch-all:GET /files');
-  // 접두사 decl이 없으면 /files는 {**}와 맞지 않는다. 빈 끝 세그먼트 후보는 끝 슬래시 불일치의
-  // 근거도 아니라서 미매치로 남는다(생산자가 접두사 decl을 펼쳐야 하는 이유).
+  // 접두사 decl이 없으면 /files는 {**}와 맞지 않는다. 슬래시를 붙이면 빈 끝 세그먼트로 닿는
+  // 증명 불가 후보가 있어 error 대신 끝 슬래시 불일치 warning이다(두 미상이 겹친 경우).
   const withoutPrefix = joinRoutes(
     document('js', ['server'], [decl('GET', '/files/{**}')]),
     document('kotlin', ['client'], [call('GET', '/files')]),
   ).scopes[0]!;
-  assert.equal(describe(declOutcome(withoutPrefix, '/files', 'GET')), 'missing');
+  assert.equal(describe(declOutcome(withoutPrefix, '/files', 'GET')), 'near-miss:trailing-slash');
   // 접두사 decl로 닿은 호출은 원본 {**} decl도 호출한 것으로 본다.
   assert.deepEqual(onlyCatchAll.decls.map(({ called }) => called), [true, true]);
 });

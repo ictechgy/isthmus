@@ -52,3 +52,20 @@ test('리뷰 2: suffix 후보도 caseInsensitive decl은 대소문자를 접어 
     document('kotlin', ['client'], [call('GET', '/v1/users', { pathAnchor: 'base' })]),
   ), ['warning route-call-without-decl-unverified /v1/users']);
 });
+
+test('리뷰 5: 증명 불가 후보만으로 닿는 near-miss도 error로 올리지 않고 불일치 warning으로 남긴다', () => {
+  const regex = { paramConstraints: [{ segment: 1, kind: 'regex', pattern: '[0-9]+' }] };
+  assert.deepEqual(callCodes(
+    document('js', ['server'], [decl('GET', '/Orders/{}', regex)]),
+    document('kotlin', ['client'], [call('GET', '/orders/abc')]),
+  ), ['warning route-case-mismatch /orders/abc']);
+  assert.deepEqual(callCodes(
+    document('js', ['server'], [decl('GET', '/orders/{}/', regex)]),
+    document('kotlin', ['client'], [call('GET', '/orders/abc')]),
+  ), ['warning route-trailing-slash-mismatch /orders/abc']);
+  // 빈 끝 세그먼트↔{**}도 두 미상(끝 슬래시 정책, 0세그먼트 수용)이 겹친 경우라 error가 아니다.
+  assert.deepEqual(callCodes(
+    document('js', ['server'], [decl('GET', '/files/{**}')]),
+    document('kotlin', ['client'], [call('GET', '/files')]),
+  ), ['warning route-trailing-slash-mismatch /files']);
+});
