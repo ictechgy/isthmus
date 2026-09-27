@@ -722,8 +722,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - 펼친 접두사 decl에는 `catchAllPrefix: true`를 단다. 목록 엔드포인트 `/files`와
   `/files/{*path}`가 함께 있는 흔한 구성에서 명시적 decl과 구분하기 위해서다.
   - `method`·`symbol`·`location`은 원본 catch-all decl과 같다. 같은 문서에 원본 decl(같은
-    method와 `symbol.usr`, 템플릿은 접두사가 `/`이면 `/{**}`, 아니면 접두사 + `/{**}`)이 없으면
-    입력 오류다.
+    method와 `symbol.usr`·유효 service, 템플릿은 접두사가 `/`이면 `/{**}`, 아니면 접두사 + `/{**}`)이
+    없으면 입력 오류다. 접두사 decl은 접두사 경로 자체만 받고, 더 긴 호출은 함께 있는 원본이 받는다.
   - specificity 문서에서는 원본 `{**}` decl과 같은 순위로 본다. 그래서 같은 키의 명시적
     decl이 있으면 항상 명시적 decl이 match다. 매칭 품질은 `catch-all`이다.
   - registration-order 문서에서는 원본 decl의 `order`를 그대로 물려받는다.
@@ -770,7 +770,7 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   세그먼트에 기대지 않는 후보가 하나라도 있으면 그 후보들만 비교한다는 뜻이다. 그래서
   `/users/{}` 호출은 `/users/{}` decl이 있으면 `/users/me`에 붙지 않는다.
 - 남은 것이 빈 끝 세그먼트 하나뿐인 경로(`/files/` ↔ `/files/{**}`)는 증명 불가 후보다. match는
-  되지만(거짓 `route-call-without-decl` 방지) 구체성 비교·error 근거·끝 슬래시 불일치 근거로 쓰지 않는다.
+  되지만(거짓 `route-call-without-decl` 방지) 구체성 비교·error 근거로 쓰지 않는다.
 - `paramConstraints`의 닫힌 종류(`int`·`uuid`·`slug`)는 call 리터럴이 명백히 어길 때 후보에서
   뺀다. `regex`는 방언 차이와 ReDoS 위험 때문에 평가하지 않고 `param-to-literal-constrained`
   후보로 둔다. 이 후보는 구체성 비교에서 빼고 error 근거로 쓰지 않는다.
@@ -793,7 +793,11 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - 끝 슬래시만 다르면 `route-trailing-slash-mismatch`(decl이 `trailingSlash: "optional"`이면
   match), 대소문자만 다르면 `route-case-mismatch`(decl이 `caseInsensitive`면 match)다. 이 둘은
   경로 후보가 전혀 없을 때만 보고하며 그때는 `route-call-without-decl`을 대신한다(contract
-  쪽도 같아 `route-call-without-contract`를 대신한다).
+  쪽도 같아 `route-call-without-contract`를 대신한다). 슬래시·대소문자를 바꿔 닿는 후보가 증명
+  불가(정규식 제약, 빈 끝 세그먼트↔`{**}` 등)여도 불일치 warning이다. 거르면 증명하지 못한 근거
+  위에서 error가 된다. 그래서 접두사 decl 없이 `/files/{**}`만 있을 때 `/files` 호출은
+  `route-trailing-slash-mismatch`다.
+- suffix 후보에서도 `caseInsensitive` decl은 대소문자를 접어 맞춘다.
 - pathAnchor 조합은 넷이다. decl 자리의 contract(서버 변수를 해석하지 못해 base인 contract
   포함)도 같은 규칙을 쓴다.
   - root call ↔ root decl: 정확 매칭이다.
@@ -1082,7 +1086,8 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 - 선언 측 service는 전부 있거나 전부 없어야 한다. 섞이면 scope를 정할 수 없어 입력 오류다.
 - 다른 target 문서의 route 필드는 거부하되 `channelPrefix`는 기존 계약 필드라 버린다.
 - `authority`는 소문자 `host[:port]`만 받는다(대소문자 미결 해소, 기본 포트는 미결).
-- 빈 끝 세그먼트↔`{**}`는 증명 불가 후보다(미결 해소).
+- 빈 끝 세그먼트↔`{**}`는 증명 불가 후보다(미결 해소). 증명 불가 후보로만 닿는 끝 슬래시·대소문자
+  차이도 error가 아니라 불일치 warning이다.
 - 이 scope를 불렀을 수 있는 `unjoined-unbound-route-calls`는 미호출 진단을 `-unverified`로 내린다(미결 해소).
 - method를 먼저 거르고, 호출 파라미터는 decl 파라미터가 있으면 리터럴에 붙지 않는다.
 - 끝 슬래시·대소문자 불일치는 경로 후보가 없을 때만이며 미매치 진단을 대신한다.
