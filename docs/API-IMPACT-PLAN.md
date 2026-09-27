@@ -235,6 +235,12 @@ location-column 벡터(UTF-16 열 회귀 방지)를 통과한다.
 - workspace 확장: `contract.member`, catalog 기록, 여러 revision의 클라이언트 member(릴리스
   태그), 사전 계산 분석 수용(revision·sha 검사), 두 저장소 CI 예제.
 - MCP 노출 결정(trace, `--pairs`, 출력 상한).
+- 진행(2026-09-27): trace workspace 입력([TRACE](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트) — member·link·
+  `match`의 hosts·services·baseRefs.ref, `contract.member`, `catalog.graphSha`, 사전 계산 분석의 sha256·revision
+  검사), files 선택(`file-selection-coarse`·사실 위치 fallback), member 사이 테이블→API→클라이언트, 분리된 두
+  저장소 합성 fixture(`fixtures/trace-workspace/`)의 E2E, gap 코드 전수 음성 fixture, `--strict` 종료 코드 고정이
+  들어갔다. 형제 전파는 이 문서가 무엇을 형제로 볼지 정의하지 않아 보류했다. http diff, `match.interfaces`·
+  `declared-base`, check·query의 매니페스트, MCP 노출, 앱 A dogfooding(가치 게이트)은 남았다.
 
 종료 조건: 분리된 두 git 저장소 fixture에서 API·테이블·DB 의존자·호출부·클라이언트 영향
 심볼을 모두 담은 보고서가 나온다. gap 코드마다 음성 fixture가 기대대로 보고된다. `--strict`
