@@ -183,3 +183,67 @@ test('mixed-targets 보류가 http 귀속 위반보다 먼저 결정되어 보�
   assert.equal(joined.routes, undefined);
   assert.equal(joined.observedFacts, 5);
 });
+
+/** 호출 템플릿별 decl 쪽 결과를 짧게 적는다. */
+function outcomes(side: 'decl' | 'contract', ...documents: BridgeFactsDocument[]): string[] {
+  return joinBridgeDocuments(documents).routes!.scopes.flatMap(({ scope, calls }) => calls.map((item) => {
+    const outcome = item[side];
+    const detail = outcome?.status === 'matched'
+      ? `${outcome.quality}:${outcome.targets.map(({ template }) => template).join(',')}`
+      : outcome?.status === 'ambiguous' ? `ambiguous:${outcome.targets.map(({ template }) => template).sort().join(',')}` : outcome?.status;
+    return `${scope} ${item.template} ${detail}`;
+  }));
+}
+
+test('suffix 후보도 구체성으로 순위를 매긴다: base 호출은 리터럴 root 선언을 {} 형제보다 먼저 고른다', () => {
+  const client = document('kotlin', ['client'], [call('GET', '/companies/tech', { pathAnchor: 'base' }), call('GET', '/companies/42', { pathAnchor: 'base' })]);
+  assert.deepEqual(outcomes('decl',
+    document('js', ['server'], [decl('GET', '/api/v1/companies/tech'), decl('GET', '/api/v1/companies/{}')]), client), [
+    'default /companies/tech suffix:/api/v1/companies/tech',
+    'default /companies/42 suffix:/api/v1/companies/{}',
+  ]);
+  // openapi contract도 같은 구체성 규칙으로 고른다.
+  const spec = document('openapi', ['server'], [
+    fact('route-contract', 'GET', '/api/v1/companies/{}', { location: { path: 'o.yaml', line: 1, column: 1 } }),
+    fact('route-contract', 'GET', '/api/v1/companies/tech', { location: { path: 'o.yaml', line: 2, column: 1 } }),
+  ]);
+  assert.deepEqual(outcomes('contract', spec, client), [
+    'default /companies/tech suffix:/api/v1/companies/tech',
+    'default /companies/42 suffix:/api/v1/companies/{}',
+  ]);
+  assert.deepEqual(callCodes(spec, client), []);
+});
+
+test('suffix 후보도 구체성으로 순위를 매긴다: root 호출은 리터럴 base 선언을 {} 형제보다 먼저 고른다', () => {
+  assert.deepEqual(outcomes('decl',
+    document('js', ['server'], [decl('GET', '/companies/{}', { pathAnchor: 'base' }), decl('GET', '/companies/tech', { pathAnchor: 'base' })]),
+    document('kotlin', ['client'], [call('GET', '/api/companies/tech')]),
+  ), ['default /api/companies/tech suffix:/companies/tech']);
+  // 오프셋이 달라도 호출 세그먼트에 맞춰 비교한다. 알 수 없는 base 자리는 어떤 세그먼트보다 낮다.
+  assert.deepEqual(outcomes('decl',
+    document('js', ['server'], [decl('GET', '/tech', { pathAnchor: 'base' }), decl('GET', '/{}/tech', { pathAnchor: 'base' })]),
+    document('kotlin', ['client'], [call('GET', '/api/companies/tech')]),
+  ), ['default /api/companies/tech suffix:/{}/tech']);
+});
+
+test('구체성이 같은 suffix 후보는 여전히 모호하고, method 불일치는 여전히 error 근거가 아니다', () => {
+  assert.deepEqual(outcomes('decl',
+    document('js', ['server'], [decl('GET', '/a/companies/{}'), decl('GET', '/b/companies/{}')]),
+    document('kotlin', ['client'], [call('GET', '/companies/{}', { pathAnchor: 'base' }), call('GET', '/companies/42', { pathAnchor: 'base' })]),
+  ), [
+    'default /companies/{} ambiguous:/a/companies/{},/b/companies/{}',
+    'default /companies/42 ambiguous:/a/companies/{},/b/companies/{}',
+  ]);
+  assert.deepEqual(callCodes(
+    document('js', ['server'], [decl('POST', '/companies/tech', { pathAnchor: 'base' }), decl('POST', '/companies/{}', { pathAnchor: 'base' })]),
+    document('kotlin', ['client'], [call('GET', '/api/companies/tech')]),
+  ), ['warning route-method-mismatch-unverified /api/companies/tech']);
+});
+
+test('다른 scope의 suffix 후보는 함께 순위를 매기지 않는다', () => {
+  assert.deepEqual(outcomes('decl',
+    document('js', ['server'], [decl('GET', '/api/v1/companies/{}')], { service: 'orders' }),
+    document('kotlin', ['server'], [decl('GET', '/api/v1/companies/tech')], { service: 'billing' }),
+    document('kotlin', ['client'], [call('GET', '/companies/tech', { pathAnchor: 'base', service: 'orders' })]),
+  ), ['orders /companies/tech suffix:/api/v1/companies/{}']);
+});

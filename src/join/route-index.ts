@@ -58,7 +58,7 @@ export interface RouteCandidate {
   /** 정규식 제약 때문에 증명하지 못했다. 품질이 `param-to-literal-constrained`다. */
   readonly regexConstrained: boolean;
   readonly catchAll: boolean;
-  /** suffix 후보(앵커 한쪽이 base)다. 구체성을 적용하지 않는다. */
+  /** suffix 후보(앵커 한쪽이 base)다. 품질은 항상 `suffix`이고 error 근거가 아니다. */
   readonly suffix: boolean;
 }
 
@@ -245,7 +245,9 @@ export class RouteIndex {
         const candidate = evaluateSegments(declaration, declaration.segments, probe.segments.slice(offset),
           declaration.caseInsensitive);
         if (candidate !== undefined) {
-          addSuffix(collection, { ...candidate, suffix: true });
+          // 호출 세그먼트에 맞춰 비교하도록, 알 수 없는 base가 차지한 앞자리를 가장 낮은 순위로 채운다.
+          const ranks = [...Array.from({ length: offset }, () => RANK_UNKNOWN_BASE), ...candidate.ranks];
+          addSuffix(collection, { ...candidate, ranks, suffix: true });
           break;
         }
       }
@@ -334,9 +336,14 @@ function decideExact(probe: RouteProbe, candidates: readonly RouteCandidate[]): 
 }
 
 /**
- * suffix 후보에서 결과를 정한다. 구체성을 적용하지 않고, method가 맞는 후보의 템플릿이
- * 하나일 때만 `suffix` match다. 여럿이거나 상한을 넘으면 모호하다. suffix 위의 method
- * 불일치는 error 근거가 아니다.
+ * suffix 후보에서 결과를 정한다.
+ *
+ * 한 색인은 한 scope·한 선언 측(decl 또는 contract)이라 후보는 같은 디스패치 모델(구체성)을
+ * 따른다. 그래서 root↔root와 같은 규칙으로 구체성 최상위를 고른다: method가 맞는 후보 중
+ * 증명 가능한 후보, 그중 호출 파라미터를 decl 리터럴에 기대지 않은 후보를 먼저 보고, 순위는
+ * 호출 세그먼트에 맞춰 비교한다. 최상위가 한 템플릿일 때만 `suffix` match이고 동률이면 모호하다.
+ * 증명 불가 후보만 남으면 템플릿이 하나일 때만 match다. 상한을 넘으면 모호하다. suffix 위의
+ * method 불일치는 error 근거가 아니다.
  */
 function decideSuffix(probe: RouteProbe, collection: SuffixCollection): RouteSideOutcome {
   const compatible = collection.candidates.filter(({ declaration }) =>
@@ -352,10 +359,14 @@ function decideSuffix(probe: RouteProbe, collection: SuffixCollection): RouteSid
       provable: false,
     };
   }
-  const targets = uniqueDeclarations(compatible.map(({ declaration }) => declaration));
-  if (new Set(targets.map(({ template }) => template)).size > 1) {
-    return { status: 'ambiguous', targets, capped: false };
-  }
+  const provable = compatible.filter(({ unprovable }) => !unprovable);
+  const direct = provable.filter(({ paramToLiteral }) => !paramToLiteral);
+  const tier = direct.length > 0 ? direct : provable;
+  const best = tier.length > 0 ? topRanked(tier) : compatible;
+  const templates = new Set(best.map(({ declaration }) => declaration.template));
+  const targets = uniqueDeclarations((tier.length > 0 ? tier : compatible)
+    .filter(({ declaration }) => templates.has(declaration.template)).map(({ declaration }) => declaration));
+  if (templates.size > 1) return { status: 'ambiguous', targets, capped: false };
   return { status: 'matched', quality: 'suffix', targets };
 }
 
@@ -418,6 +429,8 @@ const RANK_PARTIAL = 3;
 const RANK_CONSTRAINED = 2;
 const RANK_PARAM = 1;
 const RANK_CATCH_ALL = 0;
+/** root 호출↔base 선언 suffix에서 알 수 없는 base가 차지한 호출 세그먼트의 순위다. */
+const RANK_UNKNOWN_BASE = -1;
 
 /** 한 세그먼트 쌍의 매칭 결과다. */
 interface SegmentResult {

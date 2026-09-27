@@ -196,7 +196,7 @@ test('pathAnchor 네 조합: root↔root 정확, base 호출↔root decl suffix,
     ]),
   ).scopes[0]!;
   assert.equal(describe(declOutcome(scope, '/v1/items/{}', 'GET')), 'matched:suffix:GET /api/v1/items/{}');
-  // suffix 후보에는 구체성을 적용하지 않는다 — 여럿이면 모호하다.
+  // 구체성이 같은 suffix 후보(서로 다른 접두사의 같은 꼬리)는 모호하다.
   assert.equal(describe(declOutcome(scope, '/items/{}', 'GET')), 'ambiguous:/api/v1/items/{},/admin/items/{}');
   // 리터럴 세그먼트가 없는 base 호출은 suffix 후보를 만들지 않는다.
   assert.equal(describe(declOutcome(scope, '/{}', 'GET')), 'missing');
