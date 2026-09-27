@@ -27,6 +27,22 @@
     workspace), 코드마다의 음성 fixture·종료 코드·결정성 테스트, 문서 코드 표 대조 테스트, CLI 계약 스크립트 검사.
 - bridge `diff`가 http 문서를 거부할 때 `isthmus diff --http`를 안내한다.
 
+### Added — 파일 선택의 2단계 capture와 trace context `fileSymbols`
+
+- **capture 2단계 수집**: 파일 선택이면 capture가 역방향 순회를 뒤로 미룬다. 1단계로 정방향·사전 계산 분석과 member
+  `listings`(생산자 심볼 목록 — tsograph `graph`, kartograph `snapshot --include-paths`(v1·compact v2), cartograph `graph
+  --level symbol --format json`)를 모으고, 선택한 파일에 놓인 심볼을 찾아 역방향 root에 더한 뒤 역방향을 실행한다. 그래서
+  사실이 없는 헬퍼(핸들러가 부르는 함수 등)도 root가 되어 `file-selection-fact-fallback`·`analysis-missing` 없이 route에 닿는다.
+  목록이 없는 platform은 1단계 순회가 파일에 위치시킨 심볼만 쓰고(부분), schemagraph·dartograph처럼 목록이 없으면 fallback을
+  그대로 둔다. platform마다 출처(`listing`·`traversal`)·완전성·찾은 심볼·더한 root 수와 남은 한계를 manifest
+  `fileSelection`에 싣는다. 파일 선택이 아니면 목록은 실행하지 않는다. context의 분석 순서는 설정 순서 그대로다.
+- **trace context `fileSymbols`(선택, 추가 필드)**: `[{member?, path, platform, usrs}]` — 선택한 파일에 생산자 목록이 놓은
+  심볼이다. tsograph는 순회 root에 위치를 싣지 않아 분석 위치만으로는 파일의 심볼을 알 수 없으므로, capture가 목록에서 찾은
+  심볼을 여기 싣고 trace는 분석 위치와 같은 근거로 쓴다. 파일 선택에서만 받고 선택한 파일만 가리킬 수 있다(아니면 입력 오류).
+  필드가 없는 context와 그 출력은 바이트 단위로 그대로다.
+- capture 문서에 cartograph `impact --roots-from`(cartograph PR #150) 지원을 적었다. capture는 버전을 추측해 감지하지 않는다 —
+  그 cartograph를 쓰면 분석 항목에 `roots: "roots-from"`을 준다.
+
 ### Added — trace capture와 MCP trace (Phase 3)
 
 - **`scripts/capture-trace.mjs`(npm 패키지 포함)**: `isthmus-trace-capture` v1 설정 하나로 trace 입력 전체를 모은다 —
