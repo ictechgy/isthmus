@@ -14,7 +14,8 @@
   `analysis-revision-unknown` 재사용), `catalog.graphSha`가 있으면 sql 분석 graphRevision과 비교한다. link `match`는
   `hosts`·`services`·`baseRefs[].ref`를 구현하고 `interfaces`·`baseRefs[].pathPrefix`는 거부한다. persistence·언어
   순회는 member 안에서만, http는 link 쌍에서만 잇고(체인 키 `[member, platform, id]`), 출력 끝점·hop·gap·분석 요약에
-  `member`를 싣는다. 새 gap `http-member-unlinked`. 조인에 `link` 선택 사항(trace 구성 전용)을 추가했다.
+  `member`를 싣는다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은 귀속하지 않으며,
+  좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않는다. 새 gap `http-member-unlinked`·`link-service-ambiguous`. 조인에 `link` 선택 사항(trace 구성 전용)을 추가했다.
 - **trace 사전 계산 분석**: 분석 참조의 `precomputed: {sha256, revision, generatedAt?}`로 다른 곳(예: 클라이언트
   macOS CI)에서 만든 artifact를 받는다. CLI가 파일 SHA-256을 대조하고(다르면 2), revision 없는 옛 형식은 증언
   revision으로 비교하되(`revisionSource: "attested"`) 보수적으로 `analysis-revision-unknown`을 남긴다. 문서 revision과

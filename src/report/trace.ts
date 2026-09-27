@@ -185,6 +185,8 @@ export interface TraceGap {
   readonly selector?: TraceSelector;
   /** workspace면 공백이 난 member다. */
   readonly member?: string;
+  /** workspace link 수준 공백이면 그 link 이름이다. */
+  readonly link?: string;
   readonly route?: TraceRouteKey;
   readonly symbol?: Readonly<{ platform: string; usr: string }>;
   readonly analysis?: string;
@@ -902,6 +904,9 @@ class TraceBuilder {
     }
     if ('routes' in selection) this.unsymbolizedUseGaps();
     this.unlinkedMemberGaps();
+    for (const { link, server, detail } of this.prepared.linkServiceIssues) {
+      this.gap({ code: 'link-service-ambiguous', link, member: server, detail });
+    }
   }
 
   /** route 선택에서 usr 없는 relation-use를 member·플랫폼별 개수로 남긴다. */

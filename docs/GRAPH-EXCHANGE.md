@@ -995,7 +995,8 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 > **초안(check·query) / 구현(trace).** check·query는 `format: "isthmus-workspace"` 파일을 원인 문구와 함께
 > 입력 오류로 거부한다. trace는 같은 member·link 모양을 [workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)
 > 안에서 받는다(member별 `analyses`를 더하고, `match.interfaces`·`baseRefs[].pathPrefix`는 거부한다). trace의
-> link 조인에서 link 이름이 scope이고, 선언 측 service는 scope를 가르지 않는다. revision 검사·사전 계산 분석·
+> link 조인에서 link 이름이 scope다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은
+> 귀속하지 않으며, 좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않고 gap으로 밝힌다. revision 검사·사전 계산 분석·
 > 카탈로그 기록의 trace 규칙은 TRACE에 있다.
 
 기존 "한 조인의 모든 문서는 정확히 같은 `project`" 규칙은 **문서·member 단위로 유지**한다.

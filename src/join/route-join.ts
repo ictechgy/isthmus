@@ -145,8 +145,8 @@ export function joinRouteFacts(
  *
  * link는 member 사이 http 조인을 허용하는 유일한 예외다. 선언 측은 server member(와 contract member)의
  * 문서, 호출 측은 client member의 문서로 **문서 신원**으로 정한다 — 한 문서가 server·client roles를
- * 겸해도 다른 member의 호출이 섞이지 않게 하기 위해서다. 선언 측의 service는 scope를 가르지 않는다
- * (link 하나가 scope 하나이고 이름이 link 이름이다).
+ * 겸해도 다른 member의 호출이 섞이지 않게 하기 위해서다. link 하나가 scope 하나이고 이름이 link 이름이며,
+ * 선언 측 사실 중 어느 것을 이 link의 선언으로 볼지(서비스 범위)는 `includesDeclaration`이 정한다.
  */
 export interface RouteLinkRule {
   /** 진단 신원·trace route 키의 scope가 되는 link 이름이다. */
@@ -157,6 +157,11 @@ export interface RouteLinkRule {
   readonly isClientDocument: (document: BridgeFactsDocument) => boolean;
   /** 호출 하나가 link `match`에 걸리는지다. 걸리지 않으면 개수만 센다. */
   readonly attributes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+  /**
+   * 선언 측 사실(route-decl·route-contract) 하나가 이 link의 선언인지다. 선언 측 member가 여러 서비스를 낼 때
+   * link가 좁힌 서비스의 선언만 잇기 위해서다 — 다른 서비스의 선언에 호출을 잇지 않는다.
+   */
+  readonly includesDeclaration: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
 }
 
 /**
@@ -196,9 +201,9 @@ function buildLinkScope(
   attributed: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
-  const everyFact = () => true;
-  const decls = collectDeclarations(servers, 'route-decl', everyFact, compareEndpoints);
-  const contracts = collectDeclarations(servers, 'route-contract', everyFact, compareEndpoints);
+  const included = rule.includesDeclaration;
+  const decls = collectDeclarations(servers, 'route-decl', included, compareEndpoints);
+  const contracts = collectDeclarations(servers, 'route-contract', included, compareEndpoints);
   const declScanned = servers.some((document) =>
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = servers.filter(({ platform }) => platform === 'openapi').length;
@@ -235,8 +240,8 @@ function buildLinkScope(
     clientDocuments: clients.length,
     serverLimitations: servers.flatMap(({ limitations }) => limitations),
     clientLimitations: clients.flatMap(({ limitations }) => limitations),
-    dynamicDecls: countDynamic(servers, 'route-decl', everyFact),
-    dynamicContracts: countDynamic(servers, 'route-contract', everyFact),
+    dynamicDecls: countDynamic(servers, 'route-decl', included),
+    dynamicContracts: countDynamic(servers, 'route-contract', included),
     dynamicCalls,
     unboundCalls,
     decls: markCalled(decls, calls, 'decl'),

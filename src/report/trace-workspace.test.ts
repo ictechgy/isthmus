@@ -220,6 +220,54 @@ test('link match에 걸리지 않은 호출은 개수만 싣고 경로·host를 
   assert.doesNotMatch(encodeSortedJson(result), /api\.example\.com|OrdersApi\.get/);
 });
 
+/** server member가 두 서비스(example-api·admin-api)의 같은 route를 선언하게 바꾼다. 계약도 example-api다. */
+const twoServices = (value: Value) => {
+  const http = value.files['server/server.http.json'];
+  for (const fact of [...http.facts, ...value.files['server/api.openapi.json'].facts]) fact.service = 'example-api';
+  http.facts.push({ ...http.facts[0], service: 'admin-api', location: { path: 'src/admin/orders.ts', line: 4, column: 3 },
+    symbol: { qualifiedName: 'admin.orders.get', usr: 'ts:admin/orders.get' } });
+};
+
+test('link는 match.services가 좁힌 서비스의 선언만 잇고 다른 서비스로 확정된 호출을 귀속하지 않는다', () => {
+  const narrowed = workspace((value) => {
+    twoServices(value);
+    // host는 맞지만 다른 서비스로 확정된 호출은 이 link 호출이 아니다.
+    value.files['client/android.http.json'].facts[0].service = 'admin-api';
+  });
+  assert.deepEqual(narrowed.gaps.map(({ code }) => code), ['unattributed-calls-omitted']);
+  const [route] = narrowed.chains[0]!.routes;
+  assert.deepEqual(route?.declarations.map(({ symbol }) => symbol?.usr), ['ts:api/orders.get']);
+  assert.deepEqual(narrowed.chains[0]?.handlers.map(({ usr }) => usr), ['ts:api/orders.get']);
+  assert.deepEqual(route?.calls.map(({ call }) => call.symbol?.usr), ['s:OrdersClient.fetch']);
+});
+
+test('선언 측이 여러 서비스인데 link가 좁히지 않으면 선언을 잇지 않고 link-service-ambiguous다', () => {
+  const unnarrowed = workspace((value) => {
+    twoServices(value);
+    delete value.context.links[0].match.services;
+  });
+  assert.deepEqual(codes(unnarrowed), ['link-service-ambiguous', 'route-without-decl']);
+  const gap = unnarrowed.gaps.find(({ code }) => code === 'link-service-ambiguous')!;
+  assert.deepEqual([gap.link, gap.member], ['mobile->api', 'server']);
+  assert.match(gap.detail, /several services \(admin-api, example-api\)/);
+  assert.deepEqual(unnarrowed.chains, []);
+  // 이름 없는 선언이 이름 있는 선언과 섞이면, 좁힌 link에서도 이름 없는 선언은 빼고 gap을 남긴다.
+  const mixed = workspace((value) => {
+    value.files['server/server.http.json'].facts[1].service = 'example-api';
+  });
+  // GET decl과 두 계약이 이름 없는 선언이라 빠지고, 그래서 선택한 GET route의 선언 측이 남지 않는다.
+  assert.deepEqual(codes(mixed), ['link-service-ambiguous', 'route-without-decl']);
+  assert.match(mixed.gaps.find(({ code }) => code === 'link-service-ambiguous')!.detail,
+    /^3 server declaration\(s\) without a service were excluded/);
+  assert.deepEqual(mixed.chains, []);
+  // 좁히지 않았고 이름 없음 + 이름 하나면 역시 모호하다.
+  const unnamedAndNamed = workspace((value) => {
+    value.files['server/server.http.json'].facts[1].service = 'example-api';
+    delete value.context.links[0].match.services;
+  });
+  assert.match(unnamedAndNamed.gaps.find(({ code }) => code === 'link-service-ambiguous')!.detail, /example-api, \(no service\)/);
+});
+
 test('link 계약이 없으면 server의 openapi 문서가 계약이고, 계약 문서가 openapi가 아니면 거부한다', () => {
   const withoutContract = workspace((value) => {
     const spec = member(value, 'server-spec');
@@ -416,6 +464,10 @@ const gapFixtures: Record<string, () => TraceReport> = {
   'file-selection-fact-fallback': () => workspace(select({ files: [{ member: 'client',
     path: 'android/app/src/main/java/example/OrdersApi.kt' }] })),
   'http-member-unlinked': () => workspace((value) => { value.context.links = []; }),
+  'link-service-ambiguous': () => workspace((value) => {
+    twoServices(value);
+    delete value.context.links[0].match.services;
+  }),
 };
 
 test('TRACE.md의 모든 gap 코드에 그 코드를 내는 음성 fixture가 있다', () => {

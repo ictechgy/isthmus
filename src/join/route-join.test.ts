@@ -376,6 +376,7 @@ test('link 조인은 project가 다른 member 문서를 link 이름 scope 하나
     attributes: (_document, item) => (item.authority !== undefined && matches.hosts.includes(item.authority)) ||
       (item.baseRef !== undefined && matches.refs.includes(item.baseRef)) ||
       (item.service !== undefined && matches.services.includes(item.service)),
+    includesDeclaration: () => true,
   } });
   const routes = joined.routes!;
   assert.equal(routes.scopes.length, 1);
@@ -398,7 +399,7 @@ test('link 조인은 문서 신원으로 측을 정해 server member 문서의 �
   const client = memberDocument('/work/client', 'kotlin', ['client'], [call('GET', '/a', { service: 's' })]);
   const joined = joinBridgeDocuments([server, client], { composition: 'trace', link: {
     scope: 'l', isServerDocument: (candidate) => candidate === server, isClientDocument: (candidate) => candidate === client,
-    attributes: (_document, item) => item.service === 's',
+    attributes: (_document, item) => item.service === 's', includesDeclaration: () => true,
   } });
   const [scope] = joined.routes!.scopes;
   assert.equal(scope?.calls.length, 1);
@@ -409,7 +410,25 @@ test('link 조인은 문서 신원으로 측을 정해 server member 문서의 �
 test('link 조인은 trace 구성에서만 받고, link 없는 조인은 여전히 project 하나를 요구한다', () => {
   const server = memberDocument('/work/server', 'js', ['server'], [decl('GET', '/a')]);
   const client = memberDocument('/work/client', 'kotlin', ['client'], [call('GET', '/a')]);
-  const link = { scope: 'l', isServerDocument: () => true, isClientDocument: () => true, attributes: () => true };
+  const link = { scope: 'l', isServerDocument: () => true, isClientDocument: () => true, attributes: () => true,
+    includesDeclaration: () => true };
   assert.throws(() => joinBridgeDocuments([server, client], { link }), /requires the trace composition/);
   assert.throws(() => joinBridgeDocuments([server, client], { composition: 'trace' }), BridgeJoinValidationError);
+});
+
+test('link 조인은 includesDeclaration이 뺀 선언 측 사실을 매칭·dynamic 계수에서 뺀다', () => {
+  const server = memberDocument('/work/server', 'js', ['server'], [
+    decl('GET', '/a', { service: 'one' }), decl('GET', '/a', { service: 'two' }),
+    decl('GET', 'base + x', { service: 'two', dynamic: true, channel: null }),
+  ]);
+  const client = memberDocument('/work/client', 'kotlin', ['client'], [call('GET', '/a', { service: 'one' })]);
+  const joined = joinBridgeDocuments([server, client], { composition: 'trace', link: {
+    scope: 'l', isServerDocument: (candidate) => candidate === server, isClientDocument: (candidate) => candidate === client,
+    attributes: () => true, includesDeclaration: (document, item) => (item.service ?? document.service) === 'one',
+  } });
+  const [scope] = joined.routes!.scopes;
+  assert.deepEqual(scope?.decls.map(({ endpoint }) => endpoint.location?.line), [scope?.decls[0]?.endpoint.location?.line]);
+  assert.equal(scope?.decls.length, 1);
+  assert.equal(describe(scope?.calls[0]?.decl), 'matched:exact:GET /a');
+  assert.equal(scope?.dynamicDecls, 0);
 });

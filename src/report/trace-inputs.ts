@@ -51,12 +51,20 @@ export interface TraceLinkedScope {
 /** 출처(member 조인 또는 link 조인)를 붙인 조인 한계다. 단일 project면 출처 필드가 없다. */
 export type TraceLimitation = JoinLimitation & { readonly member?: string; readonly link?: string };
 
+/** link의 서비스 범위를 정하지 못해 선언 일부(또는 전부)를 잇지 않은 곳이다. 보고 층이 gap으로 바꾼다. */
+export interface TraceLinkServiceIssue {
+  readonly link: string;
+  readonly server: string;
+  readonly detail: string;
+}
+
 /** 준비된 trace 입력이다. */
 export interface PreparedTrace {
   readonly workspace: boolean;
   readonly members: readonly TraceMemberInput[];
   readonly scopes: readonly TraceLinkedScope[];
   readonly limitations: readonly TraceLimitation[];
+  readonly linkServiceIssues: readonly TraceLinkServiceIssue[];
 }
 
 /**
@@ -82,6 +90,7 @@ function prepareSingle(project: string, documents: readonly BridgeFactsDocument[
     members: [{ key: '', documents, joined, resolver: createRelationResolver(documents) }],
     scopes: (joined.routes?.scopes ?? []).map((scope) => ({ scope, server: '', client: '', contract: '' })),
     limitations: joined.limitations,
+    linkServiceIssues: [],
   };
 }
 
@@ -95,17 +104,18 @@ function prepareWorkspace(context: TraceContext, documents: readonly BridgeFacts
   const states = members.map((member) => memberInput(member, member.documents.map((path) => byPath.get(path)!)));
   const byName = new Map(states.map((state) => [state.key, state]));
   const scopes: TraceLinkedScope[] = [];
+  const linkServiceIssues: TraceLinkServiceIssue[] = [];
   const limitations: TraceLimitation[] = states.flatMap(({ key, joined }) =>
     joined.limitations.map((limitation) => ({ ...limitation, member: key })));
   for (const link of links) {
-    const joined = joinLink(link, byName, byPath);
+    const joined = joinLink(link, byName, byPath, linkServiceIssues);
     const scope = joined.routes?.scopes[0];
     if (scope !== undefined) {
       scopes.push({ scope, server: link.server, client: link.client, contract: link.contract?.member ?? link.server });
     }
     limitations.push(...joined.limitations.map((limitation) => ({ ...limitation, link: link.name })));
   }
-  return { workspace: true, members: states, scopes, limitations: limitations.sort(compareTraceLimitations) };
+  return { workspace: true, members: states, scopes, limitations: limitations.sort(compareTraceLimitations), linkServiceIssues };
 }
 
 /** member 하나를 검증하고 http 문서를 뺀 문서로 member 안 조인을 한다. */
@@ -131,7 +141,7 @@ function memberInput(member: TraceMember, documents: readonly BridgeFactsDocumen
  * 쓴다 — 계약 끝점의 member가 하나로 정해지게 하기 위해서다), 호출 측은 client member의 http 문서다.
  */
 function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput>,
-  byPath: ReadonlyMap<string, BridgeFactsDocument>): BridgeJoinResult {
+  byPath: ReadonlyMap<string, BridgeFactsDocument>, issues: TraceLinkServiceIssue[]): BridgeJoinResult {
   const contracts = (link.contract?.documents ?? []).map((path) => byPath.get(path)!);
   if (contracts.some(({ platform }) => platform !== 'openapi')) {
     throw new TraceInputError('Workspace link contract documents must be openapi documents; list other documents in a member.');
@@ -141,13 +151,61 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
   const clients = members.get(link.client)!.documents.filter(({ target }) => target === 'http');
   const serverSet = new Set([...servers, ...contracts]);
   const clientSet = new Set(clients);
+  const scope = linkServiceScope(link, [...serverSet]);
+  if (scope.issue !== undefined) issues.push({ link: link.name, server: link.server, detail: scope.issue });
+  const attributed = linkAttribution(link.match);
+  const services = link.match.services === undefined ? undefined : new Set(link.match.services);
   const rule: RouteLinkRule = {
     scope: link.name,
     isServerDocument: (document) => serverSet.has(document),
     isClientDocument: (document) => clientSet.has(document),
-    attributes: linkAttribution(link.match),
+    // link가 서비스를 좁혔으면 다른 서비스로 확정된 호출은 host·baseRef가 맞아도 이 link 호출이 아니다.
+    attributes: (document, fact) => {
+      const service = fact.service ?? document.service;
+      return attributed(document, fact) && (services === undefined || service === undefined || services.has(service));
+    },
+    includesDeclaration: scope.includes,
   };
   return joinTrace([...new Set([...servers, ...contracts, ...clients])], rule);
+}
+
+/**
+ * link가 잇는 선언 측 서비스 범위다.
+ *
+ * 선언 측(server·contract 문서)의 선언 사실마다 유효 service(사실 값, 없으면 문서 값)를 모은다.
+ * - `match.services`가 있으면 그 서비스의 선언만 잇는다. 선언 측이 서비스를 하나도 밝히지 않았으면(단일 서비스)
+ *   이름 없는 선언도 잇는다. 이름 있는 선언과 섞인 이름 없는 선언은 어느 서비스인지 모르므로 빼고 issue를 남긴다.
+ * - `match.services`가 없는데 선언 측 서비스 신원(이름 없는 것 포함)이 둘 이상이면 어느 서비스를 부르는지 모르므로
+ *   선언을 하나도 잇지 않고 issue를 남긴다. 다른 서비스의 선언에 조용히 잇지 않기 위해서다.
+ */
+function linkServiceScope(link: TraceLink, servers: readonly BridgeFactsDocument[]):
+  { includes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean; issue?: string } {
+  const named = new Set<string>();
+  let unnamed = 0;
+  for (const document of servers) {
+    for (const fact of document.facts) {
+      if (fact.kind !== 'route-decl' && fact.kind !== 'route-contract') continue;
+      const service = fact.service ?? document.service;
+      if (service === undefined) unnamed += 1;
+      else named.add(service);
+    }
+  }
+  const narrowed = link.match.services === undefined ? undefined : new Set(link.match.services);
+  if (narrowed !== undefined) {
+    const includes = (document: BridgeFactsDocument, fact: BridgeFact) => {
+      const service = fact.service ?? document.service;
+      return service === undefined ? named.size === 0 : narrowed.has(service);
+    };
+    return named.size > 0 && unnamed > 0
+      ? { includes, issue: `${unnamed} server declaration(s) without a service were excluded because other declarations `
+        + 'of this link name services; set service on every declaration of the server member.' }
+      : { includes };
+  }
+  if (named.size + (unnamed > 0 ? 1 : 0) < 2) return { includes: () => true };
+  const identities = [...named].sort(compareStrings).concat(unnamed > 0 ? ['(no service)'] : []);
+  return { includes: () => false,
+    issue: `The server side of this link declares several services (${identities.join(', ')}) and the link match does `
+      + 'not narrow them, so no declaration was joined; add match.services to select the service this client calls.' };
 }
 
 /**
