@@ -4,21 +4,27 @@ import { lstat, mkdir, open, readdir, readFile, realpath, stat, writeFile } from
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  analysisSymbolsInFiles,
   buildCaptureContext,
   capturedAnalysisPath,
   capturedDocumentPath,
   chunkCaptureRoots,
   collectCaptureRoots,
   expandCaptureArgument,
+  listedSymbolsInFiles,
   MAX_ROOT_ARGUMENT_BYTES,
   pairsDocumentIndexes,
+  parseSymbolListing,
   parseTraceCaptureConfig,
   rootArguments,
+  selectedCaptureFiles,
   selectedSymbols,
   TraceCaptureValidationError,
 } from '../dist/report/trace-capture.js';
 import { parseBridgeFactsDocument } from '../dist/exchange/parse.js';
-import { analysisProject, normalizeTraceAnalysis, parseTraceContext } from '../dist/exchange/trace-context.js';
+import {
+  analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
+} from '../dist/exchange/trace-context.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
 import { runChild } from './run-child.mjs';
 
@@ -28,6 +34,8 @@ import { runChild } from './run-child.mjs';
  * 제품(`isthmus`)은 JSON만 읽고 생산자를 실행하지 않는다. 그래서 생산자 실행은 capture-preflight와 같이
  * 이 스크립트가 맡는다. 단계는 (a) 생산자 사실 명령 → (b) `isthmus check --pairs`로 조인 검증과 root 추출 →
  * (c) 그 root로 생산자 순회 명령 → (d) trace context·artifact·manifest 기록 → (e) 선택적으로 `isthmus trace`다.
+ * 파일 선택이면 (c)를 두 단계로 나눈다: 역방향이 아닌 순회와 생산자 심볼 목록을 먼저 모으고, 선택한 파일에 놓인
+ * 심볼을 찾아 역방향 순회의 root에 더한 뒤 역방향을 실행한다({@link collectFileSymbols}).
  * 모든 자식은 인자 배열로 셸 없이 실행하고, 단계마다 시간 제한을 둔다.
  */
 
@@ -85,8 +93,20 @@ export async function captureTrace(input, { execute = runChild, now = () => new 
     try { provisional = parseTraceContext(buildCaptureContext(config, members.map(({ captured }) => captured))); }
     catch (error) { throw new CaptureTraceError('context', error.message); }
     for (const member of members) await capturePairs(session, member);
-    for (const member of members) await captureAnalyses(session, member, provisional);
-    const context = buildCaptureContext(config, members.map(({ captured }) => captured));
+    // 파일 선택이면 역방향 순회를 뒤로 미룬다. 그 root에 파일의 심볼을 더하려면 먼저 목록·정방향 순회가 있어야 한다.
+    const files = 'files' in provisional.selection;
+    for (const member of members) await captureAnalyses(session, member, provisional, files ? 'stage1' : 'all');
+    const fileSymbols = [];
+    if (files) {
+      manifest.fileSelection = [];
+      for (const member of members) fileSymbols.push(...await collectFileSymbols(session, member, provisional));
+      for (const member of members) await captureAnalyses(session, member, provisional, 'stage2');
+    } else {
+      for (const member of members) skipListings(session, member);
+    }
+    // context의 분석 순서는 실행 순서가 아니라 설정 순서다(나눈 묶음은 실행 순서를 지킨다).
+    for (const { captured } of members) captured.analyses.sort((left, right) => left.order - right.order);
+    const context = buildCaptureContext(config, members.map(({ captured }) => captured), fileSymbols);
     try { parseTraceContext(context); }
     catch (error) { throw new CaptureTraceError('context', error.message); }
     await writeOutput(output, 'trace-context.json', encodeSortedJson(context));
@@ -253,9 +273,11 @@ async function gitState(session, directory, step) {
 
 /** 쓰는 도구마다 `--version`과(선언했으면) 소스 checkout revision을 기록한다. */
 async function recordTools(session) {
+  const listing = listingMembers(session.config);
   const used = new Set(session.config.members.flatMap((member) => [
     ...member.documents.flatMap(({ step }) => (step ? [step.tool] : [])),
     ...member.analyses.flatMap(({ step }) => (step ? [step.tool] : [])),
+    ...(listing.has(member.name) ? member.listings.flatMap(({ step }) => (step ? [step.tool] : [])) : []),
   ]));
   for (const name of [...used].sort()) {
     const tool = session.config.tools[name];
@@ -269,6 +291,16 @@ async function recordTools(session) {
     }
     session.manifest.tools[name] = record;
   }
+}
+
+/**
+ * 심볼 목록을 실제로 실행할 member 이름이다 — 파일 선택이 그 member의 파일을 하나라도 고른 member.
+ * 단일 project의 파일 선택(문자열)은 유일한 member를 고른다. 선택은 설정 검증에서 이미 trace 규칙으로 확인했다.
+ */
+function listingMembers(config) {
+  const files = config.selection?.files;
+  if (!Array.isArray(files)) return new Set();
+  return new Set(files.map((file) => (typeof file === 'string' ? config.members[0].name : file.member)));
 }
 
 /** 파일 바이트의 SHA-256(소문자 hex)이다. */
@@ -364,7 +396,7 @@ async function captureFacts(session, member) {
     documents.push({ name: document.name, path });
     parsed.push(facts);
   }
-  return { config: member, values, parsed, captured: { name: member.name, project,
+  return { config: member, values, parsed, normalized: [], fileRoots: new Map(), captured: { name: member.name, project,
     ...(revision === undefined ? {} : { revision }), ...(catalog === undefined ? {} : { catalog }), documents, analyses: [] } };
 }
 
@@ -410,22 +442,32 @@ async function capturePairs(session, member) {
   };
 }
 
+/** 파일 선택의 2단계로 미루는 분석이다 — 생산자 명령으로 실행하는 역방향 순회. */
+function isDeferred(analysis) {
+  return analysis.role === 'reverse' && analysis.step !== undefined;
+}
+
 /**
  * (c) member의 순회 분석을 모은다. 생산자 명령은 사실 문서에서 뽑은 root로 실행하고, root가 많으면 나눠
  * 여러 분석으로 기록한다(trace가 같은 역할·플랫폼·member 분석을 합친다). 사전 계산 artifact는 복사하고
  * sha256을 `precomputed`에 싣는다.
+ *
+ * `phase`: `all`은 전부, `stage1`은 미룬 역방향을 뺀 나머지, `stage2`는 미룬 역방향만 실행한다. `stage2`의 root에는
+ * {@link collectFileSymbols}가 찾은 파일 심볼(`member.fileRoots`)을 더한다.
  */
-async function captureAnalyses(session, member, provisional) {
+async function captureAnalyses(session, member, provisional, phase) {
   const memberName = session.config.workspace ? member.config.name : undefined;
   const ids = new Set(session.config.members.flatMap(({ analyses }) => analyses.map(({ id }) => id)));
-  for (const analysis of member.config.analyses) {
+  for (const [order, analysis] of member.config.analyses.entries()) {
+    if (phase !== 'all' && isDeferred(analysis) !== (phase === 'stage2')) continue;
     const step = `analysis:${analysis.id}`;
     if (analysis.precomputed !== undefined) {
-      await capturePrecomputedAnalysis(session, member, analysis, provisional, step);
+      await capturePrecomputedAnalysis(session, member, analysis, provisional, step, order);
       continue;
     }
+    const extra = phase === 'stage2' ? member.fileRoots.get(analysis.platform) ?? [] : [];
     const roots = collectCaptureRoots(member.parsed, analysis.role, analysis.platform,
-      selectedSymbols(provisional, memberName, analysis.platform));
+      [...selectedSymbols(provisional, memberName, analysis.platform), ...extra]);
     if (roots.length === 0) {
       session.manifest.steps.push({ step, skipped: 'no roots: the member documents carry no symbol for this role and platform' });
       continue;
@@ -446,13 +488,121 @@ async function captureAnalyses(session, member, provisional) {
         if (ids.has(id)) throw new CaptureTraceError(step, `split analysis id ${id} collides with another analysis id.`);
         ids.add(id);
       }
-      await runTraversal(session, member, analysis, id, chunk, provisional);
+      await runTraversal(session, member, analysis, id, chunk, provisional, order);
     }
   }
 }
 
+/** 파일 선택이 아닐 때 선언된 심볼 목록은 실행하지 않고 이유를 manifest에 남긴다. */
+function skipListings(session, member) {
+  for (const { platform } of member.config.listings) {
+    session.manifest.steps.push({ step: `listing:${member.config.name}/${platform}`,
+      skipped: 'symbol listings are used only by a files selection' });
+  }
+}
+
+/**
+ * 파일 선택의 2단계 준비: 선택한 파일에 놓인 심볼을 platform마다 찾고, 역방향 root에 더할 것을 `member.fileRoots`에
+ * 둔다. 돌려주는 값은 context `fileSymbols` 항목이다.
+ *
+ * - 목록이 있는 platform: 생산자 목록이 파일에 둔 심볼 전부(완전). context `fileSymbols`에 싣는다 — tsograph처럼 순회
+ *   root에 위치를 싣지 않는 생산자는 분석만으로 trace가 그 심볼이 파일에 있다는 것을 알 수 없기 때문이다.
+ * - 목록이 없는 platform: 1단계 순회(정방향·사전 계산)가 파일에 위치시킨 심볼(부분). 이미 분석 위치로 trace에 보이므로
+ *   `fileSymbols`에 싣지 않고 root에만 더한다. 닿지 않은 심볼은 여전히 빠질 수 있어 manifest에 그렇게 적는다.
+ * 파일 심볼을 정방향 root에는 더하지 않는다 — trace의 파일 체인은 파일 심볼의 역방향 도달만 쓴다.
+ */
+async function collectFileSymbols(session, member, provisional) {
+  const memberName = session.config.workspace ? member.config.name : undefined;
+  const files = selectedCaptureFiles(provisional, memberName);
+  if (files.length === 0) {
+    for (const { platform } of member.config.listings) {
+      session.manifest.steps.push({ step: `listing:${member.config.name}/${platform}`,
+        skipped: 'the files selection selects no file of this member' });
+    }
+    return [];
+  }
+  const platforms = new Set([...member.config.listings.map(({ platform }) => platform),
+    ...member.config.analyses.filter(({ platform }) => platform !== 'sql').map(({ platform }) => platform)]);
+  const entries = [];
+  for (const platform of [...platforms].sort()) {
+    const listing = member.config.listings.find((entry) => entry.platform === platform);
+    const record = { ...(memberName === undefined ? {} : { member: memberName }), platform, files: files.length, notes: [] };
+    let byFile;
+    if (listing === undefined) {
+      byFile = analysisSymbolsInFiles(member.normalized.filter((analysis) => analysis.platform === platform), files);
+      Object.assign(record, { source: 'traversal', complete: false });
+      record.notes.push('No symbol listing for this platform: only symbols that stage-1 traversals located in the selected '
+        + 'files are rooted, so file symbols they did not reach can still leave trace with a fact-location fallback.');
+    } else {
+      const parsed = await captureListing(session, member, listing);
+      byFile = listedSymbolsInFiles(parsed, files);
+      requireFileSymbolBudget(byFile, entries, `listing:${member.config.name}/${platform}`);
+      Object.assign(record, { source: 'listing', listing: parsed.format, complete: true, skipped: parsed.skipped });
+      for (const [path, usrs] of byFile) entries.push({ ...(memberName === undefined ? {} : { member: memberName }), path, platform, usrs });
+    }
+    const symbols = [...new Set([...byFile.values()].flat())].sort();
+    const existing = new Set(collectCaptureRoots(member.parsed, 'reverse', platform, selectedSymbols(provisional, memberName, platform)));
+    const added = symbols.filter((usr) => !existing.has(usr));
+    const rerooted = member.config.analyses.some((analysis) => analysis.platform === platform && isDeferred(analysis));
+    if (rerooted) member.fileRoots.set(platform, added);
+    else if (added.length > 0) {
+      record.notes.push('No reverse analysis with a producer command for this platform: the file symbols are not rooted, '
+        + 'so trace reports analysis-missing for them.');
+    }
+    Object.assign(record, { symbols: symbols.length, reverseRoots: rerooted ? added.length : 0 });
+    if (record.notes.length === 0) delete record.notes;
+    session.manifest.fileSelection.push(record);
+  }
+  return entries;
+}
+
+/**
+ * 목록이 찾은 파일 심볼이 context `fileSymbols` 상한 안인지 역방향 순회 전에 확인한다. 넘으면 순회를 돌린 뒤 context
+ * 검증에서야 실패하지 않도록 이 목록 단계의 오류로 알린다. 잘라 싣지 않는다 — 자른 목록은 완전하다는 주장이 거짓이 된다.
+ */
+function requireFileSymbolBudget(byFile, entries, step) {
+  const largest = Math.max(0, ...[...byFile.values()].map((usrs) => usrs.length));
+  if (largest > MAX_FILE_SYMBOL_USRS) {
+    throw new CaptureTraceError(step, `a selected file has ${largest} listed symbols, above the fileSymbols limit of `
+      + `${MAX_FILE_SYMBOL_USRS} per file; select smaller files.`);
+  }
+  const total = entries.reduce((sum, { usrs }) => sum + usrs.length, 0) + [...byFile.values()].reduce((sum, usrs) => sum + usrs.length, 0);
+  if (total > MAX_FILE_SYMBOL_TOTAL) {
+    throw new CaptureTraceError(step, `the selected files have ${total} listed symbols, above the fileSymbols limit of `
+      + `${MAX_FILE_SYMBOL_TOTAL}; select fewer files.`);
+  }
+}
+
+/** 생산자 심볼 목록 하나를 실행(또는 복사)하고 검증해 artifact로 남긴다. */
+async function captureListing(session, member, listing) {
+  const step = `listing:${member.config.name}/${listing.platform}`;
+  let content;
+  let source;
+  if (listing.precomputed !== undefined) {
+    content = await readPrecomputed(listing.precomputed, session, step);
+    source = 'precomputed';
+  } else {
+    const args = await expandArguments(listing.step.args, member.values, session, step);
+    ({ stdout: content } = await run(session, { step, label: commandLabel(listing.step.tool, args),
+      command: session.config.tools[listing.step.tool].command, args,
+      timeoutSeconds: listing.step.timeoutSeconds, acceptExitCodes: listing.step.acceptExitCodes }));
+    source = 'captured';
+  }
+  const value = parseJson(content.toString('utf8'), step, `the ${listing.platform} symbol listing`);
+  let parsed;
+  try { parsed = parseSymbolListing(value, listing.platform, member.values.project); }
+  catch (error) {
+    if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError(step, error.message);
+    throw error;
+  }
+  const path = `${member.config.name}/listings/${listing.platform}.json`;
+  await writeOutput(session.output, path, content);
+  recordArtifact(session, path, content, source, documentTool(value));
+  return parsed;
+}
+
 /** 한 묶음의 root로 생산자 순회 명령을 실행하고 결과를 검증해 기록한다. */
-async function runTraversal(session, member, analysis, id, roots, provisional) {
+async function runTraversal(session, member, analysis, id, roots, provisional, order) {
   const step = `analysis:${id}`;
   let rootsFile;
   if (analysis.step.roots === 'roots-from') {
@@ -474,14 +624,14 @@ async function runTraversal(session, member, analysis, id, roots, provisional) {
   const reference = { id, platform: analysis.platform, role: analysis.role, path,
     ...(session.config.workspace ? { member: member.config.name } : {}) };
   const value = parseJson(stdout, step, label);
-  validateAnalysis(value, reference, provisional, step, label);
+  member.normalized.push(validateAnalysis(value, reference, provisional, step, label));
   await writeOutput(session.output, path, stdout);
   recordArtifact(session, path, stdout, 'captured', documentTool(value));
-  member.captured.analyses.push({ id, platform: analysis.platform, role: analysis.role, path });
+  member.captured.analyses.push({ id, platform: analysis.platform, role: analysis.role, path, order });
 }
 
 /** 사전 계산 순회를 복사하고 증언(sha256·revision)을 붙인다. */
-async function capturePrecomputedAnalysis(session, member, analysis, provisional, step) {
+async function capturePrecomputedAnalysis(session, member, analysis, provisional, step, order) {
   const content = await readPrecomputed(analysis.precomputed.path, session, step);
   const value = parseJson(content.toString('utf8'), step, `precomputed ${analysis.id}`);
   // 증언 revision: 설정이 밝힌 값, 없으면 문서가 싣는 revision. 둘 다 없으면 묶을 revision이 없어 받지 않는다.
@@ -494,15 +644,15 @@ async function capturePrecomputedAnalysis(session, member, analysis, provisional
     ...(analysis.precomputed.generatedAt === undefined ? {} : { generatedAt: analysis.precomputed.generatedAt }) };
   const reference = { id: analysis.id, platform: analysis.platform, role: analysis.role, path, precomputed,
     ...(session.config.workspace ? { member: member.config.name } : {}) };
-  validateAnalysis(value, reference, provisional, step, `precomputed ${analysis.id}`);
+  member.normalized.push(validateAnalysis(value, reference, provisional, step, `precomputed ${analysis.id}`));
   await writeOutput(session.output, path, content);
   recordArtifact(session, path, content, 'precomputed', documentTool(value));
-  member.captured.analyses.push({ id: analysis.id, platform: analysis.platform, role: analysis.role, path, precomputed });
+  member.captured.analyses.push({ id: analysis.id, platform: analysis.platform, role: analysis.role, path, precomputed, order });
 }
 
 /** trace와 같은 파서·어댑터로 순회를 검증한다(형식·방향·플랫폼·project·revision 증언). */
 function validateAnalysis(value, reference, provisional, step, label) {
-  try { normalizeTraceAnalysis(value, reference, analysisProject(provisional, reference)); }
+  try { return normalizeTraceAnalysis(value, reference, analysisProject(provisional, reference)); }
   catch (error) { throw new CaptureTraceError(step, `${label} output violates the traversal contract: ${error.message}`); }
 }
 

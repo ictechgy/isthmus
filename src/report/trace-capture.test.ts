@@ -2,17 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
-import { parseTraceContext } from '../exchange/trace-context.ts';
+import { parseTraceContext, type TraceAnalysis } from '../exchange/trace-context.ts';
 import {
+  analysisSymbolsInFiles,
   buildCaptureContext,
   chunkCaptureRoots,
   collectCaptureRoots,
   DEFAULT_MAX_ROOTS_PER_RUN,
   DEFAULT_STEP_TIMEOUT_SECONDS,
   expandCaptureArgument,
+  listedSymbolsInFiles,
   pairsDocumentIndexes,
+  parseSymbolListing,
   parseTraceCaptureConfig,
   rootArguments,
+  selectedCaptureFiles,
   selectedSymbols,
   TraceCaptureValidationError,
   type CapturedMember,
@@ -277,4 +281,109 @@ test('수집 결과로 단일 project·workspace context를 조립한다', () =>
   assert.deepEqual((workspace.links as any[]).map((link) => link.contract?.documents), [['spec/documents/api.json'], undefined, ['x']]);
   assert.deepEqual((workspace.members as any[])[1], { name: 'spec', project: '/work/app', revision: 'rev-1',
     catalog: { graphSha: 'b'.repeat(64) }, documents: ['spec/documents/api.json'] });
+});
+
+test('심볼 목록은 파일 선택용 member 필드이고 platform마다 명령 또는 사전 계산 파일 하나다', () => {
+  const input = baseConfig();
+  input.members[0].listings = [
+    { platform: 'js', tool: 'tsograph', args: ['graph', '--project', '{project}'] },
+    { platform: 'kotlin', precomputed: { root: 'work', path: 'ci/snapshot.json' } },
+  ];
+  const config = parseTraceCaptureConfig(input);
+  assert.deepEqual(config.members[0]!.listings, [
+    { platform: 'js', step: { tool: 'tsograph', args: ['graph', '--project', '{project}'], timeoutSeconds: DEFAULT_STEP_TIMEOUT_SECONDS, acceptExitCodes: [0] } },
+    { platform: 'kotlin', precomputed: { root: 'work', path: 'ci/snapshot.json' } },
+  ]);
+  assert.deepEqual(parseTraceCaptureConfig(baseConfig()).members[0]!.listings, []);
+  const listing = { platform: 'js', tool: 'tsograph', args: [] };
+  rejects((value) => { value.members[0].listings = {}; }, /listings must be a list/);
+  rejects((value) => { value.members[0].listings = [listing, listing]; }, /more than one listing for a platform/);
+  rejects((value) => { value.members[0].listings = [{ ...listing, platform: 'sql' }]; }, /language platform/);
+  rejects((value) => { value.members[0].listings = [{ platform: 'js' }]; }, /exactly one of tool/);
+  rejects((value) => { value.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'a.json' }, args: [] }]; }, /no command fields/);
+  rejects((value) => { value.members[0].listings = [{ ...listing, roots: 'arguments' }]; }, /listing of capture member 1 has an unknown field/);
+  rejects((value) => { value.members[0].listings = [{ ...listing, tool: 'ghost' }]; }, /undeclared tool/);
+  rejects((value) => { value.members[0].listings = ['x']; }, /must be an object/);
+});
+
+test('생산자 심볼 목록 세 형식을 project 상대 파일로 읽고 확정 못 한 위치는 센다', () => {
+  const tsograph = parseSymbolListing({ format: 'tsograph-graph', version: 1, project: '/work/app', nodes: [
+    { id: 'src/a.ts#f', location: { path: 'src/a.ts', line: 1, column: 1 } },
+    { id: 'src/a.ts#<module>' },
+  ] }, 'js', '/work/app');
+  assert.deepEqual(tsograph, { format: 'tsograph-graph', symbols: [{ usr: 'src/a.ts#f', path: 'src/a.ts' }], skipped: 1 });
+  const plain = parseSymbolListing({ format: 'kartograph-query-snapshot', version: 1, graph: { nodes: [
+    { usr: 'method:A#f()V', location: { path: 'app/src/A.kt', line: 3 } },
+    { usr: 'method:B#g()V', location: { path: 'B.kt', line: 1 } },
+  ] } }, 'kotlin', '/work/app');
+  assert.deepEqual(plain.symbols, [{ usr: 'method:A#f()V', path: 'app/src/A.kt' }]);
+  assert.equal(plain.skipped, 1);
+  const compact = parseSymbolListing({ format: 'kartograph-query-snapshot', version: 2, graph: {
+    stringTable: ['method:A#f()V', 'f', 'app/src/A.kt', 'B.kt', 'method:B#g()V'],
+    nodes: [[0, 1, null, null, null, [2, 3, 1], null, null, [], [], [], [], null, false],
+      [4, 1, null, null, null, [3, 1, 1], null, null, [], [], [], [], null, false],
+      [4, 1, null, null, null, null, null, null, [], [], [], [], null, false]] } }, 'kotlin', '/work/app');
+  assert.deepEqual(compact.symbols, [{ usr: 'method:A#f()V', path: 'app/src/A.kt' }]);
+  assert.equal(compact.skipped, 2);
+  const cartograph = parseSymbolListing({ tool: 'cartograph', version: '0.22.0', level: 'symbol', nodes: [
+    { id: 's:1A', usr: 's:1A', location: { path: '/work/app/Sources/A.swift', line: 1, column: 1 }, isExternal: false },
+    { id: 's:1B', location: { path: '/work/app/Sources/B.swift', line: 1, column: 1 }, isExternal: false },
+    { id: 's:ext', usr: 's:ext', location: { path: '/sdk/UIKit.swift', line: 1, column: 1 }, isExternal: true },
+    { id: 's:out', usr: 's:out', location: { path: '/work/application/C.swift', line: 1, column: 1 }, isExternal: false },
+  ] }, 'swift', '/work/app');
+  assert.deepEqual(cartograph.symbols, [{ usr: 's:1A', path: 'Sources/A.swift' }, { usr: 's:1B', path: 'Sources/B.swift' }]);
+  assert.equal(cartograph.skipped, 2);
+});
+
+test('모르는 목록 형식·다른 project·어긋난 platform·잘못된 id는 거부한다', () => {
+  const graph = { format: 'tsograph-graph', version: 1, project: '/work/app', nodes: [] };
+  const cases: Array<[unknown, string, RegExp]> = [
+    [[], 'js', /not a JSON object/],
+    [{ format: 'code-graph', nodes: [] }, 'js', /Unsupported symbol listing/],
+    [{ tool: 'cartograph', level: 'module', nodes: [] }, 'swift', /Unsupported symbol listing/],
+    [{ ...graph, project: '/work/other' }, 'js', /different project/],
+    [{ ...graph, version: 2 }, 'js', /tsograph-graph version 1/],
+    [graph, 'kotlin', /cannot describe platform kotlin/],
+    [{ ...graph, nodes: [{ id: 7, location: { path: 'a.ts' } }] }, 'js', /no valid symbol id/],
+    [{ format: 'kartograph-query-snapshot', version: 3, graph: { nodes: [] } }, 'kotlin', /version 1 or 2/],
+    [{ format: 'kartograph-query-snapshot', version: 2, graph: { nodes: [] } }, 'kotlin', /stringTable/],
+    [{ tool: 'cartograph', level: 'symbol' }, 'swift', /nodes list/],
+  ];
+  for (const [value, platform, pattern] of cases) {
+    assert.throws(() => parseSymbolListing(value, platform as never, '/work/app'), pattern);
+  }
+});
+
+test('파일 선택의 member별 파일과, 목록·분석이 그 파일에 둔 심볼을 모은다', () => {
+  const single = parseTraceContext({ format: 'isthmus-trace-context', version: 1, project: '/p', documents: ['a.json'],
+    analyses: [], selection: { files: ['src/b.ts', 'src/a.ts'] } });
+  assert.deepEqual(selectedCaptureFiles(single, undefined), ['src/a.ts', 'src/b.ts']);
+  assert.deepEqual(selectedCaptureFiles(single, 'app'), []);
+  const workspace = parseTraceContext({ format: 'isthmus-trace-context', version: 1, links: [], members: [
+    { name: 'a', project: '/a', revision: 'r', documents: ['a.json'] }, { name: 'b', project: '/b', revision: 'r', documents: ['b.json'] }],
+    selection: { files: [{ member: 'a', path: 'x.ts' }, { member: 'b', path: 'y.ts' }] } });
+  assert.deepEqual(selectedCaptureFiles(workspace, 'b'), ['y.ts']);
+  assert.deepEqual(selectedCaptureFiles({ ...single, selection: { routes: [{ method: 'GET', template: '/' }] } }, undefined), []);
+
+  const listing = { format: 'tsograph-graph' as const, skipped: 0, symbols: [
+    { usr: 'b', path: 'src/a.ts' }, { usr: 'a', path: 'src/a.ts' }, { usr: 'a', path: 'src/a.ts' }, { usr: 'c', path: 'src/other.ts' }] };
+  assert.deepEqual([...listedSymbolsInFiles(listing, ['src/a.ts', 'src/b.ts'])], [['src/a.ts', ['a', 'b']]]);
+  const graph = (roots: unknown[], reached: unknown[]) => ({ graph: { roots, reached } }) as unknown as TraceAnalysis;
+  const located = analysisSymbolsInFiles([
+    graph([{ id: 'r', symbol: { usr: 'r', location: { path: 'src/a.ts' } } }, { id: 'n' }, { id: 'u', symbol: { usr: 'u' } }],
+      [{ symbol: { usr: 'h', location: { path: 'src/a.ts' } } }, { symbol: { usr: 'z', location: { path: 'src/z.ts' } } }, { symbol: { usr: 'q' } }]),
+  ], ['src/a.ts']);
+  assert.deepEqual([...located], [['src/a.ts', ['h', 'r']]]);
+});
+
+test('목록이 찾은 파일 심볼은 context fileSymbols로 싣고, 없으면 필드를 쓰지 않는다', () => {
+  const input = baseConfig();
+  input.selection = { files: ['src/a.ts'] };
+  const config = parseTraceCaptureConfig(input);
+  const member: CapturedMember = { name: 'app', project: '/work/app', revision: 'rev-1',
+    documents: [{ name: 'routes.json', path: 'app/documents/routes.json' }], analyses: [] };
+  assert.equal('fileSymbols' in buildCaptureContext(config, [member]), false);
+  const context = buildCaptureContext(config, [member], [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
+  assert.deepEqual(context.fileSymbols, [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
+  assert.deepEqual(parseTraceContext(context).fileSymbols, [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
 });

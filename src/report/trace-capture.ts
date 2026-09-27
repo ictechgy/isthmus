@@ -3,7 +3,8 @@ import type { TraversalPlatform } from '../exchange/language-traversal.ts';
 import type { BridgeFactsDocument } from '../exchange/parse.ts';
 import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isSafeNonEmptyString } from '../exchange/parse.ts';
 import {
-  parseTraceContext, TraceContextValidationError, type TraceAnalysisRole, type TraceContext,
+  parseTraceContext, TraceContextValidationError, type TraceAnalysis, type TraceAnalysisRole, type TraceContext,
+  type TraceFileSymbols,
 } from '../exchange/trace-context.ts';
 import { isClientDocument, isDeclarationDocument } from '../join/route-join.ts';
 
@@ -72,6 +73,16 @@ export interface CaptureAnalysis {
   readonly precomputed?: CapturePrecomputedAnalysis;
 }
 
+/**
+ * 생산자 심볼 목록 하나다(파일 선택의 2단계 수집용). 생산자 명령의 stdout이거나 미리 만든 파일이다.
+ * 받는 형식은 {@link parseSymbolListing}이 정한다.
+ */
+export interface CaptureListing {
+  readonly platform: TraversalPlatform;
+  readonly step?: CaptureCommandStep;
+  readonly precomputed?: CapturePathRef;
+}
+
 /** member revision이다. 문자열은 그대로, `{git: true}`는 project의 `git rev-parse HEAD`다. */
 export type CaptureRevision = string | { readonly git: true };
 
@@ -83,6 +94,8 @@ export interface CaptureMember {
   readonly catalog?: { readonly graph: CapturePathRef; readonly source?: string };
   readonly documents: readonly CaptureDocument[];
   readonly analyses: readonly CaptureAnalysis[];
+  /** 파일 선택일 때만 실행하는 생산자 심볼 목록이다. 플랫폼마다 하나다. */
+  readonly listings: readonly CaptureListing[];
 }
 
 /** 생산자 실행 파일과(선택) 버전 기록용 소스 checkout이다. */
@@ -118,10 +131,11 @@ export const MAX_ROOT_ARGUMENT_BYTES = 128 * 1024;
 
 const configKeys = new Set(['format', 'version', 'roots', 'output', 'generatedAt', 'tools', 'members', 'links', 'selection', 'trace']);
 const toolKeys = new Set(['command', 'source']);
-const memberKeys = new Set(['name', 'project', 'revision', 'catalog', 'documents', 'analyses']);
+const memberKeys = new Set(['name', 'project', 'revision', 'catalog', 'documents', 'analyses', 'listings']);
 const stepKeys = ['tool', 'args', 'timeoutSeconds', 'acceptExitCodes'];
 const documentKeys = new Set(['name', 'precomputed', ...stepKeys]);
 const analysisKeys = new Set(['id', 'platform', 'role', 'precomputed', 'roots', 'maxRootsPerRun', ...stepKeys]);
+const listingKeys = new Set(['platform', 'precomputed', ...stepKeys]);
 const platforms = new Set<TraversalPlatform>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql']);
 const roles = new Set<TraceAnalysisRole>(['forward', 'reverse', 'db-dependents']);
 const deliveries = new Set<CaptureRootsDelivery>(['arguments', 'separator', 'roots-from']);
@@ -266,8 +280,34 @@ function parseMember(value: unknown, position: number, roots: Record<string, str
     fail(`Capture member ${position} analyses must be a list of at most 256 entries.`);
   }
   const analyses = ((value.analyses ?? []) as unknown[]).map((analysis) => parseAnalysis(analysis, position, roots, tools));
+  if (value.listings !== undefined && (!Array.isArray(value.listings) || value.listings.length > 8)) {
+    fail(`Capture member ${position} listings must be a list of at most 8 entries.`);
+  }
+  const listings = ((value.listings ?? []) as unknown[]).map((listing) => parseListing(listing, position, roots, tools));
+  unique(listings.map(({ platform }) => platform), `Capture member ${position} declares more than one listing for a platform.`);
   return { name: value.name, project, ...(revision === undefined ? {} : { revision }),
-    ...(catalog === undefined ? {} : { catalog }), documents, analyses };
+    ...(catalog === undefined ? {} : { catalog }), documents, analyses, listings };
+}
+
+/** 심볼 목록 하나: 언어 platform(sql 제외)과, 생산자 명령 또는 사전 계산 파일 중 정확히 하나. */
+function parseListing(value: unknown, member: number, roots: Record<string, string>,
+  tools: Record<string, CaptureTool>): CaptureListing {
+  if (!isJsonObject(value)) fail(`A listing of capture member ${member} must be an object.`);
+  rejectUnknownKeys(value, listingKeys, `A listing of capture member ${member} has an unknown field.`);
+  if (!platforms.has(value.platform as TraversalPlatform) || value.platform === 'sql') {
+    fail(`A listing of capture member ${member} needs a language platform (sql vertices have no source file).`);
+  }
+  const platform = value.platform as TraversalPlatform;
+  if ((value.precomputed === undefined) === (value.tool === undefined)) {
+    fail(`The ${platform} listing of capture member ${member} needs exactly one of tool (with args) or precomputed.`);
+  }
+  if (value.precomputed !== undefined) {
+    if (['args', 'timeoutSeconds', 'acceptExitCodes'].some((key) => value[key] !== undefined)) {
+      fail(`The precomputed ${platform} listing of capture member ${member} takes no command fields.`);
+    }
+    return { platform, precomputed: parsePathRef(value.precomputed, roots, 'precomputed listing') };
+  }
+  return { platform, step: parseStep(value, `${platform} listing of capture member ${member}`, roots, tools) };
 }
 
 /** member revision 선언을 검증한다. */
@@ -424,7 +464,10 @@ export function capturedAnalysisPath(member: string, id: string): string {
  * 아니면 `members`·`links`를 쓴다. link `contract.documents`는 설정에서 contract member의 **문서 이름**으로
  * 받아 출력 경로로 바꾼다 — 설정 작성자가 capture 출력 배치를 알 필요가 없게 하기 위해서다.
  */
-export function buildCaptureContext(config: TraceCaptureConfig, members: readonly CapturedMember[]): Record<string, unknown> {
+export function buildCaptureContext(config: TraceCaptureConfig, members: readonly CapturedMember[],
+  fileSymbols: readonly TraceFileSymbols[] = []): Record<string, unknown> {
+  // 목록이 아무 심볼도 싣지 않으면 필드를 쓰지 않는다 — 옛 context와 바이트가 같다.
+  const listed = fileSymbols.length === 0 ? {} : { fileSymbols };
   const analysisEntry = (analysis: CapturedMember['analyses'][number]) => ({
     id: analysis.id, platform: analysis.platform, role: analysis.role, path: analysis.path,
     ...(analysis.precomputed === undefined ? {} : { precomputed: analysis.precomputed }),
@@ -435,7 +478,7 @@ export function buildCaptureContext(config: TraceCaptureConfig, members: readonl
       format: 'isthmus-trace-context', version: 1, project: member!.project,
       ...(member!.revision === undefined ? {} : { revision: member!.revision }),
       documents: member!.documents.map(({ path }) => path), analyses: member!.analyses.map(analysisEntry),
-      selection: config.selection,
+      selection: config.selection, ...listed,
     };
   }
   const byName = new Map(members.map((member) => [member.name, member]));
@@ -448,7 +491,7 @@ export function buildCaptureContext(config: TraceCaptureConfig, members: readonl
       documents: member.documents.map(({ path }) => path),
       ...(member.analyses.length === 0 ? {} : { analyses: member.analyses.map(analysisEntry) }),
     })),
-    links, selection: config.selection,
+    links, selection: config.selection, ...listed,
   };
 }
 
@@ -545,6 +588,142 @@ export function chunkCaptureRoots(roots: readonly string[], maxRoots: number, ma
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
+}
+
+/** 생산자 심볼 목록에서 읽은 심볼 하나와 그 project 상대 파일이다. */
+export interface ListedSymbol {
+  readonly usr: string;
+  readonly path: string;
+}
+
+/** 읽은 심볼 목록이다. `skipped`는 project 상대 파일로 확정하지 못해 뺀 심볼 수다. */
+export interface SymbolListing {
+  readonly format: 'tsograph-graph' | 'kartograph-query-snapshot' | 'cartograph-graph';
+  readonly symbols: readonly ListedSymbol[];
+  readonly skipped: number;
+}
+
+/** 목록 형식마다 그 형식이 나올 수 있는 platform이다. 설정의 platform과 어긋나면 잘못 붙인 목록이다. */
+const listingPlatforms: Readonly<Record<SymbolListing['format'], TraversalPlatform>> = {
+  'tsograph-graph': 'js', 'kartograph-query-snapshot': 'kotlin', 'cartograph-graph': 'swift',
+};
+
+/**
+ * 생산자 심볼 목록(신뢰하지 않는 JSON)을 심볼 → project 상대 파일 목록으로 읽는다.
+ *
+ * 각 생산자의 origin/main README가 밝힌 출력만 받는다. 모르는 형식은 추측하지 않고 거부한다.
+ * - tsograph `graph`(`tsograph-graph` v1): `nodes[].id`가 routes·schema 사실과 순회의 `symbol.usr`이고
+ *   `location.path`는 `--project` 상대 경로다. 문서 `project`가 member project와 같아야 한다.
+ * - kartograph `snapshot --include-paths`(`kartograph-query-snapshot` v1, compact v2): `graph.nodes[].usr`와
+ *   `location.path`. v2는 `graph.stringTable` 색인으로 푼다(노드 행의 0번이 usr, 5번이 `[path, line, column]`).
+ *   `/`가 없는 경로는 소스 파일 이름만 남은 것이라(project 경로를 확정하지 못함) 뺀다 — kartograph 순회와 같은 규칙이다.
+ *   snapshot은 project를 싣지 않아 project 대조는 하지 못한다.
+ * - cartograph `graph --level symbol --format json`: `nodes[].usr`와 절대 경로 `location.path`. member project
+ *   (realpath) 아래 경로만 상대 경로로 바꾸고, 밖의 경로와 외부 심볼(`isExternal`)은 뺀다.
+ */
+export function parseSymbolListing(value: unknown, platform: TraversalPlatform, project: string): SymbolListing {
+  if (!isJsonObject(value)) fail('The symbol listing is not a JSON object.');
+  const listing = value.format === 'tsograph-graph' ? tsographListing(value, project)
+    : value.format === 'kartograph-query-snapshot' ? kartographListing(value)
+      : value.tool === 'cartograph' && value.level === 'symbol' ? cartographListing(value, project)
+        : fail('Unsupported symbol listing; use tsograph graph, kartograph snapshot --include-paths, or cartograph graph '
+          + '--level symbol --format json.');
+  if (listingPlatforms[listing.format] !== platform) fail(`A ${listing.format} listing cannot describe platform ${platform}.`);
+  return listing;
+}
+
+/** tsograph `graph` 출력이다. */
+function tsographListing(value: Record<string, unknown>, project: string): SymbolListing {
+  if (value.version !== 1 || !Array.isArray(value.nodes)) fail('Expected tsograph-graph version 1 with a nodes list.');
+  if (value.project !== project) fail('The tsograph graph was produced for a different project than its member.');
+  return collectListed('tsograph-graph', value.nodes, (node) => (isJsonObject(node)
+    ? { usr: node.id, path: isJsonObject(node.location) ? node.location.path : undefined } : {}));
+}
+
+/** kartograph query snapshot이다. v2(compact)는 문자열 사전으로 푼다. */
+function kartographListing(value: Record<string, unknown>): SymbolListing {
+  const graph = value.graph;
+  if ((value.version !== 1 && value.version !== 2) || !isJsonObject(graph) || !Array.isArray(graph.nodes)) {
+    fail('Expected kartograph-query-snapshot version 1 or 2 with graph.nodes.');
+  }
+  const kept = (path: unknown) => (typeof path === 'string' && path.includes('/') ? path : undefined);
+  if (value.version === 1) {
+    return collectListed('kartograph-query-snapshot', graph.nodes, (node) => (isJsonObject(node)
+      ? { usr: node.usr, path: isJsonObject(node.location) ? kept(node.location.path) : undefined } : {}));
+  }
+  const table = graph.stringTable;
+  if (!Array.isArray(table)) fail('A compact kartograph snapshot needs graph.stringTable.');
+  const text = (index: unknown) => (Number.isSafeInteger(index) && (index as number) >= 0 ? table[index as number] : undefined);
+  return collectListed('kartograph-query-snapshot', graph.nodes, (node) => {
+    if (!Array.isArray(node)) return {};
+    return { usr: text(node[0]), path: Array.isArray(node[5]) ? kept(text(node[5][0])) : undefined };
+  });
+}
+
+/** cartograph `graph --level symbol --format json` 출력이다. 절대 경로를 member project 기준으로 바꾼다. */
+function cartographListing(value: Record<string, unknown>, project: string): SymbolListing {
+  if (!Array.isArray(value.nodes)) fail('Expected a cartograph symbol graph with a nodes list.');
+  const prefix = project.endsWith('/') ? project : `${project}/`;
+  return collectListed('cartograph-graph', value.nodes, (node) => {
+    if (!isJsonObject(node) || node.isExternal === true) return {};
+    const path = isJsonObject(node.location) ? node.location.path : undefined;
+    // symbol 수준에서는 id와 usr가 같은 인덱스 USR이다. usr가 비면 id를 쓴다.
+    return { usr: node.usr ?? node.id,
+      path: typeof path === 'string' && path.startsWith(prefix) ? path.slice(prefix.length) : undefined };
+  });
+}
+
+/** 목록 행에서 (usr, 상대 경로)를 모은다. 위치를 확정하지 못한 행은 센다. usr가 문자열이 아니면 형식 위반이다. */
+function collectListed(format: SymbolListing['format'], nodes: readonly unknown[],
+  read: (node: unknown) => { usr?: unknown; path?: unknown }): SymbolListing {
+  const symbols: ListedSymbol[] = [];
+  let skipped = 0;
+  for (const node of nodes) {
+    const { usr, path } = read(node);
+    if (usr === undefined && path === undefined) { skipped += 1; continue; }
+    if (!isSafeNonEmptyString(usr)) fail(`A ${format} listing entry has no valid symbol id.`);
+    if (isProjectRelativePath(path) && !path.includes('\\')) symbols.push({ usr, path });
+    else skipped += 1;
+  }
+  return { format, symbols, skipped };
+}
+
+/** 파일 선택에서 이 member(단일 project면 undefined)가 고른 파일이다. 파일 선택이 아니면 빈 목록이다. */
+export function selectedCaptureFiles(context: TraceContext, member: string | undefined): string[] {
+  const { selection } = context;
+  if (!('files' in selection)) return [];
+  return selection.files.flatMap((file) => {
+    if (typeof file === 'string') return member === undefined ? [file] : [];
+    return file.member === member ? [file.path] : [];
+  });
+}
+
+/** 목록에서 고른 파일에 놓인 심볼을 파일별로 모은다(정렬·중복 제거). */
+export function listedSymbolsInFiles(listing: SymbolListing, files: readonly string[]): Map<string, string[]> {
+  return groupByFile(listing.symbols, files);
+}
+
+/** 순회 분석들이 고른 파일에 위치시킨 root·도달 심볼을 파일별로 모은다. 목록이 없는 platform의 대안이다. */
+export function analysisSymbolsInFiles(analyses: readonly TraceAnalysis[], files: readonly string[]): Map<string, string[]> {
+  const located = analyses.flatMap(({ graph }) => [
+    ...graph.roots.flatMap(({ symbol }) => (symbol?.location === undefined ? [] : [symbol])),
+    ...graph.reached.map(({ symbol }) => symbol),
+  ]).flatMap((symbol) => (symbol.location === undefined ? [] : [{ usr: symbol.usr, path: symbol.location.path }]));
+  return groupByFile(located, files);
+}
+
+/** (usr, path) 목록을 고른 파일로 거르고 파일별로 묶는다. 결과는 파일·usr 모두 정렬한다. */
+function groupByFile(symbols: readonly ListedSymbol[], files: readonly string[]): Map<string, string[]> {
+  const wanted = new Set(files);
+  const byFile = new Map<string, Set<string>>();
+  for (const { usr, path } of symbols) {
+    if (!wanted.has(path)) continue;
+    const set = byFile.get(path) ?? new Set<string>();
+    set.add(usr);
+    byFile.set(path, set);
+  }
+  return new Map([...byFile.entries()].sort(([left], [right]) => compareStrings(left, right))
+    .map(([path, usrs]) => [path, [...usrs].sort(compareStrings)]));
 }
 
 /** 자리표시자 치환에 쓰는 값이다. revision은 모를 수 있다. */
