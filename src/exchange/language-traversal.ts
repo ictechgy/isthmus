@@ -1,0 +1,426 @@
+import { compareStrings } from '../compare.ts';
+import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
+import type { LanguageImpact } from './preflight-context.ts';
+
+/**
+ * `language-traversal` v1 — 생산자가 내는 언어 그래프 순회 결과의 공유 형식이다.
+ *
+ * 정방향(`dependencies`)과 역방향(`dependents`) 순회를 같은 모양으로 담고, 도달 정점마다
+ * 어느 root에서 닿았는지(`roots`)를 보존한다. isthmus trace는 이 숲을 생산자 id 정확 일치로만
+ * 잇는다. 정본 계약은 docs/LANGUAGE-TRAVERSAL.md다. 검증은 fail-closed다 — 모르는 필드,
+ * 부모 없는 정점, depth 불일치, 정렬 위반을 조용히 고치지 않고 거부한다.
+ */
+
+/** 순회 문서를 낼 수 있는 플랫폼이다. openapi는 언어 그래프가 없어 제외한다. */
+export type TraversalPlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'sql';
+
+/** 순회 방향이다. `dependencies`는 root가 기대는 쪽, `dependents`는 root에 기대는 쪽이다. */
+export type TraversalDirection = 'dependencies' | 'dependents';
+
+/** 생산자가 관찰한 소스 위치다. JVM처럼 줄·열이 없을 수 있어 부분 위치를 허용한다. */
+export interface TraversalLocation {
+  readonly path: string;
+  readonly line?: number;
+  readonly column?: number;
+}
+
+/** 순회 정점의 신원이다. `usr`는 그 생산자의 안정 id이며 bridge-facts의 `symbol.usr`와 같은 문자열이다. */
+export interface TraversalSymbol {
+  readonly usr: string;
+  readonly qualifiedName?: string;
+  readonly kind?: string;
+  readonly location?: TraversalLocation;
+}
+
+/**
+ * 순회의 시작점이다. `id`는 생산자 id이고, 심볼 root면 `symbol.usr`가 `id`와 같다.
+ * 파일 선택처럼 심볼이 아닌 root나 생산자가 해석하지 못한 요청(`root-not-found:`)은 `symbol`을
+ * 생략한다. trace는 `symbol`이 있는 root만 생산자 id로 잇는다.
+ */
+export interface TraversalRoot {
+  readonly id: string;
+  readonly symbol?: TraversalSymbol;
+}
+
+/** 순회가 도달한 정점 하나다. */
+export interface TraversalReached {
+  readonly symbol: TraversalSymbol;
+  /** 가장 짧은 경로 하나의 직전 정점(도달 정점의 usr 또는 root id)이다. */
+  readonly via: string;
+  /** 가장 가까운 root까지의 간선 수다(root는 0). */
+  readonly depth: number;
+  /**
+   * 이 정점에 닿는 모든 root의 인덱스(오름차순)다. 64개를 넘으면 가장 작은 인덱스 64개만 싣고
+   * 문서에 `rootsTruncated: true`를 단다.
+   */
+  readonly roots: readonly number[];
+  readonly relationships?: readonly string[];
+}
+
+/** 검증된 `language-traversal` v1 문서다. */
+export interface LanguageTraversal {
+  readonly format: 'language-traversal';
+  readonly version: 1;
+  readonly tool: Readonly<{ name: string; version: string }>;
+  readonly generatedAt: string;
+  readonly platform: TraversalPlatform;
+  readonly project: string;
+  readonly revision?: string;
+  readonly graphRevision?: string;
+  readonly direction: TraversalDirection;
+  readonly roots: readonly TraversalRoot[];
+  readonly reached: readonly TraversalReached[];
+  readonly rootsTruncated?: boolean;
+  readonly truncated: boolean;
+  readonly truncationReasons?: readonly string[];
+  readonly limitations: readonly string[];
+}
+
+/**
+ * 형식과 무관하게 trace가 소비하는 정규화된 순회 숲이다.
+ *
+ * `rootProvenance`가 `witness`면 어댑터가 root 출처를 via 사슬의 대표 root 하나로만 복원했다는
+ * 뜻이다(옛 역방향 형식은 정점별 root 목록이 없다). 이때 root가 둘 이상이면 다른 root의 도달은
+ * 빠질 수 있으므로 소비자가 gap으로 밝혀야 한다.
+ */
+export interface TraversalGraph {
+  readonly source: TraversalSource;
+  readonly platform: TraversalPlatform;
+  readonly direction: TraversalDirection;
+  readonly tool?: Readonly<{ name: string; version: string }>;
+  readonly revision?: string;
+  readonly graphRevision?: string;
+  readonly roots: readonly TraversalRoot[];
+  readonly reached: readonly TraversalReached[];
+  readonly rootsTruncated: boolean;
+  readonly rootProvenance: 'complete' | 'witness';
+  readonly truncated: boolean;
+  readonly truncationReasons: readonly string[];
+  readonly limitations: readonly string[];
+}
+
+/** 정규화 전 원본 형식이다. 출력의 분석 메타데이터에 실어 출처를 밝힌다. */
+export type TraversalSource =
+  | 'language-traversal' | 'kartograph-impact' | 'change-impact' | 'dartograph-impact' | 'schemagraph-impact';
+
+/** 순회 입력이 계약을 어겼음을 나타낸다. 입력 원문을 메시지에 넣지 않는다. */
+export class TraversalValidationError extends Error {
+  /** 입력 내용을 노출하지 않는 고정 문구만 보존한다. */
+  constructor(message: string) {
+    super(message);
+    this.name = 'TraversalValidationError';
+  }
+}
+
+/** 한 문서의 root 상한이다. */
+export const MAX_TRAVERSAL_ROOTS = 10_000;
+/** 한 문서의 도달 정점 상한이다. */
+export const MAX_TRAVERSAL_REACHED = 100_000;
+/** depth 상한이다. preflight의 producer depth 상한과 같다. */
+export const MAX_TRAVERSAL_DEPTH = 128;
+/** 정점 하나가 싣는 root 인덱스 상한이다. 넘으면 64개만 싣고 `rootsTruncated`다. */
+export const MAX_ROOTS_PER_REACHED = 64;
+/** 정점 하나의 관계 문자열 상한이다. */
+export const MAX_TRAVERSAL_RELATIONSHIPS = 32;
+
+const platforms = new Set<string>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql']);
+const topKeys = new Set(['format', 'version', 'tool', 'generatedAt', 'platform', 'project', 'revision',
+  'graphRevision', 'direction', 'roots', 'reached', 'rootsTruncated', 'truncated', 'truncationReasons', 'limitations']);
+const reachedKeys = new Set(['symbol', 'via', 'depth', 'roots', 'relationships']);
+const symbolKeys = new Set(['usr', 'qualifiedName', 'kind', 'location']);
+
+/** 값이 순회 플랫폼인지 확인한다. */
+export function isTraversalPlatform(value: unknown): value is TraversalPlatform {
+  return typeof value === 'string' && platforms.has(value);
+}
+
+/** 신뢰하지 않는 JSON을 검증된 `language-traversal` v1 문서로 바꾼다. */
+export function parseLanguageTraversal(input: unknown): LanguageTraversal {
+  const value = object(input, 'Language traversal must be a JSON object.');
+  if (value.format !== 'language-traversal' || value.version !== 1) {
+    fail('Expected language-traversal version 1.');
+  }
+  onlyKeys(value, topKeys, 'Language traversal has an unknown field.');
+  const toolValue = object(value.tool, 'Invalid language traversal tool.');
+  onlyKeys(toolValue, new Set(['name', 'version']), 'Invalid language traversal tool.');
+  const tool = { name: safe(toolValue.name, 'Invalid language traversal tool name.'),
+    version: safe(toolValue.version, 'Invalid language traversal tool version.') };
+  if (!isBridgeTimestamp(value.generatedAt)) fail('Invalid language traversal generatedAt.');
+  if (!isTraversalPlatform(value.platform)) fail('Unsupported language traversal platform.');
+  const project = safe(value.project, 'Invalid language traversal project.');
+  const revision = optionalSafe(value.revision, 'Invalid language traversal revision.');
+  const graphRevision = optionalSafe(value.graphRevision, 'Invalid language traversal graphRevision.');
+  if (value.direction !== 'dependencies' && value.direction !== 'dependents') {
+    fail('Invalid language traversal direction.');
+  }
+  if (value.rootsTruncated !== undefined && typeof value.rootsTruncated !== 'boolean') {
+    fail('Invalid language traversal rootsTruncated flag.');
+  }
+  if (typeof value.truncated !== 'boolean') fail('Invalid language traversal truncation flag.');
+  const truncationReasons = value.truncationReasons === undefined ? undefined
+    : sortedUniqueStrings(value.truncationReasons, 1_000, 'Invalid language traversal truncation reasons.');
+  if (!value.truncated && (truncationReasons?.length ?? 0) > 0) {
+    fail('Truncation reasons require truncated: true.');
+  }
+  const limitations = textStrings(value.limitations, 'Invalid language traversal limitations.');
+  const roots = array(value.roots, MAX_TRAVERSAL_ROOTS, 'Invalid language traversal roots.').map(parseRoot);
+  const reached = array(value.reached, MAX_TRAVERSAL_REACHED, 'Invalid language traversal reached symbols.')
+    .map(parseReached);
+  requireSortedReached(reached);
+  validateTraversalGraph(roots, reached, { rootsTruncated: value.rootsTruncated === true, truncated: value.truncated });
+  return {
+    format: 'language-traversal', version: 1, tool, generatedAt: value.generatedAt, platform: value.platform, project,
+    ...(revision === undefined ? {} : { revision }), ...(graphRevision === undefined ? {} : { graphRevision }),
+    direction: value.direction, roots, reached,
+    ...(value.rootsTruncated === undefined ? {} : { rootsTruncated: value.rootsTruncated }),
+    truncated: value.truncated, ...(truncationReasons === undefined ? {} : { truncationReasons }), limitations,
+  };
+}
+
+/** 검증된 문서를 형식 무관 순회 숲으로 바꾼다. */
+export function traversalGraphFromDocument(document: LanguageTraversal): TraversalGraph {
+  return {
+    source: 'language-traversal', platform: document.platform, direction: document.direction, tool: document.tool,
+    ...(document.revision === undefined ? {} : { revision: document.revision }),
+    ...(document.graphRevision === undefined ? {} : { graphRevision: document.graphRevision }),
+    roots: document.roots, reached: document.reached, rootsTruncated: document.rootsTruncated === true,
+    rootProvenance: 'complete', truncated: document.truncated,
+    truncationReasons: document.truncationReasons ?? [], limitations: document.limitations,
+  };
+}
+
+/**
+ * preflight 어댑터가 만든 역방향 영향(kartograph·cartograph·dartograph)을 순회 숲으로 바꾼다.
+ *
+ * 옛 형식은 정점별 root 목록이 없어 via 사슬의 대표 root 하나만 복원한다. root가 둘 이상이면
+ * `rootProvenance: "witness"`로 표시해 소비자가 부분 귀속을 gap으로 밝히게 한다. 새 id를 만들지 않는다.
+ */
+export function traversalGraphFromImpact(impact: LanguageImpact, source: TraversalSource): TraversalGraph {
+  const roots = [...impact.roots].sort((left, right) => compareStrings(left.id, right.id)).map((root) => ({
+    id: root.id,
+    symbol: symbolFromImpact(root),
+  }));
+  const rootIndex = new Map(roots.map(({ id }, index) => [id, index]));
+  const parents = new Map(impact.affected.map((row) => [row.symbol.id, row.via]));
+  const reached = impact.affected.map((row): TraversalReached => ({
+    symbol: symbolFromImpact(row.symbol),
+    via: row.via,
+    depth: row.depth,
+    roots: [witnessRoot(row.symbol.id, parents, rootIndex)],
+    ...(row.relationships.length === 0 ? {} : { relationships: [...new Set(row.relationships)].sort(compareStrings) }),
+  })).sort(compareReached);
+  validateTraversalGraph(roots, reached, { rootsTruncated: false, truncated: impact.truncated });
+  return {
+    source, platform: impact.platform, direction: 'dependents', roots, reached, rootsTruncated: false,
+    rootProvenance: roots.length > 1 ? 'witness' : 'complete', truncated: impact.truncated,
+    truncationReasons: [], limitations: impact.limitations,
+  };
+}
+
+/**
+ * root·도달 정점의 그래프 불변식을 검사한다. 파서와 어댑터가 같은 규칙을 쓴다.
+ *
+ * - root id와 도달 usr는 서로 겹치지 않고 각각 유일하다.
+ * - `via`는 root id거나 다른 도달 정점이고 `depth`는 부모 depth + 1이다(root는 0).
+ * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다. via가 root면 그 root를 포함한다.
+ * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모의 root 집합이 자식에
+ *   포함된다 — 부모에 닿는 root는 간선을 따라 자식에도 닿기 때문이다.
+ */
+export function validateTraversalGraph(
+  roots: readonly TraversalRoot[],
+  reached: readonly TraversalReached[],
+  flags: Readonly<{ rootsTruncated: boolean; truncated: boolean }>,
+): void {
+  const rootIndex = new Map<string, number>();
+  roots.forEach(({ id }, index) => {
+    if (rootIndex.has(id)) fail('Traversal root ids must be unique.');
+    rootIndex.set(id, index);
+  });
+  const rows = new Map<string, TraversalReached>();
+  for (const row of reached) {
+    if (rootIndex.has(row.symbol.usr) || rows.has(row.symbol.usr)) fail('Traversal symbol ids must be unique.');
+    rows.set(row.symbol.usr, row);
+  }
+  const checkSubset = !flags.truncated && !flags.rootsTruncated;
+  for (const row of reached) {
+    if (row.roots.length === 0 || row.roots.length > MAX_ROOTS_PER_REACHED ||
+      row.roots.some((index, position) => !Number.isSafeInteger(index) || index < 0 || index >= roots.length ||
+        (position > 0 && index <= row.roots[position - 1]!))) {
+      fail('Traversal root indices must be sorted, unique and in range.');
+    }
+    const viaRoot = rootIndex.get(row.via);
+    if (viaRoot !== undefined) {
+      if (row.depth !== 1 || !row.roots.includes(viaRoot)) fail('Traversal depth or roots do not match the via root.');
+      continue;
+    }
+    const parent = rows.get(row.via);
+    if (parent === undefined || parent.depth + 1 !== row.depth) {
+      fail('Traversal depth does not match its observed parent.');
+    }
+    if (checkSubset && parent.roots.some((index) => !row.roots.includes(index))) {
+      fail('Traversal roots must include every root of the parent.');
+    }
+  }
+}
+
+/**
+ * 도달 정점의 대표 경로(root부터 그 정점까지의 id)를 복원한다.
+ *
+ * 경로는 생산자가 준 `via` 목격만 따른다. 여러 root가 닿는 정점이면 첫 원소가 호출자가 묻는
+ * root와 다를 수 있다 — 대표 경로는 가장 가까운 root 하나의 것이다.
+ */
+export function traversalPath(graph: TraversalGraph, usr: string): string[] {
+  const rows = rowIndex(graph);
+  const path = [usr];
+  let current = rows.get(usr);
+  while (current !== undefined) {
+    path.push(current.via);
+    current = rows.get(current.via);
+  }
+  return path.reverse();
+}
+
+/** 순회 숲의 usr별 도달 정점 색인을 한 번만 만든다. */
+const rowIndexes = new WeakMap<TraversalGraph, Map<string, TraversalReached>>();
+
+/** usr별 도달 정점 색인이다. */
+export function rowIndex(graph: TraversalGraph): Map<string, TraversalReached> {
+  let index = rowIndexes.get(graph);
+  if (index === undefined) {
+    index = new Map(graph.reached.map((row) => [row.symbol.usr, row]));
+    rowIndexes.set(graph, index);
+  }
+  return index;
+}
+
+/** 결정적 도달 정점 순서다: depth, 그다음 usr. */
+export function compareReached(left: TraversalReached, right: TraversalReached): number {
+  return left.depth - right.depth || compareStrings(left.symbol.usr, right.symbol.usr);
+}
+
+/** 어댑터가 복원한 via 사슬의 대표 root 인덱스다. 검증이 사슬 무결성을 다시 확인한다. */
+function witnessRoot(id: string, parents: ReadonlyMap<string, string>, rootIndex: ReadonlyMap<string, number>): number {
+  let current = id;
+  for (let step = 0; step <= MAX_TRAVERSAL_DEPTH; step++) {
+    const index = rootIndex.get(current);
+    if (index !== undefined) return index;
+    const parent = parents.get(current);
+    if (parent === undefined) break;
+    current = parent;
+  }
+  return fail('Traversal via chain does not reach a root.');
+}
+
+/** preflight 심볼을 순회 심볼로 옮긴다. 이름·종류·위치는 있는 것만 복사한다. */
+function symbolFromImpact(symbol: LanguageImpact['roots'][number]): TraversalSymbol {
+  return {
+    usr: symbol.id,
+    qualifiedName: symbol.qualifiedName,
+    ...(symbol.kind === undefined ? {} : { kind: symbol.kind }),
+    ...(symbol.location === undefined ? {} : { location: symbol.location }),
+  };
+}
+
+/** root 항목을 검증한다. 심볼 root면 usr가 id와 같아야 한다. */
+function parseRoot(input: unknown): TraversalRoot {
+  const value = object(input, 'Invalid traversal root.');
+  onlyKeys(value, new Set(['id', 'symbol']), 'Traversal root has an unknown field.');
+  const id = safe(value.id, 'Invalid traversal root id.');
+  if (value.symbol === undefined) return { id };
+  const symbol = parseTraversalSymbol(value.symbol);
+  if (symbol.usr !== id) fail('Traversal root symbol usr must equal the root id.');
+  return { id, symbol };
+}
+
+/** 도달 정점 항목을 검증한다. 그래프 불변식은 `validateTraversalGraph`가 본다. */
+function parseReached(input: unknown): TraversalReached {
+  const value = object(input, 'Invalid traversal reached symbol.');
+  onlyKeys(value, reachedKeys, 'Traversal reached symbol has an unknown field.');
+  const symbol = parseTraversalSymbol(value.symbol);
+  const via = safe(value.via, 'Invalid traversal via.');
+  if (!Number.isSafeInteger(value.depth) || (value.depth as number) < 1 || (value.depth as number) > MAX_TRAVERSAL_DEPTH) {
+    fail(`Traversal depth must be between 1 and ${MAX_TRAVERSAL_DEPTH}.`);
+  }
+  const roots = array(value.roots, MAX_ROOTS_PER_REACHED, 'Invalid traversal root indices.') as number[];
+  const relationships = value.relationships === undefined ? undefined
+    : sortedUniqueStrings(value.relationships, MAX_TRAVERSAL_RELATIONSHIPS, 'Invalid traversal relationships.');
+  return { symbol, via, depth: value.depth as number, roots: [...roots],
+    ...(relationships === undefined ? {} : { relationships }) };
+}
+
+/** 순회 심볼을 검증한다. */
+export function parseTraversalSymbol(input: unknown): TraversalSymbol {
+  const value = object(input, 'Invalid traversal symbol.');
+  onlyKeys(value, symbolKeys, 'Traversal symbol has an unknown field.');
+  const usr = safe(value.usr, 'Invalid traversal symbol usr.');
+  const qualifiedName = optionalSafe(value.qualifiedName, 'Invalid traversal symbol qualified name.');
+  const kind = optionalSafe(value.kind, 'Invalid traversal symbol kind.');
+  const location = value.location === undefined ? undefined : parseTraversalLocation(value.location);
+  return { usr, ...(qualifiedName === undefined ? {} : { qualifiedName }), ...(kind === undefined ? {} : { kind }),
+    ...(location === undefined ? {} : { location }) };
+}
+
+/** 프로젝트 상대 부분 위치를 검증한다. 열은 줄이 있을 때만 올 수 있다. */
+function parseTraversalLocation(input: unknown): TraversalLocation {
+  const value = object(input, 'Invalid traversal symbol location.');
+  onlyKeys(value, new Set(['path', 'line', 'column']), 'Invalid traversal symbol location.');
+  if (!isProjectRelativePath(value.path) || (value.line !== undefined && !positive(value.line)) ||
+    (value.column !== undefined && (value.line === undefined || !positive(value.column)))) {
+    fail('Invalid traversal symbol location.');
+  }
+  return { path: value.path, ...(value.line === undefined ? {} : { line: value.line as number }),
+    ...(value.column === undefined ? {} : { column: value.column as number }) };
+}
+
+/** 도달 정점이 (depth, usr) 엄격한 오름차순인지 검사한다. */
+function requireSortedReached(reached: readonly TraversalReached[]): void {
+  for (let index = 1; index < reached.length; index++) {
+    if (compareReached(reached[index - 1]!, reached[index]!) >= 0) {
+      fail('Traversal reached symbols must be sorted by depth, then usr.');
+    }
+  }
+}
+
+function positive(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 1;
+}
+
+function onlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, message: string): void {
+  if (Object.keys(value).some((key) => !allowed.has(key))) fail(message);
+}
+
+function object(input: unknown, message: string): Record<string, unknown> {
+  if (!isJsonObject(input)) fail(message);
+  return input;
+}
+
+function array(input: unknown, maximum: number, message: string): unknown[] {
+  if (!Array.isArray(input) || input.length > maximum) fail(message);
+  return input;
+}
+
+function sortedUniqueStrings(input: unknown, maximum: number, message: string): string[] {
+  const values = array(input, maximum, message);
+  if (!values.every(isSafeNonEmptyString) ||
+    values.some((item, index) => index > 0 && compareStrings(values[index - 1] as string, item) >= 0)) fail(message);
+  return [...values] as string[];
+}
+
+function textStrings(input: unknown, message: string): string[] {
+  const values = array(input, 50_000, message);
+  if (!values.every((item) => typeof item === 'string')) fail(message);
+  return [...values] as string[];
+}
+
+function safe(input: unknown, message: string): string {
+  if (!isSafeNonEmptyString(input)) fail(message);
+  return input;
+}
+
+function optionalSafe(input: unknown, message: string): string | undefined {
+  return input === undefined ? undefined : safe(input, message);
+}
+
+function fail(message: string): never {
+  throw new TraversalValidationError(message);
+}
