@@ -209,3 +209,75 @@ test('check --pairs는 http 쌍 상한을 넘으면 stdout 없이 종료 코드 
     undefined, clock, '0.0.0');
   assert.equal(plain.exitCode, 0, '--pairs 없이는 같은 입력이 정상 보고된다');
 });
+
+test('http 베이스라인 왕복: --update-baseline 파일을 --baseline으로 다시 읽어 정확히 그 이슈만 억제한다', async () => {
+  // fixture는 service가 없는 단일 서비스 입력이라 모든 http 진단의 scope가 `default`다. 드리프트
+  // (route-*-without-decl/contract)와 contract 쪽(route-call-without-contract-unverified)이 섞여 있다.
+  const written = new Map<string, string>();
+  const created = await runCheckCommand(['check', ...all, '--update-baseline', 'baseline.json'], read,
+    async (path, text) => { written.set(path, text); }, clock, '0.0.0');
+  assert.equal(created.exitCode, 0);
+  const report = JSON.parse(created.standardOutput) as {
+    issues: Array<{ code: string; target: string; channel: string; method?: string; scope?: string }>;
+  };
+  assert.ok(report.issues.length > 0);
+  assert.ok(report.issues.every(({ target, scope }) => target === 'http' && scope === 'default'), 'every http issue has a scope');
+  const codes = new Set(report.issues.map(({ code }) => code));
+  for (const code of ['route-contract-without-decl', 'route-decl-without-contract', 'route-call-without-contract-unverified',
+    'route-call-without-decl', 'route-method-mismatch']) {
+    assert.ok(codes.has(code), code);
+  }
+  const baselineText = written.get('baseline.json')!;
+  const baseline = JSON.parse(baselineText) as { entries: Array<Record<string, unknown>> };
+  const key = (item: Record<string, unknown>): string =>
+    JSON.stringify([item.code, item.target, item.channel, item.method ?? null, item.scope]);
+  assert.deepEqual(baseline.entries.map(key).sort(), report.issues.map(key).sort());
+  const reread = async (path: string): Promise<string> => (path === 'baseline.json' ? baselineText : read(path));
+  const applied = await runCheckCommand(['check', ...all, '--strict', '--baseline', 'baseline.json'], reread,
+    undefined, clock, '0.0.0');
+  assert.equal(applied.standardError, '');
+  assert.equal(applied.exitCode, 0);
+  const appliedReport = JSON.parse(applied.standardOutput) as {
+    summary: { errors: number; warnings: number; suppressed: number; staleBaselineEntries: number };
+    issues: Array<{ suppressed?: boolean }>;
+  };
+  assert.deepEqual(
+    [appliedReport.summary.errors, appliedReport.summary.warnings, appliedReport.summary.suppressed,
+      appliedReport.summary.staleBaselineEntries],
+    [0, 0, report.issues.length, 0],
+  );
+  assert.ok(appliedReport.issues.every(({ suppressed }) => suppressed === true));
+  // scope가 다른 입력(service가 붙은 선언 측)에는 같은 베이스라인이 억제하지 못하고 오래된 항목이 된다.
+  const scoped = async (path: string): Promise<string> => {
+    if (path === 'baseline.json') return baselineText;
+    const parsed = JSON.parse(await read(path)) as { roles?: string[]; service?: string };
+    if (parsed.roles?.includes('server') === true) parsed.service = 'items-api';
+    return JSON.stringify(parsed);
+  };
+  const otherScope = await runCheckCommand(['check', ...all, '--baseline', 'baseline.json'], scoped, undefined, clock, '0.0.0');
+  const otherReport = JSON.parse(otherScope.standardOutput) as { summary: { suppressed: number; staleBaselineEntries: number } };
+  assert.equal(otherReport.summary.suppressed, 0);
+  assert.equal(otherReport.summary.staleBaselineEntries, report.issues.length);
+});
+
+test('mixed-targets 문서가 있으면 http 귀속 위반보다 보류 원인이 stderr에 나온다', async () => {
+  const mixed = JSON.stringify({
+    format: 'bridge-facts', version: 1, tool: { name: 'synthetic', version: '0.0.0' },
+    generatedAt: '2026-09-27T00:00:00Z', platform: 'kotlin', target: 'flutter', project: '/work/example',
+    facts: [{ kind: 'channel-register', channel: 'c', dynamic: false, location: { path: 'a.kt', line: 1, column: 1 } }],
+    limitations: ['mixed-targets: flutter and react-native facts share this document'],
+  });
+  const dart = mixed.replace('"kotlin"', '"dart"').replace('channel-register', 'channel-create').replace(/"limitations":\[[^\]]*\]/u, '"limitations":[]');
+  const inputs = async (path: string): Promise<string> => {
+    if (path === 'mixed.json') return mixed;
+    if (path === 'dart.json') return dart;
+    const parsed = JSON.parse(await read(path)) as { platform: string; service?: string };
+    if (path === 'server.json') parsed.service = 'items-api';
+    return JSON.stringify(parsed);
+  };
+  const result = await runCheckCommand(['check', 'dart.json', 'mixed.json', 'server.json', 'openapi.json', 'android.json'],
+    inputs, undefined, clock, '0.0.0');
+  assert.equal(result.exitCode, 2);
+  assert.match(result.standardError, /split mixed bridge targets/);
+  assert.doesNotMatch(result.standardError, /declare a service/);
+});
