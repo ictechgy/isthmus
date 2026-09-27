@@ -198,7 +198,7 @@ proven prefix candidates. Prefix matches preserve unresolved
 suffix and instance wiring. These additions are available in the public producer
 versions listed above (`bridges --messages`).
 Agent clients can call the same commands over `isthmus serve`, an MCP stdio server
-that exposes check, query, graph, diff, impact, preflight, and retentions as tools.
+that exposes check, query, graph, diff, impact, preflight, retentions, and trace (with output caps) as tools.
 See the [MCP server contract](docs/MCP.md).
 To reproduce a verified development combination or audit the toolchain, build the tools
 from pinned local Git commits with the
@@ -357,7 +357,18 @@ symbols, analyses, truncation, stale revisions, and non-http entry points are re
 never as "not reached". Each reach carries the producer's evidence tier (`direct`, `bound`, `candidate`,
 or `unassessed`); hops that rest only on possible-implementation dispatch edges and handlers whose
 forward reach passes unlinked call sites (or whose producer does not report them) are gaps too.
-`--strict` exits 1 when any gap remains; notices alone do not fail it. MCP does not expose `trace` yet.
+`--strict` exits 1 when any gap remains; notices alone do not fail it. `--max-chains` and `--max-rows`
+cap the output lists and record every cut in `truncation` (the summary and exit code still describe the
+full report); the MCP `trace` tool always applies these caps.
+
+`node scripts/capture-trace.mjs capture.json` (shipped in the npm package) collects the whole input in one
+run: it runs the producer fact commands, `isthmus check --pairs` to validate the join, and the producer
+traversals rooted at the handler, call-site, relation-use, and schema vertex ids taken from the facts
+(`--roots-from` where the producer supports it), copies precomputed artifacts with their `sha256`, and
+writes a single-project or workspace trace context, a manifest of producer versions and revisions, and
+optionally `trace.json`. Children run from argument arrays without a shell, with a timeout per step, and
+every path must stay inside the declared roots. See
+[capture in `docs/TRACE.md` (Korean)](docs/TRACE.md#capture로-한-번에-수집하기).
 See [`docs/TRACE.md`](docs/TRACE.md).
 
 ### Baselines

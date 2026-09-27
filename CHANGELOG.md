@@ -27,6 +27,24 @@
     workspace), 코드마다의 음성 fixture·종료 코드·결정성 테스트, 문서 코드 표 대조 테스트, CLI 계약 스크립트 검사.
 - bridge `diff`가 http 문서를 거부할 때 `isthmus diff --http`를 안내한다.
 
+### Added — trace capture와 MCP trace (Phase 3)
+
+- **`scripts/capture-trace.mjs`(npm 패키지 포함)**: `isthmus-trace-capture` v1 설정 하나로 trace 입력 전체를 모은다 —
+  (a) 생산자 사실 명령 또는 사전 계산 사실 문서(bridge-facts·member project 즉시 검증), (b) member마다 `isthmus check
+  --pairs`(양쪽 측이 있는 도메인의 문서만, `pairs/<member>.json`), (c) 사실에서 뽑은 선택 무관 상위 집합 root(핸들러
+  usr, route-call·relation-use를 감싼 usr와 선택한 심볼, sql VertexId)로 생산자 순회(`arguments`·`separator`·
+  `roots-from` 전달, `maxRootsPerRun`·128KiB 인자 상한으로 나눠 실행, trace 파서로 검증), (d) 단일 project·workspace
+  `trace-context.json`과 artifact(사전 계산 분석은 sha256·revision 증언을 `precomputed`에), 도구 `--version`·소스
+  revision·member revision·단계별 argv·종료 코드·artifact sha256을 담은 `capture-manifest.json`, (e) 선택적
+  `isthmus trace`. 자식은 셸 없이 인자 배열로 단계별 시간 제한 안에서 실행하고, 실패는 단계와 명령을 밝히며 stderr는
+  `logs/`에만 남긴다. 모든 경로는 선언한 root 아래(`..`·심링크 탈출·제어 문자·`.env`·키 파일 이름 거부)이고 출력
+  디렉터리는 없거나 비어 있어야 한다. 설정 검증·root 추출·context 조립은 `dist/report/trace-capture.js`에 있다.
+- **trace 출력 상한**: `isthmus trace --max-chains <1..1000> --max-rows <1..10000>`이 chain과 모든 행 목록(목록마다)을
+  자르고 `truncation: {maxChains, maxRows, truncated, omittedLists, omitted[{path, total, shown}]}`를 더한다. `summary`와
+  종료 코드는 자르기 전 보고서 기준이고, 플래그가 없으면 출력은 그대로다.
+- **MCP `trace` 도구**: `context`·`maxChains`(기본 10)·`maxRows`(기본 25)·`strict`·`compact`. 항상 출력 상한을 넘긴다.
+  `check --pairs`는 MCP에 노출하지 않는다(API-IMPACT-PLAN 결정 표).
+
 ### Added
 
 - **trace workspace(개발 중, Phase 3 소비자)**: 서버와 클라이언트가 다른 git 저장소에 있어도 `isthmus trace` 한
