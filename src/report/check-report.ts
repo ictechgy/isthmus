@@ -10,6 +10,7 @@ import type {
 } from '../join/join.ts';
 import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
+import { countMatchedRoutes, createRouteIssues } from './route-issues.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /** check 결과 개수를 빠르게 판단할 요약이다. */
@@ -36,6 +37,11 @@ export interface CheckSummary {
   readonly matchedStreams?: number;
   /** RN 전역 이벤트에서 구독과 방출이 모두 관찰된 이름 수다. */
   readonly matchedEvents?: number;
+  /**
+   * http 입력이 있을 때만 실리는, 선언 측(decl 또는 contract)과 match된 귀속 호출 키
+   * (scope·method·템플릿·앵커) 수다. 없으면 키가 빠져 기존 요약을 깨지 않는다.
+   */
+  readonly matchedRoutes?: number;
   /** 입력 문서 전체가 관찰한 fact 수다. 0이면 아무것도 관찰하지 못한 실행이다. */
   readonly observedFacts: number;
   /** 이 실행에 보고된 분석 한계 수다. */
@@ -45,6 +51,29 @@ export interface CheckSummary {
   /** 베이스라인이 적용된 실행에서만 실리는, 현재 이슈와 맞지 않는 항목 수다. */
   readonly staleBaselineEntries?: number;
 }
+
+/**
+ * http 도메인 진단 종류다. SARIF 규칙 목록은 http 입력이 있을 때만 이 코드를 싣는다 —
+ * http가 없는 입력의 SARIF 출력을 바이트 단위로 유지하기 위해서다.
+ */
+export const httpIssueCodes = [
+  'route-call-without-decl',
+  'route-call-without-decl-unverified',
+  'route-method-mismatch',
+  'route-method-mismatch-unverified',
+  'route-call-without-contract',
+  'route-call-without-contract-unverified',
+  'route-decl-without-call',
+  'route-decl-without-call-unverified',
+  'route-contract-without-call',
+  'route-contract-without-call-unverified',
+  'route-contract-without-decl',
+  'route-decl-without-contract',
+  'ambiguous-route-call',
+  'route-trailing-slash-mismatch',
+  'route-case-mismatch',
+  'route-decl-conflict',
+] as const;
 
 /**
  * check가 보고하는 안정적인 진단 종류다.
@@ -86,6 +115,7 @@ export const checkIssueCodes = [
   'relation-decl-without-use-unverified',
   'column-use-without-decl',
   'column-use-without-decl-unverified',
+  ...httpIssueCodes,
 ] as const;
 
 /** check가 보고하는 안정적인 진단 종류다. */
@@ -143,6 +173,12 @@ export interface CheckIssue {
    * 이름 후보다. 다른 코드에는 없다.
    */
   readonly candidates?: readonly string[];
+  /**
+   * http 진단 신원의 5번째 원소다(매니페스트가 없으면 service 문자열, 단일 서비스 입력이면
+   * `default`). 두 scope가 같은 (method, 템플릿)에 진단을 내도 베이스라인 억제와 지문이 섞이지
+   * 않게 한다. http 외 진단에는 없어 기존 키가 바이트 단위로 유지된다.
+   */
+  readonly scope?: string;
   /**
    * 베이스라인이 이 이슈를 인정된 상태로 억제했다는 표시다.
    *
@@ -328,6 +364,7 @@ export function createCheckReport(
       channel: item.channel,
       evidence: item.decls,
     })),
+    ...(joined.routes === undefined ? [] : createRouteIssues(joined.routes)),
     ...(messages === undefined ? [] : createMessageIssues(messages, gaps)),
   ];
   return {
@@ -352,6 +389,7 @@ export function createCheckReport(
           matchedColumns: joined.matchedColumns.length,
         }
         : {}),
+      ...(joined.routes === undefined ? {} : { matchedRoutes: countMatchedRoutes(joined.routes) }),
       ...(messages === undefined ? {} : {
         matchedMessages: matchedMessageRoutes(messages, 'basic-message-channel'),
         matchedStreams: matchedMessageRoutes(messages, 'event-channel'),

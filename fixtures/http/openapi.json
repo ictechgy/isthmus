@@ -1,0 +1,82 @@
+{
+  "facts": [
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 12,
+        "path": "openapi.yaml"
+      },
+      "method": "GET",
+      "operationId": "listItems",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "listItems"
+      }
+    },
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 30,
+        "path": "openapi.yaml"
+      },
+      "method": "POST",
+      "operationId": "createItem",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "createItem"
+      }
+    },
+    {
+      "channel": "/api/v1/items/{}",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 48,
+        "path": "openapi.yaml"
+      },
+      "method": "GET",
+      "operationId": "getItem",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "getItem"
+      }
+    },
+    {
+      "channel": "/api/v1/items/{}",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 66,
+        "path": "openapi.yaml"
+      },
+      "method": "DELETE",
+      "operationId": "deleteItem",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "deleteItem"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "openapi",
+  "project": "/work/example",
+  "roles": [
+    "server"
+  ],
+  "target": "http",
+  "tool": {
+    "name": "synthetic-http",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

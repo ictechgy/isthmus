@@ -4,7 +4,7 @@ _기록: 2026-09-26 · 상태: 승인된 프로그램, Phase 0 진행 중 · 구
 
 백엔드 API를 바꿀 때 닿는 DB 객체와 그 API를 부르는 클라이언트 코드를 정적으로 판단하기 위한
 다단계 계획이다. isthmus, 언어 생산자(cartograph·kartograph·dartograph 등), schemagraph와
-새 생산자가 대상이다. 공유 계약 초안은 [GRAPH-EXCHANGE의 HTTP 경계 합의 초안](GRAPH-EXCHANGE.md#개발-중-http-경계-합의-초안)에
+새 생산자가 대상이다. 공유 계약 초안은 [GRAPH-EXCHANGE의 HTTP 경계 절](GRAPH-EXCHANGE.md#개발-중-http-경계-v1-확장)에
 있고, bridge 도메인의 기존 실행 순서는 [PLAN](PLAN.md)에 그대로 남는다. 조사·설계·비평의
 원 기록은 저장소 밖 세션 자료라서, 저장소 안에서는 이 문서가 요약 정본이다.
 **모든 기간은 1인 + 에이전트 기준 추측이다.**
@@ -49,8 +49,9 @@ Django(+DRF), Flask(+SQLAlchemy)다. OpenAPI 스펙이 있는 경우와 없는 �
   백엔드(사용자 앱 A: Next.js + Prisma, 사용자 앱 B: Hono + D1 — 둘 다 비공개 저장소)는 모두 TS다. JVM 척추로는 사용자
   코드를 오랫동안 검증하지 못하므로, 설계가 대안으로 남긴 "사용자 앱 전체 체인 우선"을
   채택해 [단계](#단계-사용자-앱-우선-재배열)를 재배열했다.
-- **새 생산자 저장소 이름은 보류.** 이 문서와 계약 초안은 "TS 생산자"(OpenAPI 변환과 Node/TS
-  백엔드)와 "Python 생산자"로만 부른다.
+- **새 생산자 저장소 이름(2026-09-27 확정).** TS 생산자(OpenAPI 변환과 Node/TS 백엔드)는
+  `tsograph`, Python 생산자는 `pythograph`다. 기존 가족 규칙(언어 접두사 + ograph)을 따른다.
+  이 문서의 "TS 생산자"·"Python 생산자"는 각각 이 두 저장소를 가리킨다.
 
 ### 설계 입력 정정
 
@@ -103,7 +104,8 @@ schemagraph facts ───────── relation-decl ───┘        
   url-compose, sql-relations, location-column)와 파일별 sha256 목록을 둔다. 생산자는
   `conformance.lock`으로 벤더링한다. 닫힌 limitation 접두사 목록은 Phase 0에서
   `docs/limitation-prefixes.json`으로 추출해 기계 판독하고 dist에 번들한다. 래퍼 선언용
-  `http-wrappers` v1 스키마도 isthmus docs가 소유한다. 모두 아직 없는 계획 산출물이다.
+  `http-wrappers` v1 스키마도 isthmus docs가 소유한다. http-template·url-compose suite와
+  [`http-wrappers` v1](HTTP-WRAPPERS.md)은 Phase 1에서 추가됐고, 나머지는 아직 계획 산출물이다.
 
 ## 단계 (사용자 앱 우선 재배열)
 
@@ -118,7 +120,7 @@ schemagraph facts ───────── relation-decl ───┘        
 새 target을 넣기 전에 platform 기반 역할 판정 누수를 막는다. persistence 조인 결과(사용↔선언
 쌍과 symbol)를 밖으로 내보내고, http 계약 초안을 합의에 올린다.
 
-- 착수 게이트 기록: 이 문서(승인, 순서, 이름 보류, 설계 입력 정정).
+- 착수 게이트 기록: 이 문서(승인, 순서, 생산자 이름, 설계 입력 정정).
 - isthmus: platform만 보고 역할을 정하는 곳을 target 기반 명시 규칙으로 고치고 곳마다 재현
   테스트를 둔다. 대상은 diff `validateSnapshots`, retentions, preflight-view `isReceiverEndpoint`,
   check-report `receiverCoverageGaps`, preflight-context `parseBridges`, preflight-runtime의
@@ -283,7 +285,7 @@ relation-use symbol, preflight를 trace 코어 위의 얇은 래퍼로 수렴.
 
 | 결정 | 현재 권고 | 정할 때 |
 |---|---|---|
-| 새 생산자 저장소 이름 | 사용자 결정(보류) | 새 저장소를 만들기 전(Phase 1) |
+| 새 생산자 저장소 이름 | `tsograph`·`pythograph`(2026-09-27 확정) | 완료 |
 | 사실 0건 http 문서 표현 | target `http` + `roles`, http 한정 target-null 예외 | Phase 1 계약 합의 |
 | openapi 문서의 `roles`, `authority` 정규화 | [계약 초안의 미결 항목](GRAPH-EXCHANGE.md#미결-항목) | Phase 1 계약 합의 |
 | 앱 A DB 카탈로그 원천 | Prisma 마이그레이션 또는 DDL 중 착수 시 확인 | Phase 2 |

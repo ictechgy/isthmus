@@ -9,8 +9,11 @@ import { joinMessageBridges } from '../join/messages.ts';
 import {
   createBridgeQuery,
   createRelationPrefixedQuery,
+  createRoutePrefixedQuery,
   encodeBridgeQuery,
+  parseRouteSubject,
   RELATION_SUBJECT_PREFIX,
+  ROUTE_SUBJECT_PREFIX,
 } from '../report/query.ts';
 import type { BridgeQueryDocument } from '../report/query.ts';
 import {
@@ -33,11 +36,15 @@ export async function runQueryCommand(
   const requested = parsed.positionals[0];
   const inputPaths = parsed.positionals.slice(1);
   const relationRequested = requested?.startsWith(RELATION_SUBJECT_PREFIX) ?? false;
+  const routeRequested = requested?.startsWith(ROUTE_SUBJECT_PREFIX) ?? false;
+  const routeSubject = routeRequested ? parseRouteSubject(requested!) : undefined;
   if (
     requested === undefined ||
     requested.trim().length === 0 ||
     // 접두사만 있고 관계 이름이 비면 질의할 이름이 없는 호출 오류다.
     (relationRequested && requested.slice(RELATION_SUBJECT_PREFIX.length).trim().length === 0) ||
+    // route 주체는 `route:[<METHOD> ]<template>[ <scope>]` 형식이어야 한다.
+    (routeRequested && routeSubject === undefined) ||
     inputPaths.length < 2 ||
     inputPaths.length > MAX_DOCUMENTS_PER_JOIN
   ) {
@@ -59,7 +66,9 @@ export async function runQueryCommand(
     // 요청 문자열 그대로의 bridge 키를 찾으므로 메시지 조인도 함께 넘긴다.
     const query = relationRequested
       ? createRelationPrefixedQuery(joined, createRelationResolver(bridges), requested, messageJoin)
-      : createBridgeQuery(joined, requested, messageJoin);
+      : routeSubject !== undefined
+        ? createRoutePrefixedQuery(joined, requested, routeSubject, messageJoin)
+        : createBridgeQuery(joined, requested, messageJoin);
     return {
       standardOutput: encodeBridgeQuery(query),
       standardError: queryStatusHint(query),
@@ -79,6 +88,13 @@ export async function runQueryCommand(
  */
 function queryStatusHint(query: BridgeQueryDocument): string {
   if (query.status === 'found') return '';
+  if (query.level === 'http') {
+    return query.status === 'ambiguous'
+      ? `The requested route matches ${query.candidates?.length ?? 0} scoped keys; `
+        + 'repeat the query with a qualifiedName from candidates.\n'
+      : 'No attributed http route matches the requested key; query a canonical template that '
+        + 'the inputs declare or call, for example route:GET /api/v1/items/{}.\n';
+  }
   if (query.level === 'persistence') {
     return query.status === 'ambiguous'
       ? `The requested relation name matches ${query.candidates?.length ?? 0} declarations; `
@@ -105,5 +121,5 @@ function queryUsageError(): CommandResult {
 
 /** query 명령의 한 줄 사용법이다. */
 export const queryUsage =
-  'Usage: isthmus query <channel-or-method|relation:<name>> <bridge-facts.json> '
-  + '<bridge-facts.json> [more...]';
+  'Usage: isthmus query <channel-or-method|relation:<name>|route:[<METHOD> ]<template>> '
+  + '<bridge-facts.json> <bridge-facts.json> [more...]';

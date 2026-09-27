@@ -6,6 +6,27 @@
 
 ### Added
 
+- **http 도메인 Phase 1(개발 중)**: `check`·`query`가 `target: "http"` 문서를 소비한다.
+  platform `openapi`(`route-contract` 전용)와 kind `route-decl`·`route-call`·`route-contract`를
+  받고, 역할은 kind로 정한다. `roles`로 사실 0건 http 문서도 "스캔했으나 없음"을 표현하며 이
+  문서는 bridge·persistence 요건을 채우지 않는다. 정규 경로 템플릿 문법을 검증하고(다시 정규화하지
+  않고 사유 코드로 거부), 세그먼트 trie 매처로 정확·`{}`·부분 세그먼트·`{**}`(catch-all 접두사
+  decl)·구체성·닫힌 경로 제약·HEAD/OPTIONS·동적 동사·끝 슬래시/대소문자·경로 앵커 네 조합과
+  suffix 후보(호출당 64개)를 판정한다. 매니페스트 없는 귀속 게이트(service 일치, 단일 서비스)를
+  적용하고, 귀속되지 않은 호출은 `unjoined-unbound-route-calls` 개수로만 남긴다.
+- http check 진단 16종(`route-call-without-decl`·`route-method-mismatch`·`route-call-without-contract`와
+  `-unverified` 변형, 미호출·드리프트·모호·끝 슬래시·대소문자·충돌). error는 전제 (a)~(f)가 모두
+  증명될 때만이고, 선언 측이 스펙뿐인 link는 decl 기반 진단을 내지 않는다. 이 버전은 매니페스트의
+  `contract.authoritative`가 없어 `route-call-without-contract`가 항상 `-unverified`다.
+- http 진단 신원의 5번째 원소 `scope`. 베이스라인·SARIF(`properties.scope`)·Code Quality에
+  실리며, scope가 없는 기존 키·지문과 http가 없는 입력의 SARIF 규칙 목록은 바이트 단위로 같다.
+- `check --pairs`의 http 매치(`{domain: "http", scope, key: {method, template}, quality, uses,
+  decls, contracts}`)와 `query route:[<METHOD> ]<template>[ <scope>]` 주체(MCP `query`도 같은 경로).
+- [`http-wrappers` v1 스키마와 공통 해석 규칙](docs/HTTP-WRAPPERS.md), 공유 적합성 벡터
+  `conformance/http-template.json`·`conformance/url-compose.json`과 `SHA256SUMS`(패키지에 포함).
+  `npm run verify`가 `scripts/verify-conformance.mjs`로 해시·형식을 대조하고 소비자 케이스는 제품
+  매처로, 생산자 케이스는 참조 구현으로 실행한다.
+
 - `check --pairs`(기본 `--format json` 전용)가 최상위 `matches`에 persistence 사용↔선언 쌍을
   싣는다. 키는 조인이 해석한 선언 관계(와 컬럼)이고, 끝점은 사실의 platform·location·symbol을
   그대로 복사한다. 플래그 없는 출력과 요약·이슈·베이스라인·`--strict` 판정은 바이트 단위로
@@ -36,6 +57,12 @@
   기록과 구분하며 iOS RN·모든 lifecycle·가청 출력의 검증을 주장하지 않는다.
 
 ### Changed
+
+- `graph`·`diff`·`impact`·`retentions`·preflight context는 http 문서(target `http` 또는 platform
+  `openapi`)를 빈 정상 결과로 읽지 않고 원인 문구와 종료 코드 2로 거부한다.
+- 아직 구현하지 않은 http 초안 값(`dispatch: "registration-order"`, `order`, http 문서의
+  `limitationScopes`, `isthmus-workspace` 매니페스트)과 다른 target 문서의 route 필드는 입력
+  오류로 거부한다(`channelPrefix`는 기존 계약 필드라 예외로 버린다).
 
 - persistence 도메인의 호출 측 생산자에 dartograph `schema`(`platform: "dart"`)를 추가했다.
   조인 로직은 이미 비sql `target: "persistence"` 문서를 받으므로 코드 변경은 없고, dart

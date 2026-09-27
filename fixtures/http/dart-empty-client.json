@@ -1,0 +1,17 @@
+{
+  "facts": [],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "dart",
+  "project": "/work/example",
+  "roles": [
+    "client"
+  ],
+  "target": "http",
+  "tool": {
+    "name": "synthetic-http",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

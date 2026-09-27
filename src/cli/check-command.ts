@@ -24,7 +24,9 @@ import {
   encodeCodeQualityReport,
 } from '../report/codequality.ts';
 import {
+  createHttpMatches,
   createPersistenceMatches,
+  HttpPairsLimitError,
   PersistencePairsLimitError,
 } from '../report/pairs.ts';
 import {
@@ -99,7 +101,10 @@ export async function runCheckCommand(
             createCodeQualityFindings(report, issueFingerprint),
           )
         : pairs
-          ? encodeSortedJson({ ...report, matches: createPersistenceMatches(joined) })
+          ? encodeSortedJson({
+              ...report,
+              matches: [...createPersistenceMatches(joined), ...createHttpMatches(joined)],
+            })
           : encodeCheckReport(report);
     if (updateBaselinePath !== undefined && writeTextFile !== undefined) {
       await writeBaselineDocument(
@@ -115,7 +120,7 @@ export async function runCheckCommand(
       exitCode: strict && report.summary.errors > 0 ? 1 : 0,
     };
   } catch (error) {
-    if (error instanceof PersistencePairsLimitError) {
+    if (error instanceof PersistencePairsLimitError || error instanceof HttpPairsLimitError) {
       return inputFailure(`${error.message}\n`);
     }
     return inputFailureResult(error) ?? baselineFailureResult(error)
@@ -320,6 +325,7 @@ function issueFingerprint(issue: {
   readonly target: string;
   readonly channel: string;
   readonly method?: string;
+  readonly scope?: string;
 }): string {
   return createHash('sha256').update(baselineEntryKey(issue)).digest('hex');
 }

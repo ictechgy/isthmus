@@ -1,0 +1,119 @@
+{
+  "dispatch": "specificity",
+  "facts": [
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 10,
+        "path": "server/routes/items.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "items.list",
+        "usr": "ts:items.list"
+      }
+    },
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 20,
+        "path": "server/routes/items.ts"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "items.create",
+        "usr": "ts:items.create"
+      }
+    },
+    {
+      "channel": "/api/v1/items/{}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 30,
+        "path": "server/routes/items.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "items.get",
+        "usr": "ts:items.get"
+      }
+    },
+    {
+      "channel": "/api/v1/items/featured",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 40,
+        "path": "server/routes/items.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "items.featured",
+        "usr": "ts:items.featured"
+      }
+    },
+    {
+      "channel": "/files/{**}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 5,
+        "path": "server/routes/files.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "files.get",
+        "usr": "ts:files.get"
+      }
+    },
+    {
+      "catchAllPrefix": true,
+      "channel": "/files",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 5,
+        "path": "server/routes/files.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "files.get",
+        "usr": "ts:files.get"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/example",
+  "roles": [
+    "server"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-http",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

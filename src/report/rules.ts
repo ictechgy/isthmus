@@ -9,6 +9,7 @@ export type IssueFingerprint = (issue: {
   readonly target: string;
   readonly channel: string;
   readonly method?: string;
+  readonly scope?: string;
 }) => string;
 
 /**
@@ -82,4 +83,36 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'A code-side column reference has no matching column declaration on the resolved relation.',
   'column-use-without-decl-unverified':
     'A code-side column reference has no matching column declaration, and the schema catalog coverage is known to be incomplete.',
+  'route-call-without-decl':
+    'An attributed root-anchored HTTP call has no matching route declaration on the scanned server side. Request and response fields, query parameters, and headers are not compared.',
+  'route-call-without-decl-unverified':
+    'An attributed HTTP call has no matching route declaration, but a precondition for an error (root anchor, server coverage, no dynamic routes, non-test source, unmasked literal method and path) is not proven.',
+  'route-method-mismatch':
+    'An attributed root-anchored HTTP call matches declared route paths only with other HTTP methods.',
+  'route-method-mismatch-unverified':
+    'An attributed HTTP call matches declared route paths only with other HTTP methods, but the path candidates or error preconditions are not proven.',
+  'route-call-without-contract':
+    'An attributed HTTP call has no matching operation in an authoritative API contract.',
+  'route-call-without-contract-unverified':
+    'An attributed HTTP call has no matching operation in the API contract; the contract is not declared authoritative or its coverage is incomplete.',
+  'route-decl-without-call':
+    'A server route declaration has no observed call from the scanned clients; it is not a deletion verdict.',
+  'route-decl-without-call-unverified':
+    'A server route declaration has no observed call, and client-side gaps, unattributed calls, or an unknown base path may be hiding it.',
+  'route-contract-without-call':
+    'An API contract operation has no observed call from the scanned clients; it is not a deletion verdict.',
+  'route-contract-without-call-unverified':
+    'An API contract operation has no observed call, and client-side gaps, unattributed calls, or an unknown base path may be hiding it.',
+  'route-contract-without-decl':
+    'An API contract operation has no route declaration with the same method and path template on the scanned server side (drift).',
+  'route-decl-without-contract':
+    'A server route declaration has no API contract operation with the same method and path template (drift).',
+  'ambiguous-route-call':
+    'An attributed HTTP call matches more than one route declaration or contract operation with equal specificity, so it could not be joined to one.',
+  'route-trailing-slash-mismatch':
+    'An attributed HTTP call matches a declared route only when the trailing slash is ignored.',
+  'route-case-mismatch':
+    'An attributed HTTP call matches a declared route only when letter case is ignored.',
+  'route-decl-conflict':
+    'More than one server route declaration uses the same method and path template without narrowing conditions or different path constraints.',
 };

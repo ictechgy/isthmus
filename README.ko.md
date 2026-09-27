@@ -76,6 +76,16 @@ sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸�
 계약은 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 persistence 절을
 참조한다.
 
+세 번째 도메인 `http`는 개발 중이다([API 변경 영향 계획](docs/API-IMPACT-PLAN.md)의 Phase 1).
+`check`와 `query`가 `target: "http"` 문서를 소비한다. 서버 `route-decl`, 클라이언트 `route-call`,
+OpenAPI `route-contract` 사실을 (HTTP method, 정규 경로 템플릿)으로 세그먼트 매칭·구체성·경로
+제약·경로 앵커 네 조합 규칙에 따라 잇는다. 호출은 `service` 문자열이 정확히 같을 때(또는 아무도
+service를 선언하지 않았을 때)만 선언 측에 귀속되고, 귀속되지 않은 호출은 개수만 세며 출력하지
+않는다. error는 모든 전제가 증명될 때만 내고, 스펙만 있는 선언 측은 `route-call-without-decl`을
+만들지 않는다. 아직 이 문서를 내는 생산자는 없고 요청·응답 필드, query 파라미터, 헤더는 비교하지
+않는다. `graph`·`diff`·`impact`·`retentions`·`preflight`는 지금은 http 문서를 거부한다.
+[`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 HTTP 절과 [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md)를 본다.
+
 변경 예측은 고정된 공개 정밀도 코퍼스 — `battery_plus`·`shared_preferences_foundation`·
 `url_launcher_macos`와 **LocalSend** 앱, 파일/심볼/버전 diff 15케이스 — 로 측정한다.
 최근 실행은 **TP 83 / FN 0 / FP 0**을 기록했고, 최초의 앱 수준 Dart↔Swift↔Kotlin
@@ -87,7 +97,8 @@ sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸�
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | 무엇을 · 누구를 위해 · 어디까지 |
 | [`docs/PLAN.md`](docs/PLAN.md) | 단계별 계획. **cartograph와 dartograph에 선행 작업이 있다** |
-| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | 새 HTTP 경계 도메인으로 API 변경 영향(API → DB 테이블, API → 클라이언트 호출부)을 추적하는 승인된 계획. 아직 구현 전 |
+| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | 새 HTTP 경계 도메인으로 API 변경 영향(API → DB 테이블, API → 클라이언트 호출부)을 추적하는 승인된 계획. Phase 1 소비자(check·query) 구현, 생산자와 이후 단계는 계획 |
+| [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md) | `http-wrappers` v1 스키마와 생산자가 래퍼 호출을 `route-call`로 바꾸는 공통 규칙(`conformance/` 벡터 포함) |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
@@ -269,6 +280,23 @@ isthmus query relation:users code-facts.json sql-facts.json
 bridge 키는 qualifiedName(예: `flutter:relation%3Afoo`)으로 질의한다. 이 id들을
 kartograph/cartograph `impact`와 `schemagraph impact`에 넘기는 방법은
 [persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을 본다. 이 연결은 아직 자동화되지 않았다.
+
+### HTTP 경로 (개발 중)
+
+```bash
+isthmus check server-routes.json openapi.json android-calls.json ios-calls.json --pairs
+isthmus query 'route:GET /api/v1/items/{}' server-routes.json android-calls.json
+```
+
+http 진단은 code·target·channel·method에 5번째 신원 원소 `scope`(`service` 문자열, 선언 측이
+아무도 service를 선언하지 않으면 `default`)를 더한다. 다른 도메인의 베이스라인 항목·SARIF
+`partialFingerprints`·Code Quality 지문은 그대로다. `--pairs`의 http 매치는 `{domain: "http",
+scope, key: {method, template}, quality, uses, decls, contracts}`이고, `key`는 호출이 닿은 선언
+측 route, `quality`는 `exact`·`suffix`·`any-method`·`head-as-get`·`options-any`·`catch-all`·
+`param-to-literal`·`param-to-literal-constrained` 중 하나다. `query route:[<METHOD> ]<template>[ <scope>]`는
+scope가 붙은 route 키 하나의 귀속 호출·선언·계약과 dynamic 호출의 증명된 접두사 후보를 낸다.
+아직 구현하지 않은 초안 필드(`registration-order`, http `limitationScopes`, workspace 매니페스트)를
+쓴 문서는 종료 코드 2로 실패한다.
 
 ### 베이스라인
 
@@ -480,8 +508,8 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
 | `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
-| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목·persistence 쌍 끝점), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거 등 도구 실패. stderr가 원인을 구분 |
-| `64` | 잘못된 명령·옵션·입력 개수 또는 `query`의 `notFound`·`ambiguous` |
+| `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목·persistence·http 쌍 끝점·http suffix 비교), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거, 아직 http를 소비하지 않는 명령에 넘긴 http 문서 등 도구 실패. stderr가 원인을 구분 |
+| `64` | 잘못된 명령·옵션·입력 개수(형식이 틀린 `route:` 주체 포함) 또는 `query`의 `notFound`·`ambiguous` |
 
 저장소 checkout에서 개발할 때는 먼저 `npm ci`를 실행한다. 개발 검증은 타입 체크와 clean build를 실행하고 제품 코드 90% 커버리지를
 강제하며 실제 CLI·패키지 계약 검증을 함께 수행한다.

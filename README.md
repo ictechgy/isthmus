@@ -85,6 +85,18 @@ downgrading findings to `*-unverified` when a producer saw less than the whole
 schema. See the persistence section of
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) for the contract.
 
+A third domain, `http`, is in development (Phase 1 of the
+[API-change impact plan](docs/API-IMPACT-PLAN.md)). `check` and `query` consume `target: "http"`
+documents: server `route-decl`, client `route-call`, and OpenAPI `route-contract` facts join by
+(HTTP method, canonical path template) with segment matching, specificity, path constraints, and
+four path-anchor combinations. Calls are attributed to a declaration side only by exact `service`
+strings (or when nobody declares one); unattributed calls are counted, never printed. Errors are
+reported only when every precondition is proven, and a spec-only side never produces
+`route-call-without-decl`. No producer emits these documents yet; request/response fields, query
+parameters, and headers are not compared. `graph`, `diff`, `impact`, `retentions`, and `preflight`
+reject http documents for now. See the HTTP section of
+[`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) and [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md).
+
 Change predictions are measured against a pinned public precision corpus —
 `battery_plus`, `shared_preferences_foundation`, `url_launcher_macos`, and the
 **LocalSend** app — over 15 file/symbol/version-diff cases. The latest run
@@ -98,7 +110,8 @@ measured.
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | What, for whom, how far |
 | [`docs/PLAN.md`](docs/PLAN.md) | Step-by-step plan. **cartograph and dartograph have prerequisite work** |
-| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | Approved plan for API-change impact (API → DB tables, API → client call sites) over a new HTTP boundary domain — planned, not implemented |
+| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | Approved plan for API-change impact (API → DB tables, API → client call sites) over a new HTTP boundary domain — Phase 1 consumer (check/query) implemented, producers and later phases planned |
+| [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md) | `http-wrappers` v1 schema and the shared rules producers use to turn wrapper calls into `route-call` facts (with the `conformance/` vectors) |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
@@ -295,6 +308,24 @@ relation also matches, the relation wins and the bridge key is queried by its qu
 example `flutter:relation%3Afoo`). See the
 [manual persistence round trip](docs/PERSISTENCE-TRACE.md) for feeding these ids to
 kartograph/cartograph `impact` and `schemagraph impact`; that chaining is not automated yet.
+
+### HTTP routes (in development)
+
+```bash
+isthmus check server-routes.json openapi.json android-calls.json ios-calls.json --pairs
+isthmus query 'route:GET /api/v1/items/{}' server-routes.json android-calls.json
+```
+
+http issues add a fifth identity element, `scope` (the `service` string, or `default` when no
+declaration side declares one), to code, target, channel, and method; baseline entries, SARIF
+`partialFingerprints`, and Code Quality fingerprints of other domains are unchanged. With
+`--pairs`, each http match is `{domain: "http", scope, key: {method, template}, quality, uses,
+decls, contracts}`, where `key` is the declaration-side route a call reached and `quality` is
+one of `exact`, `suffix`, `any-method`, `head-as-get`, `options-any`, `catch-all`,
+`param-to-literal`, or `param-to-literal-constrained`. `query route:[<METHOD> ]<template>[ <scope>]`
+finds one scoped route key, its attributed callers, declarations and contracts, and proven prefix
+candidates of dynamic calls. Documents that use not-yet-implemented draft fields
+(`registration-order`, http `limitationScopes`, workspace manifests) fail with exit code 2.
 
 ### Baselines
 
@@ -520,8 +551,8 @@ unattributed is counted as dynamic only.
 |---|---|
 | `0` | Success. In default mode, issues are reported but do not fail the run |
 | `1` | `--strict` found error issues (for `diff`: newly observed errors only). `-unverified` warnings and baseline-suppressed errors do not fail |
-| `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries, persistence pair endpoints), baseline file or write errors, retention evidence that cannot be built. stderr distinguishes the cause |
-| `64` | Bad command, option, or input count; or `query` `notFound`/`ambiguous` |
+| `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries, persistence or http pair endpoints, http suffix comparisons), baseline file or write errors, retention evidence that cannot be built, http documents passed to a command that does not consume them yet. stderr distinguishes the cause |
+| `64` | Bad command, option, or input count (including a malformed `route:` subject); or `query` `notFound`/`ambiguous` |
 
 For development from a checkout, run `npm ci` first. Development verification runs the type
 check and a clean build, enforces 90% product-code coverage, and exercises the real CLI and

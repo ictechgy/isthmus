@@ -31,6 +31,7 @@ verifyMissingQuery();
 verifyPersistencePairs();
 verifyRelationQuery();
 verifyRelationPrefixedBridgeQuery();
+verifyHttpDomain();
 verifyGraph();
 verifyDiff();
 verifyImpact();
@@ -312,6 +313,33 @@ function verifyRelationQuery() {
   const missing = run(['query', 'relation:payments', ...inputs]);
   verify(missing.status === 64 && JSON.parse(missing.stdout).status === 'notFound', 'relation query notFound');
   verify(run(['help', 'query']).stdout.includes('relation:<name>'), 'relation query help');
+}
+
+/**
+ * 빌드된 CLI가 http 문서를 check·--pairs·query로 소비하고, 귀속되지 않은 호출을 출력에 싣지
+ * 않으며, 아직 http를 소비하지 않는 명령은 코드 2로 거부하는지 검증한다.
+ */
+function verifyHttpDomain() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/http/${name}`, import.meta.url));
+  const inputs = ['server.json', 'openapi.json', 'android.json', 'ios.json'].map(fixture);
+  const check = run(['check', ...inputs]);
+  const report = JSON.parse(check.stdout);
+  verify(check.status === 0 && report.summary.matchedRoutes === 4, 'http check exit code');
+  verify(report.issues.some(({ code, scope }) => code === 'route-call-without-decl' && scope === 'default'), 'http check scope');
+  verify(run(['check', ...inputs, '--strict']).status === 1, 'http check strict');
+  const paired = run(['check', ...inputs, '--pairs']);
+  const { matches } = JSON.parse(paired.stdout);
+  verify(matches.length === 4 && matches.every(({ domain }) => domain === 'http'), 'http check pairs');
+  const sarif = run(['check', ...inputs, '--format', 'sarif']);
+  for (const output of [check.stdout, paired.stdout, sarif.stdout]) {
+    verify(!output.includes('/services/') && !output.includes('hooks.example.com'), 'http unattributed calls omitted');
+  }
+  const query = run(['query', 'route:GET /api/v1/items', ...inputs]);
+  verify(query.status === 0 && JSON.parse(query.stdout).level === 'http', 'http route query');
+  verify(run(['query', 'route:GET items', ...inputs]).status === 64, 'http route query usage');
+  const graph = run(['graph', ...inputs]);
+  verify(graph.status === 2 && graph.stderr.includes('does not support http documents yet'), 'http graph rejected');
+  verify(run(['help', 'query']).stdout.includes('route:'), 'http route query help');
 }
 
 /**

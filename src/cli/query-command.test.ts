@@ -34,8 +34,8 @@ test('query 입력 파일이 두 개보다 적으면 사용법과 64를 반환�
   assert.deepEqual(result, {
     standardOutput: '',
     standardError:
-      'Usage: isthmus query <channel-or-method|relation:<name>> <bridge-facts.json> '
-      + '<bridge-facts.json> [more...]\n',
+      'Usage: isthmus query <channel-or-method|relation:<name>|route:[<METHOD> ]<template>> '
+      + '<bridge-facts.json> <bridge-facts.json> [more...]\n',
     exitCode: 64,
   });
 });

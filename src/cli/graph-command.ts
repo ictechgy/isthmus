@@ -16,6 +16,7 @@ import {
   inputFailureResult,
   internalError,
   readBridgeInputs,
+  rejectHttpDocuments,
   type CommandResult,
   type ReadTextFile,
 } from './command-support.ts';
@@ -30,6 +31,7 @@ export async function runGraphCommand(
   if (options === undefined) return graphUsageError();
   try {
     const { bridges, messages } = await readBridgeInputs(options.inputPaths, readTextFile);
+    rejectHttpDocuments(bridges, 'Graph');
     const project = bridges[0]?.project ?? messages[0]!.project;
     const joined = bridges.length > 0
       ? joinBridgeDocuments(bridges)

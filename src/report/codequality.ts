@@ -88,9 +88,10 @@ function codeQualityFinding(
   if (line < 1) {
     throw new Error('Cannot create a Code Quality location before the first line.');
   }
-  const context = issue.method === undefined
+  const channel = issue.method === undefined
     ? `Channel '${issue.channel}'`
     : `Channel '${issue.channel}', method '${issue.method}'`;
+  const context = issue.scope === undefined ? channel : `${channel}, scope '${issue.scope}'`;
   return {
     description:
       `${checkIssueRuleDescriptions[issue.code]} ${context} (target: ${issue.target})`,

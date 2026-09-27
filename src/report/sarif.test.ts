@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { baselineEntryKey } from './baseline.ts';
 import type { CheckReport } from './check-report.ts';
-import { checkIssueCodes } from './check-report.ts';
+import { checkIssueCodes, httpIssueCodes } from './check-report.ts';
 import { createSarifLog, encodeSarifLog, sarifUri } from './sarif.ts';
 
 /** 해싱은 cli 계층 소관이므로, report 테스트는 논리 키를 그대로 지문으로 쓴다. */
@@ -21,7 +21,8 @@ test('check 보고서의 이슈를 SARIF 결과로 옮긴다', () => {
   assert.equal(run.tool.driver.version, '9.9.9');
   assert.deepEqual(
     run.tool.driver.rules.map(({ id }) => id),
-    [...checkIssueCodes].sort(),
+    // http 입력이 없는 보고서는 http 규칙을 싣지 않는다 — 기존 SARIF 바이트를 유지한다.
+    [...checkIssueCodes].filter((code) => !(httpIssueCodes as readonly string[]).includes(code)).sort(),
   );
   for (const rule of run.tool.driver.rules) {
     assert.equal(rule.shortDescription.text.length > 0, true);

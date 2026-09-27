@@ -194,6 +194,9 @@ function parseBridges(input: unknown, project: string): BridgeFactsDocument[] {
       if (parsed.project !== project) fail('Bridge project differs from preflight project.');
       // 플랫폼이 dart·swift·kotlin이어도 persistence 문서는 bridge 경계를 기술하지 않는다.
       // 조인 실패의 일반 문구로 흐리지 않고, 원인을 밝혀 거부한다.
+      if (parsed.target === 'http') {
+        fail('Preflight context supports only bridge documents; remove http documents from the context.');
+      }
       if (!isBridgeDomainDocument(parsed)) {
         fail('Preflight context supports only bridge documents; remove persistence documents from the context.');
       }
