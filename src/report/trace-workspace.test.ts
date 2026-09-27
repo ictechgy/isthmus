@@ -338,6 +338,37 @@ test('workspace 입력이 member 계약을 어기면 부분 결과 없이 거부
     /single-project analyses must not/);
 });
 
+test('fileSymbols 목록이 사실 없는 파일의 심볼을 분석 위치처럼 잇고 사실 위치 fallback을 없앤다', () => {
+  // 사실이 없는 헬퍼 파일이다. 분석은 위치를 싣지 않으므로 목록이 없으면 아무것도 찾지 못한다.
+  const helperFile = 'server/service/users.ts';
+  const withoutListing = single(select({ files: [helperFile] }));
+  assert.deepEqual(codes(withoutListing), ['file-without-symbols']);
+  const listed = (reroot: boolean) => single((value) => {
+    value.context.selection = { files: [helperFile] };
+    value.context.fileSymbols = [{ path: helperFile, platform: 'js', usrs: ['ts:service/users.load'] }];
+    if (!reroot) return;
+    // capture 2단계가 하듯 목록의 심볼을 역방향 root에 더한다.
+    const reverse = value.files['server-reverse.json'];
+    reverse.roots.push({ id: 'ts:service/users.load', symbol: { usr: 'ts:service/users.load' } });
+    const get = reverse.reached.find(({ symbol }: any) => symbol.usr === 'ts:api/users.get');
+    Object.assign(get, { roots: [1, 2], depth: 1, via: 'ts:service/users.load' });
+    reverse.reached.sort((left: any, right: any) => left.depth - right.depth || (left.symbol.usr < right.symbol.usr ? -1 : 1));
+  });
+  const rerooted = listed(true);
+  assert.equal(codes(rerooted).includes('file-selection-fact-fallback'), false);
+  assert.equal(codes(rerooted).includes('analysis-missing'), false);
+  assert.deepEqual(rerooted.chains[0]?.routes.map(({ method, template }) => [method, template]), [['GET', '/api/users/{}']]);
+  assert.match(rerooted.notices[0]!.detail, /0 symbol\(s\) located by analyses, 1 more listed in fileSymbols and 0 more/);
+  // 목록의 심볼을 root로 순회하지 않았으면 조용히 비우지 않고 analysis-missing으로 드러낸다.
+  assert.ok(codes(listed(false)).includes('analysis-missing'));
+  // 사실이 있는 파일에서 목록이 비어도(다른 파일만 실어도) 옛 fallback 문구 대신 목록을 언급한다.
+  const factsOnly = single((value) => {
+    value.context.selection = { files: ['server/db/users.ts', helperFile] };
+    value.context.fileSymbols = [{ path: helperFile, platform: 'js', usrs: ['ts:service/users.load'] }];
+  });
+  assert.match(factsOnly.gaps.find(({ code }) => code === 'file-selection-fact-fallback')!.detail, /or fileSymbols listing/);
+});
+
 test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분석 위치가 없으면 사실 위치로 대신한다', () => {
   const server = workspace(select({ files: [{ member: 'server', path: 'src/db/orders.ts' }] }));
   // 과대 근사는 영향을 숨기지 않으므로 gap이 아니라 알림이고 --strict를 실패시키지 않는다.

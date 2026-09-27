@@ -231,3 +231,47 @@ test('사전 계산 artifact의 증언 revision은 문서 revision이 없을 때
   assert.throws(() => normalizeTraceAnalysis(forward, { ...entry, precomputed: { ...precomputed, revision: 'rev-0' } },
     '/work/trace-example'), /contradicts its precomputed revision/);
 });
+
+test('fileSymbols는 파일 선택에서만 받고 결정적 순서로 정규화한다', () => {
+  const single = parseTraceContext({ ...context, selection: { files: ['src/a.ts', 'src/b.ts'] }, fileSymbols: [
+    { path: 'src/b.ts', platform: 'js', usrs: ['z', 'y'] }, { path: 'src/a.ts', platform: 'kotlin', usrs: ['k'] },
+    { path: 'src/a.ts', platform: 'js', usrs: ['j'] }] });
+  assert.deepEqual(single.fileSymbols, [
+    { path: 'src/a.ts', platform: 'js', usrs: ['j'] }, { path: 'src/a.ts', platform: 'kotlin', usrs: ['k'] },
+    { path: 'src/b.ts', platform: 'js', usrs: ['y', 'z'] }]);
+  assert.equal(parseTraceContext({ ...context, selection: { files: ['src/a.ts'] } }).fileSymbols, undefined);
+  const workspace = parseTraceContext({ ...workspaceContext, selection: { files: [{ member: 'server', path: 'src/a.ts' }] },
+    fileSymbols: [{ member: 'server', path: 'src/a.ts', platform: 'js', usrs: ['j'] }] });
+  assert.deepEqual(workspace.fileSymbols, [{ member: 'server', path: 'src/a.ts', platform: 'js', usrs: ['j'] }]);
+});
+
+test('선택하지 않은 파일·잘못된 플랫폼·중복·다른 선택의 fileSymbols를 거부한다', () => {
+  const files = { files: ['src/a.ts'] };
+  const entry = { path: 'src/a.ts', platform: 'js', usrs: ['j'] };
+  const cases: Array<[Record<string, unknown>, RegExp]> = [
+    [{ selection: context.selection, fileSymbols: [entry] }, /only with a files selection/],
+    [{ selection: files, fileSymbols: [] }, /Invalid fileSymbols list/],
+    [{ selection: files, fileSymbols: [{ ...entry, path: 'src/b.ts' }] }, /does not select/],
+    [{ selection: files, fileSymbols: [{ ...entry, path: '../a.ts' }] }, /project-relative/],
+    [{ selection: files, fileSymbols: [{ ...entry, platform: 'sql' }] }, /Unsupported fileSymbols platform/],
+    [{ selection: files, fileSymbols: [{ ...entry, usrs: [] }] }, /distinct non-empty/],
+    [{ selection: files, fileSymbols: [{ ...entry, usrs: ['j', 'j'] }] }, /distinct non-empty/],
+    [{ selection: files, fileSymbols: [{ ...entry, usrs: ['a\u0007'] }] }, /distinct non-empty/],
+    [{ selection: files, fileSymbols: [entry, entry] }, /unique per member, path and platform/],
+    [{ selection: files, fileSymbols: [{ ...entry, extra: true }] }, /takes path, platform, usrs/],
+    [{ selection: files, fileSymbols: [{ ...entry, member: 'server' }] }, /Only workspace/],
+    [{ selection: files, fileSymbols: [{ ...entry, usrs: Array.from({ length: 10_001 }, (_, index) => `u${index}`) }] },
+      /1 to 10000/],
+  ];
+  for (const [patch, pattern] of cases) {
+    assert.throws(() => parseTraceContext({ ...context, ...patch }), pattern);
+  }
+  const workspaceFiles = { files: [{ member: 'server', path: 'src/a.ts' }] };
+  assert.throws(() => parseTraceContext({ ...workspaceContext, selection: workspaceFiles, fileSymbols: [entry] }), /need a member/);
+  assert.throws(() => parseTraceContext({ ...workspaceContext, selection: workspaceFiles,
+    fileSymbols: [{ ...entry, member: 'client' }] }), /does not select/);
+  const paths = Array.from({ length: 11 }, (_, index) => `src/f${index}.ts`);
+  const many = paths.map((path, index) => ({ path, platform: 'js',
+    usrs: Array.from({ length: 10_000 }, (__, item) => `u${index}-${item}`) }));
+  assert.throws(() => parseTraceContext({ ...context, selection: { files: paths }, fileSymbols: many }), /at most 100000 usrs/);
+});

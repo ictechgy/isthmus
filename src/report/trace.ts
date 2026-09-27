@@ -524,7 +524,11 @@ class TraceBuilder {
    */
   private fileChain(selector: { file: string; member?: string }): TraceChain[] {
     const member = selector.member ?? '';
-    const located = this.locatedAnalysisSymbols(member, selector.file);
+    const byAnalyses = this.locatedAnalysisSymbols(member, selector.file);
+    // 생산자 목록(`fileSymbols`)의 심볼은 분석 위치와 같은 근거다 — 둘 다 생산자가 이 파일에 둔 심볼이다.
+    const listed = this.listedFileSymbols(member, selector.file).filter((start) =>
+      !byAnalyses.some((other) => other.platform === start.platform && other.usr === start.usr));
+    const located = [...byAnalyses, ...listed];
     const facts = this.locatedFactSymbols(member, selector.file).filter((start) =>
       !located.some((other) => other.platform === start.platform && other.usr === start.usr));
     const uses = this.uses.filter((use) => use.member === member && use.fact.location?.path === selector.file);
@@ -534,15 +538,18 @@ class TraceBuilder {
           + 'that the file affects no route (producers may not report locations, or the file is outside their scan).' });
       return [];
     }
+    const counts = listed.length === 0 ? `${located.length} symbol(s) located by analyses and `
+      : `${byAnalyses.length} symbol(s) located by analyses, ${listed.length} more listed in fileSymbols and `;
     this.gap({ code: 'file-selection-coarse', selector, ...this.memberField(member),
-      detail: `File selection is a file-level over-approximation: ${located.length} symbol(s) located by analyses and `
+      detail: `File selection is a file-level over-approximation: ${counts}`
         + `${facts.length} more located by bridge facts are all treated as changed, so routes reached only through `
         + 'unchanged symbols of this file may be reported.' });
     if (located.length === 0) {
       // 과대 근사와 달리 이쪽은 영향을 숨길 수 있다(사실이 없는 심볼이 빠진다) — 알림이 아니라 gap이다.
       this.gap({ code: 'file-selection-fact-fallback', selector, ...this.memberField(member),
-        detail: 'No analysis locates a symbol in this file, so only bridge fact locations were used (fact-location '
-          + 'fallback); symbols of this file without route or relation facts are missing.' });
+        detail: `No analysis${this.input.context.fileSymbols === undefined ? '' : ' or fileSymbols listing'} locates a `
+          + 'symbol in this file, so only bridge fact locations were used (fact-location fallback); symbols of this '
+          + 'file without route or relation facts are missing.' });
     }
     // dynamic 사용의 원문 식은 관계 이름이 아니므로 hop으로 싣지 않고 gap 증거로만 남긴다.
     for (const use of uses) if (use.outcome === 'dynamic') this.useOutcomeGap(selector, use);
@@ -563,6 +570,13 @@ class TraceBuilder {
       }
     }
     return uniqueStarts(found);
+  }
+
+  /** context `fileSymbols`가 이 member·파일에 놓은 심볼이다. 없으면 빈 목록이다. */
+  private listedFileSymbols(member: string, path: string): StartSymbol[] {
+    return uniqueStarts((this.input.context.fileSymbols ?? [])
+      .filter((entry) => (entry.member ?? '') === member && entry.path === path)
+      .flatMap(({ platform, usrs }) => usrs.map((usr) => ({ member, platform, usr }))));
   }
 
   /** member 문서에서 이 파일에 위치한 사실의 `symbol.usr`다(sql·openapi 제외). */
