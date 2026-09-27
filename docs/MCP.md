@@ -2,7 +2,7 @@
 
 `isthmus serve`는 stdio 위에서 MCP(Model Context Protocol)를 말한다.
 코딩 에이전트(Claude Code, Devin, 호환 클라이언트)가 이 프로세스를 자식으로 띄우고,
-일곱 개의 분석 도구를 JSON-RPC `tools/call`로 호출한다. 각 도구는 대응하는 CLI
+여덟 개의 분석 도구를 JSON-RPC `tools/call`로 호출한다. 각 도구는 대응하는 CLI
 명령과 정확히 같은 실행 경로·보고서 형식·한계 보고를 재사용한다 — MCP 응답에
 담기는 문서는 파이프로 받은 CLI 출력과 동일하다.
 
@@ -28,7 +28,8 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 
 ## 도구
 
-모든 도구의 `documents`는 GRAPH-EXCHANGE v1/v2 브리지 사실 문서 경로 2개 이상이다.
+`documents`를 받는 도구의 `documents`는 GRAPH-EXCHANGE v1/v2 브리지 사실 문서 경로 2개 이상이다
+(`preflight`·`trace`는 context 경로 하나를 받는다).
 `check`·`query`는 target `http` 문서도 받아 CLI와 같은 http 진단(`scope` 포함)과 `route:` 주체를
 내고, 나머지 도구는 http 문서를 CLI와 같은 원인 문구로 거부한다. 귀속되지 않은 호출의 경로·host는
 어떤 응답에도 싣지 않는다.
@@ -44,6 +45,7 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 | `impact` | `isthmus impact` | `file`·`symbol`·`changes` 중 정확히 하나(필수), `runtime`, `revision`, `strict`, `compact` |
 | `preflight` | `isthmus preflight` | `context`(필수), `runtime[]`, `expectations`, `revision`, `summary`, `limit`, `explain`, `strict`, `compact` |
 | `retentions` | `isthmus retentions` | `producer`(필수, `cartograph` 또는 `kartograph`; Kotlin은 개발 빌드) |
+| `trace` | `isthmus trace` | `context`(필수), `maxChains`(1~1,000, 기본 10), `maxRows`(1~10,000, 기본 25), `strict`, `compact` |
 
 ## 응답 의미
 
@@ -61,7 +63,13 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
   부모 에이전트가 이미 읽을 수 있는 파일만 도구 인자로 넘기는 모델이며, 네트워크
   노출은 하지 않는다(stdio 전용).
 - `--update-baseline`·`--output` 같은 파일 쓰기 경로는 도구 인자로 열지 않았다.
-- 개발 중인 `trace`([TRACE](TRACE.md))는 아직 도구로 노출하지 않는다. 출력 상한과 함께
-  [API 변경 영향 계획](API-IMPACT-PLAN.md)의 Phase 3에서 정한다.
+- `trace`([TRACE](TRACE.md), 개발 중)는 **항상 출력 상한과 함께** 실행한다 — 도구는 `--max-chains`·`--max-rows`를
+  기본값(10·25)이나 인자 값으로 넘긴다. 상한은 목록마다 적용되고, 자른 곳은 보고서의 `truncation.omitted`에
+  JSON 경로·원래 개수·남긴 개수로 적힌다(앞 1,000개까지, 전체 수는 `omittedLists`). `summary`와 `strict` 판정은 자르기 전 보고서 기준이다. 잘린 응답의
+  짧은 목록을 "영향 없음"으로 읽지 않는다 — 더 보려면 selection을 좁힌 context로 다시 부르거나 상한을 올린다.
+  입력 context는 보통 `scripts/capture-trace.mjs`가 만든다(도구는 생산자를 실행하지 않는다).
+- `check --pairs`는 도구로 열지 않았다. 쌍 목록은 생산자 root를 뽑는 기계용 중간 산출물이고(capture가 쓴다) 전체
+  project의 모든 매치를 한 번에 싣는다. 에이전트가 특정 relation·route의 양쪽 끝을 볼 때는 주체 하나로 좁혀지는
+  `query relation:<name>`·`query route:…`가 같은 끝점을 준다([결정](API-IMPACT-PLAN.md#미결-결정)).
 - 이것은 제품 명령의 **트랜스포트**다. 새 분석이나 새 보고서 형식을 추가하지 않고,
   교환 계약(GRAPH-EXCHANGE)의 범위를 넓히지도 않는다.

@@ -105,6 +105,7 @@ test('tools/list는 모든 도구와 입력 스키마를 나열한다', async ()
     'impact',
     'preflight',
     'retentions',
+    'trace',
   ]);
   for (const tool of response.result.tools) {
     assert.equal(tool.inputSchema.type, 'object');
@@ -283,6 +284,11 @@ test('광고된 스키마 밖의 인자는 -32602로 거부한다', async () => 
     // 필수 인자 누락
     [37, 'query', { documents: [dartPath, swiftPath] }],
     [38, 'retentions', { documents: [dartPath, swiftPath] }],
+    [39, 'trace', {}],
+    [42, 'trace', { context: 'context.json', maxRows: 0 }],
+    [43, 'trace', { context: 'context.json', maxChains: 1001 }],
+    [44, 'trace', { context: '' }],
+    [45, 'trace', { context: 'context.json', pairs: true }],
   ];
   for (const [id, name, args] of invalidCases) {
     const response = JSON.parse(
@@ -334,4 +340,23 @@ test('거절 응답은 검출 가능한 스칼라 id를 에코한다', async () 
   );
   assert.equal(nonScalar.error.code, -32600);
   assert.equal(nonScalar.id, null);
+});
+
+test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문서를 돌려준다', async () => {
+  const contextPath = fileURLToPath(new URL('../../fixtures/trace/context.json', import.meta.url));
+  const call = async (id: number, args: Record<string, unknown>) => JSON.parse(
+    (await session.handleLine(request(id, 'tools/call', { name: 'trace', arguments: args })))!,
+  );
+  const defaults = await call(50, { context: contextPath });
+  assert.equal(defaults.result.isError, false);
+  const report = JSON.parse(defaults.result.content[0].text);
+  assert.equal(report.format, 'isthmus-trace');
+  assert.deepEqual([report.truncation.maxChains, report.truncation.maxRows], [10, 25]);
+  const narrow = await call(51, { context: contextPath, maxRows: 1, maxChains: 1, strict: true, compact: true });
+  const narrowed = JSON.parse(narrow.result.content[0].text);
+  assert.equal(narrow.result.content[0].text.trim().split('\n').length, 1);
+  assert.equal(narrowed.truncation.truncated, true);
+  assert.deepEqual(narrowed.summary, report.summary);
+  const missing = await call(52, { context: '/nonexistent/context.json' });
+  assert.equal(missing.result.isError, true);
 });

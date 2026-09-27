@@ -269,3 +269,24 @@ test('사전 계산 sha256은 파일 바이트와 같다: 멀티바이트 UTF-8�
     await rm(directoryPath, { recursive: true, force: true });
   }
 });
+
+test('--max-chains·--max-rows는 목록을 자르고 truncation에 적으며 종료 코드와 summary는 그대로다', async () => {
+  const full = JSON.parse((await runTraceCommand(['trace', '/fx/context.json'], reader())).standardOutput);
+  const limited = await runTraceCommand(['trace', '/fx/context.json', '--max-rows', '1', '--strict'], reader());
+  assert.equal(limited.exitCode, 0);
+  const report = JSON.parse(limited.standardOutput);
+  assert.deepEqual(report.summary, full.summary);
+  assert.equal(report.chains[0].relationUses.length, 1);
+  assert.equal(report.truncation.maxChains, 1000);
+  assert.equal(report.truncation.maxRows, 1);
+  assert.equal(report.truncation.truncated, true);
+  assert.ok(report.truncation.omitted.some((entry: { path: string; total: number; shown: number }) =>
+    entry.path === 'chains[0].relationUses' && entry.total === full.chains[0].relationUses.length && entry.shown === 1));
+  const chainsOnly = JSON.parse((await runTraceCommand(['trace', '/fx/context.json', '--max-chains', '5'], reader())).standardOutput);
+  assert.deepEqual(chainsOnly.truncation, { maxChains: 5, maxRows: 10000, truncated: false, omittedLists: 0, omitted: [] });
+  assert.deepEqual(chainsOnly.chains, full.chains);
+  for (const args of [['--max-rows', '0'], ['--max-rows', '10001'], ['--max-chains', '1.5'], ['--max-chains', '2e1'], ['--max-rows', '1', '--max-rows', '2']]) {
+    const result = await runTraceCommand(['trace', '/fx/context.json', ...args], reader());
+    assert.equal(result.exitCode, 64, args.join(' '));
+  }
+});

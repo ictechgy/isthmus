@@ -205,7 +205,7 @@ lock sha가 같은 벡터를 통과하고, `npm run verify`가 통과한다.
   - 진행(2026-09-27): [`language-traversal` v1 계약](LANGUAGE-TRAVERSAL.md)과 파서, `trace` 명령
     ([TRACE](TRACE.md), 단일 project, route 정방향과 relation·심볼 역방향, 클라이언트 continuation 포함),
     schemagraph 어댑터(새 형식 + `schemagraph-impact` v1 대체 경로), preflight 어댑터 공유, package
-    files 반영이 들어갔다. `scripts/capture-trace.mjs`와 실제 생산자 출력의 왕복 검증은 남았다.
+    files 반영이 들어갔다. `scripts/capture-trace.mjs`는 2026-09-28에 들어갔다(Phase 3 진행 참조).
 - schemagraph: impact의 `language-traversal` v1 출력(dependents, via, roots)과 다중 subject.
 - 카탈로그 capture: 앱 B는 저장소의 SQLite 마이그레이션을 로컬 SQLite에 적용해 schemagraph
   카탈로그를 만든다(wrangler 명령은 착수 시 확인). 앱 A의 카탈로그 원천(Prisma 마이그레이션 또는
@@ -247,6 +247,10 @@ location-column 벡터(UTF-16 열 회귀 방지)를 통과한다.
   속성 변화(경로 제약·끝 슬래시·catch-all·대소문자)와 "base에서 결합하던 호출이 head에서 결합하지 않음"을 finding 19종
   (surface·impact·incompleteness)으로 내고, `--fail-on`(코드·`error`·`warning`·`incomplete`)으로 종료 코드를 정한다.
   귀속·스캔이 불완전하면 incompleteness finding이 반드시 나온다.
+- 진행(2026-09-28): `scripts/capture-trace.mjs`([TRACE](TRACE.md#capture로-한-번에-수집하기) — 생산자 사실 명령,
+  `check --pairs` 조인 검증, 사실에서 뽑은 root로 생산자 순회(`--roots-from`·인자·`--` 전달, 나눠 실행), 사전 계산
+  artifact의 sha256·revision 증언, 단일 project·workspace context와 도구 버전·revision manifest, 선택적 trace)와 MCP
+  `trace` 도구(출력 상한)가 들어갔다.
 
 종료 조건: 분리된 두 git 저장소 fixture에서 API·테이블·DB 의존자·호출부·클라이언트 영향
 심볼을 모두 담은 보고서가 나온다. gap 코드마다 음성 fixture가 기대대로 보고된다. `--strict`
@@ -305,7 +309,8 @@ relation-use symbol, preflight를 trace 코어 위의 얇은 래퍼로 수렴.
 | 사실 0건 http 문서 표현 | target `http` + `roles`, http 한정 target-null 예외 | Phase 1 계약 합의 |
 | openapi 문서의 `roles`, `authority` 정규화 | [계약 초안의 미결 항목](GRAPH-EXCHANGE.md#미결-항목) | Phase 1 계약 합의 |
 | 앱 A DB 카탈로그 원천 | Prisma 마이그레이션 또는 DDL 중 착수 시 확인 | Phase 2 |
-| MCP에 trace·`--pairs` 노출 | 출력 상한과 함께 노출 | Phase 3 |
+| MCP에 trace·`--pairs` 노출 | **결정(2026-09-28)**: `trace`는 출력 상한과 함께 노출한다 — CLI `--max-chains`·`--max-rows`(목록마다, 자른 곳은 `truncation.omitted`), MCP 기본 10·25, `summary`·strict는 자르기 전 기준. `--pairs`는 노출하지 않는다 — capture가 쓰는 기계용 중간 산출물이고 project 전체 매치를 싣는다. 주체별로 좁혀지는 `query relation:`·`route:`가 같은 끝점을 준다 | 완료 |
+| capture 형태 | **결정(2026-09-28)**: `isthmus capture` 하위 명령이 아니라 배포 스크립트 `scripts/capture-trace.mjs` — 제품은 JSON만 읽고 생산자를 실행하지 않는다는 불변식과 capture-preflight 선례를 따른다. root는 쌍이 아니라 사실 문서의 선택 무관 상위 집합([TRACE](TRACE.md#capture로-한-번에-수집하기)) | 완료 |
 | 가치 게이트 뒤 순서 | Spring → Flutter·iOS → Python(재확인) | Phase 3 끝 |
 | change-based-impact spec 승인과 스냅샷 변경 순서 | spec 먼저, 어노테이션 값은 그 위 선택 필드 | Phase 4 전 |
 | 플레이스홀더 기본값(`${key:default}`) | 저장소 안 재정의가 없을 때만 기본값과 `configDefault` 증거 | Phase 4 |

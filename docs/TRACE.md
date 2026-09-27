@@ -3,7 +3,8 @@
 _기록: 2026-09-27 · 상태: 개발 중(Phase 3 소비자 — 단일 project와 workspace) · [API 변경 영향 계획](API-IMPACT-PLAN.md)_
 
 ```bash
-isthmus trace trace-context.json [--strict] [--compact]
+isthmus trace trace-context.json [--strict] [--compact] [--max-chains <1..1000>] [--max-rows <1..10000>]
+node scripts/capture-trace.mjs capture.json   # 생산자 실행부터 context·trace까지 한 번에(아래 capture 절)
 ```
 
 한 project — 또는 서버와 클라이언트가 다른 저장소에 있는 workspace의 여러 member — 의 bridge-facts(http·
@@ -273,6 +274,14 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 - 테스트 소스 사실(`testSource`)은 기본으로 체인에서 뺀다(`test-source-omitted`).
 - 정렬·키 순서가 고정돼 같은 입력이면 바이트 단위로 같은 출력이다. hop·정점·gap 합계가 1,000,000을
   넘으면 부분 결과 없이 종료 코드 2다.
+- **출력 상한(`--max-chains`·`--max-rows`)**: 주면 `chains`를 앞에서 N개, 그 밖의 행 목록(최상위 `gaps`·`notices`·
+  `limitations`·`analysisLimitations`·`analyses`, chain의 `routes`·`handlers`·`relationUses`·`database`, route의
+  `declarations`·`contracts`·`calls`, 호출의 `affected`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
+  `reachedFrom`, DB 정점의 `dependents`)을 **목록마다** M개로 자른다. 하나만 주면 다른 하나는 범위 상한이다. 출력에
+  `truncation: {maxChains, maxRows, truncated, omittedLists, omitted: [{path, total, shown}]}`(자른 목록의 JSON 경로,
+  최대 1,000개 — 넘으면 `omittedLists`로 전체 수만)를 더한다. hop 증거인 `path`·`relationships`와 `selection`은 자르지
+  않는다. `summary`·종료 코드(`--strict`)는 자르기 전 보고서로 정한다 — 잘린 목록이 짧다고 영향이 적다는 뜻이 아니다.
+  플래그가 없으면 출력은 이전과 바이트 단위로 같다. MCP `trace` 도구는 항상 상한(기본 10·25)을 넘긴다.
 
 ## gap 코드
 
@@ -336,6 +345,110 @@ gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`
   link match 필드는 gap이 아니라 2다(입력이 선언과 다르다).
 - 이 의미는 `src/cli/trace-command.test.ts`가 실제 CLI 프로세스로 고정한다.
 
+## capture로 한 번에 수집하기
+
+`scripts/capture-trace.mjs`는 생산자 명령을 차례로 실행해 trace 입력 전체를 한 디렉터리에 모은다. 제품(`isthmus`)은
+JSON만 읽고 생산자를 실행하지 않으므로 이것은 `isthmus` 하위 명령이 아니라 capture-preflight와 같은 배포 스크립트다
+(npm 패키지에 포함, `node node_modules/isthmus-cli/scripts/capture-trace.mjs capture.json`).
+
+```bash
+node scripts/capture-trace.mjs capture.json
+```
+
+1. **(a) 사실**: member마다 생산자 사실 명령(routes·schema·openapi·facts)을 실행하거나 미리 만든 사실 문서를 복사하고
+   bridge-facts 계약과 member `project`로 즉시 검증한다.
+2. **(b) 쌍**: member마다 `isthmus check --pairs`를 실행해 조인이 계약대로 서는지 확인하고 `pairs/<member>.json`에
+   남긴다. 한쪽 측만 있는 도메인(workspace의 서버·클라이언트 member)은 check가 거부하므로 양쪽 측이 있는 도메인의
+   문서만 넘기고, 없으면 건너뛴 이유를 manifest에 적는다.
+3. **(c) 순회**: 사실 문서에서 뽑은 root로 생산자 순회를 실행한다. root는 **선택과 무관한 상위 집합**이다 —
+   forward는 그 platform의 route-decl 핸들러 usr 전체, reverse는 route-call·relation-use를 감싼 심볼 usr 전체와
+   선택한 심볼, db-dependents는 sql relation-decl VertexId 전체(테이블과 컬럼)다. 테스트 소스 사실은 뺀다. 쌍을 root
+   원천으로 쓰지 않는 이유: 쌍은 호출이 없는 핸들러, 사용이 없는 relation, member 사이 호출을 싣지 않고, 선택으로
+   좁히려면 정방향 도달이 끝나야 어떤 relation이 닿는지 알 수 있어 순서가 생기며 link 귀속·파일 선택 규칙을 다시
+   구현해야 한다. 상위 집합은 한 번의 다중 root 순회라 비용이 작고 같은 artifact로 다른 선택도 trace할 수 있다.
+   root가 많으면 `maxRootsPerRun`(기본 2,000, 상한 10,000)과 인자 바이트 상한(128KiB)으로 나눠 `<id>.1`, `<id>.2`…
+   분석으로 싣는다(trace가 같은 역할·플랫폼·member 분석을 합친다). 순회 출력은 trace와 같은 파서로 검증한다.
+4. **(d) 기록**: `trace-context.json`(member 하나에 links가 없으면 단일 project, 아니면 workspace), 모든 artifact,
+   `capture-manifest.json`을 쓴다. 사전 계산 분석은 복사한 바이트의 sha256과 revision 증언을 `precomputed`에 싣는다.
+5. **(e) trace**: `trace`가 false가 아니면 `isthmus trace`를 실행해 `trace.json`을 쓰고 요약·gap 코드별 수를 manifest에
+   싣는다.
+
+### 설정 (`isthmus-trace-capture` v1)
+
+```jsonc
+{
+  "format": "isthmus-trace-capture", "version": 1,
+  "roots": { "app": "/work/example-app", "ci": "/work/ci-artifacts", "work": "/work/capture" },
+  "output": { "root": "work", "path": "out" },            // 없거나 빈 디렉터리여야 한다
+  "generatedAt": "2026-09-27T00:00:00Z",                  // 선택: {generatedAt} 값을 고정해 재실행 출력을 같게 한다
+  "tools": {
+    "tsograph": { "command": ["tsograph"] },
+    "schemagraph": { "command": ["schemagraph"] },
+    "kartograph": { "command": ["kartograph"], "source": { "root": "work", "path": "src/kartograph" } }
+  },
+  "members": [{
+    "name": "app", "project": { "root": "app" }, "revision": { "git": true },
+    "documents": [
+      { "name": "routes.json", "tool": "tsograph", "args": ["routes", "--role", "server", "--project", "{project}"] },
+      { "name": "schema.json", "tool": "tsograph", "args": ["schema", "--project", "{project}"] },
+      { "name": "sql-facts.json", "tool": "schemagraph",
+        "args": ["facts", "--document", { "root": "work", "path": "catalog.json" }, "--project", "{project}"] },
+      { "name": "android.json", "tool": "kartograph", "args": ["routes", "--role", "client", "--project", "{project}",
+        "--wrappers", { "root": "app", "path": "http-wrappers.json" }, "--graph-file", { "root": "work", "path": "graph.snapshot.json" }] },
+      { "name": "ios.json", "precomputed": { "root": "ci", "path": "ios.http.json" } }
+    ],
+    "analyses": [
+      { "id": "server-forward", "platform": "js", "role": "forward", "tool": "tsograph",
+        "args": ["reach", "--project", "{project}", "--generated-at", "{generatedAt}"], "roots": "arguments" },
+      { "id": "db", "platform": "sql", "role": "db-dependents", "tool": "schemagraph",
+        "args": ["impact", "--graph", { "root": "work", "path": "graph.json" }, "--format", "language-traversal",
+                 "--project", "{project}", "--revision", "{revision}", "--generated-at", "{generatedAt}"], "roots": "arguments" },
+      { "id": "android-reverse", "platform": "kotlin", "role": "reverse", "tool": "kartograph",
+        "args": ["impact", "--format", "language-traversal", "--graph-file", { "root": "work", "path": "graph.snapshot.json" },
+                 "--project", "{project}"], "roots": "roots-from" },
+      { "id": "ios-reverse", "platform": "swift", "role": "reverse",
+        "precomputed": { "path": { "root": "ci", "path": "ios-reverse.json" }, "generatedAt": "2026-09-26T21:00:00Z" } }
+    ]
+  }],
+  "selection": { "routes": [{ "method": "GET", "template": "/api/users/{}" }] }
+}
+```
+
+- **경로는 선언한 root 아래로만** 쓴다. 모든 경로는 `{root, path?}`이고 path는 root 상대 POSIX 경로다. 생산자 인자의
+  경로 참조도 실행 전에 존재해야 한다(capture는 생산자 stdout만 받고, 생산자가 쓸 출력 경로는 열지 않는다). `..`·절대 경로·
+  역슬래시·제어 문자는 설정 검증에서, 심링크로 root 밖을 가리키는 경로는 실행 전 realpath 검사에서 거부한다. `.env`·
+  키·인증 파일 같은 이름(`.env*`, `.npmrc`, `.netrc`, `.pgpass`, `.git`(원격 URL에 토큰이 박힌 `.git/config`), `.ssh`, `.aws`, `.kube`, `id_rsa*`, `*.pem`·`*.key` 등)은 읽지도
+  생산자에 넘기지도 않는다. 출력 디렉터리는 없거나 비어 있어야 한다 — capture는 아무것도 지우지 않는다. 사전 계산 파일은
+  한 번 연 핸들로 종류(일반 파일)·크기(64MiB)를 확인하고 그 핸들에서만 읽으며, 출력 파일을 쓸 때마다 부모 디렉터리의
+  realpath가 출력 디렉터리 안인지 다시 본다. root 자체(예: `/`)를 넓게 선언하면 그만큼 넓어진다 — 설정 작성자가 정한다.
+- **명령은 인자 배열**이고 셸을 거치지 않는다(자식은 spawn 인자 배열로 실행). 문자열 인자의 `{project}`(member project의
+  realpath)·`{revision}`·`{generatedAt}`만 자리표시자다 — route 템플릿의 `{}` 같은 다른 중괄호는 그대로 넘긴다.
+- **root 전달**(`roots`): `arguments`(인자 끝, `-`로 시작하는 id는 플래그로 읽힐 수 있어 거부), `separator`(`--` 뒤),
+  `roots-from`(JSON 문자열 배열 파일을 `<member>/roots/`에 쓰고 `--roots-from <file>` — argv 상한을 피한다).
+- **단계별 시간 제한**: 시간이 지나면 자식을 SIGKILL로 끝낸다. `timeoutSeconds`(기본 600, 1~7,200)와 `acceptExitCodes`(기본 `[0]`)를 문서·분석마다 준다.
+  `git` 조회는 60초, `check`·`trace`는 600초다. 실패는 `Capture step <단계> failed: <도구> <하위 명령> exited with
+  status N; stderr saved to logs/<단계>.stderr.txt.`처럼 단계와 명령을 밝히고, 자식 stderr는 터미널에 옮기지 않고
+  출력 디렉터리의 `logs/`에만 저장한다(경로·비밀이 섞일 수 있다). 실패해도 `capture-manifest.json`에 `status: "failed"`와
+  실패 단계가 남는다. 종료 코드는 성공 0, 실패 2다.
+- **revision**: member `revision`은 문자열 또는 `{"git": true}`(`git rev-parse --verify HEAD`, workspace member는 필수).
+  git 조회는 `GIT_OPTIONAL_LOCKS=0`과 `core.fsmonitor=false`로 저장소의 index를 고치지 않고, 작업 트리가 더러운지를
+  manifest `dirty`에 적는다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
+  둘 다 없는 옛 형식 artifact(`change-impact` 등)는 받지 않는다.
+- **catalog**(workspace member만): `catalog.graph`의 파일 sha256을 `catalog.graphSha`로 싣는다(schemagraph
+  `graphRevision`과 같은 규칙).
+- **links·selection**: trace context와 같은 모양이다. link `contract.documents`는 contract member의 **문서 이름**으로
+  쓰면 출력 경로로 바꿔 싣는다. selection·links는 생산자를 실행하기 전에 trace 규칙으로 미리 검증한다.
+- **manifest**(`isthmus-trace-capture-manifest` v1): isthmus 버전, 호스트(node·platform·arch), 도구마다 `--version`
+  출력과(`source`를 주면) 소스 checkout의 revision·dirty, member의 project·revision·출처, 단계마다 전체 argv·종료 코드·
+  시간·root 수·check 쌍 수, 모든 artifact의 경로·sha256·바이트·출처(`captured`·`precomputed`·`isthmus`)와 문서가 밝힌
+  생산자 신원, trace 요약을 싣는다. 시간 값이 있어 manifest는 재실행마다 다르다. context와 artifact는 생산자가 결정적이고
+  `generatedAt`을 고정하면 같다.
+
+한계: 파일 선택은 분석이 파일에 둔 심볼을 capture가 미리 알 수 없어, 사실 위치의 usr(상위 집합에 이미 있다)만 root가
+된다. 분석이 파일에 둔 다른 심볼은 그 분석의 root에 없으면 trace가 `file-selection-fact-fallback`·`analysis-missing`으로
+드러낸다. dartograph는 아직 `language-traversal`과 route 사실을 내지 않아 사전 계산 artifact(옛 dartograph impact)로만
+쓴다. cartograph는 `--roots-from`이 없어 `arguments`/`separator`로 넘긴다(root가 많으면 나눠 실행).
+
 ## 현재 범위와 남은 일
 
 - 구현: 단일 project, workspace(member·link·catalog·사전 계산 분석), routes·relations·symbols·files 선택.
@@ -343,10 +456,10 @@ gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`
   route, 같은 테이블의 다른 컬럼, 같은 인터페이스의 다른 구현 등)와 전파 범위를 정의하지 않는다. 정의 없이 넣으면
   과대 근사의 크기를 소비자가 가늠할 수 없으므로 계획이 정의할 때까지 넣지 않는다.
 - 남은 일: link match의 `interfaces`와 `baseRefs[].pathPrefix`
-  (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류), MCP 노출(출력 상한과 함께 결정).
+  (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류).
   http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
-- 입력 수집 스크립트(`scripts/capture-trace.mjs`)는 아직 없다. 생산자 명령을 차례로 실행하고 context를
-  손으로 쓴다. 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
+- 입력 수집은 [`scripts/capture-trace.mjs`](#capture로-한-번에-수집하기)가 맡는다. MCP `trace` 도구는 출력 상한과 함께
+  노출했다([MCP](MCP.md)). 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
   있다(실제 앱 입력으로 쓸 수 없다).
 - 생산자 쪽: TS 생산자의 route-decl·relation-use usr와 `reach`/impact의 language-traversal 출력,
   schemagraph impact의 language-traversal 출력은 각 저장소에서 진행 중이다. 옛 schemagraph-impact v1은

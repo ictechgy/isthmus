@@ -11,6 +11,7 @@ export function runChild(command, arguments_, options = {}) {
     env: options.env,
     input: options.input,
     timeout: options.timeout ?? defaultTimeout,
+    killSignal: options.killSignal,
     maxBuffer: options.maxBuffer ?? defaultMaxBuffer,
     stdio: options.stdio,
   });

@@ -177,7 +177,7 @@ summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 �
 증명된 prefix 후보를 연결한다. prefix의 suffix·instance 배선 불확실성은 유지한다.
 이 추가 기능은 위에 나열한 공개 producer 버전의 `bridges --messages`로 사용할 수 있다.
 에이전트 클라이언트는 `isthmus serve`(MCP stdio 서버)로 같은 명령을 도구로 호출할 수 있다 —
-check·query·graph·diff·impact·preflight·retentions를 노출한다.
+check·query·graph·diff·impact·preflight·retentions·trace(출력 상한 포함)를 노출한다.
 [MCP 서버 계약](docs/MCP.md)을 본다.
 검증된 개발 조합을 재현하거나 도구를 직접 감사하려면 로컬 Git의 고정 commit에서
 구축하는 [도구 구축 절차](docs/TOOLCHAIN.md)를 쓴다. Dart AOT 실행 파일, impact와
@@ -325,7 +325,16 @@ http가 선언한 link에서만 이어지므로 테이블 변경이 다른 저�
 `complete: false`다. 빠진 심볼·분석, 잘린 순회, 다른 revision, http가 아닌 진입점은 "닿지 않음"이 아니라
 `gaps`로 보고한다. 도달 근거마다 생산자의 근거 등급(`direct`·`bound`·`candidate`, 분류하지 않았으면
 `unassessed`)을 싣고, 가능성 구현 간선으로만 닿는 hop과 잇지 못한 호출을 지나는(또는 그 신고가 없는) 핸들러의
-정방향 도달도 gap이다. `--strict`는 gap이 남으면 1이고 알림만으로는 실패하지 않는다. MCP에는 아직 노출하지 않는다.
+정방향 도달도 gap이다. `--strict`는 gap이 남으면 1이고 알림만으로는 실패하지 않는다. `--max-chains`·`--max-rows`는
+출력 목록을 자르고 자른 곳을 모두 `truncation`에 적는다(`summary`와 종료 코드는 전체 보고서 기준). MCP `trace` 도구는
+항상 이 상한을 적용한다.
+
+`node scripts/capture-trace.mjs capture.json`(npm 패키지에 포함)은 입력 전체를 한 번에 모은다. 생산자 사실 명령,
+조인을 검증하는 `isthmus check --pairs`, 사실에서 뽑은 핸들러·호출부·relation-use·스키마 정점 id를 root로 한 생산자
+순회(`--roots-from`을 지원하면 그것으로)를 실행하고, 사전 계산 artifact는 `sha256`과 함께 복사해 단일 project 또는
+workspace trace context, 생산자 버전·revision manifest, 선택적으로 `trace.json`을 쓴다. 자식은 셸 없이 인자 배열로
+단계별 시간 제한 안에서 실행하고, 모든 경로는 선언한 root 안에 있어야 한다.
+[TRACE의 capture 절](docs/TRACE.md#capture로-한-번에-수집하기)을 본다.
 [`docs/TRACE.md`](docs/TRACE.md)를 본다.
 
 ### 베이스라인
