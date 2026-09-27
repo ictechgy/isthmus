@@ -5,6 +5,8 @@ import { runImpactCommand } from './impact-command.ts';
 import { runPreflightCommand } from './preflight-command.ts';
 import { runQueryCommand } from './query-command.ts';
 import { runRetentionsCommand } from './retentions-command.ts';
+import { runTraceCommand } from './trace-command.ts';
+import { MAX_TRACE_VIEW_CHAINS, MAX_TRACE_VIEW_ROWS } from '../report/trace-view.ts';
 import type { CommandResult, ReadTextFile, WriteTextFile } from './command-support.ts';
 
 /**
@@ -45,6 +47,13 @@ const DOCUMENTS_PROPERTY = {
   description:
     'Bridge fact document paths to join (GRAPH-EXCHANGE v1/v2 JSON).',
 } as const;
+
+/**
+ * MCP `trace`의 기본 출력 상한이다. 에이전트 한 번의 응답으로 읽을 만한 크기로 잡았다 — 더 보려면 선택을
+ * 좁히거나 상한을 올린다. CLI는 플래그가 없으면 자르지 않지만 MCP는 항상 상한을 넘긴다.
+ */
+const MCP_TRACE_DEFAULT_CHAINS = 10;
+const MCP_TRACE_DEFAULT_ROWS = 25;
 
 const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
   {
@@ -195,6 +204,37 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
         },
       },
       required: ['documents', 'producer'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'trace',
+    description:
+      'Trace route-level impact candidates (API -> tables and DB dependents, API -> client '
+      + 'call sites and the client code that uses them) from an isthmus-trace-context, '
+      + 'typically written by scripts/capture-trace.mjs. Lists are capped by maxChains '
+      + `(default ${MCP_TRACE_DEFAULT_CHAINS}) and maxRows (default ${MCP_TRACE_DEFAULT_ROWS}); `
+      + 'every cut is listed in truncation.omitted and summary keeps the uncapped totals. '
+      + 'Gaps, truncation, and short lists are not evidence that nothing is affected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        context: {
+          type: 'string',
+          minLength: 1,
+          description: 'Path to the isthmus-trace-context JSON.',
+        },
+        maxChains: { type: 'integer', minimum: 1, maximum: MAX_TRACE_VIEW_CHAINS },
+        maxRows: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_TRACE_VIEW_ROWS,
+          description: 'Cap for every list in the report (per list, not in total).',
+        },
+        strict: { type: 'boolean', description: 'Exit nonzero when the uncapped trace has gaps.' },
+        compact: { type: 'boolean' },
+      },
+      required: ['context'],
       additionalProperties: false,
     },
   },
@@ -519,6 +559,18 @@ function buildToolArgv(
       argv.push(...valueFlag('--explain', args.explain));
       return argv;
     }
+    case 'trace':
+      if (typeof args.context !== 'string' || args.context.length === 0) return undefined;
+      return [
+        'trace',
+        args.context,
+        '--max-chains',
+        String(typeof args.maxChains === 'number' ? args.maxChains : MCP_TRACE_DEFAULT_CHAINS),
+        '--max-rows',
+        String(typeof args.maxRows === 'number' ? args.maxRows : MCP_TRACE_DEFAULT_ROWS),
+        ...booleanFlag('--strict', args.strict),
+        ...booleanFlag('--compact', args.compact),
+      ];
     case 'retentions':
       if (args.producer !== 'cartograph' && args.producer !== 'kartograph') return undefined;
       const retentionTarget = args.producer;
@@ -592,6 +644,8 @@ async function runToolCommand(
       return runImpactCommand(argv, dependencies.readTextFile);
     case 'preflight':
       return runPreflightCommand(argv, dependencies.readTextFile);
+    case 'trace':
+      return runTraceCommand(argv, dependencies.readTextFile);
     case 'retentions':
       return dependencies.producerVersion === undefined
         ? {
