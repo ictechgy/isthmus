@@ -1,0 +1,48 @@
+{
+  "facts": [
+    {
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 10,
+        "path": "openapi.yaml"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "getOrder"
+      }
+    },
+    {
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 5,
+        "line": 30,
+        "path": "openapi.yaml"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "createOrder"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "openapi",
+  "project": "/work/example-server",
+  "roles": [
+    "server"
+  ],
+  "target": "http",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

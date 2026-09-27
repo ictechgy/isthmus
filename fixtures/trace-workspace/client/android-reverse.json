@@ -1,0 +1,77 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-client",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "line": 40,
+          "path": "android/app/src/main/java/example/CheckoutViewModel.kt"
+        },
+        "qualifiedName": "CheckoutViewModel.submit",
+        "usr": "kt:CheckoutViewModel.submit"
+      },
+      "via": "kt:OrdersApi.create"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "OrdersRepository.load",
+        "usr": "kt:OrdersRepository.load"
+      },
+      "via": "kt:OrdersApi.get"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "OrderDetailViewModel.refresh",
+        "usr": "kt:OrderDetailViewModel.refresh"
+      },
+      "via": "kt:OrdersRepository.load"
+    }
+  ],
+  "revision": "cli-41d9e0b",
+  "roots": [
+    {
+      "id": "kt:OrdersApi.create",
+      "symbol": {
+        "usr": "kt:OrdersApi.create"
+      }
+    },
+    {
+      "id": "kt:OrdersApi.get",
+      "symbol": {
+        "usr": "kt:OrdersApi.get"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

@@ -1,11 +1,14 @@
+import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, resolve } from 'node:path';
 
 import { TraversalValidationError } from '../exchange/language-traversal.ts';
 import {
+  analysisProject,
   normalizeTraceAnalysis,
   parseTraceContext,
   TraceContextValidationError,
   type TraceAnalysis,
+  type TraceAnalysisReference,
 } from '../exchange/trace-context.ts';
 import { HttpPairsLimitError, PersistencePairsLimitError } from '../report/pairs.ts';
 import { createTraceReport, hasTraceGaps, TraceInputError } from '../report/trace.ts';
@@ -54,8 +57,8 @@ export async function runTraceCommand(arguments_: readonly string[], readTextFil
     const budget = { used: text.length };
     const analyses: TraceAnalysis[] = [];
     for (const [index, reference] of context.analyses.entries()) {
-      analyses.push(normalizeTraceAnalysis(await readAnalysis(locate(reference.path), index + 1, readTextFile, budget),
-        reference, context.project));
+      const raw = await readAnalysis(locate(reference.path), index + 1, reference, readTextFile, budget);
+      analyses.push(normalizeTraceAnalysis(raw, reference, analysisProject(context, reference)));
     }
     const documents = await readBridgeDocuments(context.documents.map(locate), readTextFile, budget.used);
     const report = createTraceReport({ context, documents, analyses });
@@ -86,9 +89,14 @@ class AnalysisReadError extends Error {
   }
 }
 
-/** 분석 파일 하나를 크기 상한 안에서 JSON으로 읽는다. */
-async function readAnalysis(path: string, position: number, readTextFile: ReadTextFile, budget: { used: number }):
-  Promise<unknown> {
+/**
+ * 분석 파일 하나를 크기 상한 안에서 JSON으로 읽는다.
+ *
+ * 사전 계산 artifact(`precomputed`)면 읽은 내용의 SHA-256을 선언과 대조한다. 다르면 다른 빌드의 artifact이거나
+ * 내려받다 깨진 것이므로 부분 결과 없이 입력 오류다.
+ */
+async function readAnalysis(path: string, position: number, reference: TraceAnalysisReference, readTextFile: ReadTextFile,
+  budget: { used: number }): Promise<unknown> {
   let text: string;
   try {
     text = await readTextFile(path);
@@ -98,6 +106,11 @@ async function readAnalysis(path: string, position: number, readTextFile: ReadTe
   budget.used += text.length;
   if (text.length > MAX_INPUT_TEXT_LENGTH || budget.used > MAX_TOTAL_INPUT_TEXT_LENGTH) {
     throw new AnalysisReadError(`Trace analysis ${position} exceeds the input size limits.`);
+  }
+  if (reference.precomputed !== undefined &&
+    createHash('sha256').update(text, 'utf8').digest('hex') !== reference.precomputed.sha256) {
+    throw new AnalysisReadError(`Trace analysis ${position} does not match its precomputed sha256; `
+      + 'download the artifact built for this revision again or update the context.');
   }
   try {
     return JSON.parse(text);

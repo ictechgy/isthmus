@@ -174,6 +174,7 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `relation-selection-ambiguous` | 선택한 relation 이름이 여러 선언과 맞는다 |
 | `relation-without-decl` | 선택한 relation의 선언이 없다 |
 | `relation-without-use` | 선택한 relation의 리터럴 사용이 관찰되지 않았다(없다는 증거가 아님). dynamic 사용이 있으면 문구에 그 수를 싣는다 |
+| `http-member-unlinked` | workspace member의 http 문서가 해당 역할(client 또는 server·contract)의 link에 속하지 않아 잇지 않았다 |
 
 gap은 `selector`(체인)·`route`·`symbol`·`analysis`·`evidence` 중 해당하는 필드를 싣는다. 귀속되지 않은
 호출은 어떤 gap에도 경로·host·심볼을 싣지 않고 개수만 싣는다.

@@ -39,7 +39,7 @@ function build(mutate: (value: Fixture) => void = () => {}, extra: TraceAnalysis
   return {
     context,
     documents: Object.values(value.docs).filter((document) => document !== undefined).map(parseBridgeFactsDocument),
-    analyses: [...context.analyses.map((reference) => normalizeTraceAnalysis(value.analyses[reference.id], reference, context.project)),
+    analyses: [...context.analyses.map((reference) => normalizeTraceAnalysis(value.analyses[reference.id], reference, context.project!)),
       ...extra],
   };
 }

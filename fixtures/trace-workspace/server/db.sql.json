@@ -1,0 +1,43 @@
+{
+  "facts": [
+    {
+      "channel": "main.orders",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "symbol": {
+        "qualifiedName": "main.orders",
+        "usr": "main.orders"
+      }
+    },
+    {
+      "channel": "main.orders",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "method": "status",
+      "symbol": {
+        "qualifiedName": "main.orders.status",
+        "usr": "main.orders.status"
+      }
+    },
+    {
+      "channel": "main.order_items",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "symbol": {
+        "qualifiedName": "main.order_items",
+        "usr": "main.order_items"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "sql",
+  "project": "/work/example-server",
+  "target": "persistence",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

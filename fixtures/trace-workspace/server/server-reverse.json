@@ -1,0 +1,83 @@
+{
+  "direction": "dependents",
+  "dispatch": "direct",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/example-server",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "location": {
+          "line": 24,
+          "path": "src/routes/orders.ts"
+        },
+        "usr": "ts:api/orders.create"
+      },
+      "via": "ts:repo/orders.insert"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "line": 5,
+          "path": "src/services/orders.ts"
+        },
+        "usr": "ts:service/orders.load"
+      },
+      "via": "ts:repo/orders.findById"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "line": 12,
+          "path": "src/routes/orders.ts"
+        },
+        "usr": "ts:api/orders.get"
+      },
+      "via": "ts:service/orders.load"
+    }
+  ],
+  "revision": "srv-7f3c2a1",
+  "roots": [
+    {
+      "id": "ts:repo/orders.findById",
+      "symbol": {
+        "usr": "ts:repo/orders.findById"
+      }
+    },
+    {
+      "id": "ts:repo/orders.insert",
+      "symbol": {
+        "usr": "ts:repo/orders.insert"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

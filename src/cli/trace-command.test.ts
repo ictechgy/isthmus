@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
@@ -67,7 +67,7 @@ test('사용 오류는 64, 입력 오류는 원인과 함께 2다', async () => 
   const cases: Array<[Record<string, string>, RegExp]> = [
     [{ 'context.json': '{' }, /not valid JSON/],
     [{ 'context.json': 'x'.repeat(MAX_INPUT_TEXT_LENGTH + 1) }, /size limit/],
-    [{ 'context.json': JSON.stringify({ format: 'isthmus-workspace', version: 1 }) }, /Phase 3/],
+    [{ 'context.json': JSON.stringify({ format: 'isthmus-workspace', version: 1 }) }, /bare isthmus-workspace manifest/],
     [{ 'context.json': JSON.stringify({ ...context, analyses: [...context.analyses, { id: 'x', platform: 'js', role: 'reverse',
       path: 'missing.json' }] }) }, /Unable to read trace analysis 5/],
     [{ 'server-forward.json': '[' }, /analysis 1 is not valid JSON/],
@@ -144,4 +144,66 @@ test('같은 핸들러의 정방향 분석 중 하나라도 잇지 못한 호출
   assert.equal(strict.exitCode, 1);
   assert.deepEqual(JSON.parse(strict.standardOutput).gaps.map(({ code, analysis }: any) => [code, analysis]),
     [['reach-completeness-unknown', 'z-forward']]);
+});
+
+const workspaceDirectory = fileURLToPath(new URL('../../fixtures/trace-workspace/', import.meta.url));
+const mainPath = fileURLToPath(new URL('./main.ts', import.meta.url));
+
+/** 빌드 전 CLI를 실제 프로세스로 실행하고 종료 코드와 출력을 돌려준다. */
+async function runProcess(args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await promisify(execFile)(process.execPath, [mainPath, ...args]);
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const failed = error as { code: number; stdout: string; stderr: string };
+    return { code: failed.code, stdout: failed.stdout, stderr: failed.stderr };
+  }
+}
+
+/** workspace fixture 전체를 임시 디렉터리에 복사하고 변형한다(분리된 두 저장소 배치 그대로). */
+async function copyWorkspace(mutate: (files: Map<string, string>) => void): Promise<string> {
+  const directoryPath = await mkdtemp(join(tmpdir(), 'isthmus-trace-workspace-'));
+  const names = ['context.json', 'context-relation.json',
+    ...['server.http.json', 'api.openapi.json', 'server.persistence.json', 'db.sql.json', 'server-forward.json',
+      'server-reverse.json', 'db-dependents.json'].map((name) => `server/${name}`),
+    ...['android.http.json', 'ios.http.json', 'android-reverse.json', 'ios-reverse.change-impact.json'].map((name) => `client/${name}`)];
+  const texts = new Map<string, string>();
+  for (const name of names) texts.set(name, await readFile(join(workspaceDirectory, name), 'utf8'));
+  mutate(texts);
+  for (const dir of ['server', 'client']) await mkdir(join(directoryPath, dir), { recursive: true });
+  for (const [name, text] of texts) await writeFile(join(directoryPath, name), text);
+  return directoryPath;
+}
+
+test('분리된 두 저장소 workspace를 실제 CLI가 한 명령으로 잇는다', async () => {
+  const route = await runProcess(['trace', join(workspaceDirectory, 'context.json'), '--strict', '--compact']);
+  assert.equal(route.code, 0);
+  assert.equal(route.stderr, '');
+  const report = JSON.parse(route.stdout);
+  assert.deepEqual(report.gaps, []);
+  const [hop] = report.chains[0].routes;
+  assert.equal(hop.template, '/api/orders/{}');
+  assert.deepEqual(report.chains[0].database.map(({ vertex }: any) => vertex), ['main.orders', 'main.orders.status']);
+  assert.deepEqual(hop.calls.map(({ call }: any) => call.symbol.usr), ['kt:OrdersApi.get', 's:OrdersClient.fetch']);
+  assert.ok(hop.calls[1].affected.some(({ usr }: any) => usr === 's:OrderDetailView.body'));
+  const again = await runProcess(['trace', join(workspaceDirectory, 'context.json'), '--compact', '--strict']);
+  assert.equal(again.stdout, route.stdout);
+  const relation = await runProcess(['trace', join(workspaceDirectory, 'context-relation.json'), '--strict', '--compact']);
+  assert.equal(relation.code, 0);
+  assert.equal(JSON.parse(relation.stdout).summary.routes, 2);
+});
+
+test('사전 계산 artifact의 sha256이 선언과 다르면 부분 결과 없이 2다', async () => {
+  const directoryPath = await copyWorkspace((texts) => {
+    const name = 'client/ios-reverse.change-impact.json';
+    texts.set(name, texts.get(name)!.replace('OrderDetailView.body', 'OrderListView.body'));
+  });
+  try {
+    const result = await runProcess(['trace', join(directoryPath, 'context.json'), '--strict']);
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /Trace analysis 5 does not match its precomputed sha256/);
+  } finally {
+    await rm(directoryPath, { recursive: true, force: true });
+  }
 });

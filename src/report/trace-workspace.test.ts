@@ -1,0 +1,234 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+import { parseBridgeFactsDocument } from '../exchange/parse.ts';
+import { analysisProject, normalizeTraceAnalysis, parseTraceContext } from '../exchange/trace-context.ts';
+import { createTraceReport, hasTraceGaps, TraceInputError, type TraceInput, type TraceReport } from './trace.ts';
+import { encodeSortedJson } from './sorted-json.ts';
+
+/**
+ * workspace trace — 분리된 두 저장소(서버·클라이언트) 합성 fixture다.
+ *
+ * `fixtures/trace-workspace/server`는 TS 서버(route-decl·relation-use)와 schemagraph 흉내 sql 카탈로그를,
+ * `client`는 Kotlin·Swift 호출부와 역방향 분석(iOS는 macOS CI가 미리 계산한 change-impact artifact)을 담는다.
+ * 두 저장소는 project 루트와 revision이 서로 다르고 link 하나로만 이어진다.
+ */
+
+type Files = Record<string, any>;
+interface Value { context: any; files: Files }
+
+const workspaceRoot = new URL('../../fixtures/trace-workspace/', import.meta.url);
+const singleRoot = new URL('../../fixtures/trace/', import.meta.url);
+const readJson = async (root: URL, path: string) => JSON.parse(await readFile(new URL(path, root), 'utf8'));
+
+/** context가 가리키는 모든 문서·분석 원문을 읽는다. */
+async function load(root: URL, contextName: string): Promise<Value> {
+  const context = await readJson(root, contextName);
+  const paths = context.members === undefined
+    ? [...context.documents, ...context.analyses.map(({ path }: { path: string }) => path)]
+    : context.members.flatMap((member: any) => [...member.documents, ...(member.analyses ?? []).map(({ path }: any) => path)]);
+  const files: Files = {};
+  for (const path of paths) files[path] = await readJson(root, path);
+  return { context, files };
+}
+
+const workspaceFixture = await load(workspaceRoot, 'context.json');
+const singleFixture = await load(singleRoot, 'context.json');
+
+/** fixture를 복제·변형해 검증된 trace 입력으로 만든다. sha256 대조는 CLI 층의 일이라 여기서는 하지 않는다. */
+function build(base: Value, mutate: (value: Value) => void = () => {}): TraceInput {
+  const value = structuredClone(base);
+  mutate(value);
+  const context = parseTraceContext(value.context);
+  return {
+    context,
+    documents: context.documents.map((path) => parseBridgeFactsDocument(value.files[path])),
+    analyses: context.analyses.map((reference) =>
+      normalizeTraceAnalysis(value.files[reference.path], reference, analysisProject(context, reference))),
+  };
+}
+
+const workspace = (mutate?: (value: Value) => void) => createTraceReport(build(workspaceFixture, mutate));
+const single = (mutate?: (value: Value) => void) => createTraceReport(build(singleFixture, mutate));
+const codes = (result: TraceReport) => [...new Set(result.gaps.map(({ code }) => code))].sort();
+const member = (value: Value, name: string) => value.context.members.find((entry: any) => entry.name === name);
+const select = (selection: unknown) => (value: Value) => { value.context.selection = selection; };
+
+test('분리된 두 저장소에서 route 선택이 API·테이블·DB 의존자·호출부·클라이언트 영향 심볼을 모두 잇는다', () => {
+  const result = workspace();
+  assert.deepEqual(result.gaps, []);
+  assert.equal(hasTraceGaps(result), false);
+  assert.equal(result.project, undefined);
+  assert.deepEqual(result.workspace?.members.map(({ name, project, revision }) => [name, project, revision]), [
+    ['server', '/work/example-server', 'srv-7f3c2a1'], ['server-spec', '/work/example-server', 'srv-7f3c2a1'],
+    ['client', '/work/example-client', 'cli-41d9e0b'],
+  ]);
+  assert.deepEqual(result.workspace?.links.map(({ name, client, server, contract }) => [name, client, server, contract]),
+    [['mobile->api', 'client', 'server', { member: 'server-spec', authoritative: true }]]);
+  const [chain] = result.chains;
+  // API: 선언은 server member, 계약은 server-spec member(같은 project를 공유하는 두 member)에서 온다.
+  const [route] = chain!.routes;
+  assert.deepEqual([route?.scope, route?.method, route?.template], ['mobile->api', 'GET', '/api/orders/{}']);
+  assert.deepEqual(route?.declarations.map(({ member: name, symbol }) => [name, symbol?.usr]), [['server', 'ts:api/orders.get']]);
+  assert.deepEqual(route?.contracts.map(({ member: name, symbol }) => [name, symbol?.qualifiedName]), [['server-spec', 'getOrder']]);
+  assert.deepEqual(chain?.handlers.map(({ member: name, usr }) => [name, usr]), [['server', 'ts:api/orders.get']]);
+  // 테이블과 DB 의존자: server member 안에서만 잇는다.
+  assert.deepEqual(chain?.relationUses.map(({ use, resolved }) => [use.member, use.symbol?.usr, resolved]), [
+    ['server', 'ts:repo/orders.findById', { relation: 'main.orders' }],
+    ['server', 'ts:repo/orders.findById', { relation: 'main.orders', column: 'status' }],
+  ]);
+  assert.deepEqual(chain?.database.map(({ member: name, vertex, dependents }) => [name, vertex, dependents.map(({ usr }) => usr)]), [
+    ['server', 'main.orders', ['main.open_orders', 'main.order_items']],
+    ['server', 'main.orders.status', ['main.open_orders']],
+  ]);
+  // 호출부와 클라이언트 영향 심볼: client member의 Kotlin(host 귀속)·Swift(service 귀속) 호출과 각 역방향 분석이다.
+  assert.deepEqual(route?.calls.map(({ call, side, quality, affected }) => [call.member, call.platform, call.symbol?.usr, side, quality,
+    affected.map(({ member: name, usr, analysis }) => [name, usr, analysis])]), [
+    ['client', 'kotlin', 'kt:OrdersApi.get', 'decl', 'exact',
+      [['client', 'kt:OrdersRepository.load', 'android-reverse'], ['client', 'kt:OrderDetailViewModel.refresh', 'android-reverse']]],
+    ['client', 'swift', 's:OrdersClient.fetch', 'decl', 'exact',
+      [['client', 's:OrderStore.refresh', 'ios-reverse'], ['client', 's:OrderDetailView.body', 'ios-reverse']]],
+  ]);
+  assert.deepEqual(route?.calls[1]?.affected[0]?.location, { path: 'ios/App/Stores/OrderStore.swift', line: 31, column: 10 });
+  assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
+    databaseDependents: 3, calls: 2, clientSymbols: 4, gaps: 0, evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 4 } });
+  const ios = result.analyses.find(({ id }) => id === 'ios-reverse')!;
+  assert.deepEqual([ios.member, ios.source, ios.revision, ios.revisionSource, ios.precomputed?.generatedAt],
+    ['client', 'change-impact', 'cli-41d9e0b', 'attested', '2026-09-26T21:00:00Z']);
+  assert.equal(result.analyses.find(({ id }) => id === 'android-reverse')?.revisionSource, undefined);
+  assert.ok(result.limitations.every(({ member: name, link }) => (name === undefined) !== (link === undefined)));
+});
+
+test('테이블 선택이 서버 member의 역방향 순회로 API를 찾고 link 너머 클라이언트까지 잇는다', () => {
+  const result = workspace(select({ relations: [{ member: 'server', name: 'orders' }] }));
+  assert.deepEqual(result.gaps, []);
+  const [chain] = result.chains;
+  assert.deepEqual(chain?.selector, { relation: 'orders', member: 'server' });
+  assert.deepEqual(chain?.routes.map(({ method, template, calls }) => [method, template,
+    calls.map(({ call, affected }) => [call.symbol?.usr, affected.map(({ usr }) => usr)])]), [
+    ['POST', '/api/orders', [['kt:OrdersApi.create', ['kt:CheckoutViewModel.submit']]]],
+    ['GET', '/api/orders/{}', [['kt:OrdersApi.get', ['kt:OrdersRepository.load', 'kt:OrderDetailViewModel.refresh']],
+      ['s:OrdersClient.fetch', ['s:OrderStore.refresh', 's:OrderDetailView.body']]]],
+  ]);
+  assert.deepEqual(chain?.handlers.map(({ member: name, usr, reachedFrom }) => [name, usr, reachedFrom.map(({ from, depth }) => [from, depth])]), [
+    ['server', 'ts:api/orders.create', [['ts:repo/orders.insert', 1]]],
+    ['server', 'ts:api/orders.get', [['ts:repo/orders.findById', 2]]],
+  ]);
+  assert.deepEqual(chain?.database.map(({ vertex }) => vertex), ['main.orders', 'main.orders.status']);
+});
+
+test('workspace 출력은 분석 순서와 무관하게 바이트 단위로 같다', () => {
+  const input = build(workspaceFixture);
+  assert.equal(encodeSortedJson(createTraceReport({ ...input, analyses: [...input.analyses].reverse() })),
+    encodeSortedJson(createTraceReport(input)));
+});
+
+test('persistence와 언어 순회는 member 밖으로 나가지 않는다', () => {
+  // 클라이언트 로컬 캐시의 orders 테이블 사용은 서버 DB의 orders와 섞이지 않는다.
+  const local = workspace((value) => {
+    const cache = structuredClone(value.files['server/server.persistence.json']);
+    cache.project = '/work/example-client';
+    cache.platform = 'kotlin';
+    cache.facts = [{ ...cache.facts[0], location: { path: 'android/Cache.kt', line: 3, column: 1 },
+      symbol: { qualifiedName: 'Cache.load', usr: 'kt:Cache.load' } }];
+    value.files['client/cache.persistence.json'] = cache;
+    member(value, 'client').documents.push('client/cache.persistence.json');
+    value.context.selection = { relations: [{ member: 'server', name: 'orders' }] };
+  });
+  assert.ok(local.chains[0]!.relationUses.every(({ use }) => use.member === 'server'));
+  assert.deepEqual(local.gaps.map(({ code, member: name }) => [code, name]), [['persistence-unscanned', 'client']]);
+  // 클라이언트 역방향 분석을 server member에 붙이면 그 호출의 영향은 client member에서 찾지 못한다.
+  const moved = workspace((value) => {
+    const android = member(value, 'client').analyses.shift();
+    value.files[android.path].project = '/work/example-server';
+    value.files[android.path].revision = 'srv-7f3c2a1';
+    member(value, 'server').analyses.push(android);
+  });
+  assert.deepEqual(moved.gaps.map(({ code, member: name, symbol }) => [code, name, symbol?.usr]),
+    [['analysis-missing', 'client', 'kt:OrdersApi.get']]);
+});
+
+test('revision은 member마다 검사하고 사전 계산 artifact는 증언 revision으로 검사한다', () => {
+  const gaps = (mutate: (value: Value) => void) => workspace(mutate).gaps.map(({ code, member: name, analysis }) => [code, name, analysis]);
+  assert.deepEqual(gaps((value) => { value.files['server/server-forward.json'].revision = 'srv-old'; }),
+    [['stale-analysis', 'server', 'server-forward']]);
+  assert.deepEqual(gaps((value) => { delete value.files['client/android-reverse.json'].revision; }),
+    [['analysis-revision-unknown', 'client', 'android-reverse']]);
+  assert.deepEqual(gaps((value) => { member(value, 'client').analyses[1].precomputed.revision = 'cli-old'; }),
+    [['stale-analysis', 'client', 'ios-reverse']]);
+  // 카탈로그 graphSha를 선언한 member의 sql 분석은 graphRevision으로 검사한다.
+  assert.deepEqual(gaps((value) => { value.files['server/db-dependents.json'].graphRevision = 'f'.repeat(64); }),
+    [['stale-analysis', 'server', 'server-db']]);
+  assert.deepEqual(gaps((value) => { delete value.files['server/db-dependents.json'].graphRevision; }),
+    [['analysis-revision-unknown', 'server', 'server-db']]);
+  assert.deepEqual(gaps((value) => {
+    value.files['server/db-dependents.json'].revision = 'catalog-only';
+    delete member(value, 'server').catalog;
+  }), [['stale-analysis', 'server', 'server-db']]);
+  assert.deepEqual(gaps((value) => { value.files['server/db-dependents.json'].revision = 'catalog-only'; }), []);
+  // 같은 member·플랫폼 분석의 graphRevision이 다르면 stale이다.
+  assert.deepEqual(gaps((value) => {
+    value.files['server/server-forward.json'].graphRevision = 'g1';
+    value.files['server/server-reverse.json'].graphRevision = 'g2';
+  }), [['stale-analysis', 'server', 'server-forward'], ['stale-analysis', 'server', 'server-reverse']]);
+});
+
+test('link match에 걸리지 않은 호출은 개수만 싣고 경로·host를 어떤 필드에도 싣지 않는다', () => {
+  const result = workspace((value) => { value.context.links[0].match.hosts = ['other.example.com']; });
+  assert.deepEqual(result.gaps.map(({ code, route, detail }) => [code, route?.scope, detail.slice(0, 18)]),
+    [['unattributed-calls-omitted', 'mobile->api', '1 route call(s) co']]);
+  assert.deepEqual(result.chains[0]?.routes[0]?.calls.map(({ call }) => call.symbol?.usr), ['s:OrdersClient.fetch']);
+  assert.doesNotMatch(encodeSortedJson(result), /api\.example\.com|OrdersApi\.get/);
+});
+
+test('link 계약이 없으면 server의 openapi 문서가 계약이고, 계약 문서가 openapi가 아니면 거부한다', () => {
+  const withoutContract = workspace((value) => {
+    const spec = member(value, 'server-spec');
+    member(value, 'server').documents.push(...spec.documents);
+    value.context.members = value.context.members.filter((entry: any) => entry.name !== 'server-spec');
+    delete value.context.links[0].contract;
+  });
+  assert.deepEqual(withoutContract.gaps, []);
+  assert.deepEqual(withoutContract.chains[0]?.routes[0]?.contracts.map(({ member: name }) => name), ['server']);
+  assert.throws(() => workspace((value) => {
+    member(value, 'server-spec').documents.push('server/db.sql.json');
+    member(value, 'server').documents = member(value, 'server').documents.filter((path: string) => path !== 'server/db.sql.json');
+    value.context.links[0].contract.documents = ['server/db.sql.json'];
+  }), /contract documents must be openapi/);
+});
+
+test('link에 해당 역할로 속하지 않은 member의 http 문서와 member별 persistence 공백을 gap으로 남긴다', () => {
+  const result = workspace((value) => {
+    const web = structuredClone(value.files['client/ios.http.json']);
+    web.project = '/work/example-web';
+    web.platform = 'js';
+    value.files['web/web.http.json'] = web;
+    value.context.members.push({ name: 'web', project: '/work/example-web', revision: 'web-1', documents: ['web/web.http.json'] });
+    delete value.context.links[0].contract;
+    member(value, 'server').documents = member(value, 'server').documents.filter((path: string) => path !== 'server/db.sql.json');
+  });
+  assert.deepEqual(result.gaps.filter(({ code }) => code !== 'relation-use-without-decl')
+    .map(({ code, member: name, detail }) => [code, name, detail.slice(0, 30)]), [
+    ['http-member-unlinked', 'web', 'This member has client-role ht'],
+    ['http-member-unlinked', 'server-spec', 'This member has server-role ht'],
+    ['persistence-unscanned', 'server', 'The member lacks a persistence'],
+  ]);
+});
+
+test('workspace 입력이 member 계약을 어기면 부분 결과 없이 거부한다', () => {
+  assert.throws(() => workspace((value) => { value.files['client/ios.http.json'].project = '/work/example-server'; }),
+    (error: unknown) => error instanceof TraceInputError && /member project/.test(error.message));
+  assert.throws(() => workspace((value) => {
+    value.files['client/ios.http.json'] = { ...value.files['client/ios.http.json'], target: 'flutter', roles: undefined,
+      sourceSets: undefined, facts: [{ kind: 'method-invoke', channel: 'c', method: 'm', dynamic: false,
+        location: { path: 'a.dart', line: 1, column: 1 } }], platform: 'dart' };
+  }), /bridge-target documents/);
+  const input = build(workspaceFixture);
+  assert.throws(() => createTraceReport({ ...input, documents: input.documents.slice(1) }), /member document order/);
+  assert.throws(() => createTraceReport({ ...input, analyses: input.analyses.map(({ member: _member, ...rest }) => rest) }),
+    /must belong to a member/);
+  const flat = build(singleFixture);
+  assert.throws(() => createTraceReport({ ...flat, analyses: flat.analyses.map((analysis) => ({ ...analysis, member: 'x' })) }),
+    /single-project analyses must not/);
+});

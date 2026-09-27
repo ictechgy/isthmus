@@ -1,0 +1,111 @@
+{
+  "format": "isthmus-trace-context",
+  "links": [
+    {
+      "client": "client",
+      "contract": {
+        "authoritative": true,
+        "documents": [
+          "server/api.openapi.json"
+        ],
+        "member": "server-spec"
+      },
+      "match": {
+        "baseRefs": [
+          {
+            "ref": "kt:NetworkModule.baseUrl"
+          }
+        ],
+        "hosts": [
+          "api.example.com"
+        ],
+        "services": [
+          "example-api"
+        ]
+      },
+      "name": "mobile->api",
+      "server": "server"
+    }
+  ],
+  "members": [
+    {
+      "analyses": [
+        {
+          "id": "server-forward",
+          "path": "server/server-forward.json",
+          "platform": "js",
+          "role": "forward"
+        },
+        {
+          "id": "server-reverse",
+          "path": "server/server-reverse.json",
+          "platform": "js",
+          "role": "reverse"
+        },
+        {
+          "id": "server-db",
+          "path": "server/db-dependents.json",
+          "platform": "sql",
+          "role": "db-dependents"
+        }
+      ],
+      "catalog": {
+        "graphSha": "c0ffee0000000000000000000000000000000000000000000000000000000001",
+        "source": "server/migrations"
+      },
+      "documents": [
+        "server/server.http.json",
+        "server/server.persistence.json",
+        "server/db.sql.json"
+      ],
+      "name": "server",
+      "project": "/work/example-server",
+      "revision": "srv-7f3c2a1"
+    },
+    {
+      "documents": [
+        "server/api.openapi.json"
+      ],
+      "name": "server-spec",
+      "project": "/work/example-server",
+      "revision": "srv-7f3c2a1"
+    },
+    {
+      "analyses": [
+        {
+          "id": "android-reverse",
+          "path": "client/android-reverse.json",
+          "platform": "kotlin",
+          "role": "reverse"
+        },
+        {
+          "id": "ios-reverse",
+          "path": "client/ios-reverse.change-impact.json",
+          "platform": "swift",
+          "precomputed": {
+            "generatedAt": "2026-09-26T21:00:00Z",
+            "revision": "cli-41d9e0b",
+            "sha256": "f866470979ff97a630434fa39ca37aec0cb51bf983ae15894ebaf3af1bf87879"
+          },
+          "role": "reverse"
+        }
+      ],
+      "documents": [
+        "client/android.http.json",
+        "client/ios.http.json"
+      ],
+      "name": "client",
+      "project": "/work/example-client",
+      "revision": "cli-41d9e0b"
+    }
+  ],
+  "selection": {
+    "relations": [
+      {
+        "member": "server",
+        "name": "orders"
+      }
+    ]
+  },
+  "version": 1
+}
