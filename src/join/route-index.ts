@@ -117,6 +117,11 @@ export class RouteIndex {
   readonly #folded = createNode();
   readonly #rootByLastLiteral = new Map<string, RouteDeclaration[]>();
   readonly #rootOther: RouteDeclaration[] = [];
+  /**
+   * 대소문자 무시 root 선언이다. 마지막 리터럴 색인은 대소문자를 구분하므로 suffix 후보
+   * 계산에서 이 선언은 항상 후보 풀에 넣는다.
+   */
+  readonly #rootCaseInsensitive: RouteDeclaration[] = [];
   readonly #base: RouteDeclaration[] = [];
   readonly #budget: { remaining: number };
 
@@ -133,7 +138,9 @@ export class RouteIndex {
         insert(this.#folded, segments, declaration, true);
       }
       const last = declaration.segments.at(-1)!;
-      if (last.kind === 'literal') {
+      if (declaration.caseInsensitive) {
+        this.#rootCaseInsensitive.push(declaration);
+      } else if (last.kind === 'literal') {
         const bucket = this.#rootByLastLiteral.get(last.value) ?? [];
         bucket.push(declaration);
         this.#rootByLastLiteral.set(last.value, bucket);
@@ -208,11 +215,13 @@ export class RouteIndex {
     const pool = [
       ...(last.kind === 'literal' ? this.#rootByLastLiteral.get(last.value) ?? [] : allValues(this.#rootByLastLiteral)),
       ...this.#rootOther,
+      ...this.#rootCaseInsensitive,
     ];
     for (const declaration of pool) {
       for (let offset = 0; offset < declaration.segments.length; offset++) {
         this.#spend();
-        const candidate = evaluateSegments(declaration, declaration.segments.slice(offset), probe.segments, false, offset);
+        const candidate = evaluateSegments(declaration, declaration.segments.slice(offset), probe.segments,
+          declaration.caseInsensitive, offset);
         if (candidate !== undefined) {
           addSuffix(collection, { ...candidate, suffix: true });
           break;
@@ -233,7 +242,8 @@ export class RouteIndex {
       if (!hasLiteral(declaration.segments)) continue;
       for (let offset = 0; offset < probe.segments.length; offset++) {
         this.#spend();
-        const candidate = evaluateSegments(declaration, declaration.segments, probe.segments.slice(offset), false);
+        const candidate = evaluateSegments(declaration, declaration.segments, probe.segments.slice(offset),
+          declaration.caseInsensitive);
         if (candidate !== undefined) {
           addSuffix(collection, { ...candidate, suffix: true });
           break;
