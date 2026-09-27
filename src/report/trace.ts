@@ -342,7 +342,7 @@ class TraceBuilder {
       // 테스트 소스 decl만 있는 경우는 test-source-omitted가 이미 밝힌다. 계약만 있는 route만 여기서 남긴다.
       // found의 scope에는 decl이나 contract가 있으므로 decl이 없으면 계약만 있는 route다.
       if (!this.hasDecl(routeScope, method, template)) {
-        this.gap({ code: 'handler-without-symbol', selector, route: key,
+        this.gap({ code: 'route-contract-only', selector, route: key,
           detail: 'The route is declared only by a contract (no route-decl), so there is no handler to follow.' });
       }
     }
@@ -380,13 +380,19 @@ class TraceBuilder {
         }
       }
     }
+    // dynamic 사용은 원문 식이 이름이 아니라 어느 relation을 가리키는지 모른다. hop으로 싣지 않고 모두 gap으로 밝힌다.
+    const dynamicUses = this.uses.filter((use) => use.fact.dynamic);
+    for (const use of dynamicUses) this.useOutcomeGap(selector, use);
     if (outcome.status === 'missing') {
       this.gap({ code: 'relation-without-decl', selector,
         detail: 'No relation-decl matches this name, so no schema vertex or database dependents can be followed.' });
       if (uses.length === 0) return [];
     } else if (uses.length === 0) {
       this.gap({ code: 'relation-without-use', selector,
-        detail: 'No relation-use of this relation was observed in the scanned code; this is not evidence that no code uses it.' });
+        detail: dynamicUses.length === 0
+          ? 'No relation-use of this relation was observed in the scanned code; this is not evidence that no code uses it.'
+          : `No literal relation-use of this relation was observed; ${dynamicUses.length} relation use(s) with a `
+            + 'non-literal name may refer to it.' });
     }
     const hops = new Map<string, MutableUse>();
     const starts: StartSymbol[] = [];
@@ -546,18 +552,18 @@ class TraceBuilder {
 
   /** 조인하지 못한 relation-use를 gap으로 남긴다. */
   private useOutcomeGap(selector: TraceSelector, use: UseRecord): void {
-    const detail = {
+    const gap = {
       resolved: undefined,
-      missing: 'The relation use has no matching relation-decl, so no schema vertex can be followed.',
-      ambiguous: 'The unqualified relation use matches several declarations; no schema vertex is guessed.',
-      'column-missing': 'The column use has no matching column declaration, so no column vertex can be followed.',
+      missing: ['relation-use-without-decl', 'The relation use has no matching relation-decl, so no schema vertex can be followed.'],
+      ambiguous: ['relation-use-ambiguous', 'The unqualified relation use matches several declarations; no schema vertex is guessed.'],
+      'column-missing': ['column-use-without-decl',
+        'The column use has no matching column declaration, so no column vertex can be followed.'],
     }[use.outcome];
     if (use.fact.dynamic) {
       this.gap({ code: 'dynamic-relation-use', selector, evidence: use.endpoint,
         detail: 'The relation use has a non-literal name and was not joined.' });
-    } else if (detail !== undefined) {
-      this.gap({ code: use.outcome === 'ambiguous' ? 'relation-use-ambiguous' : 'relation-use-without-decl',
-        selector, evidence: use.endpoint, detail });
+    } else if (gap !== undefined) {
+      this.gap({ code: gap[0]!, selector, evidence: use.endpoint, detail: gap[1]! });
     }
   }
 
@@ -622,6 +628,9 @@ class TraceBuilder {
       if (revision !== undefined && graph.revision === undefined) {
         this.gap({ code: 'analysis-revision-unknown', analysis: id,
           detail: 'The trace context declares a revision but this analysis carries none, so its freshness is unverified.' });
+      } else if (revision === undefined && graph.revision === undefined && revisions.size > 0) {
+        this.gap({ code: 'analysis-revision-unknown', analysis: id,
+          detail: 'Other analyses carry a revision but this one has none, so they cannot be checked against each other.' });
       } else if (graph.revision !== undefined && (revision === undefined ? revisions.size > 1 : graph.revision !== revision)) {
         this.gap({ code: 'stale-analysis', analysis: id,
           detail: 'This analysis revision differs from the trace context revision or from other analyses.' });

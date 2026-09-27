@@ -175,7 +175,7 @@ test('계약만 있는 route와 없는 route는 핸들러를 만들지 않고 ga
     value.context.documents.push('openapi.json');
     value.context.selection = { routes: [{ method: 'GET', template: '/api/health' }] };
   });
-  assert.deepEqual(codes(contract), ['handler-without-symbol']);
+  assert.deepEqual(codes(contract), ['route-contract-only']);
   assert.equal(contract.chains[0]?.routes[0]?.contracts.length, 1);
   const missing = report(select({ routes: [{ method: 'GET', template: '/nope' }, { method: 'GET', template: '/api/users/{}', scope: 'x' }] }));
   assert.deepEqual(codes(missing), ['route-without-decl']);
@@ -235,6 +235,13 @@ test('revision이 context나 서로와 다르면 stale-analysis다', () => {
   assert.deepEqual(codes(noContext), ['stale-analysis']);
   assert.equal(noContext.gaps.length, 4);
   assert.deepEqual(codes(report((value) => { delete value.context.revision; })), []);
+  const partial = report((value) => {
+    delete value.context.revision;
+    delete value.analyses['server-forward'].revision;
+  });
+  assert.deepEqual(codes(partial), ['analysis-revision-unknown']);
+  assert.equal(partial.gaps[0]?.analysis, 'server-forward');
+  assert.match(partial.gaps[0]!.detail, /other analyses/i);
   const graphs = report((value) => {
     const other = structuredClone(value.analyses.db);
     other.graphRevision = 'catalog-2';
@@ -317,8 +324,8 @@ test('조인하지 못한 relation-use와 모호한 선택은 hop 대신 gap이�
       { ...base, method: 'nickname', location: { path: 'server/db/users.ts', line: 8, column: 1 } },
       { ...base, channel: 'tableFor(kind)', dynamic: true, location: { path: 'server/db/users.ts', line: 9, column: 1 } });
   });
-  assert.deepEqual(codes(unjoined), ['dynamic-relation-use', 'relation-use-without-decl']);
-  assert.equal(unjoined.gaps.filter(({ code }) => code === 'relation-use-without-decl').length, 2);
+  assert.deepEqual(codes(unjoined), ['column-use-without-decl', 'dynamic-relation-use', 'relation-use-without-decl']);
+  assert.equal(unjoined.gaps.filter(({ code }) => code === 'relation-use-without-decl').length, 1);
   assert.ok(unjoined.chains[0]?.relationUses.every(({ relation }) => relation !== 'tableFor(kind)'));
   const ambiguous = (selection: unknown) => report((value) => {
     value.docs.sql.facts.push({ kind: 'relation-decl', channel: 'audit.users', dynamic: false,
@@ -331,6 +338,20 @@ test('조인하지 못한 relation-use와 모호한 선택은 hop 대신 gap이�
   assert.deepEqual(codes(qualified), ['relation-use-ambiguous', 'relation-without-use']);
   assert.deepEqual(qualified.chains[0]?.database.map(({ vertex }) => vertex), ['main.users']);
   assert.ok(codes(ambiguous({ routes: [{ method: 'GET', template: '/api/users/{}' }] })).includes('relation-use-ambiguous'));
+});
+
+test('relation 선택도 dynamic 사용을 gap으로 밝히고 사용 없음 문구를 약하게 쓴다', () => {
+  const result = report((value) => {
+    value.docs.persistence.facts.push({ ...value.docs.persistence.facts[0], channel: 'tableFor(kind)', dynamic: true,
+      location: { path: 'server/db/users.ts', line: 9, column: 1 } });
+    value.docs.sql.facts.push({ kind: 'relation-decl', channel: 'main.unused', dynamic: false,
+      symbol: { qualifiedName: 'main.unused', usr: 'main.unused' } });
+    value.context.selection = { relations: ['main.unused'] };
+  });
+  assert.deepEqual(codes(result), ['analysis-missing', 'dynamic-relation-use', 'relation-without-use']);
+  assert.equal(result.gaps.find(({ code }) => code === 'dynamic-relation-use')?.evidence?.location?.line, 9);
+  assert.match(result.gaps.find(({ code }) => code === 'relation-without-use')!.detail, /1 relation use\(s\) with a non-literal name/);
+  assert.deepEqual(result.chains[0]?.relationUses, []);
 });
 
 test('선언이나 사용이 없는 relation 선택은 없음이 아니라 gap이다', () => {

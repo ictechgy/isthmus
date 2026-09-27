@@ -51,7 +51,8 @@ isthmus trace trace-context.json [--strict] [--compact]
   `language-traversal` v1, 그리고 역할별 옛 형식([어댑터 표](LANGUAGE-TRAVERSAL.md#옛-형식-어댑터-trace)).
   같은 역할·플랫폼·root id의 분석이 여럿이면 합치고, 같은 정점은 한 근거만 싣는다.
 - `revision`(선택): 분석의 `revision`과 비교한다. 다르면 `stale-analysis`, 분석에 없으면
-  `analysis-revision-unknown`이다. context에 없으면 분석끼리 다를 때만 `stale-analysis`다. 같은
+  `analysis-revision-unknown`이다. context에 없으면 분석끼리 다를 때 `stale-analysis`, 일부 분석에만
+  revision이 있으면 없는 쪽이 `analysis-revision-unknown`이다. 같은
   플랫폼 분석의 `graphRevision`이 다르면 역시 `stale-analysis`다.
 - `selection`: 정확히 하나. 목록은 1~1,000개이고 중복은 거부한다.
   - `routes: [{method, template, scope?}]` — method는 동사 또는 `ANY`, template은 정규 경로 템플릿
@@ -118,7 +119,8 @@ isthmus trace trace-context.json [--strict] [--compact]
 | 코드 | 뜻 |
 |---|---|
 | `route-without-decl` | 선택한 (method, template)과 정확히 같은 route-decl·route-contract가 선택 scope에 없다 |
-| `handler-without-symbol` | route-decl에 `symbol.usr`가 없거나, route가 contract로만 선언돼 핸들러가 없다 |
+| `handler-without-symbol` | route-decl에 `symbol.usr`가 없다 |
+| `route-contract-only` | route가 contract로만 선언돼 따라갈 핸들러가 없다 |
 | `relation-use-without-symbol` | relation-use에 `symbol.usr`가 없다(route 선택은 플랫폼별 개수, relation 선택은 사실별 증거) |
 | `relation-decl-without-symbol` | relation-decl에 VertexId(`symbol.usr`)가 없다 |
 | `call-without-symbol` | 귀속된 route-call에 `symbol.usr`가 없다 |
@@ -126,7 +128,7 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `analysis-truncated` | 분석이 잘렸거나(`truncationReasons` 포함), root 귀속 64개 상한 때문에 이 root의 도달이 빠졌을 수 있다 |
 | `roots-provenance-partial` | 옛 형식의 다중 root 분석이라 root 출처를 대표 root 하나로만 안다 |
 | `stale-analysis` | 분석 revision이 context나 다른 분석과 다르거나, 같은 플랫폼 분석의 graphRevision이 다르다 |
-| `analysis-revision-unknown` | context가 revision을 선언했는데 분석에 revision이 없다 |
+| `analysis-revision-unknown` | context가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다 |
 | `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전) |
 | `unattributed-calls-omitted` | 이 scope를 불렀을 수 있는 귀속되지 않은 호출 수. 경로·host는 싣지 않는다 |
 | `dynamic-route-calls` | 이 scope에 귀속됐지만 템플릿이 리터럴이 아니라 매칭하지 못한 호출 수 |
@@ -135,12 +137,13 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `http-clients-unscanned` | 이 scope에 닿을 수 있는 client roles 문서가 없다 |
 | `http-server-unscanned` | 역방향 선택인데 route-decl을 스캔한 server 문서가 없다 |
 | `persistence-unscanned` | persistence 호출 측 문서나 sql 선언 문서가 없다 |
-| `relation-use-without-decl` | 닿은 relation-use(또는 컬럼 사용)가 선언과 조인되지 않았다 |
+| `relation-use-without-decl` | 닿은 relation-use가 선언과 조인되지 않았다 |
+| `column-use-without-decl` | 관계는 해석됐지만 컬럼 사용에 맞는 컬럼 선언이 없다 |
 | `relation-use-ambiguous` | 비한정 relation-use가 여러 선언 후보와 맞는다 |
-| `dynamic-relation-use` | 닿은 relation-use의 이름이 리터럴이 아니다(원문은 증거로만) |
+| `dynamic-relation-use` | relation-use의 이름이 리터럴이 아니다(원문은 증거로만). route 선택은 닿은 것만, relation 선택은 어느 relation을 가리키는지 모르므로 문서의 모든 dynamic 사용을 싣는다 |
 | `relation-selection-ambiguous` | 선택한 relation 이름이 여러 선언과 맞는다 |
 | `relation-without-decl` | 선택한 relation의 선언이 없다 |
-| `relation-without-use` | 선택한 relation의 사용이 관찰되지 않았다(없다는 증거가 아님) |
+| `relation-without-use` | 선택한 relation의 리터럴 사용이 관찰되지 않았다(없다는 증거가 아님). dynamic 사용이 있으면 문구에 그 수를 싣는다 |
 
 gap은 `selector`(체인)·`route`·`symbol`·`analysis`·`evidence` 중 해당하는 필드를 싣는다. 귀속되지 않은
 호출은 어떤 gap에도 경로·host·심볼을 싣지 않고 개수만 싣는다.
