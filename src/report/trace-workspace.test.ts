@@ -8,7 +8,7 @@ import { createTraceReport, hasTraceGaps, TraceInputError, type TraceInput, type
 import { encodeSortedJson } from './sorted-json.ts';
 
 /**
- * workspace trace — 분리된 두 저장소(서버·클라이언트) 합성 fixture다.
+ * workspace trace — 분리된 두 저장소(서버·클라이언트) 합성 fixture와 gap 코드 전수 음성 fixture다.
  *
  * `fixtures/trace-workspace/server`는 TS 서버(route-decl·relation-use)와 schemagraph 흉내 sql 카탈로그를,
  * `client`는 Kotlin·Swift 호출부와 역방향 분석(iOS는 macOS CI가 미리 계산한 change-impact artifact)을 담는다.
@@ -263,4 +263,118 @@ test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분�
   assert.deepEqual(flat.chains[0]?.routes.map(({ template }) => template), ['/api/users', '/api/users/{}']);
   assert.deepEqual(flat.chains[0]?.relationUses.map(({ relation, column }) => [relation, column]),
     [['users', undefined], ['users', 'email']]);
+});
+
+/** TRACE.md gap 표의 코드 목록이다. 문서와 음성 fixture 목록이 어긋나면 이 테스트가 실패한다. */
+const documentedCodes = (await readFile(new URL('../../docs/TRACE.md', import.meta.url), 'utf8'))
+  .split('\n').flatMap((line) => /^\| `([a-z-]+)` \|/u.exec(line)?.[1] ?? []).sort();
+
+/** gap 코드마다 그 코드를 기대대로 내는 음성 fixture다. */
+const gapFixtures: Record<string, () => TraceReport> = {
+  'route-without-decl': () => single(select({ routes: [{ method: 'GET', template: '/nope' }] })),
+  'handler-without-symbol': () => single((value) => { delete value.files['server.http.json'].facts[0].symbol; }),
+  'route-contract-only': () => workspace((value) => {
+    const spec = value.files['server/api.openapi.json'];
+    spec.facts.push({ ...spec.facts[0], channel: '/api/orders', location: { path: 'openapi.yaml', line: 50, column: 5 },
+      symbol: { qualifiedName: 'listOrders' } });
+    value.context.selection = { routes: [{ method: 'GET', template: '/api/orders' }] };
+  }),
+  'relation-use-without-symbol': () => single((value) => { delete value.files['server.persistence.json'].facts[0].symbol; }),
+  'relation-decl-without-symbol': () => single((value) => { delete value.files['db.sql.json'].facts[0].symbol.usr; }),
+  'call-without-symbol': () => single((value) => { delete value.files['android.http.json'].facts[0].symbol; }),
+  'analysis-missing': () => workspace((value) => { member(value, 'client').analyses.shift(); }),
+  'analysis-truncated': () => single((value) => {
+    Object.assign(value.files['server-forward.json'], { truncated: true, truncationReasons: ['depth'] });
+  }),
+  'witness-partial': () => single((value) => {
+    const db = value.files['db-dependents.json'];
+    db.roots.push({ id: 'main.orders', symbol: { usr: 'main.orders' } });
+    db.reached = [
+      { symbol: { usr: 'main.audit_view' }, via: 'main.users', depth: 1, roots: [0] },
+      { symbol: { usr: 'main.v' }, via: 'main.orders', depth: 1, roots: [0, 2] },
+      { symbol: { usr: 'main.orders' }, via: 'main.v', depth: 3, roots: [0] },
+    ];
+  }),
+  'roots-provenance-partial': () => workspace((value) => {
+    value.files['client/ios-reverse.change-impact.json'].changeScope.push({ usr: 's:OrdersClient.create', qualifiedName: 'create' });
+  }),
+  'candidate-dispatch': () => single((value) => {
+    const forward = value.files['server-forward.json'];
+    forward.dispatch = 'candidates';
+    forward.reached.find(({ symbol }: any) => symbol.usr === 'ts:repo/users.findById').evidence = 'candidate';
+  }),
+  'reach-possibly-incomplete': () => single((value) => { value.files['server-forward.json'].roots[1].unresolvedCalls = 2; }),
+  'reach-completeness-unknown': () => single((value) => { delete value.files['server-forward.json'].dispatch; }),
+  'stale-analysis': () => workspace((value) => { value.files['server/server-reverse.json'].revision = 'srv-old'; }),
+  'analysis-revision-unknown': () => single((value) => { delete value.files['android-reverse.json'].revision; }),
+  'non-http-entry': () => workspace(select({ symbols: [{ member: 'server', platform: 'js', usr: 'ts:jobs/purge.run' }] })),
+  'unattributed-calls-omitted': () => workspace((value) => { value.context.links[0].match.services = ['other-api']; }),
+  'dynamic-route-calls': () => single((value) => {
+    value.files['android.http.json'].facts.push({ kind: 'route-call', method: 'GET', channel: 'base + path', dynamic: true,
+      pathAnchor: 'root', location: { path: 'android/D.kt', line: 1, column: 1 } });
+  }),
+  'ambiguous-route-call': () => single((value) => {
+    value.files['server.http.json'].facts.push(
+      { kind: 'route-decl', method: 'GET', channel: '/f/a{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'server/f.ts', line: 1, column: 1 }, symbol: { qualifiedName: 'f.a', usr: 'ts:f.a' } },
+      { kind: 'route-decl', method: 'GET', channel: '/f/{}b', dynamic: false, pathAnchor: 'root',
+        location: { path: 'server/f.ts', line: 2, column: 1 }, symbol: { qualifiedName: 'f.b', usr: 'ts:f.b' } });
+    value.files['android.http.json'].facts.push({ kind: 'route-call', method: 'GET', channel: '/f/axb', dynamic: false,
+      pathAnchor: 'root', location: { path: 'android/F.kt', line: 1, column: 1 }, symbol: { qualifiedName: 'F.get', usr: 'kt:F.get' } });
+    value.context.selection = { routes: [{ method: 'GET', template: '/f/a{}' }] };
+  }),
+  'test-source-omitted': () => single((value) => {
+    value.files['android.http.json'].sourceSets = { tests: 'included' };
+    value.files['android.http.json'].facts[0].testSource = true;
+  }),
+  'http-clients-unscanned': () => workspace((value) => {
+    member(value, 'client').documents = [];
+    member(value, 'client').documents.push('client/ios.http.json');
+    value.files['client/ios.http.json'].roles = ['server'];
+    value.files['client/ios.http.json'].facts = [];
+  }),
+  'http-server-unscanned': () => single((value) => {
+    value.context.documents = value.context.documents.filter((path: string) => path !== 'server.http.json');
+    value.context.selection = { relations: ['users'] };
+  }),
+  'persistence-unscanned': () => workspace((value) => {
+    member(value, 'server').documents = member(value, 'server').documents.filter((path: string) => path !== 'server/db.sql.json');
+  }),
+  'relation-use-without-decl': () => single((value) => {
+    const base = value.files['server.persistence.json'].facts[0];
+    value.files['server.persistence.json'].facts.push({ ...base, channel: 'ghosts', location: { path: 'server/db/users.ts', line: 7, column: 1 } });
+  }),
+  'column-use-without-decl': () => single((value) => {
+    const base = value.files['server.persistence.json'].facts[0];
+    value.files['server.persistence.json'].facts.push({ ...base, method: 'nickname', location: { path: 'server/db/users.ts', line: 8, column: 1 } });
+  }),
+  'relation-use-ambiguous': () => single((value) => {
+    value.files['db.sql.json'].facts.push({ kind: 'relation-decl', channel: 'audit.users', dynamic: false,
+      symbol: { qualifiedName: 'audit.users', usr: 'audit.users' } });
+  }),
+  'dynamic-relation-use': () => workspace((value) => {
+    const persistence = value.files['server/server.persistence.json'];
+    persistence.facts.push({ ...persistence.facts[0], channel: 'tableFor(kind)', dynamic: true,
+      location: { path: 'src/db/orders.ts', line: 30, column: 1 } });
+  }),
+  'relation-selection-ambiguous': () => single((value) => {
+    value.files['db.sql.json'].facts.push({ kind: 'relation-decl', channel: 'audit.users', dynamic: false,
+      symbol: { qualifiedName: 'audit.users', usr: 'audit.users' } });
+    value.context.selection = { relations: ['users'] };
+  }),
+  'relation-without-decl': () => workspace(select({ relations: [{ member: 'server', name: 'ghosts' }] })),
+  'relation-without-use': () => workspace(select({ relations: [{ member: 'server', name: 'order_items' }] })),
+  'file-selection-coarse': () => workspace(select({ files: [{ member: 'server', path: 'src/routes/orders.ts' }] })),
+  'file-without-symbols': () => single(select({ files: ['docs/README.md'] })),
+  'http-member-unlinked': () => workspace((value) => { value.context.links = []; }),
+};
+
+test('TRACE.md의 모든 gap 코드에 그 코드를 내는 음성 fixture가 있다', () => {
+  assert.deepEqual(Object.keys(gapFixtures).sort(), documentedCodes);
+  assert.ok(documentedCodes.length >= 33);
+  for (const [code, produce] of Object.entries(gapFixtures)) {
+    const result = produce();
+    assert.ok(result.gaps.some((gap) => gap.code === code), `${code}: ${codes(result).join(', ')}`);
+    assert.equal(hasTraceGaps(result), true, code);
+  }
 });

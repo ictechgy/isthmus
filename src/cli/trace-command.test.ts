@@ -163,7 +163,7 @@ async function runProcess(args: readonly string[]): Promise<{ code: number; stdo
 /** workspace fixture 전체를 임시 디렉터리에 복사하고 변형한다(분리된 두 저장소 배치 그대로). */
 async function copyWorkspace(mutate: (files: Map<string, string>) => void): Promise<string> {
   const directoryPath = await mkdtemp(join(tmpdir(), 'isthmus-trace-workspace-'));
-  const names = ['context.json', 'context-relation.json',
+  const names = ['context.json', 'context-relation.json', 'context-files.json',
     ...['server.http.json', 'api.openapi.json', 'server.persistence.json', 'db.sql.json', 'server-forward.json',
       'server-reverse.json', 'db-dependents.json'].map((name) => `server/${name}`),
     ...['android.http.json', 'ios.http.json', 'android-reverse.json', 'ios-reverse.change-impact.json'].map((name) => `client/${name}`)];
@@ -203,6 +203,37 @@ test('사전 계산 artifact의 sha256이 선언과 다르면 부분 결과 없�
     assert.equal(result.code, 2);
     assert.equal(result.stdout, '');
     assert.match(result.stderr, /Trace analysis 5 does not match its precomputed sha256/);
+  } finally {
+    await rm(directoryPath, { recursive: true, force: true });
+  }
+});
+
+test('--strict 종료 코드: gap 없음 0, gap 있음 1(보고서 그대로), strict 없으면 0, 파일 선택은 항상 1, 입력 오류 2, 사용 오류 64', async () => {
+  const directoryPath = await copyWorkspace((texts) => {
+    const context = JSON.parse(texts.get('context.json')!);
+    context.links[0].match.services = ['other-api'];
+    texts.set('context-gap.json', JSON.stringify(context));
+    texts.set('context-broken.json', JSON.stringify({ ...context, links: [{ ...context.links[0], client: 'nobody' }] }));
+  });
+  try {
+    const at = (name: string) => join(directoryPath, name);
+    const clean = await runProcess(['trace', at('context.json'), '--strict']);
+    assert.deepEqual([clean.code, clean.stderr], [0, '']);
+    const gap = await runProcess(['trace', at('context-gap.json'), '--strict']);
+    assert.equal(gap.code, 1);
+    assert.match(gap.stderr, /Trace has gaps/);
+    const gapReport = JSON.parse(gap.stdout);
+    assert.deepEqual(gapReport.gaps.map(({ code }: any) => code), ['unattributed-calls-omitted']);
+    const lenient = await runProcess(['trace', at('context-gap.json')]);
+    assert.deepEqual([lenient.code, lenient.stderr, lenient.stdout], [0, '', gap.stdout]);
+    const files = await runProcess(['trace', at('context-files.json'), '--strict', '--compact']);
+    assert.equal(files.code, 1);
+    assert.deepEqual(JSON.parse(files.stdout).gaps.map(({ code }: any) => code), ['file-selection-coarse']);
+    assert.equal((await runProcess(['trace', at('context-files.json')])).code, 0);
+    const broken = await runProcess(['trace', at('context-broken.json'), '--strict']);
+    assert.deepEqual([broken.code, broken.stdout], [2, '']);
+    assert.match(broken.stderr, /link client and server must name members/);
+    assert.equal((await runProcess(['trace', '--strict'])).code, 64);
   } finally {
     await rm(directoryPath, { recursive: true, force: true });
   }
