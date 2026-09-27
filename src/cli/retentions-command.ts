@@ -17,6 +17,7 @@ import {
   inputFailureResult,
   internalError,
   readBridgeInputs,
+  rejectHttpDocuments,
   type Clock,
   type CommandResult,
   type ReadTextFile,
@@ -37,6 +38,7 @@ export async function runRetentionsCommand(
   const { inputPaths, target } = options;
   try {
     const { bridges, messages } = await readBridgeInputs(inputPaths, readTextFile);
+    rejectHttpDocuments(bridges, 'Retentions');
     const project = bridges[0]?.project ?? messages[0]!.project;
     const joined = bridges.length > 0
       ? joinBridgeDocuments(bridges)

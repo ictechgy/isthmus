@@ -237,6 +237,21 @@ export function inputFailureResult(error: unknown): CommandResult | undefined {
   return undefined;
 }
 
+/**
+ * http 도메인을 아직 소비하지 않는 명령이 http 문서를 받으면 원인을 밝혀 거부한다.
+ *
+ * 그대로 조인하면 http 사실은 결과에 나타나지 않은 채 빈 정상 결과처럼 읽힌다. openapi
+ * 문서는 사실이 0건(target null)이어도 http 계약 측이라 함께 거부한다.
+ */
+export function rejectHttpDocuments(documents: readonly BridgeFactsDocument[], command: string): void {
+  if (documents.some(({ target, platform }) => target === 'http' || platform === 'openapi')) {
+    throw new BridgeJoinValidationError(
+      `${command} does not support http documents yet; remove http-target and openapi documents `
+      + 'from the inputs, or use check or query for the http domain.',
+    );
+  }
+}
+
 /** 원인 메시지만 stdout 없이 코드 2로 내보낸다. */
 export function inputFailure(standardError: string): CommandResult {
   return { standardOutput: '', standardError, exitCode: 2 };

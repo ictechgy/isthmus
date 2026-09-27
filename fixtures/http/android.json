@@ -1,0 +1,112 @@
+{
+  "facts": [
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 21,
+        "path": "app/src/main/java/example/ItemsApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemsApi.list",
+        "usr": "kt:ItemsApi.list"
+      }
+    },
+    {
+      "channel": "/api/v1/items/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 25,
+        "path": "app/src/main/java/example/ItemsApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemsApi.get",
+        "usr": "kt:ItemsApi.get"
+      }
+    },
+    {
+      "channel": "/api/v1/items/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 29,
+        "path": "app/src/main/java/example/ItemsApi.kt"
+      },
+      "method": "PUT",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemsApi.update",
+        "usr": "kt:ItemsApi.update"
+      }
+    },
+    {
+      "channel": "/api/v1/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 14,
+        "path": "app/src/main/java/example/OrdersApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.list",
+        "usr": "kt:OrdersApi.list"
+      }
+    },
+    {
+      "channel": "/files",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 9,
+        "path": "app/src/main/java/example/FilesApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root"
+    },
+    {
+      "authority": "hooks.example.com",
+      "channel": "/services/{}/{}/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 7,
+        "path": "app/src/main/java/example/Alerts.kt"
+      },
+      "maskedSegments": 3,
+      "method": "POST",
+      "pathAnchor": "root",
+      "service": "third-party-hooks"
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-http",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

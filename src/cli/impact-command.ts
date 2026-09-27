@@ -7,7 +7,7 @@ import { createBridgeImpact, encodeBridgeImpact, hasImpactBlockers } from '../re
 import type { ImpactRuntimeInput } from '../report/runtime-impact.ts';
 import {
   inputFailure, inputFailureResult, internalError, isJsonParseFailure,
-  MAX_INPUT_TEXT_LENGTH, readBridgeDocuments,
+  MAX_INPUT_TEXT_LENGTH, readBridgeDocuments, rejectHttpDocuments,
 } from './command-support.ts';
 import type { CommandResult, ReadTextFile } from './command-support.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
@@ -54,6 +54,7 @@ export async function runImpactCommand(
       runtime = { document: loaded.document, revision };
     }
     const documents = await readBridgeDocuments(parsed.positionals, readTextFile, supplementalTextLength);
+    rejectHttpDocuments(documents, 'Impact');
     const report = createBridgeImpact(documents, selection, runtime);
     const blocked = parsed.booleanFlags.has('--strict') && hasImpactBlockers(report);
     return {

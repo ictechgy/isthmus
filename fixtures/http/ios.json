@@ -1,0 +1,59 @@
+{
+  "facts": [
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 40,
+        "path": "Sources/Network/ItemsEndpoint.swift"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemsEndpoint.list",
+        "usr": "s:ItemsEndpoint.list"
+      }
+    },
+    {
+      "channel": "/api/v1/items",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 44,
+        "path": "Sources/Network/ItemsEndpoint.swift"
+      },
+      "method": "POST",
+      "pathAnchor": "root"
+    },
+    {
+      "channel": "\"/api/v1/items/search\" + suffix",
+      "channelPrefix": "/api/v1/items/search",
+      "dynamic": true,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 52,
+        "path": "Sources/Network/ItemsEndpoint.swift"
+      },
+      "method": "GET",
+      "pathAnchor": "root"
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "swift",
+  "project": "/work/example",
+  "roles": [
+    "client"
+  ],
+  "target": "http",
+  "tool": {
+    "name": "synthetic-http",
+    "version": "0.0.0"
+  },
+  "version": 1
+}
