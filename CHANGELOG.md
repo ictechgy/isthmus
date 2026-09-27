@@ -14,7 +14,7 @@
   조인·귀속은 check와 같은 코드(`check --pairs` 투영 포함)를 재사용하고, 한쪽 측만 있어도 조인하되 빠진
   측은 gap으로 밝힌다(조인에 `composition: "trace"` 선택 사항 추가, 기존 명령은 그대로). 결과는 항상
   `complete: false`이고 출력의 모든 id는 생산자 문자열이며, 귀속되지 않은 호출은 개수만 싣는다. gap 코드
-  27종(`handler-without-symbol`·`relation-use-without-symbol`·`route-without-decl`·`analysis-missing`·
+  30종(`handler-without-symbol`·`relation-use-without-symbol`·`route-without-decl`·`analysis-missing`·
   `analysis-truncated`·`stale-analysis`·`non-http-entry`·`unattributed-calls-omitted` 등)과 `--strict`(gap이
   있으면 1). workspace 매니페스트는 Phase 3 원인으로 거부하고 MCP에는 노출하지 않는다([TRACE](docs/TRACE.md)).
 - **[`language-traversal` v1 계약](docs/LANGUAGE-TRAVERSAL.md)과 fail-closed 파서**: 정방향·역방향 순회,
@@ -23,6 +23,18 @@
   테이블끼리의 FK 의존자가 사라지지 않게 하기 위해서다). root 항목의 depth는 기준값이고 via는 그 root를
   거쳐 돌아올 수 있는 목격이라 depth 관계를 검사하지 않으며, trace는 순환 목격을 `witness-partial`로 표시한다. trace는 새 형식을
   우선하고 `schemagraph-impact` v1과 preflight의 kartograph·cartograph·dartograph 어댑터를 대체 경로로 공유한다.
+- **`language-traversal` v1 선택 필드 — 근거 등급과 잇지 못한 호출**: DI dispatch를 해석하는 생산자(tsograph)를 위해
+  문서 `dispatch`(생산자 표식), `reached[].evidence`(`direct`·`bound`·`candidate`, 나열된 root마다 성립하는 하한),
+  `reached[].unresolvedCalls`·`roots[].unresolvedCalls`(1~1,000,000, 0이면 생략)를 더한다. 파서는 열거값·정수
+  범위와 root 항목의 `unresolvedCalls` 일치를 검사하고, via 사이 등급 관계는 via가 전체 그래프 목격이라 생산자
+  보장으로 둔다. 없는 필드는 문서 단위로 읽는다 — `dispatch`나 필드를 실은 정점이 있으면 신고하는 문서(없는 등급은
+  `direct`, 없는 수는 0), 아니면 sql은 `direct`, 언어 그래프는 `unassessed`, 잇지 못한 호출은 "알 수 없음"이다.
+- **trace 근거 등급·완전성 gap**: 모든 도달 근거(relation-use·핸들러 `reachedFrom`, 클라이언트 `affected`, DB
+  `dependents`)가 `evidence`를 싣고, 같은 정점의 근거가 여럿이면 더 강한 등급을 먼저 고른다. `summary.evidence`에
+  등급별 수, `analyses[]`에 `dispatch`·`evidenceReported`·`unresolvedCallsReported`를 싣는다. 새 gap
+  `candidate-dispatch`(가능성 구현 간선으로만 닿는 hop, hop은 유지), `reach-possibly-incomplete`(핸들러나 그
+  도달 정점에 잇지 못한 호출 — 합계와 예시 id), `reach-completeness-unknown`(정방향 분석이 잇지 못한 호출을 신고하지
+  않음). `bound`는 품질 표시일 뿐 gap이 아니다. 합성 fixture의 TS 순회는 `dispatch: "direct"`를 싣는다.
 
 - **http 도메인 Phase 1(개발 중)**: `check`·`query`가 `target: "http"` 문서를 소비한다.
   platform `openapi`(`route-contract` 전용)와 kind `route-decl`·`route-call`·`route-contract`를
