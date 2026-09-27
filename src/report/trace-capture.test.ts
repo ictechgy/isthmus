@@ -115,6 +115,9 @@ test('도구·member·문서·분석 위반을 거부한다', () => {
   rejects((config) => { config.members = ['x']; }, /member 1 must be an object/u);
   rejects((config) => { config.members[0].extra = 1; }, /member 1 has an unknown field/u);
   rejects((config) => { config.members[0].name = '../x'; }, /needs a name/u);
+  for (const name of ['logs', 'pairs', 'trace.json']) {
+    rejects((config) => { config.members[0].name = name; }, /collides with a capture output entry/u);
+  }
   rejects((config) => { config.members[0].revision = 7; }, /revision must be a string/u);
   rejects((config) => { config.members[0].catalog = { graph: { root: 'work', path: 'g.json' }, extra: 1 }; }, /catalog takes graph/u);
   rejects((config) => { config.members[0].catalog = { graph: { root: 'work', path: 'g.json' } }; }, /workspace trace context/u);

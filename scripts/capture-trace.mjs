@@ -186,7 +186,8 @@ async function isthmusVersion() {
 async function run(session, { step, label, command, args, timeoutSeconds, acceptExitCodes = [0], cwd }) {
   const begin = performance.now();
   const result = await session.execute(command[0], [...command.slice(1), ...args], {
-    cwd: cwd ?? session.output, timeout: timeoutSeconds * 1000, maxBuffer: MAX_CHILD_OUTPUT_BYTES,
+    // SIGTERM을 무시하는 자식이 있어도 시간 제한이 지켜지도록 SIGKILL로 끝낸다.
+    cwd: cwd ?? session.output, timeout: timeoutSeconds * 1000, killSignal: 'SIGKILL', maxBuffer: MAX_CHILD_OUTPUT_BYTES,
     env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0' },
   });
   const milliseconds = Math.round(performance.now() - begin);
@@ -194,7 +195,9 @@ async function run(session, { step, label, command, args, timeoutSeconds, accept
   session.manifest.steps.push(entry);
   let logHint = '';
   if (typeof result.stderr === 'string' && result.stderr.length > 0) {
-    const log = `logs/${step.replace(/[^A-Za-z0-9._-]/gu, '_')}.stderr.txt`;
+    // 단계 순번을 앞에 붙여 이름을 치환한 뒤에도 서로 다른 단계의 로그가 겹치지 않게 한다.
+    const ordinal = String(session.manifest.steps.length).padStart(3, '0');
+    const log = `logs/${ordinal}-${step.replace(/[^A-Za-z0-9._-]/gu, '_')}.stderr.txt`;
     await writeOutput(session.output, log, result.stderr, true);
     entry.stderr = log;
     logHint = `; stderr saved to ${log}`;
@@ -232,7 +235,7 @@ async function gitState(session, directory, step) {
     args: ['-C', directory, 'rev-parse', '--verify', 'HEAD'], timeoutSeconds: GIT_TIMEOUT_SECONDS });
   const revision = head.stdout.trim();
   if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(revision)) throw new CaptureTraceError(step, 'git did not return a commit hash.');
-  const status = await run(session, { step: `${step}-status`, label: 'git status', command: ['git'],
+  const status = await run(session, { step: `${step}:status`, label: 'git status', command: ['git'],
     args: ['-C', directory, '-c', 'core.fsmonitor=false', 'status', '--porcelain', '-z', '--untracked-files=normal'],
     timeoutSeconds: GIT_TIMEOUT_SECONDS });
   return { revision, dirty: status.stdout.length > 0 };
@@ -246,13 +249,13 @@ async function recordTools(session) {
   ]));
   for (const name of [...used].sort()) {
     const tool = session.config.tools[name];
-    const { stdout } = await run(session, { step: `version-${name}`, label: `${name} --version`, command: tool.command,
+    const { stdout } = await run(session, { step: `version:${name}`, label: `${name} --version`, command: tool.command,
       args: ['--version'], timeoutSeconds: 60 });
     const record = { command: tool.command, version: oneLine(stdout) };
-    if (record.version === '') throw new CaptureTraceError(`version-${name}`, `${name} --version printed nothing.`);
+    if (record.version === '') throw new CaptureTraceError(`version:${name}`, `${name} --version printed nothing.`);
     if (tool.source !== undefined) {
-      const source = await resolveExisting(tool.source, session.roots, `version-${name}`);
-      record.source = await gitState(session, source, `source-${name}`);
+      const source = await resolveExisting(tool.source, session.roots, `version:${name}`);
+      record.source = await gitState(session, source, `source:${name}`);
     }
     session.manifest.tools[name] = record;
   }
@@ -289,21 +292,21 @@ function documentTool(value) {
  * 생산자 문서는 bridge-facts 계약으로 즉시 검증해 잘못된 출력을 그 단계 이름으로 알린다.
  */
 async function captureFacts(session, member) {
-  const project = await resolveExisting(member.project, session.roots, `project-${member.name}`);
+  const project = await resolveExisting(member.project, session.roots, `project:${member.name}`);
   let revision = typeof member.revision === 'string' ? member.revision : undefined;
   const record = { name: member.name, project };
   if (member.revision !== undefined && typeof member.revision !== 'string') {
-    const state = await gitState(session, project, `revision-${member.name}`);
+    const state = await gitState(session, project, `revision:${member.name}`);
     revision = state.revision;
     Object.assign(record, { revisionSource: 'git', dirty: state.dirty });
   } else if (revision !== undefined) record.revisionSource = 'config';
   if (revision !== undefined) record.revision = revision;
   if (session.config.workspace && revision === undefined) {
-    throw new CaptureTraceError(`revision-${member.name}`, 'a workspace member needs a revision (a string or {"git": true}).');
+    throw new CaptureTraceError(`revision:${member.name}`, 'a workspace member needs a revision (a string or {"git": true}).');
   }
   let catalog;
   if (member.catalog !== undefined) {
-    const bytes = await readPrecomputed(member.catalog.graph, session, `catalog-${member.name}`);
+    const bytes = await readPrecomputed(member.catalog.graph, session, `catalog:${member.name}`);
     catalog = { graphSha: sha256(bytes), ...(member.catalog.source === undefined ? {} : { source: member.catalog.source }) };
     record.catalog = catalog;
   }
@@ -312,7 +315,7 @@ async function captureFacts(session, member) {
   const documents = [];
   const parsed = [];
   for (const document of member.documents) {
-    const step = `fact-${member.name}-${document.name}`;
+    const step = `fact:${member.name}/${document.name}`;
     const path = capturedDocumentPath(member.name, document.name);
     let content;
     let source;
@@ -364,7 +367,7 @@ async function expandArguments(args, values, session, step) {
  * 싣지 않으므로 root 원천으로는 부분 집합이기 때문이다.
  */
 async function capturePairs(session, member) {
-  const step = `pairs-${member.config.name}`;
+  const step = `pairs:${member.config.name}`;
   const indexes = pairsDocumentIndexes(member.parsed);
   if (indexes.length === 0) {
     session.manifest.steps.push({ step, skipped: 'no domain in this member has both sides (check --pairs would reject it)' });
@@ -393,7 +396,7 @@ async function captureAnalyses(session, member, provisional) {
   const memberName = session.config.workspace ? member.config.name : undefined;
   const ids = new Set(session.config.members.flatMap(({ analyses }) => analyses.map(({ id }) => id)));
   for (const analysis of member.config.analyses) {
-    const step = `analysis-${analysis.id}`;
+    const step = `analysis:${analysis.id}`;
     if (analysis.precomputed !== undefined) {
       await capturePrecomputedAnalysis(session, member, analysis, provisional, step);
       continue;
@@ -420,7 +423,7 @@ async function captureAnalyses(session, member, provisional) {
 
 /** 한 묶음의 root로 생산자 순회 명령을 실행하고 결과를 검증해 기록한다. */
 async function runTraversal(session, member, analysis, id, roots, provisional) {
-  const step = `analysis-${id}`;
+  const step = `analysis:${id}`;
   let rootsFile;
   if (analysis.step.roots === 'roots-from') {
     const relative = `${member.config.name}/roots/${id}.json`;

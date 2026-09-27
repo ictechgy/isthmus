@@ -58,6 +58,8 @@ if (mode === '--version') {
 } else if (mode === 'garbage') {
   process.stdout.write('not json\n');
 } else if (mode === 'hang') {
+  // SIGTERM을 무시해 capture가 SIGKILL로 시간 제한을 지키는지 본다.
+  process.on('SIGTERM', () => {});
   setInterval(() => {}, 1000);
 } else {
   process.stderr.write(`fake producer: unknown mode ${mode}\n`);

@@ -5,6 +5,7 @@ export interface RunChildOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly maxBuffer?: number;
   readonly timeout?: number;
+  readonly killSignal?: NodeJS.Signals;
   readonly stdio?: 'inherit';
 }
 

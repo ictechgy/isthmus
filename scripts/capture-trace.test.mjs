@@ -135,10 +135,10 @@ test('단일 project: 사실·쌍·순회를 모아 참조 trace와 같은 체�
     assert.equal(artifact.bytes, bytes.length);
   }
   assert.equal(manifest.artifacts.find(({ path }) => path.endsWith('android.http.json')).source, 'precomputed');
-  const pairs = manifest.steps.find(({ step }) => step === 'pairs-app');
+  const pairs = manifest.steps.find(({ step }) => step === 'pairs:app');
   assert.deepEqual(pairs.pairs, { http: 2, persistence: 3 });
   assert.ok(existsSync(join(out, 'pairs/app.json')));
-  assert.equal(manifest.steps.find(({ step }) => step === 'analysis-db').roots, 3);
+  assert.equal(manifest.steps.find(({ step }) => step === 'analysis:db').roots, 3);
 });
 
 test('인자는 셸을 거치지 않는다: 셸 메타 문자가 그대로 전달되고 실행되지 않는다', async (t) => {
@@ -215,11 +215,11 @@ test('workspace: member별 사실·순회, 사전 계산 artifact의 sha256, cat
   assert.deepEqual(trace.gaps, []);
   const manifest = JSON.parse(await readFile(join(out, 'capture-manifest.json'), 'utf8'));
   // 서버 member는 persistence 양쪽 측만 있어 그 문서만 check에 넘기고, 한쪽 측뿐인 member는 건너뛴다.
-  const serverPairs = manifest.steps.find(({ step }) => step === 'pairs-server');
+  const serverPairs = manifest.steps.find(({ step }) => step === 'pairs:server');
   assert.deepEqual(serverPairs.pairs, { http: 0, persistence: 2 });
   assert.deepEqual(serverPairs.command.slice(-2).map((path) => path.slice(out.length + 1)),
     ['server/documents/server.persistence.json', 'server/documents/db.sql.json']);
-  for (const step of ['pairs-server-spec', 'pairs-client']) {
+  for (const step of ['pairs:server-spec', 'pairs:client']) {
     assert.match(manifest.steps.find((entry) => entry.step === step).skipped, /both sides/u);
   }
 });
@@ -230,10 +230,10 @@ test('옛 형식 사전 계산 artifact는 revision 증언을 요구하고, 있�
   const legacy = await precomputedCopy(work, 'trace-workspace/client/ios-reverse.change-impact.json', project, 'ios.change-impact.json');
   config.members[0].analyses[3] = { id: 'android-reverse', platform: 'kotlin', role: 'reverse', precomputed: { path: android } };
   config.members[0].analyses.push({ id: 'ios', platform: 'swift', role: 'reverse', precomputed: { path: legacy } });
-  await rejectsAt(captureTrace(config), 'analysis-ios', /precomputed\.revision/u);
+  await rejectsAt(captureTrace(config), 'analysis:ios', /precomputed\.revision/u);
   const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
   assert.equal(manifest.status, 'failed');
-  assert.equal(manifest.failure.step, 'analysis-ios');
+  assert.equal(manifest.failure.step, 'analysis:ios');
 
   config.output = { root: 'work', path: 'out2' };
   config.members[0].analyses[4].precomputed.revision = 'rev-1';
@@ -247,24 +247,24 @@ test('옛 형식 사전 계산 artifact는 revision 증언을 요구하고, 있�
 test('단계마다 실패하면 단계 이름과 명령을 밝히고 stderr는 logs/에만 남긴다', async (t) => {
   const cases = [
     ['version', (config) => { config.members[0].documents[0].tool = 'broken'; config.tools.broken = { command: [process.execPath, fake, 'broken', 'fail', '5'] }; },
-      'version-broken', /broken --version exited with status 5; stderr saved/u],
-    ['fact status', (config) => { config.members[0].documents[0].args = ['fail', '2']; }, 'fact-app-server.http.json',
-      /tsograph fail exited with status 2; stderr saved to logs\/fact-app-server\.http\.json\.stderr\.txt/u],
-    ['fact json', (config) => { config.members[0].documents[1].args = ['garbage']; }, 'fact-app-server.persistence.json',
+      'version:broken', /broken --version exited with status 5; stderr saved/u],
+    ['fact status', (config) => { config.members[0].documents[0].args = ['fail', '2']; }, 'fact:app/server.http.json',
+      /tsograph fail exited with status 2; stderr saved to logs\/\d{3}-fact_app_server\.http\.json\.stderr\.txt/u],
+    ['fact json', (config) => { config.members[0].documents[1].args = ['garbage']; }, 'fact:app/server.persistence.json',
       /did not print a JSON document/u],
     ['fact contract', (config) => { config.members[0].documents[2].args = ['emit', fixture('trace/server-forward.json'), '--project', '{project}']; },
-      'fact-app-db.sql.json', /violates the bridge-facts contract/u],
+      'fact:app/db.sql.json', /violates the bridge-facts contract/u],
     ['fact project', (config) => { config.members[0].documents[2].args = ['emit', fixture('trace/db.sql.json'), '--project', '/elsewhere']; },
-      'fact-app-db.sql.json', /different project/u],
-    ['traversal status', (config) => { config.members[0].analyses[0].args = ['fail', '64']; }, 'analysis-server-forward',
+      'fact:app/db.sql.json', /different project/u],
+    ['traversal status', (config) => { config.members[0].analyses[0].args = ['fail', '64']; }, 'analysis:server-forward',
       /tsograph fail exited with status 64/u],
     ['traversal roots', (config) => { config.members[0].analyses[0].args = ['traverse', fixture('trace/server-reverse.json'), '--project', '{project}']; },
-      'analysis-server-forward', /exited with status 3/u],
+      'analysis:server-forward', /exited with status 3/u],
     ['traversal contract', (config) => { config.members[0].analyses[1].args = ['emit', fixture('trace/server-forward.json'), '--project', '{project}']; },
-      'analysis-server-reverse', /violates the traversal contract: A reverse analysis must be a dependents traversal/u],
+      'analysis:server-reverse', /violates the traversal contract: A reverse analysis must be a dependents traversal/u],
     ['traversal timeout', (config) => { Object.assign(config.members[0].analyses[2], { args: ['hang'], timeoutSeconds: 1 }); },
-      'analysis-db', /schemagraph hang timed out after 1s/u],
-    ['spawn', (config) => { config.tools.kartograph = { command: [join(repository, 'missing-producer')] }; }, 'version-kartograph',
+      'analysis:db', /schemagraph hang timed out after 1s/u],
+    ['spawn', (config) => { config.tools.kartograph = { command: [join(repository, 'missing-producer')] }; }, 'version:kartograph',
       /could not be started/u],
   ];
   for (const [name, mutate, step, pattern] of cases) {
@@ -284,7 +284,7 @@ test('단계마다 실패하면 단계 이름과 명령을 밝히고 stderr는 l
 });
 
 test('isthmus 단계(check --pairs, trace)의 실패도 단계 이름으로 보고한다', async (t) => {
-  for (const [command, step] of [['check', 'pairs-app'], ['trace', 'trace']]) {
+  for (const [command, step] of [['check', 'pairs:app'], ['trace', 'trace']]) {
     await t.test(command, async (st) => {
       const { config } = await singleProjectConfig(st);
       const execute = (file, args, options) => (args[1] === command
@@ -318,7 +318,7 @@ test('설정 경로는 선언한 root 밖으로 나갈 수 없다', async (t) =>
     await writeFile(join(outside, 'facts.json'), '{}');
     await symlink(join(outside, 'facts.json'), join(work, 'ci', 'link.json'));
     config.members[0].documents[3].precomputed = { root: 'work', path: 'ci/link.json' };
-    await rejectsAt(captureTrace(config), 'fact-app-android.http.json', /resolves outside it through a symbolic link/u);
+    await rejectsAt(captureTrace(config), 'fact:app/android.http.json', /resolves outside it through a symbolic link/u);
   });
 
   await t.test('symlink escape in the output path', async (st) => {
@@ -351,7 +351,7 @@ test('설정 경로는 선언한 root 밖으로 나갈 수 없다', async (t) =>
     facts.facts[0].symbol.usr = '--delete-everything';
     await writeFile(join(work, 'ci', 'flag.http.json'), JSON.stringify({ ...facts, project }));
     config.members[0].documents[0] = { name: 'server.http.json', precomputed: { root: 'work', path: 'ci/flag.http.json' } };
-    await rejectsAt(captureTrace(config), 'analysis-server-forward', /could be read as a producer flag/u);
+    await rejectsAt(captureTrace(config), 'analysis:server-forward', /could be read as a producer flag/u);
   });
 });
 
@@ -361,7 +361,7 @@ test('root가 많으면 나눠 실행하고 같은 역할의 분석 여럿으로
   // 가짜 생산자는 fixture root가 모두 넘어와야 받으므로, 첫 묶음(root 하나)에서 종료 코드 3으로 멈춘다 —
   // 나눈 id(`.1`)와 묶음의 root가 실제 인자에 나타나는지만 본다.
   config.members[0].analyses[0].maxRootsPerRun = 1;
-  await rejectsAt(captureTrace(config), 'analysis-server-forward.1', /exited with status 3/u);
+  await rejectsAt(captureTrace(config), 'analysis:server-forward.1', /exited with status 3/u);
   const argv = await calls();
   assert.deepEqual(argv.filter((entry) => entry[1] === 'traverse' && entry[2].endsWith('server-forward.json')).map((entry) => entry.slice(5)),
     [['ts:api/users.create']]);
@@ -372,7 +372,7 @@ test('root가 하나도 없는 분석은 실행하지 않고 manifest에 이유�
   config.members[0].analyses.push({ id: 'dart-reverse', platform: 'dart', role: 'reverse', tool: 'tsograph', args: ['fail', '9'], roots: 'arguments' });
   await captureTrace(config);
   const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
-  assert.match(manifest.steps.find(({ step }) => step === 'analysis-dart-reverse').skipped, /no roots/u);
+  assert.match(manifest.steps.find(({ step }) => step === 'analysis:dart-reverse').skipped, /no roots/u);
   const context = JSON.parse(await readFile(join(work, 'out/trace-context.json'), 'utf8'));
   assert.equal(context.analyses.some(({ id }) => id === 'dart-reverse'), false);
 });

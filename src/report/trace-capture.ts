@@ -128,6 +128,7 @@ const deliveries = new Set<CaptureRootsDelivery>(['arguments', 'separator', 'roo
 /** 출력 파일 이름으로도 쓰이므로 경로 구분자·점 두 개로 시작하는 이름을 막는다. */
 const namePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const documentNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,122}\.json$/u;
+const reservedMemberNames = new Set(['logs', 'pairs']);
 const rootNamePattern = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/u;
 /**
  * 비밀이 흔히 놓이는 경로 조각이다. capture는 이런 파일을 읽지도, 생산자 인자로 넘기지도 않는다.
@@ -240,6 +241,10 @@ function parseMember(value: unknown, position: number, roots: Record<string, str
   rejectUnknownKeys(value, memberKeys, `Capture member ${position} has an unknown field.`);
   if (typeof value.name !== 'string' || !namePattern.test(value.name)) {
     fail(`Capture member ${position} needs a name of letters, digits, ., - or _ (at most 64).`);
+  }
+  // member 이름은 출력 디렉터리 이름이 된다. capture가 쓰는 최상위 파일·디렉터리와 겹치지 않게 한다.
+  if (reservedMemberNames.has(value.name) || value.name.endsWith('.json')) {
+    fail(`Capture member ${position} name collides with a capture output entry (logs, pairs, *.json).`);
   }
   const project = parsePathRef(value.project, roots, 'member project');
   const revision = parseRevision(value.revision, position);

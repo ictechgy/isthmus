@@ -414,7 +414,8 @@ node scripts/capture-trace.mjs capture.json
 }
 ```
 
-- **경로는 선언한 root 아래로만** 쓴다. 모든 경로는 `{root, path?}`이고 path는 root 상대 POSIX 경로다. `..`·절대 경로·
+- **경로는 선언한 root 아래로만** 쓴다. 모든 경로는 `{root, path?}`이고 path는 root 상대 POSIX 경로다. 생산자 인자의
+  경로 참조도 실행 전에 존재해야 한다(capture는 생산자 stdout만 받고, 생산자가 쓸 출력 경로는 열지 않는다). `..`·절대 경로·
   역슬래시·제어 문자는 설정 검증에서, 심링크로 root 밖을 가리키는 경로는 실행 전 realpath 검사에서 거부한다. `.env`·
   키·인증 파일 같은 이름(`.env*`, `.npmrc`, `.netrc`, `.pgpass`, `.ssh`, `.aws`, `id_rsa*`, `*.pem`·`*.key` 등)은 읽지도
   생산자에 넘기지도 않는다. 출력 디렉터리는 없거나 비어 있어야 한다 — capture는 아무것도 지우지 않는다.
@@ -422,7 +423,7 @@ node scripts/capture-trace.mjs capture.json
   realpath)·`{revision}`·`{generatedAt}`만 자리표시자다 — route 템플릿의 `{}` 같은 다른 중괄호는 그대로 넘긴다.
 - **root 전달**(`roots`): `arguments`(인자 끝, `-`로 시작하는 id는 플래그로 읽힐 수 있어 거부), `separator`(`--` 뒤),
   `roots-from`(JSON 문자열 배열 파일을 `<member>/roots/`에 쓰고 `--roots-from <file>` — argv 상한을 피한다).
-- **단계별 시간 제한**: `timeoutSeconds`(기본 600, 1~7,200)와 `acceptExitCodes`(기본 `[0]`)를 문서·분석마다 준다.
+- **단계별 시간 제한**: 시간이 지나면 자식을 SIGKILL로 끝낸다. `timeoutSeconds`(기본 600, 1~7,200)와 `acceptExitCodes`(기본 `[0]`)를 문서·분석마다 준다.
   `git` 조회는 60초, `check`·`trace`는 600초다. 실패는 `Capture step <단계> failed: <도구> <하위 명령> exited with
   status N; stderr saved to logs/<단계>.stderr.txt.`처럼 단계와 명령을 밝히고, 자식 stderr는 터미널에 옮기지 않고
   출력 디렉터리의 `logs/`에만 저장한다(경로·비밀이 섞일 수 있다). 실패해도 `capture-manifest.json`에 `status: "failed"`와
