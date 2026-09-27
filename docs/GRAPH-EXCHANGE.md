@@ -2,7 +2,8 @@
 
 isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.md),
 [언어 간 전이 분석과 수집](PREFLIGHT.md),
-[런타임 통신 검증](RUNTIME.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
+[런타임 통신 검증](RUNTIME.md), 생산자 순회 결과인 [`language-traversal` v1](LANGUAGE-TRAVERSAL.md)과
+그것을 소비하는 [route 단위 영향 추적(`trace`)](TRACE.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
 변경하지 않는다. 런타임에서 지원하는 transport를 정적 producer 지원으로 해석하지 않는다.
 
 개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)와
@@ -10,8 +11,8 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 개발 중인 [React Native 이벤트 v2](BRIDGE-RN-EVENTS.md)는 코어 RN 전역 이벤트의
 `event-emit`↔`event-listen`을 다루며 Flutter transport와 섞지 않는다.
 `target: "http"`는 [HTTP 경계](#개발-중-http-경계-v1-확장) 절의 Phase 1 범위를 `check`(`--pairs`
-포함)와 `query`(`route:` 주체)가 소비한다. `graph`·`diff`·`impact`·`retentions`·`preflight`는
-http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
+포함)와 `query`(`route:` 주체)가 소비하고, `trace`가 같은 조인 결과를 persistence·순회와 잇는다.
+`graph`·`diff`·`impact`·`retentions`·`preflight`는 http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
 필드는 입력 오류로 거부한다.
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
@@ -568,7 +569,8 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`) | 초안 | http 문서의 `limitationScopes`를 입력 오류로 거부. 한계는 문서 전체에 적용 |
 | `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | 초안 | 매니페스트 파일을 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
-| graph route 간선, impact의 http blocker, diff, trace, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부 |
+| `trace`(단일 project, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 2 소비자) | — |
+| graph route 간선, impact의 http blocker, diff, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부 |
 | `docs/limitation-prefixes.json` 추출 | 초안 | 닫힌 목록은 이 절과 `src/report/route-issues.ts`가 정본 |
 
 ### target과 kind
@@ -827,8 +829,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 - root로 승격(`declared-base`)되는 것은 workspace link의 `match.baseRefs`에 `pathPrefix`가
   선언된 baseRef의 호출뿐이다.
 - dynamic이거나 `channel`이 null인 사실은 조인하지 않고 소비자가 `unjoined-dynamic-routes`·
-  `unjoined-dynamic-route-calls`로 센다. `channelPrefix`는 query·trace에 `prefix-candidate`로만
-  보인다.
+  `unjoined-dynamic-route-calls`로 센다. `channelPrefix`는 query에 `prefix-candidate`로만
+  보인다(trace는 개수만 `dynamic-route-calls` gap으로 싣는다).
 - 매칭 품질(`exact`·`suffix`·`declared-base`·`declared-wrapper`·`any-method`·`head-as-get`·
   `options-any`·`catch-all`·`param-to-literal`·`param-to-literal-constrained`·`prefix-candidate`)은
   `check --pairs`와 query에만 싣는다. info 심각도는 새로 만들지 않는다.
@@ -923,7 +925,7 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 | 서버(수신) | `route-coverage:`, `unresolved-route-prefix:`, `route-framework-version-unknown:`, `framework-provided-routes:`, `route-dispatch-order-unknown:`, `route-template-expansion-capped:` | `route-call-without-decl`, `route-method-mismatch` |
 | 계약 | `unresolved-contract-servers:`, `contract-coverage:` | `route-call-without-contract` |
 | 호출 측 | `route-call-coverage:`, `unresolved-base-url:`, `url-rewrite-interceptors:`, `ambiguous-base-join:`, `http-wrapper-undeclared:`, `http-wrapper-unresolved:`, `generated-client-unscanned:`, `unbound-route-calls-omitted:` | `route-decl-without-call`, `route-contract-without-call` |
-| 체인 전용 | `missing-route-usrs:`, `missing-relation-usrs:`, `framework-dispatch-unmodeled:` | check 심각도에 영향 없음(trace gap 근거) |
+| 체인 전용 | `missing-route-usrs:`, `missing-relation-usrs:`, `framework-dispatch-unmodeled:` | check 심각도에 영향 없음. trace는 한계로 그대로 싣고, usr가 빠진 hop은 `*-without-symbol` gap으로 드러난다 |
 | 소비자 계수(`origin: "consumer"`) | `unjoined-dynamic-routes`, `unjoined-dynamic-route-calls`, `unjoined-unbound-route-calls` | 앞의 둘은 각각 서버 측·호출 측 공백. 셋째는 개수 공개용 |
 
 - `framework-provided-routes:`는 프로젝트 코드에 선언이 없는 경로(Spring Security의

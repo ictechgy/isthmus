@@ -261,9 +261,25 @@ export class BridgeJoinValidationError extends Error {
   }
 }
 
+/**
+ * 조인 입력 구성 검사 방식이다.
+ *
+ * `strict`(기본)는 check·query 등 진단 명령의 도메인별 구성 요건(호출 측·수신 측 문서가 모두
+ * 있어야 함)을 적용한다. 한쪽만 관찰한 입력을 불일치로 오독하지 않기 위해서다. `trace`는
+ * 미관찰을 진단으로 바꾸지 않고 trace gap으로만 보고하는 소비자용이다 — 한쪽 문서가 없어도
+ * 조인은 하되, 빠진 쪽을 호출자가 gap으로 밝혀야 한다. 매칭 규칙 자체는 두 방식이 같다.
+ */
+export type JoinComposition = 'strict' | 'trace';
+
+/** 조인 선택 사항이다. */
+export interface JoinOptions {
+  readonly composition?: JoinComposition;
+}
+
 /** 위치가 아니라 문자열 키로 검증된 교환 문서를 조인한다. */
 export function joinBridgeDocuments(
   documents: readonly BridgeFactsDocument[],
+  options: JoinOptions = {},
 ): BridgeJoinResult {
   if (documents.length > MAX_DOCUMENTS_PER_JOIN) {
     throw new BridgeJoinValidationError(
@@ -271,7 +287,8 @@ export function joinBridgeDocuments(
     );
   }
   validateProjects(documents);
-  validatePlatformComposition(documents);
+  // trace 구성은 빠진 측을 gap으로 보고하므로 구성 요건을 여기서 강제하지 않는다.
+  if (options.composition !== 'trace') validatePlatformComposition(documents);
   const observedFacts = documents.reduce(
     (total, document) => total + document.facts.length,
     0,

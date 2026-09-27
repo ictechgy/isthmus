@@ -115,7 +115,9 @@ measured.
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
-| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` (not automated yet) |
+| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` |
+| [`docs/TRACE.md`](docs/TRACE.md) | `trace` (in development): route → handler → tables → DB dependents, and route → call sites → affected client code, joined by exact producer ids with explicit gaps |
+| [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | `language-traversal` v1, the shared forward/reverse traversal format producers emit for `trace` |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
 
@@ -307,7 +309,8 @@ starts with `relation:` is still found by that name when no relation of that nam
 relation also matches, the relation wins and the bridge key is queried by its qualifiedName (for
 example `flutter:relation%3Afoo`). See the
 [manual persistence round trip](docs/PERSISTENCE-TRACE.md) for feeding these ids to
-kartograph/cartograph `impact` and `schemagraph impact`; that chaining is not automated yet.
+kartograph/cartograph `impact` and `schemagraph impact`, or `trace` below to join saved producer
+traversals in one step.
 
 ### HTTP routes (in development)
 
@@ -326,6 +329,25 @@ one of `exact`, `suffix`, `any-method`, `head-as-get`, `options-any`, `catch-all
 finds one scoped route key, its attributed callers, declarations and contracts, and proven prefix
 candidates of dynamic calls. Documents that use not-yet-implemented draft fields
 (`registration-order`, http `limitationScopes`, workspace manifests) fail with exit code 2.
+
+### Route impact trace (in development)
+
+```bash
+isthmus trace trace-context.json --strict --compact
+```
+
+`trace` reads an `isthmus-trace-context` v1 file that lists one project's http and persistence
+documents, producer traversals (`language-traversal` v1, or the existing `schemagraph-impact`,
+`kartograph-impact`, cartograph `change-impact`, and dartograph impact reports through adapters),
+and one selection: routes, relations, or symbols. For a route it follows the route-decl handler
+through the forward traversal to the relation uses it reaches, the persistence join to the
+schemagraph vertex ids, and their database dependents; it also follows attributed calls of the route
+to affected client symbols. Relations and symbols go the other way: reverse traversal to route
+handlers, then routes and clients. Every id in the output comes from a producer, unattributed calls
+are only counted, reruns are byte-identical, and the report is always `complete: false` — missing
+symbols, analyses, truncation, stale revisions, and non-http entry points are reported as `gaps`,
+never as "not reached". `--strict` exits 1 when any gap remains. Single project only; workspace
+manifests are rejected, and MCP does not expose `trace` yet. See [`docs/TRACE.md`](docs/TRACE.md).
 
 ### Baselines
 
@@ -550,7 +572,7 @@ unattributed is counted as dynamic only.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success. In default mode, issues are reported but do not fail the run |
-| `1` | `--strict` found error issues (for `diff`: newly observed errors only). `-unverified` warnings and baseline-suppressed errors do not fail |
+| `1` | `--strict` found error issues (for `diff`: newly observed errors only; for `trace`: any remaining gap). `-unverified` warnings and baseline-suppressed errors do not fail |
 | `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries, persistence or http pair endpoints, http suffix comparisons), baseline file or write errors, retention evidence that cannot be built, http documents passed to a command that does not consume them yet. stderr distinguishes the cause |
 | `64` | Bad command, option, or input count (including a malformed `route:` subject); or `query` `notFound`/`ambiguous` |
 

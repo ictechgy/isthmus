@@ -106,14 +106,23 @@ function mergeMatch(
   groups.set(identity, group);
 }
 
-/** 끝점을 쌍 계약의 세 필드로 줄여 중복 없이 담는다. */
-function addEndpoint(target: Map<string, PairEndpoint>, endpoint: BridgeEndpoint): void {
-  const projected: PairEndpoint = {
+/**
+ * 조인 끝점을 쌍 계약의 필드(플랫폼·위치·심볼·route)로 줄인다.
+ *
+ * trace도 같은 투영을 쓴다 — 두 출력의 증거 모양이 어긋나지 않게 한 곳에서 정한다.
+ */
+export function toPairEndpoint(endpoint: BridgeEndpoint): PairEndpoint {
+  return {
     platform: endpoint.platform,
     ...(endpoint.location === undefined ? {} : { location: endpoint.location }),
     ...(endpoint.symbol === undefined ? {} : { symbol: endpoint.symbol }),
     ...(endpoint.route === undefined ? {} : { route: endpoint.route }),
   };
+}
+
+/** 끝점을 쌍 계약의 필드로 줄여 중복 없이 담는다. */
+function addEndpoint(target: Map<string, PairEndpoint>, endpoint: BridgeEndpoint): void {
+  const projected = toPairEndpoint(endpoint);
   target.set(encodeSortedJson(projected, true), projected);
 }
 

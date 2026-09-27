@@ -1,0 +1,53 @@
+{
+  "facts": [
+    {
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 12,
+        "path": "android/app/src/main/java/example/UsersApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "UsersApi.get",
+        "usr": "kt:UsersApi.get"
+      }
+    },
+    {
+      "channel": "/api/users",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 16,
+        "path": "android/app/src/main/java/example/UsersApi.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "UsersApi.create",
+        "usr": "kt:UsersApi.create"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/trace-example",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

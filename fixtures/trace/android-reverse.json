@@ -1,0 +1,77 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/trace-example",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "line": 30,
+          "path": "android/app/src/main/java/example/SignupViewModel.kt"
+        },
+        "qualifiedName": "SignupViewModel.submit",
+        "usr": "kt:SignupViewModel.submit"
+      },
+      "via": "kt:UsersApi.create"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "UsersRepository.load",
+        "usr": "kt:UsersRepository.load"
+      },
+      "via": "kt:UsersApi.get"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "ProfileViewModel.refresh",
+        "usr": "kt:ProfileViewModel.refresh"
+      },
+      "via": "kt:UsersRepository.load"
+    }
+  ],
+  "revision": "rev-1",
+  "roots": [
+    {
+      "id": "kt:UsersApi.create",
+      "symbol": {
+        "usr": "kt:UsersApi.create"
+      }
+    },
+    {
+      "id": "kt:UsersApi.get",
+      "symbol": {
+        "usr": "kt:UsersApi.get"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

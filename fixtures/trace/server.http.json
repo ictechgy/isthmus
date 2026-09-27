@@ -1,0 +1,54 @@
+{
+  "dispatch": "specificity",
+  "facts": [
+    {
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 10,
+        "path": "server/routes/users.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "users.get",
+        "usr": "ts:api/users.get"
+      }
+    },
+    {
+      "channel": "/api/users",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 20,
+        "path": "server/routes/users.ts"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "users.create",
+        "usr": "ts:api/users.create"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/trace-example",
+  "roles": [
+    "server"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

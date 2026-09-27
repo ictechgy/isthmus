@@ -61,5 +61,7 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
   부모 에이전트가 이미 읽을 수 있는 파일만 도구 인자로 넘기는 모델이며, 네트워크
   노출은 하지 않는다(stdio 전용).
 - `--update-baseline`·`--output` 같은 파일 쓰기 경로는 도구 인자로 열지 않았다.
+- 개발 중인 `trace`([TRACE](TRACE.md))는 아직 도구로 노출하지 않는다. 출력 상한과 함께
+  [API 변경 영향 계획](API-IMPACT-PLAN.md)의 Phase 3에서 정한다.
 - 이것은 제품 명령의 **트랜스포트**다. 새 분석이나 새 보고서 형식을 추가하지 않고,
   교환 계약(GRAPH-EXCHANGE)의 범위를 넓히지도 않는다.

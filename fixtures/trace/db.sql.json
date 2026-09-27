@@ -1,0 +1,43 @@
+{
+  "facts": [
+    {
+      "channel": "main.users",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "symbol": {
+        "qualifiedName": "main.users",
+        "usr": "main.users"
+      }
+    },
+    {
+      "channel": "main.users",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "method": "email",
+      "symbol": {
+        "qualifiedName": "main.users.email",
+        "usr": "main.users.email"
+      }
+    },
+    {
+      "channel": "main.audit_log",
+      "dynamic": false,
+      "kind": "relation-decl",
+      "symbol": {
+        "qualifiedName": "main.audit_log",
+        "usr": "main.audit_log"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "sql",
+  "project": "/work/trace-example",
+  "target": "persistence",
+  "tool": {
+    "name": "synthetic-schema",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

@@ -37,6 +37,7 @@ verifyDiff();
 verifyImpact();
 verifyRuntime();
 verifyPreflight();
+verifyTrace();
 verifyServe();
 verifyExtractJs();
 verifyDoctorInit();
@@ -74,6 +75,25 @@ function verifyPreflight() {
   verify(JSON.parse(verified.stdout).runtime.aligned === true && JSON.parse(verified.stdout).runtime.verification.status === 'passed',
     'preflight runtime alignment');
   verify(run([...args, '--expectations', expectations]).status === 1, 'preflight absent runtime observations');
+}
+
+/** 합성 trace 입력이 빌드된 CLI에서 route → DB 의존자·클라이언트 영향까지 결정적으로 이어지는지 확인한다. */
+function verifyTrace() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/trace/${name}`, import.meta.url));
+  const args = ['trace', fixture('context.json'), '--strict', '--compact'];
+  const first = run(args);
+  verify(first.status === 0 && first.stdout === run(args).stdout, 'trace deterministic success');
+  const report = JSON.parse(first.stdout);
+  verify(report.format === 'isthmus-trace' && report.complete === false && report.gaps.length === 0, 'trace document');
+  const [chain] = report.chains;
+  verify(chain.database.some(({ vertex, dependents }) => vertex === 'main.users' &&
+    dependents.some(({ usr }) => usr === 'main.active_users')), 'trace database dependents');
+  verify(chain.routes[0].calls[0].affected.some(({ usr }) => usr === 'kt:ProfileViewModel.refresh'), 'trace client impact');
+  const relation = run(['trace', fixture('context-relation.json'), '--compact']);
+  verify(relation.status === 0 && JSON.parse(relation.stdout).summary.routes === 2, 'trace reverse relation');
+  verify(run(['trace', fixture('server-forward.json')]).status === 2, 'trace invalid context');
+  verify(run(['trace']).status === 64, 'trace usage');
+  verify(run(['help', 'trace']).stdout.startsWith('Usage: isthmus trace'), 'trace help');
 }
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */
