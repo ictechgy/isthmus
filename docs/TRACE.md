@@ -68,6 +68,9 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
   - `symbols: [{platform, usr}]` — 언어 심볼(sql 제외)에서 역방향으로 route를 찾는다.
   - `files: [path]` — 사실 위치와 같은 project 상대 경로([파일 선택](#파일-선택)).
 - `analyses[].precomputed`(선택): 다른 곳에서 미리 계산해 내려받은 artifact다([사전 계산 분석](#사전-계산-분석)).
+- `fileSymbols`(선택, 파일 선택 전용): `[{path, platform, usrs}]`(workspace는 `member`도) — 선택한 파일에 생산자 심볼
+  목록이 놓은 심볼이다. capture가 채운다([2단계 수집](#파일-선택의-2단계-수집)). 선택하지 않은 파일, sql platform,
+  (member, path, platform) 중복, 항목당 usr 1~10,000개(중복 없음)·전체 100,000개를 벗어나면 입력 오류다.
 - 맨 `format: "isthmus-workspace"` 매니페스트는 원인 문구와 함께 거부한다. 매니페스트의 member·link를 아래
   workspace context로 옮기고 member별 `analyses`와 `selection`을 더한다.
 
@@ -177,13 +180,15 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 
 파일 선택은 **파일 단위 과대 근사**다. 바뀐 줄을 모르므로 파일에 놓인 모든 심볼을 바뀐 것으로 본다.
 
-- 심볼: 그 member(단일 project면 전체)의 언어 분석(sql 제외)이 이 파일에 위치시킨 root·도달 심볼과, 이 파일에
-  위치한 bridge 사실(route-decl·route-call·relation-use, sql·openapi 제외)의 `symbol.usr`(**사실 위치
-  fallback**)다. 이 심볼들로 심볼 선택과 같은 역방향 체인을 만든다. 핸들러가 파일에 있으면 그 route도 잇는다.
+- 심볼: 그 member(단일 project면 전체)의 언어 분석(sql 제외)이 이 파일에 위치시킨 root·도달 심볼, context
+  `fileSymbols`가 이 파일에 놓은 심볼(생산자 목록 — 분석 위치와 같은 근거로 본다), 그리고 이 파일에 위치한 bridge
+  사실(route-decl·route-call·relation-use, sql·openapi 제외)의 `symbol.usr`(**사실 위치 fallback**)다. 이 심볼들로
+  심볼 선택과 같은 역방향 체인을 만든다. 핸들러가 파일에 있으면 그 route도 잇는다. 알림 문구는 `fileSymbols`가 더한
+  수를 따로 센다. 역방향 분석이 그 심볼을 root로 받지 않았으면 조용히 비우지 않고 `analysis-missing`이다.
 - 파일에 놓인 relation-use는 hop(도달 근거 없음)과 VertexId 의존자로 싣는다. dynamic 사용은 hop이 아니라 gap이다.
 - 무엇이든 찾으면 항상 **알림** `file-selection-coarse`를 남긴다(아래 [gap과 알림](#gap과-알림)). 과대 근사는 영향을
   숨기지 않으므로 `--strict`를 실패시키지 않는다.
-- 분석이 이 파일에 심볼을 하나도 두지 않아 사실 위치로만 대신했으면 gap `file-selection-fact-fallback`을 남긴다.
+- 분석도 `fileSymbols`도 이 파일에 심볼을 하나도 두지 않아 사실 위치로만 대신했으면 gap `file-selection-fact-fallback`을 남긴다.
   이쪽은 사실 없는 심볼이 빠져 **영향을 숨길 수 있으므로** 알림이 아니라 gap이다. 아무것도 찾지 못하면 체인 없이
   gap `file-without-symbols`다.
 - 클라이언트 파일을 고르면 그 심볼에서 서버 핸들러에 닿지 않으므로 `non-http-entry`가 남는다. 파일 선택은 서버
@@ -360,7 +365,8 @@ node scripts/capture-trace.mjs capture.json
 2. **(b) 쌍**: member마다 `isthmus check --pairs`를 실행해 조인이 계약대로 서는지 확인하고 `pairs/<member>.json`에
    남긴다. 한쪽 측만 있는 도메인(workspace의 서버·클라이언트 member)은 check가 거부하므로 양쪽 측이 있는 도메인의
    문서만 넘기고, 없으면 건너뛴 이유를 manifest에 적는다.
-3. **(c) 순회**: 사실 문서에서 뽑은 root로 생산자 순회를 실행한다. root는 **선택과 무관한 상위 집합**이다 —
+3. **(c) 순회**: 사실 문서에서 뽑은 root로 생산자 순회를 실행한다. 파일 선택이면 이 단계를 두 번에 나눈다
+   ([아래](#파일-선택의-2단계-수집)). root는 **선택과 무관한 상위 집합**이다 —
    forward는 그 platform의 route-decl 핸들러 usr 전체, reverse는 route-call·relation-use를 감싼 심볼 usr 전체와
    선택한 심볼, db-dependents는 sql relation-decl VertexId 전체(테이블과 컬럼)다. 테스트 소스 사실은 뺀다. 쌍을 root
    원천으로 쓰지 않는 이유: 쌍은 호출이 없는 핸들러, 사용이 없는 relation, member 사이 호출을 싣지 않고, 선택으로
@@ -397,6 +403,9 @@ node scripts/capture-trace.mjs capture.json
         "--wrappers", { "root": "app", "path": "http-wrappers.json" }, "--graph-file", { "root": "work", "path": "graph.snapshot.json" }] },
       { "name": "ios.json", "precomputed": { "root": "ci", "path": "ios.http.json" } }
     ],
+    "listings": [                                         // 선택: 파일 선택일 때만 실행하는 심볼 목록(platform마다 하나)
+      { "platform": "js", "tool": "tsograph", "args": ["graph", "--project", "{project}"] }
+    ],
     "analyses": [
       { "id": "server-forward", "platform": "js", "role": "forward", "tool": "tsograph",
         "args": ["reach", "--project", "{project}", "--generated-at", "{generatedAt}"], "roots": "arguments" },
@@ -425,6 +434,9 @@ node scripts/capture-trace.mjs capture.json
   realpath)·`{revision}`·`{generatedAt}`만 자리표시자다 — route 템플릿의 `{}` 같은 다른 중괄호는 그대로 넘긴다.
 - **root 전달**(`roots`): `arguments`(인자 끝, `-`로 시작하는 id는 플래그로 읽힐 수 있어 거부), `separator`(`--` 뒤),
   `roots-from`(JSON 문자열 배열 파일을 `<member>/roots/`에 쓰고 `--roots-from <file>` — argv 상한을 피한다).
+  kartograph `impact --format language-traversal`과, `--roots-from`을 가진 cartograph(`cartograph impact --help`에
+  `--roots-from`이 보이는 판, cartograph PR #150)가 이 파일을 받는다. capture는 생산자 버전이나 `--help`를 보고 전달 방식을
+  바꾸지 않는다 — 아직 발행되지 않은 동작에 기대지 않도록 분석 항목마다 설정으로 고른다. 옛 cartograph는 `arguments`·`separator`다.
 - **단계별 시간 제한**: 시간이 지나면 자식을 SIGKILL로 끝낸다. `timeoutSeconds`(기본 600, 1~7,200)와 `acceptExitCodes`(기본 `[0]`)를 문서·분석마다 준다.
   `git` 조회는 60초, `check`·`trace`는 600초다. 실패는 `Capture step <단계> failed: <도구> <하위 명령> exited with
   status N; stderr saved to logs/<단계>.stderr.txt.`처럼 단계와 명령을 밝히고, 자식 stderr는 터미널에 옮기지 않고
@@ -441,13 +453,52 @@ node scripts/capture-trace.mjs capture.json
 - **manifest**(`isthmus-trace-capture-manifest` v1): isthmus 버전, 호스트(node·platform·arch), 도구마다 `--version`
   출력과(`source`를 주면) 소스 checkout의 revision·dirty, member의 project·revision·출처, 단계마다 전체 argv·종료 코드·
   시간·root 수·check 쌍 수, 모든 artifact의 경로·sha256·바이트·출처(`captured`·`precomputed`·`isthmus`)와 문서가 밝힌
-  생산자 신원, trace 요약을 싣는다. 시간 값이 있어 manifest는 재실행마다 다르다. context와 artifact는 생산자가 결정적이고
+  생산자 신원, 파일 선택이면 `fileSelection`([아래](#파일-선택의-2단계-수집)), trace 요약을 싣는다. 시간 값이 있어 manifest는 재실행마다 다르다. context와 artifact는 생산자가 결정적이고
   `generatedAt`을 고정하면 같다.
 
-한계: 파일 선택은 분석이 파일에 둔 심볼을 capture가 미리 알 수 없어, 사실 위치의 usr(상위 집합에 이미 있다)만 root가
-된다. 분석이 파일에 둔 다른 심볼은 그 분석의 root에 없으면 trace가 `file-selection-fact-fallback`·`analysis-missing`으로
-드러낸다. dartograph는 아직 `language-traversal`과 route 사실을 내지 않아 사전 계산 artifact(옛 dartograph impact)로만
-쓴다. cartograph는 `--roots-from`이 없어 `arguments`/`separator`로 넘긴다(root가 많으면 나눠 실행).
+### 파일 선택의 2단계 수집
+
+파일 선택에서 root의 상위 집합은 사실이 놓인 심볼뿐이다. 파일에 있지만 사실이 없는 심볼(핸들러가 부르는 헬퍼 등)은
+순회가 돌기 전에는 알 수 없어, 한 번에 수집하면 trace가 `file-selection-fact-fallback`(분석이 파일에 심볼을 두지 않음)이나
+`analysis-missing`(파일 심볼이 역방향 root가 아님)을 남긴다. 그래서 파일 선택이면 capture가 순회를 두 단계로 나눈다.
+
+1. **1단계**: 역방향이 아닌 분석(정방향·db-dependents)과 사전 계산 분석을 먼저 모은다. 이어서 member `listings`의
+   생산자 심볼 목록을 실행하거나 복사한다(`<member>/listings/<platform>.json`에 artifact로 남긴다). 각 생산자의 origin/main
+   README가 밝힌 목록만 받는다.
+
+   | 생산자 | 명령 | 읽는 값 |
+   |---|---|---|
+   | tsograph (js) | `graph --project {project}` | `nodes[].id`와 project 상대 `location.path`. 문서 `project`가 member와 같아야 한다 |
+   | kartograph (kotlin) | `snapshot --include-paths`(v1·compact v2) | `graph.nodes[].usr`·`location.path`(v2는 `stringTable`로 푼다). `/` 없는 경로(파일 이름만 남음)는 뺀다 |
+   | cartograph (swift) | `graph --level symbol --format json` | `nodes[].usr`와 절대 `location.path`. member project(realpath) 아래만 상대 경로로 바꾸고 외부 심볼은 뺀다. 인덱스가 심링크 경로를 기록했으면 빠지고 `skipped`로 센다 |
+
+   schemagraph 정점은 소스 파일이 없고(sql은 파일 선택에서 빠진다) dartograph는 목록을 내지 않는다. 모르는 형식은 추측하지
+   않고 그 단계의 오류다.
+2. **2단계**: 선택한 파일을 platform마다 심볼 id로 바꾼다. 목록이 있으면 목록이 그 파일에 둔 심볼 전부(**완전**), 없으면
+   1단계 순회가 그 파일에 위치시킨 root·도달 심볼(**부분** — 정방향에서 닿지 않은 심볼은 빠진다)이다. 이미 root인 것을 뺀
+   나머지를 역방향 root에 더해 역방향 순회를 한 번 실행한다(다시 돌리지 않는다 — 처음부터 미뤘다). 목록이 찾은 심볼은 context
+   `fileSymbols`에도 싣는다.
+
+설계 결정:
+
+- **`fileSymbols`를 추가 필드로 둔 이유**: trace는 분석이 파일에 위치시킨 심볼을 이미 쓴다. 그런데 tsograph는 순회 root에
+  위치를 싣지 않아서, 목록에서 찾은 헬퍼를 root로 넣어도 trace는 그 심볼이 파일에 있는지 알 수 없다. 사실 위치 fallback은
+  그대로 남는다. 그래서 capture가 목록의 결과를 context에 옮기고, trace는 그것을 분석 위치와 같은 생산자 근거로 쓴다(새 해석은
+  없다). 분석 위치로 이미 보이는 부분 출처(`traversal`)는 싣지 않는다. 필드는 파일 선택에서만, 선택한 파일만 가리킬 수 있어
+  다른 선택용 context를 붙이면 입력 오류다. 필드가 없는 context와 그 출력은 바이트 단위로 그대로다.
+- **정방향은 다시 돌리지 않는다**: trace의 파일 체인은 파일 심볼의 역방향 도달(route·클라이언트)과 파일에 놓인 relation-use만
+  쓴다. 파일 심볼에서 시작한 정방향 도달은 소비되지 않으므로 순회 비용만 늘린다.
+- **역방향만 미룬다**: 파일 선택이 아니면 실행 순서도 출력도 이전과 같다. 목록은 실행하지 않고 manifest에 건너뛴 이유를
+  남긴다. 파일 선택에서도 context의 분석 순서는 설정 순서다.
+
+manifest `fileSelection`에는 member·platform마다 `source`(`listing`·`traversal`), `listing`(형식), `complete`, `files`,
+`symbols`(찾은 파일 심볼), `reverseRoots`(더한 root), `skipped`(목록에서 위치를 확정하지 못해 뺀 심볼)가 들어간다. 남은 한계는
+`notes`에 적는다. 목록이 없으면 fallback이 남을 수 있다. 생산자 명령으로 실행하는 역방향 분석이 없으면(사전 계산 artifact뿐)
+root를 더할 수 없어 trace가 `analysis-missing`을 남긴다.
+
+한계: 목록이 완전해도 trace는 목록을 검증하지 않는다(생산자 신고다). 목록이 없는 platform은 정방향에서 닿지 않은 파일
+심볼을 놓칠 수 있다. dartograph는 아직 `language-traversal`과 route 사실을 내지 않아 사전 계산 artifact(옛 dartograph
+impact)로만 쓴다. `--roots-from`이 없는 cartograph는 `arguments`/`separator`로 넘긴다(root가 많으면 나눠 실행).
 
 ## 현재 범위와 남은 일
 

@@ -1,0 +1,61 @@
+{
+  "format": "tsograph-graph",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "platform": "js",
+  "project": "/work/trace-example",
+  "graphRevision": "sha256:synthetic",
+  "nodes": [
+    {
+      "id": "ts:api/users.create",
+      "kind": "function",
+      "location": {
+        "path": "server/routes/users.ts",
+        "line": 20,
+        "column": 3
+      }
+    },
+    {
+      "id": "ts:api/users.get",
+      "kind": "function",
+      "location": {
+        "path": "server/routes/users.ts",
+        "line": 10,
+        "column": 3
+      }
+    },
+    {
+      "id": "ts:repo/audit.write",
+      "kind": "function",
+      "location": {
+        "path": "server/db/audit.ts",
+        "line": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "ts:repo/users.findById",
+      "kind": "function",
+      "location": {
+        "path": "server/db/users.ts",
+        "line": 5,
+        "column": 1
+      }
+    },
+    {
+      "id": "ts:service/users.load",
+      "kind": "function",
+      "location": {
+        "path": "server/service/users.ts",
+        "line": 3,
+        "column": 1
+      }
+    }
+  ],
+  "edges": [],
+  "statistics": {},
+  "limitations": []
+}

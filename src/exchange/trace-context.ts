@@ -92,6 +92,22 @@ export type TraceSelection =
   | { readonly symbols: readonly TraceSymbolSelection[] }
   | { readonly files: readonly TraceFileSelection[] };
 
+/**
+ * 파일 선택 하나에 생산자 심볼 목록이 놓은 심볼이다(`fileSymbols`, 선택 필드).
+ *
+ * capture가 생산자 목록(tsograph `graph`·kartograph `snapshot`·cartograph `graph`)에서 선택한 파일의 심볼을 찾아
+ * 싣는다. 순회 root의 위치를 싣지 않는 생산자(tsograph)나 어떤 순회도 닿지 않은 심볼은 분석 위치만으로는 이 파일에
+ * 있다는 것을 알 수 없어, 없으면 trace가 사실 위치 fallback으로만 대신한다. trace는 이 목록을 분석 위치와 같은
+ * 근거로 쓰며 목록이 완전한지는 검증하지 않는다.
+ */
+export interface TraceFileSymbols {
+  /** workspace member 이름이다. 단일 project면 없다. */
+  readonly member?: string;
+  readonly path: string;
+  readonly platform: TraversalPlatform;
+  readonly usrs: readonly string[];
+}
+
 /** member의 DB 카탈로그 기록이다. `graphSha`가 있으면 그 member의 sql 분석 graphRevision과 대조한다. */
 export interface TraceCatalog {
   readonly graphSha?: string;
@@ -156,6 +172,8 @@ export interface TraceContext {
   readonly documents: readonly string[];
   readonly analyses: readonly TraceAnalysisReference[];
   readonly selection: TraceSelection;
+  /** 선택한 파일에 생산자 목록이 놓은 심볼이다. 파일 선택에서만 받는다. */
+  readonly fileSymbols?: readonly TraceFileSymbols[];
 }
 
 /** 역할·플랫폼이 확인된 분석과 정규화된 순회 숲이다. */
@@ -194,11 +212,15 @@ export const MAX_TRACE_MEMBERS = 64;
 export const MAX_TRACE_LINKS = 256;
 /** link `match` 목록 하나의 항목 상한이다. */
 export const MAX_LINK_MATCH_ITEMS = 1_000;
+/** `fileSymbols` 항목 하나의 usr 상한이다 — `language-traversal` v1 root 상한과 같다. */
+export const MAX_FILE_SYMBOL_USRS = 10_000;
+/** `fileSymbols` 전체의 usr 상한이다. 파일 선택 1,000개가 저마다 큰 목록을 실어도 입력이 끝없이 커지지 않게 한다. */
+export const MAX_FILE_SYMBOL_TOTAL = 100_000;
 
 const roles = new Set<string>(['forward', 'reverse', 'db-dependents']);
 const routeMethods = new Set<string>([...httpMethods, 'ANY']);
-const singleKeys = new Set(['format', 'version', 'project', 'revision', 'documents', 'analyses', 'selection']);
-const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'selection']);
+const singleKeys = new Set(['format', 'version', 'project', 'revision', 'documents', 'analyses', 'selection', 'fileSymbols']);
+const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'selection', 'fileSymbols']);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 
 /** 신뢰하지 않는 JSON을 검증된 trace context로 바꾼다. */
@@ -220,9 +242,11 @@ function parseSingleContext(input: Record<string, unknown>): TraceContext {
   const documents = uniquePaths(input.documents, MAX_TRACE_DOCUMENTS, 'Invalid trace context documents.');
   if (documents.length === 0) fail('Trace context requires at least one bridge-facts document.');
   const analyses = parseAnalysisReferences(input.analyses, undefined, new Set());
+  const selection = parseSelection(input.selection, undefined);
+  const fileSymbols = parseFileSymbols(input.fileSymbols, selection, undefined);
   return {
     format: 'isthmus-trace-context', version: 1, project, ...(revision === undefined ? {} : { revision }),
-    documents, analyses, selection: parseSelection(input.selection, undefined),
+    documents, analyses, selection, ...(fileSymbols === undefined ? {} : { fileSymbols }),
   };
 }
 
@@ -252,9 +276,11 @@ function parseWorkspaceContext(input: Record<string, unknown>): TraceContext {
     fail(`Workspace analyses must have unique paths and be at most ${MAX_TRACE_ANALYSES} in total.`);
   }
   const links = parseLinks(input.links, members);
+  const selection = parseSelection(input.selection, names);
+  const fileSymbols = parseFileSymbols(input.fileSymbols, selection, names);
   return {
     format: 'isthmus-trace-context', version: 1, workspace: { members, links }, documents, analyses,
-    selection: parseSelection(input.selection, names),
+    selection, ...(fileSymbols === undefined ? {} : { fileSymbols }),
   };
 }
 
@@ -583,6 +609,44 @@ function parseSymbolSelection(input: unknown, members: ReadonlySet<string> | und
   }
   if (!isTraversalPlatform(input.platform) || input.platform === 'sql') fail('Unsupported symbol selection platform.');
   return { platform: input.platform, usr: safe(input.usr, 'Invalid symbol selection usr.'), ...selectionMember(input, members) };
+}
+
+/**
+ * `fileSymbols`를 검증한다. 파일 선택에서만 받고, 항목마다 선택한 파일(workspace면 같은 member)을 가리켜야 한다 —
+ * 선택하지 않은 파일의 목록은 쓰이지 않으므로 다른 선택용 context를 잘못 붙인 것으로 보고 거부한다(fail-closed).
+ * (member, path, platform)은 유일하고, usr는 항목 안에서 중복 없이 1~{@link MAX_FILE_SYMBOL_USRS}개다.
+ */
+function parseFileSymbols(input: unknown, selection: TraceSelection,
+  members: ReadonlySet<string> | undefined): TraceFileSymbols[] | undefined {
+  if (input === undefined) return undefined;
+  if (!('files' in selection)) fail('fileSymbols is accepted only with a files selection.');
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_TRACE_SELECTIONS * 8) fail('Invalid fileSymbols list.');
+  const selected = new Set(selection.files.map((file) => selectionKey(file)));
+  let total = 0;
+  const entries = input.map((item): TraceFileSymbols => {
+    if (!isJsonObject(item) || Object.keys(item).some((key) => !['member', 'path', 'platform', 'usrs'].includes(key))) {
+      fail('Each fileSymbols entry takes path, platform, usrs and (in a workspace) member.');
+    }
+    const { member } = selectionMember(item, members);
+    if (!isProjectRelativePath(item.path)) fail('fileSymbols paths must be project-relative paths without "..".');
+    const key = member === undefined ? item.path : selectionKey({ member, path: item.path });
+    if (!selected.has(key)) fail('A fileSymbols entry names a file that the files selection does not select.');
+    if (!isTraversalPlatform(item.platform) || item.platform === 'sql') fail('Unsupported fileSymbols platform.');
+    if (!Array.isArray(item.usrs) || item.usrs.length === 0 || item.usrs.length > MAX_FILE_SYMBOL_USRS ||
+      !item.usrs.every(isSafeNonEmptyString) || new Set(item.usrs).size !== item.usrs.length) {
+      fail(`fileSymbols usrs must be 1 to ${MAX_FILE_SYMBOL_USRS} distinct non-empty strings without control characters.`);
+    }
+    total += item.usrs.length;
+    return { ...(member === undefined ? {} : { member }), path: item.path, platform: item.platform,
+      usrs: [...(item.usrs as string[])].sort(compareStrings) };
+  });
+  if (total > MAX_FILE_SYMBOL_TOTAL) fail(`fileSymbols may list at most ${MAX_FILE_SYMBOL_TOTAL} usrs in total.`);
+  const keyed = entries.map((entry) => [JSON.stringify([entry.member ?? '', entry.path, entry.platform]), entry] as const)
+    .sort(([left], [right]) => compareStrings(left, right));
+  if (keyed.some(([identity], index) => index > 0 && keyed[index - 1]![0] === identity)) {
+    fail('fileSymbols entries must be unique per member, path and platform.');
+  }
+  return keyed.map(([, entry]) => entry);
 }
 
 /** 중복을 거부하고 결정적 순서로 정렬한다. */

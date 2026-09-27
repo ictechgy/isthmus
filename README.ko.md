@@ -333,7 +333,10 @@ http가 선언한 link에서만 이어지므로 테이블 변경이 다른 저�
 조인을 검증하는 `isthmus check --pairs`, 사실에서 뽑은 핸들러·호출부·relation-use·스키마 정점 id를 root로 한 생산자
 순회(`--roots-from`을 지원하면 그것으로)를 실행하고, 사전 계산 artifact는 `sha256`과 함께 복사해 단일 project 또는
 workspace trace context, 생산자 버전·revision manifest, 선택적으로 `trace.json`을 쓴다. 자식은 셸 없이 인자 배열로
-단계별 시간 제한 안에서 실행하고, 모든 경로는 선언한 root 안에 있어야 한다.
+단계별 시간 제한 안에서 실행하고, 모든 경로는 선언한 root 안에 있어야 한다. 파일 선택이면 두 단계로 모은다 — 정방향 순회와
+선택적 생산자 심볼 목록(tsograph `graph`·kartograph `snapshot`·cartograph `graph`)을 먼저, 선택한 파일에 놓인 심볼까지
+root로 한 역방향 순회를 나중에 실행해 사실 없는 헬퍼도 사실 위치 fallback 없이 잇는다. 목록의 심볼은 context의 선택 필드
+`fileSymbols`로 trace에 전한다.
 [TRACE의 capture 절](docs/TRACE.md#capture로-한-번에-수집하기)을 본다.
 [`docs/TRACE.md`](docs/TRACE.md)를 본다.
 

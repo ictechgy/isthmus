@@ -153,7 +153,8 @@ test('인자는 셸을 거치지 않는다: 셸 메타 문자가 그대로 전�
   assert.equal(existsSync(join(work, 'out/trace.json')), false);
 });
 
-test('workspace: member별 사실·순회, 사전 계산 artifact의 sha256, catalog graphSha, contract 문서 경로를 context에 싣는다', async (t) => {
+/** fixtures/trace-workspace(분리된 두 저장소)를 capture 설정으로 옮긴다. */
+async function workspaceCaptureConfig(t) {
   const work = await workspace(t);
   await mkdir(join(work, 'server'));
   await mkdir(join(work, 'client'));
@@ -196,6 +197,11 @@ test('workspace: member별 사실·순회, 사전 계산 artifact의 sha256, cat
       contract: { member: 'server-spec', documents: ['api.openapi.json'], authoritative: true } }],
     selection: { routes: [{ method: 'GET', template: '/api/orders/{}' }] },
   };
+  return { work, config };
+}
+
+test('workspace: member별 사실·순회, 사전 계산 artifact의 sha256, catalog graphSha, contract 문서 경로를 context에 싣는다', async (t) => {
+  const { work, config } = await workspaceCaptureConfig(t);
   await captureTrace(config);
   const out = join(work, 'capture/out');
   const context = JSON.parse(await readFile(join(out, 'trace-context.json'), 'utf8'));
@@ -439,4 +445,151 @@ test('CLI는 사용법·설정 오류를 종료 코드 2와 단계 문구로 알
   const good = runChild(process.execPath, [script, join(work, 'good.json')]);
   assert.equal(good.status, 0, good.stderr);
   assert.deepEqual(JSON.parse(good.stdout).trace.gapCodes, {});
+});
+
+/** 2단계 수집 fixture(scripts/fixtures/capture-trace/) 경로 참조다. */
+const stageFixture = (name) => ({ root: 'repo', path: `scripts/fixtures/capture-trace/${name}` });
+/** 사실이 없는 헬퍼 파일이다. 헬퍼 users.load는 GET 핸들러가 부른다. */
+const helperFile = 'server/service/users.ts';
+
+/** 헬퍼 파일을 고른 단일 project 설정이다. 역방향 순회는 헬퍼까지 root로 받아야 하는 fixture를 쓴다. */
+async function fileSelectionConfig(t) {
+  const setup = await singleProjectConfig(t);
+  const [member] = setup.config.members;
+  setup.config.selection = { files: [helperFile] };
+  member.analyses[1].args = ['traverse', stageFixture('server-reverse-files.json'), '--project', '{project}'];
+  return setup;
+}
+
+test('파일 선택 2단계: 생산자 목록의 파일 심볼을 역방향 root에 더하고 context fileSymbols로 싣는다', async (t) => {
+  const { work, config } = await fileSelectionConfig(t);
+  config.members[0].listings = [{ platform: 'js', tool: 'tsograph',
+    args: ['emit', stageFixture('listing.tsograph-graph.json'), '--project', '{project}'] }];
+  const calls = recordArguments(t, work);
+  await captureTrace(config);
+  const out = join(work, 'out');
+  const context = JSON.parse(await readFile(join(out, 'trace-context.json'), 'utf8'));
+  assert.deepEqual(context.fileSymbols, [{ path: helperFile, platform: 'js', usrs: ['ts:service/users.load'] }]);
+  // context의 분석 순서는 실행 순서(역방향이 나중)가 아니라 설정 순서다.
+  assert.deepEqual(context.analyses.map(({ id }) => id), ['server-forward', 'server-reverse', 'db', 'android-reverse']);
+  const reverse = (await calls()).find((entry) => entry[1] === 'traverse' && entry[2].endsWith('server-reverse-files.json'));
+  assert.deepEqual(reverse.slice(5), ['--', 'ts:repo/audit.write', 'ts:repo/users.findById', 'ts:service/users.load']);
+
+  const trace = JSON.parse(await readFile(join(out, 'trace.json'), 'utf8'));
+  const codes = trace.gaps.map(({ code }) => code);
+  for (const code of ['file-selection-fact-fallback', 'file-without-symbols', 'analysis-missing']) assert.equal(codes.includes(code), false, code);
+  assert.deepEqual(trace.chains[0].routes.map(({ method, template }) => [method, template]), [['GET', '/api/users/{}']]);
+  assert.match(trace.notices[0].detail, /1 more listed in fileSymbols/u);
+
+  const manifest = JSON.parse(await readFile(join(out, 'capture-manifest.json'), 'utf8'));
+  const order = (name) => manifest.steps.findIndex(({ step }) => step === name);
+  assert.ok(order('analysis:server-forward') < order('listing:app/js'));
+  assert.ok(order('listing:app/js') < order('analysis:server-reverse'));
+  assert.deepEqual(manifest.fileSelection.find(({ platform }) => platform === 'js'), { platform: 'js', files: 1, source: 'listing',
+    listing: 'tsograph-graph', complete: true, skipped: 0, symbols: 1, reverseRoots: 1 });
+  const kotlin = manifest.fileSelection.find(({ platform }) => platform === 'kotlin');
+  assert.equal(kotlin.source, 'traversal');
+  assert.equal(kotlin.complete, false);
+  assert.match(kotlin.notes[0], /No symbol listing for this platform/u);
+  assert.equal(manifest.artifacts.find(({ path }) => path === 'app/listings/js.json').source, 'captured');
+});
+
+test('파일 선택 2단계: 목록이 없으면 1단계 순회가 위치시킨 파일 심볼을 root에 더하고 불완전하다고 적는다', async (t) => {
+  const { work, config } = await fileSelectionConfig(t);
+  config.members[0].analyses[0].args = ['traverse', stageFixture('server-forward-located.json'), '--project', '{project}'];
+  await captureTrace(config);
+  const context = JSON.parse(await readFile(join(work, 'out/trace-context.json'), 'utf8'));
+  // 순회가 이미 위치를 실었으므로 fileSymbols는 쓰지 않는다(trace가 분석 위치로 본다).
+  assert.equal('fileSymbols' in context, false);
+  const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
+  assert.equal(trace.gaps.some(({ code }) => ['file-selection-fact-fallback', 'analysis-missing'].includes(code)), false);
+  assert.deepEqual(trace.chains[0].routes.map(({ template }) => template), ['/api/users/{}']);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  const js = manifest.fileSelection.find(({ platform }) => platform === 'js');
+  assert.deepEqual({ ...js, notes: undefined }, { platform: 'js', files: 1, source: 'traversal', complete: false, symbols: 1,
+    reverseRoots: 1, notes: undefined });
+});
+
+test('파일 선택 2단계: 찾은 심볼이 없으면 fallback을 그대로 두고, 다시 돌릴 역방향이 없으면 그렇다고 적는다', async (t) => {
+  await t.test('심볼 없음', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    config.selection = { files: [helperFile] };
+    await captureTrace(config);
+    const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
+    assert.deepEqual(trace.gaps.map(({ code }) => code), ['file-without-symbols']);
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.fileSelection.map(({ platform, symbols, reverseRoots }) => [platform, symbols, reverseRoots]),
+      [['js', 0, 0], ['kotlin', 0, 0]]);
+  });
+  await t.test('사전 계산 역방향뿐', async (st) => {
+    const { work, project, config } = await fileSelectionConfig(st);
+    config.members[0].listings = [{ platform: 'js', tool: 'tsograph',
+      args: ['emit', stageFixture('listing.tsograph-graph.json'), '--project', '{project}'] }];
+    const reverse = await precomputedCopy(work, 'trace/server-reverse.json', project, 'server-reverse.json');
+    config.members[0].analyses[1] = { id: 'server-reverse', platform: 'js', role: 'reverse', precomputed: { path: reverse } };
+    await captureTrace(config);
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    const js = manifest.fileSelection.find(({ platform }) => platform === 'js');
+    assert.equal(js.reverseRoots, 0);
+    assert.match(js.notes[0], /No reverse analysis with a producer command/u);
+    const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
+    assert.ok(trace.gaps.some(({ code }) => code === 'analysis-missing'));
+  });
+});
+
+test('심볼 목록은 파일 선택에서만 실행하고, 잘못된 목록은 그 단계의 오류다', async (t) => {
+  await t.test('파일 선택이 아니면 건너뛴다', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    const calls = recordArguments(st, work);
+    config.members[0].listings = [{ platform: 'js', tool: 'tsograph', args: ['fail', '9'] }];
+    await captureTrace({ ...config, trace: false });
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.match(manifest.steps.find(({ step }) => step === 'listing:app/js').skipped, /only by a files selection/u);
+    assert.equal(manifest.fileSelection, undefined);
+    assert.equal((await calls()).some((entry) => entry[1] === 'fail'), false);
+  });
+  const cases = [
+    ['다른 project', ['emit', stageFixture('listing.tsograph-graph.json'), '--project', '/elsewhere'], /different project/u],
+    ['모르는 형식', ['emit', fixture('trace/server.http.json'), '--project', '{project}'], /Unsupported symbol listing/u],
+    ['JSON 아님', ['garbage'], /did not print a JSON document/u],
+  ];
+  for (const [name, args, pattern] of cases) {
+    await t.test(name, async (st) => {
+      const { config } = await fileSelectionConfig(st);
+      config.members[0].listings = [{ platform: 'js', tool: 'tsograph', args }];
+      await rejectsAt(captureTrace(config), 'listing:app/js', pattern);
+    });
+  }
+  await t.test('파일 심볼이 fileSymbols 상한을 넘으면 역방향 순회 전에 목록 단계에서 멈춘다', async (st) => {
+    const { work, project, config } = await fileSelectionConfig(st);
+    const nodes = Array.from({ length: 10_001 }, (_, index) => ({ id: `ts:gen/${index}`, location: { path: helperFile, line: 1, column: 1 } }));
+    await writeFile(join(work, 'ci', 'big.json'), JSON.stringify({ format: 'tsograph-graph', version: 1, project, nodes }));
+    config.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'ci/big.json' } }];
+    await rejectsAt(captureTrace(config), 'listing:app/js', /10001 listed symbols, above the fileSymbols limit of 10000/u);
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.equal(manifest.steps.some(({ step }) => step === 'analysis:server-reverse'), false);
+  });
+  await t.test('사전 계산 목록', async (st) => {
+    const { work, project, config } = await fileSelectionConfig(st);
+    const listing = JSON.parse(await readFile(join(repository, 'scripts/fixtures/capture-trace/listing.tsograph-graph.json'), 'utf8'));
+    await writeFile(join(work, 'ci', 'listing.json'), JSON.stringify({ ...listing, project }));
+    config.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'ci/listing.json' } }];
+    await captureTrace(config);
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.equal(manifest.artifacts.find(({ path }) => path === 'app/listings/js.json').source, 'precomputed');
+  });
+});
+
+test('workspace 파일 선택: 선택한 파일이 없는 member의 목록은 실행하지 않고 그 이유를 적는다', async (t) => {
+  const { work, config } = await workspaceCaptureConfig(t);
+  const calls = recordArguments(t, work);
+  config.tools.lister = { command: [process.execPath, fake, 'lister'] };
+  config.members[2].listings = [{ platform: 'kotlin', tool: 'lister', args: ['fail', '9'] }];
+  config.selection = { files: [{ member: 'server', path: 'src/db/orders.ts' }] };
+  await captureTrace({ ...config, trace: false });
+  const manifest = JSON.parse(await readFile(join(work, 'capture/out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.tools.lister, undefined);
+  assert.equal((await calls()).some((entry) => entry[0] === 'lister'), false);
+  assert.match(manifest.steps.find(({ step }) => step === 'listing:client/kotlin').skipped, /selects no file of this member/u);
+  assert.deepEqual(manifest.fileSelection.map(({ member, platform }) => [member, platform]), [['server', 'js']]);
 });

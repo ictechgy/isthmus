@@ -367,7 +367,11 @@ traversals rooted at the handler, call-site, relation-use, and schema vertex ids
 (`--roots-from` where the producer supports it), copies precomputed artifacts with their `sha256`, and
 writes a single-project or workspace trace context, a manifest of producer versions and revisions, and
 optionally `trace.json`. Children run from argument arrays without a shell, with a timeout per step, and
-every path must stay inside the declared roots. See
+every path must stay inside the declared roots. For a file selection it collects in two stages: forward
+traversals and optional producer symbol listings first (tsograph `graph`, kartograph `snapshot`, cartograph
+`graph`), then the reverse traversals rooted also at the symbols located in the selected files, so helpers
+without facts no longer fall back to fact locations; listed symbols reach trace through the optional
+context field `fileSymbols`. See
 [capture in `docs/TRACE.md` (Korean)](docs/TRACE.md#capture로-한-번에-수집하기).
 See [`docs/TRACE.md`](docs/TRACE.md).
 
