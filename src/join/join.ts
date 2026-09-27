@@ -16,6 +16,30 @@ import {
   isBridgeDomainDocument,
   isBridgeReceiverDocument,
 } from '../exchange/parse.ts';
+import type { RoutePathAnchor } from '../exchange/parse.ts';
+import {
+  isClientDocument,
+  isDeclarationDocument,
+  joinRouteFacts,
+  RouteJoinInputError,
+  RouteSuffixBudgetError,
+  type RouteJoinResult,
+} from './route-join.ts';
+import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
+
+/**
+ * http 증거 끝점의 route 정보다. 증거만 봐도 호출·선언·계약과 그 키를 구분할 수 있게 한다.
+ *
+ * authority·baseRef는 싣지 않는다. dynamic 사실은 원문을 싣지 않으므로 template이 없다.
+ */
+export interface RouteEndpointInfo {
+  readonly kind: 'route-decl' | 'route-call' | 'route-contract';
+  /** HTTP 동사(또는 decl의 `ANY`). 동사가 동적인 호출에는 없다. */
+  readonly method?: string;
+  readonly template?: string;
+  readonly pathAnchor: RoutePathAnchor;
+  readonly testSource?: true;
+}
 
 /** 한 언어 문서가 제공한 브리지 증거 위치다. */
 export interface BridgeEndpoint {
@@ -37,6 +61,8 @@ export interface BridgeEndpoint {
   /** method-handle 분기 근거다. v2 handler 사실과 같은 형태를 공유한다. */
   readonly handlerScope?: BridgeHandlerScope;
   readonly dependencies?: readonly BridgeHandlerDependency[];
+  /** http 증거에만 실린다. bridge·persistence 끝점의 직렬화는 그대로다. */
+  readonly route?: RouteEndpointInfo;
 }
 
 /** 논리 채널 하나에 모인 양쪽 생성·등록 증거다. */
@@ -218,6 +244,8 @@ export interface BridgeJoinResult {
   readonly relationDeclsWithoutUses: readonly RelationDeclWithoutUse[];
   readonly matchedColumns: readonly MatchedColumn[];
   readonly columnUsesWithoutDecls: readonly ColumnUseWithoutDecl[];
+  /** target `http` 문서가 있을 때만 실린다. 없으면 기존 결과와 같은 모양이다. */
+  readonly routes?: RouteJoinResult;
   readonly limitations: readonly JoinLimitation[];
 }
 
@@ -244,7 +272,8 @@ export function joinBridgeDocuments(
   }
   validateProjects(documents);
   validatePlatformComposition(documents);
-  const limitations = collectLimitations(documents);
+  const routes = joinRoutes(documents);
+  const limitations = collectLimitations(documents, routes?.limitations ?? []);
   const observedFacts = documents.reduce(
     (total, document) => total + document.facts.length,
     0,
@@ -316,8 +345,31 @@ export function joinBridgeDocuments(
     relationDeclsWithoutUses: relations.relationDeclsWithoutUses,
     matchedColumns: relations.matchedColumns,
     columnUsesWithoutDecls: relations.columnUsesWithoutDecls,
+    ...(routes === undefined ? {} : { routes }),
     limitations,
   };
+}
+
+/**
+ * http 문서가 있으면 route 조인을 실행한다. 없으면 undefined라 기존 결과 모양이 그대로다.
+ *
+ * mixed-targets 보류는 호출자가 결과를 버리므로 여기서 따로 막지 않는다. 귀속 규칙 위반과
+ * suffix 비교 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
+ */
+function joinRoutes(documents: readonly BridgeFactsDocument[]): RouteJoinResult | undefined {
+  if (!documents.some(({ target }) => target === 'http')) return undefined;
+  try {
+    return joinRouteFacts(documents, compareEndpoints);
+  } catch (error) {
+    if (error instanceof RouteJoinInputError) throw new BridgeJoinValidationError(error.message);
+    if (error instanceof RouteSuffixBudgetError) {
+      throw new BridgeJoinValidationError(
+        `Http suffix matching exceeds ${MAX_ROUTE_SUFFIX_COMPARISONS} comparisons; narrow the inputs `
+        + '(fewer base-anchored calls or declarations per join) and retry. No partial result is emitted.',
+      );
+    }
+    throw error;
+  }
 }
 
 /** 입력 한계 때문에 조인 전체가 보류된 결과인지 확인한다. */
@@ -345,14 +397,18 @@ function validatePlatformComposition(
   const hasPersistenceDomain = documents.some(
     (document) => document.target === 'persistence',
   );
+  // http 도메인은 target으로만 성립한다. http 문서는 bridge·persistence 어느 쪽 요건도
+  // 채우지 않는다(`isBridgeDomainDocument`가 target http를 bridge에서 뺀다).
+  const hasHttpDomain = documents.some((document) => document.target === 'http');
   // bridge 역할은 platform이 아니라 명시 규칙(`isBridgeDomainDocument`)으로 정한다 —
   // kotlin·swift·dart persistence 문서가 bridge 호출·수신 요건을 채우지 못하게 한다.
   const bridgeDocuments = documents.filter(isBridgeDomainDocument);
-  // persistence 도메인이 없으면(도메인이 하나도 성립하지 않는 입력 포함) bridge 구성
-  // 규칙을 그대로 적용하고, 혼합 입력이면 bridge 문서가 있을 때만 적용한다.
-  if (!hasPersistenceDomain || bridgeDocuments.length > 0) {
+  // 다른 도메인이 없으면(도메인이 하나도 성립하지 않는 입력 포함) bridge 구성 규칙을
+  // 그대로 적용하고, 혼합 입력이면 bridge 문서가 있을 때만 적용한다.
+  if ((!hasPersistenceDomain && !hasHttpDomain) || bridgeDocuments.length > 0) {
     validateBridgeComposition(bridgeDocuments, hasPersistenceDomain);
   }
+  if (hasHttpDomain) validateHttpComposition(documents);
   if (!hasPersistenceDomain) return;
   // persistence 도메인: sql 선언 문서 하나와, 이 경계를 실제로 스캔한
   // (target이 persistence인) 비sql 호출 측 문서 하나를 요구한다. target이
@@ -395,6 +451,28 @@ function validateBridgeComposition(
     );
   }
   throw new BridgeJoinValidationError(`${requirement}run a producer for the missing side.`);
+}
+
+/**
+ * http 도메인 입력에 선언 측과 호출 측 문서가 각각 하나 이상 있는지 검사한다.
+ *
+ * 선언 측은 route-decl·route-contract 사실이 있거나 roles에 server가 있는 문서, 호출 측은
+ * roles에 client가 있는 문서다. 사실 0건 문서도 roles로 "스캔했으나 없음"을 밝히면 센다.
+ * 예외는 호출 측 없이 decl과 contract만 비교하는 드리프트 입력이다 — 이때는 route-decl을
+ * 스캔한 서버 문서와 openapi 문서가 모두 있어야 한다.
+ */
+function validateHttpComposition(documents: readonly BridgeFactsDocument[]): void {
+  const http = documents.filter(({ target }) => target === 'http');
+  const declarations = http.filter(isDeclarationDocument);
+  if (declarations.length > 0 && http.some(isClientDocument)) return;
+  const driftMode = declarations.some(({ platform }) => platform === 'openapi') &&
+    declarations.some(({ platform, roles }) => platform !== 'openapi' && (roles?.includes('server') ?? false));
+  if (driftMode) return;
+  throw new BridgeJoinValidationError(
+    'Http documents must include at least one declaration-side document (route-decl or route-contract '
+    + 'facts, or roles with "server") and one caller-side document (roles with "client"); '
+    + 'run a producer for the missing side or pass a zero-fact document that declares its roles.',
+  );
 }
 
 /** 사실별 target이 없는 혼합 문서인지 확인한다. */
@@ -485,6 +563,7 @@ function emptyJoinResult(
 /** 입력 limitation에 생산 플랫폼과 도구 이름을 붙이고 조인하지 못한 사실을 함께 센다. */
 function collectLimitations(
   documents: readonly BridgeFactsDocument[],
+  routeLimitations: readonly JoinLimitation[],
 ): JoinLimitation[] {
   const limitations: JoinLimitation[] = documents.flatMap((document) => {
     const scopes = new Map(document.limitationScopes?.map((scope) => [scope.limitationIndex, scope.channels]));
@@ -499,7 +578,7 @@ function collectLimitations(
       };
     });
   });
-  limitations.push(...unjoinedFactLimitations(documents));
+  limitations.push(...unjoinedFactLimitations(documents), ...routeLimitations);
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
   return limitations.sort(compareLimitations);
@@ -785,11 +864,21 @@ export function compareEndpoints(left: BridgeEndpoint, right: BridgeEndpoint): n
   if (locationOrder !== 0) return locationOrder;
   const languageOrder = compareOptionalStrings(left.sourceLanguage, right.sourceLanguage);
   if (languageOrder !== 0) return languageOrder;
-  if (left.symbol === undefined) return right.symbol === undefined ? 0 : 1;
-  if (right.symbol === undefined) return -1;
-  return (
-    compareStrings(left.symbol.qualifiedName, right.symbol.qualifiedName) ||
-    compareOptionalStrings(left.symbol.usr, right.symbol.usr)
+  if (left.symbol === undefined) {
+    if (right.symbol !== undefined) return 1;
+  } else if (right.symbol === undefined) {
+    return -1;
+  } else {
+    const symbolOrder = compareStrings(left.symbol.qualifiedName, right.symbol.qualifiedName) ||
+      compareOptionalStrings(left.symbol.usr, right.symbol.usr);
+    if (symbolOrder !== 0) return symbolOrder;
+  }
+  // http 끝점만 route 정보를 가진다. 같은 위치의 catch-all 원본과 접두사 decl처럼 위치·심볼이
+  // 같아도 키가 다른 증거가 입력 순서에 따라 합쳐지지 않게 끝까지 비교한다. bridge·persistence
+  // 끝점은 둘 다 없어 기존 순서와 같다.
+  return compareOptionalStrings(
+    left.route === undefined ? undefined : JSON.stringify(left.route),
+    right.route === undefined ? undefined : JSON.stringify(right.route),
   );
 }
 
