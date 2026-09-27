@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { adaptSchemagraphImpact } from './schemagraph-impact.ts';
-import { TraversalValidationError } from './language-traversal.ts';
+import { reachedEvidence, TraversalValidationError } from './language-traversal.ts';
 
 /** schemagraph main의 impact JSON과 같은 모양의 합성 문서다(선택 키 포함). */
 function legacy(): any {
@@ -30,6 +30,9 @@ test('schemagraph-impact v1을 via 경로가 있는 sql 의존자 순회로 바�
     ['main.report', 2, 'main.active_users', ['reads']],
   ]);
   assert.deepEqual(graph.limitations, ['catalog: synthetic']);
+  // 옛 보고서는 등급·잇지 못한 호출을 신고하지 않지만 스키마 간선은 direct로 읽는다.
+  assert.deepEqual([graph.evidenceReported, graph.unresolvedCallsReported], [false, false]);
+  assert.ok(graph.reached.every((row) => reachedEvidence(graph, row) === 'direct'));
   const truncated = adaptSchemagraphImpact({ ...legacy(), truncated: true, truncationReasons: ['max', 'depth', 'max'],
     subject: { id: 'main.users' } });
   assert.deepEqual(truncated.truncationReasons, ['depth', 'max']);
