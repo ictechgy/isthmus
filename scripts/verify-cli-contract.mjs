@@ -89,6 +89,9 @@ function verifyTrace() {
   verify(chain.database.some(({ vertex, dependents }) => vertex === 'main.users' &&
     dependents.some(({ usr }) => usr === 'main.active_users')), 'trace database dependents');
   verify(chain.routes[0].calls[0].affected.some(({ usr }) => usr === 'kt:ProfileViewModel.refresh'), 'trace client impact');
+  // 근거 등급은 모든 도달 근거에 실리고 요약에 등급별 수가 있다(dispatch를 선언한 TS 순회는 direct).
+  verify(chain.relationUses.every(({ reachedFrom }) => reachedFrom.every(({ evidence }) => evidence === 'direct')) &&
+    report.summary.evidence?.direct === 5 && report.summary.evidence?.unassessed === 2, 'trace evidence tiers');
   const relation = run(['trace', fixture('context-relation.json'), '--compact']);
   verify(relation.status === 0 && JSON.parse(relation.stdout).summary.routes === 2, 'trace reverse relation');
   verify(run(['trace', fixture('server-forward.json')]).status === 2, 'trace invalid context');

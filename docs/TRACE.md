@@ -77,24 +77,26 @@ isthmus trace trace-context.json [--strict] [--compact]
       "declarations": [ /* route-decl 끝점: platform·location·symbol·route */ ], "contracts": [],
       "calls": [{ "call": { /* route-call 끝점 */ }, "side": "decl", "quality": "exact",
         "affected": [{ "platform": "kotlin", "usr": "kt:UsersRepository.load", "analysis": "android-reverse",
-                       "depth": 1, "path": ["kt:UsersApi.get", "kt:UsersRepository.load"] }] }] }],
+                       "depth": 1, "path": ["kt:UsersApi.get", "kt:UsersRepository.load"], "evidence": "unassessed" }] }] }],
     "handlers": [{ "platform": "js", "usr": "ts:api/users.get", "qualifiedName": "users.get",
                    "routes": [{ "scope": "default", "method": "GET", "template": "/api/users/{}" }], "reachedFrom": [] }],
     "relationUses": [{ "use": { /* relation-use 끝점 */ }, "relation": "users",
       "resolved": { "relation": "main.users" }, "decls": [ /* relation-decl 끝점 */ ],
-      "reachedFrom": [{ "from": "ts:api/users.get", "analysis": "server-forward", "depth": 2,
+      "reachedFrom": [{ "from": "ts:api/users.get", "analysis": "server-forward", "depth": 2, "evidence": "bound",
                         "path": ["ts:api/users.get", "ts:service/users.load", "ts:repo/users.findById"] }] }],
     "database": [{ "vertex": "main.users", "dependents": [{ "platform": "sql", "usr": "main.active_users",
-      "kind": "view", "analysis": "db", "depth": 1, "path": ["main.users", "main.active_users"] }] }]
+      "kind": "view", "analysis": "db", "depth": 1, "path": ["main.users", "main.active_users"], "evidence": "direct" }] }]
   }],
   "gaps": [],
   "limitations": [ /* 조인 한계(check와 같은 모양) */ ],
   "analysisLimitations": [{ "analysis": "…", "message": "…" }],
   "analyses": [{ "id": "db", "platform": "sql", "role": "db-dependents", "source": "language-traversal",
                  "direction": "dependents", "tool": { "…": "…" }, "revision": "rev-1", "graphRevision": "catalog-1",
-                 "truncated": false, "rootsTruncated": false, "rootProvenance": "complete", "roots": 2, "reached": 2 }],
+                 "truncated": false, "rootsTruncated": false, "rootProvenance": "complete",
+                 "evidenceReported": false, "unresolvedCallsReported": false, "roots": 2, "reached": 2 }],
   "summary": { "chains": 1, "routes": 1, "handlers": 1, "relationUses": 2, "databaseVertices": 2,
-               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "gaps": 0 }
+               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "gaps": 0,
+               "evidence": { "direct": 3, "bound": 2, "candidate": 0, "unassessed": 2 } }
 }
 ```
 
@@ -103,12 +105,25 @@ isthmus trace trace-context.json [--strict] [--compact]
   다른 생산자의 id를 섞지 않는다.
 - `path`·`depth`는 생산자의 via 목격을 따른다. 목격 경로가 이 hop의 시작 root가 아닌 다른 root에서
   시작하면 `witnessRoot`를 싣는다 — 그때 depth·path는 그 root 기준이고, 시작 root에서의 거리는 depth
-  이상이라는 것만 안다(경로를 지어내지 않는다). 같은 정점에 근거가 여럿이면 시작 root 자신의 경로,
-  depth, 분석 id 순으로 하나만 싣는다.
+  이상이라는 것만 안다(경로를 지어내지 않는다). 같은 정점에 근거가 여럿이면 더 강한 근거 등급(direct,
+  bound, candidate, unassessed 순), 시작 root 자신의 경로, depth, 분석 id 순으로 하나만 싣는다 — 한 분석이라도
+  더 강한 근거로 닿으면 그 hop은 약한 근거에만 기대지 않기 때문이다.
 - root 항목의 via 목격이 그 root 자신으로 돌아오면(순환) 돌아오기 직전까지의 경로만 싣고
   `witnessPartial: true`를 단다(`witnessRoot`는 싣지 않는다). depth는 생산자 값을 그대로 쓴다.
 - 순회에서 다른 root에서 닿은 root 항목도 도달 정점으로 쓴다. 그래서 테이블 A의 DB 의존자에는 B가
   함께 root로 주어졌어도 B가 실린다. B 너머의 정점은 B에서 시작하는 목격 경로와 `witnessRoot: B`를 싣는다.
+- **근거 등급**: 모든 도달 근거(`relationUses[].reachedFrom`·`handlers[].reachedFrom`·`calls[].affected`·
+  `database[].dependents`)는 `evidence`를 싣는다. 값은 도달한 정점의 등급(`direct`·`bound`·`candidate`)이며,
+  생산자 정의상 그 정점에 닿는 root마다 성립하는 하한이라 목격 경로에서 가장 약한 등급과 같다. 시작점 자신
+  (depth 0)은 `direct`다. 생산자가 등급을 분류하지 않은 언어 분석은 `unassessed`, 분류하지 않은 sql 분석은
+  `direct`다([필드가 없을 때](LANGUAGE-TRAVERSAL.md#필드가-없을-때-문서-수준-규칙)). `candidate` hop은 빼지 않고
+  싣되 `candidate-dispatch` gap을 남긴다. `bound`는 품질 표시일 뿐 gap이 아니다. `summary.evidence`는 이 도달
+  근거들의 등급별 수다. `analyses[]`는 `dispatch`(있으면), `evidenceReported`, `unresolvedCallsReported`를 싣는다.
+- **완전성 신호**: route 선택에서 핸들러를 root로 한 정방향 분석마다, 핸들러 root나 그 핸들러에서 닿은 정점
+  (`roots`에 핸들러 인덱스가 있는 도달 정점)에 `unresolvedCalls`가 있으면 `reach-possibly-incomplete`를
+  남긴다 — 문구에 합계, 정점 수, 예시 id 5개(핸들러 먼저, 그다음 문서 순서)를 싣는다. 분석이 잇지 못한
+  호출을 아예 신고하지 않으면 0인지 모르므로 `reach-completeness-unknown`을 남긴다. 역방향·DB 분석의
+  `unresolvedCalls`는 특정 hop에 귀속할 수 없어 이 gap을 만들지 않는다.
 - 호출은 귀속된 정적 호출만 싣는다(check 귀속 게이트와 같다). decl에 match된 호출은 `side: "decl"`,
   decl 쪽이 없거나 맞지 않고 선택 키의 contract에 match된 호출은 `side: "contract"`다. 품질 표기는
   `check --pairs`와 같다.
@@ -130,6 +145,9 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `analysis-truncated` | 분석이 잘렸거나(`truncationReasons` 포함), root 귀속 64개 상한 때문에 이 root의 도달이 빠졌을 수 있다 |
 | `witness-partial` | root 항목의 via 목격이 그 root로 돌아와(순환) 다른 root에서의 경로를 알 수 없다. depth는 유효하다 |
 | `roots-provenance-partial` | 옛 형식의 다중 root 분석이라 root 출처를 대표 root 하나로만 안다 |
+| `candidate-dispatch` | hop이 가능성만 있는 구현 간선(`candidate`)으로만 뒷받침된다. hop은 그대로 싣는다. relation-use(`evidence`에 사용 사실, `symbol`에 핸들러)·핸들러 도달은 hop마다, 클라이언트·DB 영향 목록은 시작 심볼·분석별 개수와 예시 5개로 묶는다 |
+| `reach-possibly-incomplete` | 핸들러나 그 핸들러에서 닿은 정점에 생산자가 잇지 못한 호출이 있어 그 너머의 relation-use가 빠졌을 수 있다(합계·정점 수·예시 id) |
+| `reach-completeness-unknown` | 핸들러의 정방향 분석이 잇지 못한 호출을 신고하지 않아 도달이 끊겼는지 알 수 없다(분석·체인별 하나) |
 | `stale-analysis` | 분석 revision이 context나 다른 분석과 다르거나, 같은 플랫폼 분석의 graphRevision이 다르다 |
 | `analysis-revision-unknown` | context가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다 |
 | `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전) |
