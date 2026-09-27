@@ -17,6 +17,7 @@ import {
 } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
 import { messageTarget } from '../exchange/messages.ts';
+import { httpMethods, parseRouteTemplate } from '../exchange/route-template.ts';
 import type { CheckIssue } from './check-report.ts';
 import { createCheckReport, persistenceIssueKeys } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
@@ -34,7 +35,7 @@ export const RELATION_SUBJECT_PREFIX = 'relation:';
 export interface BridgeQuerySubject {
   readonly name: string;
   readonly qualifiedName: string;
-  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event' | 'relation';
+  readonly kind: 'channel' | 'method' | 'module' | 'component' | 'message' | 'stream' | 'event' | 'relation' | 'route';
 }
 
 /** relation 주체의 컬럼 하나에서 본 사용·선언 증거다. 사용이 관찰된 컬럼만 싣는다. */
@@ -56,14 +57,19 @@ export interface BridgeQueryResult {
   readonly dependsOn: readonly BridgeEndpoint[];
   readonly columns?: readonly RelationQueryColumn[];
   readonly issues?: readonly CheckIssue[];
+  /**
+   * route 주체에만 실린다. 귀속된 dynamic 호출 중 증명된 리터럴 접두사(`channelPrefix`)가
+   * 요청 템플릿의 접두사인 호출이다(품질 `prefix-candidate`). 판정에 쓰지 않는 후보다.
+   */
+  readonly prefixCandidates?: readonly BridgeEndpoint[];
 }
 
 /** cartograph query와 같은 상태 외피를 쓰는 브리지 질의 문서다. */
 export interface BridgeQueryDocument {
   readonly status: 'found' | 'ambiguous' | 'notFound';
   readonly requested: string;
-  /** bridge 주체는 `bridge`, relation 주체는 `persistence`다. */
-  readonly level: 'bridge' | 'persistence';
+  /** bridge 주체는 `bridge`, relation 주체는 `persistence`, route 주체는 `http`다. */
+  readonly level: 'bridge' | 'persistence' | 'http';
   readonly limitations: readonly JoinLimitation[];
   readonly result?: BridgeQueryResult;
   readonly candidates?: ReadonlyArray<{
@@ -440,4 +446,162 @@ function encodeSubjectComponent(value: string): string {
     .replaceAll('%', '%25')
     .replaceAll('#', '%23')
     .replaceAll(':', '%3A');
+}
+
+/**
+ * http route 주체를 요청하는 접두사다(`route:GET /api/v1/items/{}`).
+ *
+ * 형식은 `route:[<METHOD> ]<template>[ <scope>]`다. METHOD는 HTTP 동사·`ANY`·`?`(동사가
+ * 동적인 호출)이고 생략하면 모든 method다. 템플릿에는 공백이 올 수 없으므로 템플릿 뒤의
+ * 나머지 전체가 scope다. 찾은 주체의 qualifiedName은 세 부분을 모두 적은 형태라 다시
+ * 질의하면 같은 주체로 해석된다.
+ */
+export const ROUTE_SUBJECT_PREFIX = 'route:';
+
+/** 해석한 route 주체 요청이다. */
+export interface RouteSubjectRequest {
+  readonly method?: string;
+  readonly template: string;
+  readonly scope?: string;
+}
+
+/** route 주체 요청을 해석한다. 형식이 틀리면 undefined다(호출 오류). */
+export function parseRouteSubject(requested: string): RouteSubjectRequest | undefined {
+  const body = requested.slice(ROUTE_SUBJECT_PREFIX.length);
+  const tokens = body.split(' ');
+  const hasMethod = !(tokens[0] ?? '').startsWith('/');
+  const method = hasMethod ? tokens[0] : undefined;
+  const template = hasMethod ? tokens[1] : tokens[0];
+  const scope = tokens.slice(hasMethod ? 2 : 1).join(' ');
+  if (template === undefined || !parseRouteTemplate(template).ok) return undefined;
+  if (method !== undefined && !routeSubjectMethods.has(method)) return undefined;
+  return {
+    ...(method === undefined ? {} : { method }),
+    template,
+    ...(scope.length === 0 ? {} : { scope }),
+  };
+}
+
+/** route 주체에 쓸 수 있는 method 토큰이다. `?`는 동사가 동적인 호출이다. */
+const routeSubjectMethods = new Set<string>([...httpMethods, 'ANY', '?']);
+
+/**
+ * `route:` 접두사로 요청한 주체를 질의한다.
+ *
+ * 먼저 http route로 찾고, 없을(notFound) 때만 요청 문자열 그대로를 bridge 키로 찾는다.
+ * 접두사가 생기기 전에 `route:`로 시작하는 bridge 이름을 질의하던 입력의 결과를 바꾸지
+ * 않기 위해서다. 둘 다 없으면 http의 notFound를 돌려준다.
+ */
+export function createRoutePrefixedQuery(
+  joined: BridgeJoinResult,
+  requested: string,
+  subject: RouteSubjectRequest,
+  messages?: MessageBridgeJoin,
+): BridgeQueryDocument {
+  const routeQuery = createRouteQuery(joined, requested, subject);
+  if (routeQuery.status !== 'notFound') return routeQuery;
+  const literalBridgeQuery = createBridgeQuery(joined, requested, messages);
+  return literalBridgeQuery.status === 'notFound' ? routeQuery : literalBridgeQuery;
+}
+
+/**
+ * http route 하나를 질의한다. 요청 템플릿과 정확히 같은 선언 측 키(decl·contract)와 호출 키를
+ * (scope, method)별 주체로 모은다. 주체가 여럿이면 qualifiedName 후보로 모호함을 돌려준다.
+ *
+ * `usedBy`는 그 키의 귀속 호출과 그 키의 선언에 match된 귀속 호출, `dependsOn`은 그 키의
+ * decl·contract와 그 키의 호출이 match된 선언이다. 귀속되지 않은 호출은 어디에도 싣지 않는다.
+ */
+export function createRouteQuery(
+  joined: BridgeJoinResult,
+  requested: string,
+  subject: RouteSubjectRequest,
+): BridgeQueryDocument {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot query a deferred bridge join.');
+  }
+  const envelope = { requested, level: 'http' as const, limitations: joined.limitations };
+  const subjects = collectRouteSubjects(joined, subject);
+  if (subjects.length > 1) {
+    return {
+      status: 'ambiguous', ...envelope,
+      candidates: subjects.map(({ qualifiedName }) => ({ qualifiedName }))
+        .sort((left, right) => compareStrings(left.qualifiedName, right.qualifiedName)),
+    };
+  }
+  const found = subjects[0];
+  if (found === undefined) return { status: 'notFound', ...envelope };
+  const issues = joined.routes === undefined ? [] : createCheckReport(joined).issues.filter((issue) =>
+    issue.target === 'http' && issue.scope === found.scope && issue.channel === subject.template &&
+    (issue.method ?? '?') === found.method);
+  return {
+    status: 'found', ...envelope,
+    result: {
+      subject: {
+        name: `${found.method} ${subject.template}`,
+        qualifiedName: found.qualifiedName,
+        kind: 'route',
+      },
+      usedBy: uniqueSortedEndpoints(found.usedBy),
+      dependsOn: uniqueSortedEndpoints(found.dependsOn),
+      issues,
+      prefixCandidates: uniqueSortedEndpoints(found.prefixCandidates),
+    },
+  };
+}
+
+/** 조립 중인 route 주체다. */
+interface RouteSubjectEntry {
+  readonly scope: string;
+  readonly method: string;
+  readonly qualifiedName: string;
+  readonly usedBy: BridgeEndpoint[];
+  readonly dependsOn: BridgeEndpoint[];
+  readonly prefixCandidates: BridgeEndpoint[];
+}
+
+/** 요청과 맞는 (scope, method) 주체를 모은다. */
+function collectRouteSubjects(joined: BridgeJoinResult, subject: RouteSubjectRequest): RouteSubjectEntry[] {
+  const entries = new Map<string, RouteSubjectEntry>();
+  const entry = (scope: string, method: string): RouteSubjectEntry => {
+    const qualifiedName = `${ROUTE_SUBJECT_PREFIX}${method} ${subject.template} ${scope}`;
+    const existing = entries.get(qualifiedName) ??
+      { scope, method, qualifiedName, usedBy: [], dependsOn: [], prefixCandidates: [] };
+    entries.set(qualifiedName, existing);
+    return existing;
+  };
+  const wanted = (scope: string, method: string, template: string): boolean =>
+    template === subject.template && (subject.method === undefined || subject.method === method) &&
+    (subject.scope === undefined || subject.scope === scope);
+  for (const scope of joined.routes?.scopes ?? []) {
+    for (const fact of [...scope.decls, ...scope.contracts]) {
+      if (wanted(scope.scope, fact.declaration.method, fact.declaration.template)) {
+        entry(scope.scope, fact.declaration.method).dependsOn.push(fact.endpoint);
+      }
+    }
+    for (const call of scope.calls) {
+      const callMethod = call.method ?? '?';
+      const callWanted = wanted(scope.scope, callMethod, call.template);
+      for (const [side, facts] of [['decl', scope.decls], ['contract', scope.contracts]] as const) {
+        const outcome = call[side];
+        if (outcome?.status !== 'matched') continue;
+        for (const target of outcome.targets) {
+          if (callWanted) entry(scope.scope, callMethod).dependsOn.push(facts[target.id]!.endpoint);
+          if (wanted(scope.scope, target.method, target.template)) {
+            entry(scope.scope, target.method).usedBy.push(call.endpoint);
+          }
+        }
+      }
+      if (callWanted) entry(scope.scope, callMethod).usedBy.push(call.endpoint);
+    }
+    for (const found of entries.values()) {
+      if (found.scope !== scope.scope) continue;
+      for (const prefixCall of scope.prefixCalls) {
+        if (subject.template.startsWith(prefixCall.channelPrefix) &&
+          (prefixCall.method === undefined || found.method === 'ANY' || prefixCall.method === found.method)) {
+          found.prefixCandidates.push(prefixCall.endpoint);
+        }
+      }
+    }
+  }
+  return [...entries.values()];
 }

@@ -26,6 +26,11 @@ export interface BaselineEntry {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method?: string;
+  /**
+   * http 진단 신원의 5번째 원소다. http 항목에만 있고 다른 항목에는 없어, 기존 항목의
+   * 키와 직렬화가 바이트 단위로 같다.
+   */
+  readonly scope?: string;
 }
 
 /** check 실행 사이에서 인정된 이슈를 보존하는 isthmus 소유 문서다. */
@@ -97,14 +102,13 @@ export function createBaselineDocument(
   const entries: BaselineEntry[] = [];
   const seen = new Set<string>();
   for (const issue of issues) {
-    const entry: BaselineEntry = issue.method === undefined
-      ? { code: issue.code, target: issue.target, channel: issue.channel }
-      : {
-          code: issue.code,
-          target: issue.target,
-          channel: issue.channel,
-          method: issue.method,
-        };
+    const entry: BaselineEntry = {
+      code: issue.code,
+      target: issue.target,
+      channel: issue.channel,
+      ...(issue.method === undefined ? {} : { method: issue.method }),
+      ...(issue.scope === undefined ? {} : { scope: issue.scope }),
+    };
     const key = baselineEntryKey(entry);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -173,12 +177,15 @@ export function baselineEntryKey(issue: {
   readonly target: string;
   readonly channel: string;
   readonly method?: string;
+  readonly scope?: string;
 }): string {
+  // scope는 http 진단에만 있다. 없으면 4원소 배열 그대로라 기존 키·지문이 바뀌지 않는다.
   return JSON.stringify([
     issue.code,
     issue.target,
     issue.channel,
     issue.method ?? null,
+    ...(issue.scope === undefined ? [] : [issue.scope]),
   ]);
 }
 
@@ -212,10 +219,22 @@ function normalizeEntry(value: unknown, index: number): BaselineEntry {
   ) {
     fail(`Invalid method in baseline entry at index ${index}.`);
   }
+  // scope는 http 항목에만 온다. 다른 target 항목의 scope를 버리면 억제 키가 조용히 넓어진다.
+  if (value.scope !== undefined &&
+    (value.target !== 'http' || !isSafeNonEmptyString(value.scope))) {
+    fail(`Invalid scope in baseline entry at index ${index}.`);
+  }
+  if (value.target === 'http' && value.scope === undefined) {
+    fail(`Http baseline entries require a scope at index ${index}.`);
+  }
   const code = value.code as CheckIssueCode;
-  return value.method === undefined
-    ? { code, target: value.target, channel: value.channel }
-    : { code, target: value.target, channel: value.channel, method: value.method };
+  return {
+    code,
+    target: value.target,
+    channel: value.channel,
+    ...(value.method === undefined ? {} : { method: value.method as string }),
+    ...(value.scope === undefined ? {} : { scope: value.scope as string }),
+  };
 }
 
 /** 항목을 code·target·channel·method 순으로 고정한다. */
@@ -224,7 +243,8 @@ function compareEntries(left: BaselineEntry, right: BaselineEntry): number {
     compareStrings(left.code, right.code) ||
     compareStrings(left.target, right.target) ||
     compareStrings(left.channel, right.channel) ||
-    compareStrings(left.method ?? '', right.method ?? '')
+    compareStrings(left.method ?? '', right.method ?? '') ||
+    compareStrings(left.scope ?? '', right.scope ?? '')
   );
 }
 

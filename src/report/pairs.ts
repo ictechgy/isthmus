@@ -1,6 +1,7 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeLocation, BridgePlatform, BridgeSymbol } from '../exchange/parse.ts';
-import type { BridgeEndpoint, BridgeJoinResult } from '../join/join.ts';
+import type { BridgeEndpoint, BridgeJoinResult, RouteEndpointInfo } from '../join/join.ts';
+import type { RouteMatchQuality } from '../join/route-index.ts';
 import { compareEndpoints, isBridgeJoinDeferred, relationDeclKey } from '../join/join.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
@@ -14,6 +15,8 @@ export interface PairEndpoint {
   readonly platform: BridgePlatform;
   readonly location?: BridgeLocation;
   readonly symbol?: BridgeSymbol;
+  /** http 끝점에만 있다(kind·method·템플릿·앵커). persistence 끝점의 모양은 그대로다. */
+  readonly route?: RouteEndpointInfo;
 }
 
 /**
@@ -109,6 +112,7 @@ function addEndpoint(target: Map<string, PairEndpoint>, endpoint: BridgeEndpoint
     platform: endpoint.platform,
     ...(endpoint.location === undefined ? {} : { location: endpoint.location }),
     ...(endpoint.symbol === undefined ? {} : { symbol: endpoint.symbol }),
+    ...(endpoint.route === undefined ? {} : { route: endpoint.route }),
   };
   target.set(encodeSortedJson(projected, true), projected);
 }
@@ -131,4 +135,93 @@ function compareMatchKeys(left: PersistenceMatch, right: PersistenceMatch): numb
   if (left.key.column === undefined) return right.key.column === undefined ? 0 : -1;
   if (right.key.column === undefined) return 1;
   return compareStrings(left.key.column, right.key.column);
+}
+
+/**
+ * http 매치 하나의 선언 측 키다. 호출이 닿은 decl·contract의 (method, 정규 템플릿)이다.
+ * method는 decl의 `ANY`일 수 있다.
+ */
+export interface HttpMatchKey {
+  readonly method: string;
+  readonly template: string;
+}
+
+/**
+ * 귀속된 호출과 그 호출이 닿은 선언 측 사실(decl·contract) 한 묶음이다.
+ *
+ * `scope`는 진단 신원과 같은 규칙(service 또는 `default`)이다. `quality`가 같은 호출끼리만
+ * 묶는다 — 같은 키라도 정확 매칭과 param-to-literal 호출을 섞으면 품질 표시가 사라진다.
+ * 귀속되지 않은 호출은 실리지 않는다.
+ */
+export interface HttpMatch {
+  readonly domain: 'http';
+  readonly scope: string;
+  readonly key: HttpMatchKey;
+  readonly quality: RouteMatchQuality;
+  readonly uses: readonly PairEndpoint[];
+  readonly decls: readonly PairEndpoint[];
+  readonly contracts: readonly PairEndpoint[];
+}
+
+/** http 매치 끝점이 상한을 넘어 쌍 목록을 만들 수 없음을 나타낸다. */
+export class HttpPairsLimitError extends Error {
+  /** 입력 내용을 담지 않는 고정 문구만 보존한다. */
+  constructor() {
+    super(
+      `Cannot produce http pairs with more than ${MAX_PAIR_ENDPOINTS} call, declaration, and contract `
+      + 'endpoints; narrow the check inputs (fewer documents or a smaller scan scope) and retry. '
+      + 'No partial pair list is emitted.',
+    );
+    this.name = 'HttpPairsLimitError';
+  }
+}
+
+/**
+ * 조인 결과의 http match를 호출↔선언 측 쌍 목록으로 바꾼다.
+ *
+ * 모호·불일치·미매치 호출은 check 진단에 이미 있으므로 싣지 않는다. 끝점은 route 정보를
+ * 포함해 중복 제거·정렬한다.
+ */
+export function createHttpMatches(joined: BridgeJoinResult): HttpMatch[] {
+  if (isBridgeJoinDeferred(joined)) {
+    throw new Error('Cannot create http pairs from a deferred bridge join.');
+  }
+  if (joined.routes === undefined) return [];
+  const groups = new Map<string, {
+    scope: string; key: HttpMatchKey; quality: RouteMatchQuality;
+    uses: Map<string, PairEndpoint>; decls: Map<string, PairEndpoint>; contracts: Map<string, PairEndpoint>;
+  }>();
+  for (const scope of joined.routes.scopes) {
+    for (const call of scope.calls) {
+      for (const [side, facts] of [['decl', scope.decls], ['contract', scope.contracts]] as const) {
+        const outcome = call[side];
+        if (outcome?.status !== 'matched') continue;
+        for (const target of outcome.targets) {
+          const key = { method: target.method, template: target.template };
+          const identity = JSON.stringify([scope.scope, key.method, key.template, outcome.quality]);
+          const group = groups.get(identity) ?? {
+            scope: scope.scope, key, quality: outcome.quality, uses: new Map(), decls: new Map(), contracts: new Map(),
+          };
+          addEndpoint(group.uses, call.endpoint);
+          addEndpoint(side === 'decl' ? group.decls : group.contracts, facts[target.id]!.endpoint);
+          groups.set(identity, group);
+        }
+      }
+    }
+  }
+  const matches = [...groups.values()].map((group): HttpMatch => ({
+    domain: 'http',
+    scope: group.scope,
+    key: group.key,
+    quality: group.quality,
+    uses: [...group.uses.values()].sort(compareEndpoints),
+    decls: [...group.decls.values()].sort(compareEndpoints),
+    contracts: [...group.contracts.values()].sort(compareEndpoints),
+  })).sort((left, right) =>
+    compareStrings(left.scope, right.scope) || compareStrings(left.key.template, right.key.template) ||
+    compareStrings(left.key.method, right.key.method) || compareStrings(left.quality, right.quality));
+  const endpoints = matches.reduce((total, match) =>
+    total + match.uses.length + match.decls.length + match.contracts.length, 0);
+  if (endpoints > MAX_PAIR_ENDPOINTS) throw new HttpPairsLimitError();
+  return matches;
 }

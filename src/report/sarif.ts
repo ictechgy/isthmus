@@ -3,7 +3,7 @@ import type {
   CheckIssueCode,
   CheckReport,
 } from './check-report.ts';
-import { checkIssueCodes } from './check-report.ts';
+import { checkIssueCodes, httpIssueCodes } from './check-report.ts';
 import {
   checkIssueRuleDescriptions,
   type IssueFingerprint,
@@ -51,6 +51,7 @@ interface SarifResult {
     readonly target: string;
     readonly channel: string;
     readonly method?: string;
+    readonly scope?: string;
   };
   readonly partialFingerprints: { readonly isthmusIssueV1: string };
 }
@@ -81,7 +82,11 @@ export function createSarifLog(
   toolVersion: string | undefined,
   issueFingerprint: IssueFingerprint,
 ): SarifLog {
-  const rules = [...checkIssueCodes].sort().map((id) => ({
+  // http 규칙은 http 입력이 있을 때만 싣는다. http가 없는 입력의 SARIF를 바이트 단위로 유지한다.
+  const includesHttp = report.summary.matchedRoutes !== undefined ||
+    report.issues.some(({ target }) => target === 'http');
+  const httpCodes = new Set<string>(httpIssueCodes);
+  const rules = [...checkIssueCodes].filter((id) => includesHttp || !httpCodes.has(id)).sort().map((id) => ({
     id,
     shortDescription: { text: checkIssueRuleDescriptions[id] },
   }));
@@ -133,9 +138,10 @@ function sarifResult(
   if (index === undefined) {
     throw new Error('Cannot create a SARIF result for an unknown rule.');
   }
-  const subject = issue.method === undefined
+  const base = issue.method === undefined
     ? `${issue.code} on channel '${issue.channel}'`
     : `${issue.code} on channel '${issue.channel}' for method '${issue.method}'`;
+  const subject = issue.scope === undefined ? base : `${base} in scope '${issue.scope}'`;
   return {
     ruleId: issue.code,
     ruleIndex: index,
@@ -160,6 +166,7 @@ function sarifResult(
       target: issue.target,
       channel: issue.channel,
       ...(issue.method === undefined ? {} : { method: issue.method }),
+      ...(issue.scope === undefined ? {} : { scope: issue.scope }),
     },
     partialFingerprints: {
       isthmusIssueV1: issueFingerprint(issue),

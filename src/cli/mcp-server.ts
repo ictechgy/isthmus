@@ -78,8 +78,8 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
           type: 'string',
           minLength: 1,
           description:
-            'Channel, method, or qualifiedName to look up, or relation:<name> for a '
-            + 'persistence relation.',
+            'Channel, method, or qualifiedName to look up, relation:<name> for a '
+            + 'persistence relation, or route:[<METHOD> ]<template> for an http route.',
         },
         documents: DOCUMENTS_PROPERTY,
       },
