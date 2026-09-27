@@ -37,6 +37,28 @@ function callCodes(...documents: BridgeFactsDocument[]): string[] {
     .map(({ severity, code, channel }) => `${severity} ${code} ${channel}`);
 }
 
+test('리뷰 1: 긴 호출은 필수로 함께 있는 원본 {**} decl이 받고, 접두사로 닿으면 원본도 호출된 것으로 본다', () => {
+  const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
+  const server = document('js', ['server'], [
+    decl('GET', '/a/{**}', { symbol }), decl('GET', '/a', { symbol, catchAllPrefix: true }),
+  ]);
+  const client = document('kotlin', ['client'], [call('GET', '/a/x'), call('GET', '/a/x/y'), call('GET', '/a')]);
+  assert.deepEqual(callCodes(server, client), []);
+  const scope = joinBridgeDocuments([server, client]).routes!.scopes[0]!;
+  assert.deepEqual(scope.calls.map(({ template, decl: outcome }) =>
+    `${template}:${outcome?.status === 'matched' ? outcome.targets.map((target) => target.template).join(',') : outcome?.status}`),
+  ['/a/x:/a/{**}', '/a/x/y:/a/{**}', '/a:/a']);
+  const onlyPrefixCall = joinBridgeDocuments([server, document('kotlin', ['client'], [call('GET', '/a')])]).routes!.scopes[0]!;
+  assert.deepEqual(onlyPrefixCall.decls.map(({ declaration, called }) => `${declaration.template}:${called}`), ['/a/{**}:true', '/a:true']);
+});
+
+test('리뷰 1: 접두사 decl과 원본의 유효 service가 다르면 원본이 다른 scope로 갈라지므로 입력 오류다', () => {
+  const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
+  assert.throws(() => document('js', ['server'], [
+    decl('GET', '/a/{**}', { symbol, service: 'one' }), decl('GET', '/a', { symbol, catchAllPrefix: true, service: 'two' }),
+  ]), /no matching \{\*\*\} declaration/);
+});
+
 test('리뷰 2: suffix 후보도 caseInsensitive decl은 대소문자를 접어 맞춘다', () => {
   assert.deepEqual(callCodes(
     document('js', ['server'], [decl('GET', '/users', { pathAnchor: 'base', caseInsensitive: true })]),

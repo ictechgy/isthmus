@@ -824,21 +824,25 @@ function validateParamConstraints(value: unknown, segments: readonly RouteSegmen
  * 문서 전체를 봐야 하는 http 규칙을 검증한다.
  *
  * route-decl을 담은 문서는 dispatch를 선언해야 한다. catch-all 접두사 decl은 같은 문서에
- * 원본 `{**}` decl(같은 method·symbol.usr, 접두사 + `/{**}` 템플릿)이 있어야 한다 — 원본 없는
+ * 원본 `{**}` decl(같은 method·symbol.usr·유효 service, 접두사 + `/{**}` 템플릿)이 있어야 한다 — 원본 없는
  * 접두사 decl은 생산자가 지어낸 선언이라 거짓 match를 만든다.
  */
 function validateRouteDocumentFacts(document: BridgeFactsDocument): void {
   if (document.dispatch === undefined && document.facts.some(({ kind }) => kind === 'route-decl')) {
     fail('Http documents with route-decl facts require dispatch.');
   }
+  // 유효 service까지 같아야 원본과 접두사가 같은 scope에 들어간다. 갈라지면 긴 호출을 받을
+  // 원본이 없는 scope가 생겨 거짓 미매치가 된다.
   const originals = new Set(document.facts
     .filter((fact) => fact.kind === 'route-decl' && !fact.dynamic && fact.catchAllPrefix === undefined)
-    .map((fact) => JSON.stringify([fact.method, fact.symbol?.usr ?? null, fact.channel])));
+    .map((fact) => JSON.stringify([fact.method, fact.symbol?.usr ?? null, fact.channel,
+      fact.service ?? document.service ?? null])));
   document.facts.forEach((fact, index) => {
     if (fact.catchAllPrefix !== true) return;
     const channel = fact.channel as string;
     const original = channel === '/' ? '/{**}' : `${channel}/{**}`;
-    if (!originals.has(JSON.stringify([fact.method, fact.symbol!.usr!, original]))) {
+    if (!originals.has(JSON.stringify([fact.method, fact.symbol!.usr!, original,
+      fact.service ?? document.service ?? null]))) {
       fail(`A catch-all prefix declaration has no matching {**} declaration at index ${index}.`);
     }
   });
