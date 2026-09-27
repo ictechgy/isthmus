@@ -272,15 +272,18 @@ export function joinBridgeDocuments(
   }
   validateProjects(documents);
   validatePlatformComposition(documents);
-  const routes = joinRoutes(documents);
-  const limitations = collectLimitations(documents, routes?.limitations ?? []);
   const observedFacts = documents.reduce(
     (total, document) => total + document.facts.length,
     0,
   );
+  // 보류 판정을 route 조인보다 먼저 한다. 보류된 입력에서 route 조인의 귀속·예산 오류가 먼저
+  // 던져지면 실제 원인(mixed-targets)이 다른 문구로 가려진다. 보류 결과는 출력되지 않으므로
+  // route 계수 한계 없이 입력 한계만 전달한다.
   if (documents.some(hasMixedTargets)) {
-    return emptyJoinResult(limitations, observedFacts);
+    return emptyJoinResult(collectLimitations(documents, []), observedFacts);
   }
+  const routes = joinRoutes(documents);
+  const limitations = collectLimitations(documents, routes?.limitations ?? []);
   const groups = collectChannelGroups(documents);
   const matchedChannels = [...groups.values()]
     .filter((group) => group.creations.length > 0 && group.registrations.length > 0)

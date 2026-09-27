@@ -157,3 +157,29 @@ test('매니페스트 없는 입력의 route-call-without-contract는 공백이 
   // 같은 입력의 decl 쪽은 전제가 모두 증명돼 error다 — contract 쪽만 authoritative 선언이 없어 낮춘다.
   assert.equal(report.issues.find(({ code }) => code === 'route-method-mismatch')?.severity, 'error');
 });
+
+test('mixed-targets 보류가 http 귀속 위반보다 먼저 결정되어 보류 원인이 이긴다', () => {
+  // 선언 측 service가 일부만 있어 route 조인은 입력 오류가 될 입력이지만, 같은 입력의 한 문서가
+  // mixed-targets를 신고하면 조인 전체가 보류되어야 한다(route 조인을 실행하지 않는다).
+  const mixed = parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'synthetic', version: '0.0.0' },
+    generatedAt: '2026-09-27T00:00:00Z', platform: 'kotlin', target: 'flutter', project: '/work/example',
+    facts: [{ kind: 'channel-register', channel: 'c', dynamic: false, location: { path: 'a.kt', line: 1, column: 1 } }],
+    limitations: ['mixed-targets: flutter and react-native facts share this document'],
+  });
+  const dart = parseBridgeFactsDocument({
+    format: 'bridge-facts', version: 1, tool: { name: 'synthetic', version: '0.0.0' },
+    generatedAt: '2026-09-27T00:00:00Z', platform: 'dart', target: 'flutter', project: '/work/example',
+    facts: [{ kind: 'channel-create', channel: 'c', dynamic: false, location: { path: 'a.dart', line: 1, column: 1 } }],
+    limitations: [],
+  });
+  const joined = joinBridgeDocuments([
+    dart, mixed,
+    document('js', ['server'], [decl('GET', '/a')], { service: 'orders' }),
+    document('openapi', ['server'], [fact('route-contract', 'GET', '/a', { location: { path: 'o.yaml', line: 1, column: 1 } })]),
+    document('kotlin', ['client'], [call('GET', '/a')]),
+  ]);
+  assert.equal(joined.deferred, true);
+  assert.equal(joined.routes, undefined);
+  assert.equal(joined.observedFacts, 5);
+});
