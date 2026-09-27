@@ -431,4 +431,6 @@ test('link 조인은 includesDeclaration이 뺀 선언 측 사실을 매칭·dyn
   assert.equal(scope?.decls.length, 1);
   assert.equal(describe(scope?.calls[0]?.decl), 'matched:exact:GET /a');
   assert.equal(scope?.dynamicDecls, 0);
+  // 서비스 범위 밖 dynamic 선언은 이 link의 미조인 계수에도 들지 않는다.
+  assert.ok(joined.routes!.limitations.every(({ message }) => !message.startsWith('unjoined-dynamic-routes')));
 });

@@ -186,7 +186,7 @@ export function joinLinkRouteFacts(
     driftOnly: clients.length === 0,
     scopes: [scope],
     limitations: routeConsumerLimitations(http, {
-      countsDeclarations: (document) => servers.includes(document),
+      countsDeclarations: (document, fact) => servers.includes(document) && rule.includesDeclaration(document, fact),
       countsCalls: (document) => clients.includes(document),
       isAttributed: attributed,
     }),
@@ -569,8 +569,8 @@ function factKey(platform: BridgePlatform, fact: BridgeFact): string {
 
 /** 소비자 계수가 어느 문서의 어떤 사실을 세는지다. 매니페스트 없는 조인과 link 조인이 같은 계수기를 쓴다. */
 interface ConsumerCountRule {
-  /** 이 문서의 dynamic 선언 측 사실을 센다. */
-  readonly countsDeclarations: (document: BridgeFactsDocument) => boolean;
+  /** 이 문서의 이 dynamic 선언 측 사실을 센다(link 조인은 그 link의 서비스 범위 밖 선언을 세지 않는다). */
+  readonly countsDeclarations: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
   /** 이 문서의 호출(dynamic·미귀속)을 센다. */
   readonly countsCalls: (document: BridgeFactsDocument) => boolean;
   /** 호출이 선언 측에 귀속됐는지다. */
@@ -597,7 +597,7 @@ function routeConsumerLimitations(
     for (const fact of document.facts) {
       const dynamic = fact.dynamic || fact.channel === null;
       if (isDeclarationFact(fact)) {
-        if (dynamic && rule.countsDeclarations(document)) {
+        if (dynamic && rule.countsDeclarations(document, fact)) {
           add(document.platform, 'unjoined-dynamic-routes', 'route declaration or contract facts with a non-literal template', fact);
         }
       } else if (fact.kind !== 'route-call' || !rule.countsCalls(document)) {

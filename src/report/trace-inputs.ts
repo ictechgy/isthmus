@@ -11,7 +11,7 @@ import {
   type JoinLimitation,
   type RelationResolver,
 } from '../join/join.ts';
-import type { RouteLinkRule, RouteScope } from '../join/route-join.ts';
+import { isClientDocument, isDeclarationDocument, type RouteLinkRule, type RouteScope } from '../join/route-join.ts';
 
 /**
  * trace 입력을 member·link 단위 조인으로 준비한다.
@@ -58,6 +58,13 @@ export interface TraceLinkServiceIssue {
   readonly detail: string;
 }
 
+/** 어떤 link에도 그 역할로 들지 않은 member의 http 문서 수다. 보고 층이 `http-member-unlinked`로 바꾼다. */
+export interface TraceUnlinkedDocuments {
+  readonly member: string;
+  readonly side: 'client' | 'server';
+  readonly count: number;
+}
+
 /** 준비된 trace 입력이다. */
 export interface PreparedTrace {
   readonly workspace: boolean;
@@ -65,6 +72,7 @@ export interface PreparedTrace {
   readonly scopes: readonly TraceLinkedScope[];
   readonly limitations: readonly TraceLimitation[];
   readonly linkServiceIssues: readonly TraceLinkServiceIssue[];
+  readonly unlinkedDocuments: readonly TraceUnlinkedDocuments[];
 }
 
 /**
@@ -91,6 +99,7 @@ function prepareSingle(project: string, documents: readonly BridgeFactsDocument[
     scopes: (joined.routes?.scopes ?? []).map((scope) => ({ scope, server: '', client: '', contract: '' })),
     limitations: joined.limitations,
     linkServiceIssues: [],
+    unlinkedDocuments: [],
   };
 }
 
@@ -105,17 +114,36 @@ function prepareWorkspace(context: TraceContext, documents: readonly BridgeFacts
   const byName = new Map(states.map((state) => [state.key, state]));
   const scopes: TraceLinkedScope[] = [];
   const linkServiceIssues: TraceLinkServiceIssue[] = [];
+  const covered = { server: new Set<BridgeFactsDocument>(), client: new Set<BridgeFactsDocument>() };
   const limitations: TraceLimitation[] = states.flatMap(({ key, joined }) =>
     joined.limitations.map((limitation) => ({ ...limitation, member: key })));
   for (const link of links) {
-    const joined = joinLink(link, byName, byPath, linkServiceIssues);
+    const joined = joinLink(link, byName, byPath, linkServiceIssues, covered);
     const scope = joined.routes?.scopes[0];
     if (scope !== undefined) {
       scopes.push({ scope, server: link.server, client: link.client, contract: link.contract?.member ?? link.server });
     }
     limitations.push(...joined.limitations.map((limitation) => ({ ...limitation, link: link.name })));
   }
-  return { workspace: true, members: states, scopes, limitations: limitations.sort(compareTraceLimitations), linkServiceIssues };
+  return { workspace: true, members: states, scopes, limitations: limitations.sort(compareTraceLimitations), linkServiceIssues,
+    unlinkedDocuments: unlinkedDocuments(states, covered) };
+}
+
+/**
+ * link에 그 역할로 들지 않은 http 문서를 member·측별로 센다. member 단위가 아니라 문서 단위로 본다 — link가
+ * contract 문서를 골라 쓰면 같은 member의 다른 openapi 문서나 server의 openapi 문서가 조용히 빠질 수 있기 때문이다.
+ */
+function unlinkedDocuments(states: readonly TraceMemberInput[],
+  covered: { server: ReadonlySet<BridgeFactsDocument>; client: ReadonlySet<BridgeFactsDocument> }): TraceUnlinkedDocuments[] {
+  return states.flatMap(({ key, documents }) => {
+    const http = documents.filter(({ target }) => target === 'http');
+    const client = http.filter((document) => isClientDocument(document) && !covered.client.has(document)).length;
+    const server = http.filter((document) => isDeclarationDocument(document) && !covered.server.has(document)).length;
+    return [
+      ...(client === 0 ? [] : [{ member: key, side: 'client' as const, count: client }]),
+      ...(server === 0 ? [] : [{ member: key, side: 'server' as const, count: server }]),
+    ];
+  });
 }
 
 /** member 하나를 검증하고 http 문서를 뺀 문서로 member 안 조인을 한다. */
@@ -141,7 +169,8 @@ function memberInput(member: TraceMember, documents: readonly BridgeFactsDocumen
  * 쓴다 — 계약 끝점의 member가 하나로 정해지게 하기 위해서다), 호출 측은 client member의 http 문서다.
  */
 function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput>,
-  byPath: ReadonlyMap<string, BridgeFactsDocument>, issues: TraceLinkServiceIssue[]): BridgeJoinResult {
+  byPath: ReadonlyMap<string, BridgeFactsDocument>, issues: TraceLinkServiceIssue[],
+  covered: { server: Set<BridgeFactsDocument>; client: Set<BridgeFactsDocument> }): BridgeJoinResult {
   const contracts = (link.contract?.documents ?? []).map((path) => byPath.get(path)!);
   if (contracts.some(({ platform }) => platform !== 'openapi')) {
     throw new TraceInputError('Workspace link contract documents must be openapi documents; list other documents in a member.');
@@ -151,19 +180,16 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
   const clients = members.get(link.client)!.documents.filter(({ target }) => target === 'http');
   const serverSet = new Set([...servers, ...contracts]);
   const clientSet = new Set(clients);
+  for (const document of serverSet) covered.server.add(document);
+  for (const document of clientSet) covered.client.add(document);
   const scope = linkServiceScope(link, [...serverSet]);
   if (scope.issue !== undefined) issues.push({ link: link.name, server: link.server, detail: scope.issue });
   const attributed = linkAttribution(link.match);
-  const services = link.match.services === undefined ? undefined : new Set(link.match.services);
   const rule: RouteLinkRule = {
     scope: link.name,
     isServerDocument: (document) => serverSet.has(document),
     isClientDocument: (document) => clientSet.has(document),
-    // link가 서비스를 좁혔으면 다른 서비스로 확정된 호출은 host·baseRef가 맞아도 이 link 호출이 아니다.
-    attributes: (document, fact) => {
-      const service = fact.service ?? document.service;
-      return attributed(document, fact) && (services === undefined || service === undefined || services.has(service));
-    },
+    attributes: (document, fact) => attributed(document, fact) && scope.admitsCall(fact.service ?? document.service),
     includesDeclaration: scope.includes,
   };
   return joinTrace([...new Set([...servers, ...contracts, ...clients])], rule);
@@ -178,8 +204,7 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
  * - `match.services`가 없는데 선언 측 서비스 신원(이름 없는 것 포함)이 둘 이상이면 어느 서비스를 부르는지 모르므로
  *   선언을 하나도 잇지 않고 issue를 남긴다. 다른 서비스의 선언에 조용히 잇지 않기 위해서다.
  */
-function linkServiceScope(link: TraceLink, servers: readonly BridgeFactsDocument[]):
-  { includes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean; issue?: string } {
+function linkServiceScope(link: TraceLink, servers: readonly BridgeFactsDocument[]): LinkServiceScope {
   const named = new Set<string>();
   let unnamed = 0;
   for (const document of servers) {
@@ -191,21 +216,43 @@ function linkServiceScope(link: TraceLink, servers: readonly BridgeFactsDocument
     }
   }
   const narrowed = link.match.services === undefined ? undefined : new Set(link.match.services);
-  if (narrowed !== undefined) {
-    const includes = (document: BridgeFactsDocument, fact: BridgeFact) => {
-      const service = fact.service ?? document.service;
-      return service === undefined ? named.size === 0 : narrowed.has(service);
-    };
-    return named.size > 0 && unnamed > 0
-      ? { includes, issue: `${unnamed} server declaration(s) without a service were excluded because other declarations `
-        + 'of this link name services; set service on every declaration of the server member.' }
-      : { includes };
-  }
-  if (named.size + (unnamed > 0 ? 1 : 0) < 2) return { includes: () => true };
+  if (narrowed !== undefined) return narrowedScope(narrowed, named, unnamed);
+  if (named.size + (unnamed > 0 ? 1 : 0) < 2) return { includes: () => true, admitsCall: () => true };
   const identities = [...named].sort(compareStrings).concat(unnamed > 0 ? ['(no service)'] : []);
-  return { includes: () => false,
+  return { includes: () => false, admitsCall: () => true,
     issue: `The server side of this link declares several services (${identities.join(', ')}) and the link match does `
       + 'not narrow them, so no declaration was joined; add match.services to select the service this client calls.' };
+}
+
+/** link의 서비스 범위: 잇는 선언, 받는 호출 service, 범위를 정하지 못한 곳의 설명이다. */
+interface LinkServiceScope {
+  readonly includes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+  /** 호출의 유효 service(없으면 undefined)가 이 link 호출일 수 있는지다. */
+  readonly admitsCall: (service: string | undefined) => boolean;
+  readonly issue?: string;
+}
+
+/**
+ * `match.services`로 좁힌 link의 서비스 범위다.
+ *
+ * 다른 서비스로 확정된 호출은 host·baseRef가 맞아도 받지 않는다. service 없는 호출은 선언 측에 좁힌 범위 밖의 서비스가
+ * 없을 때만 받는다 — 그런 서비스가 있으면 어느 쪽을 부르는지 모르므로 추측해 잇지 않는다(선언 측의 이름 없는 선언과 같은 규칙).
+ */
+function narrowedScope(narrowed: ReadonlySet<string>, named: ReadonlySet<string>, unnamed: number): LinkServiceScope {
+  const outside = [...named].filter((service) => !narrowed.has(service)).sort(compareStrings);
+  const includes = (document: BridgeFactsDocument, fact: BridgeFact) => {
+    const service = fact.service ?? document.service;
+    return service === undefined ? named.size === 0 : narrowed.has(service);
+  };
+  const admitsCall = (service: string | undefined) => service === undefined ? outside.length === 0 : narrowed.has(service);
+  const issues = [
+    ...(named.size > 0 && unnamed > 0 ? [`${unnamed} server-side declaration(s) or contract(s) without a service were `
+      + 'excluded because other declarations of this link name services; set service on every route-decl and '
+      + 'route-contract of the link server side (server member and contract documents).'] : []),
+    ...(outside.length > 0 ? [`The server side also declares services outside match.services (${outside.join(', ')}), so `
+      + 'route calls without a service were not attributed to this link; set service on those calls or narrow by host.'] : []),
+  ];
+  return { includes, admitsCall, ...(issues.length === 0 ? {} : { issue: issues.join(' ') }) };
 }
 
 /**

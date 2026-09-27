@@ -128,7 +128,8 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
   - 선언 측은 server member의 http 문서, 호출 측은 client member의 http 문서다(문서 신원으로 정한다). link 하나가
     scope 하나다.
   - **서비스 범위**: `match.services`가 있으면 선언 측 선언 중 그 서비스(유효 service)의 것만 잇고, 다른 서비스로
-    확정된 호출은 host·baseRef가 맞아도 귀속하지 않는다(service 없는 호출은 host·baseRef로 귀속될 수 있다). 선언 측이
+    확정된 호출은 host·baseRef가 맞아도 귀속하지 않는다. service 없는 호출은 선언 측에 좁힌 범위 밖의 서비스가 없을
+    때만 host·baseRef로 귀속하고, 그런 서비스가 있으면 귀속하지 않고 `link-service-ambiguous`를 남긴다. 선언 측이
     서비스를 하나도 밝히지 않았으면(단일 서비스) 이름 없는 선언도 잇고, 이름 있는 선언과 섞인 이름 없는 선언은 빼고
     `link-service-ambiguous`를 남긴다. `match.services`가 없는데 선언 측 서비스 신원(이름 없음 포함)이 둘 이상이면
     다른 서비스의 선언에 조용히 잇지 않도록 선언을 하나도 잇지 않고 `link-service-ambiguous`를 남긴다.
@@ -159,7 +160,8 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 
 - `sha256`(소문자 hex 64자)은 artifact 파일 바이트의 SHA-256이다. CLI가 읽은 내용과 대조하고 다르면 부분 결과
   없이 종료 코드 2다(다른 빌드의 artifact이거나 내려받다 깨졌다). sha256 없는 증언은 파일과 묶이지 않으므로
-  받지 않는다.
+  받지 않는다. CLI는 UTF-8로 읽은 내용을 다시 UTF-8로 부호화해 해시한다. JSON 텍스트는 UTF-8이어야 하므로 올바른
+  artifact에서는 파일 바이트 해시와 같고, UTF-8이 아닌 바이트가 섞인 파일은 해시가 달라져 항상 2다(안전한 쪽).
 - `revision`은 artifact를 만든 쪽이 증언한 소스 revision이다. 분석 문서가 revision을 싣지 않는 옛 형식
   (`change-impact` v1 등)이면 이 증언으로 revision을 비교하고 출력 분석 요약에 `revisionSource: "attested"`를
   단다. 증언은 생산자 신고가 아니므로 **보수적으로** 기준과 같아도 `analysis-revision-unknown`(문구: context가
@@ -309,8 +311,8 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 | `file-selection-coarse` | **알림(notice)**. 파일 선택은 파일 단위 과대 근사다 — 파일에 놓인 모든 심볼을 바뀐 것으로 본다. `notices`에 실리고 `--strict`를 실패시키지 않는다 |
 | `file-selection-fact-fallback` | 분석이 선택한 파일에 심볼을 두지 않아 사실 위치로만 대신했다. 사실 없는 심볼은 빠졌을 수 있다 |
 | `file-without-symbols` | 선택한 파일에 놓인 분석 심볼·사실이 없다(없다는 증거가 아님). 체인을 만들지 않는다 |
-| `link-service-ambiguous` | link의 선언 측이 여러 서비스를 내는데 `match.services`가 좁히지 않아 선언을 하나도 잇지 않았거나, 좁혔지만 service 없는 선언이 섞여 그 선언을 뺐다(`link`·`member`) |
-| `http-member-unlinked` | workspace member의 http 문서가 해당 역할(client 또는 server·contract)의 link에 속하지 않아 잇지 않았다 |
+| `link-service-ambiguous` | link의 선언 측이 여러 서비스를 내는데 `match.services`가 좁히지 않아 선언을 하나도 잇지 않았거나, 좁혔지만 service 없는 선언이 섞여 그 선언을 뺐거나, 좁힌 범위 밖 서비스가 있어 service 없는 호출을 귀속하지 않았다(`link`·`member`) |
+| `http-member-unlinked` | workspace member의 http 문서가 어느 link에도 그 역할(client, 또는 server 선언·link가 고른 contract 문서)로 들지 않아 잇지 않았다. 문서 단위로 세므로 link가 contract 문서를 골라 쓸 때 빠진 같은 member의 다른 openapi 문서도 드러난다 |
 
 ### gap과 알림
 

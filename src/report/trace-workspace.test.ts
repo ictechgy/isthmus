@@ -234,11 +234,23 @@ test('link는 match.services가 좁힌 서비스의 선언만 잇고 다른 서�
     // host는 맞지만 다른 서비스로 확정된 호출은 이 link 호출이 아니다.
     value.files['client/android.http.json'].facts[0].service = 'admin-api';
   });
-  assert.deepEqual(narrowed.gaps.map(({ code }) => code), ['unattributed-calls-omitted']);
+  // service 없는 Android POST 호출(baseRef 귀속)은 좁힌 범위 밖 서비스(admin-api)가 있어 추측해 잇지 않는다.
+  assert.deepEqual(codes(narrowed), ['link-service-ambiguous', 'unattributed-calls-omitted']);
+  assert.match(narrowed.gaps.find(({ code }) => code === 'link-service-ambiguous')!.detail,
+    /outside match\.services \(admin-api\), so route calls without a service were not attributed/);
+  assert.match(narrowed.gaps.find(({ code }) => code === 'unattributed-calls-omitted')!.detail, /^2 route call/);
   const [route] = narrowed.chains[0]!.routes;
   assert.deepEqual(route?.declarations.map(({ symbol }) => symbol?.usr), ['ts:api/orders.get']);
   assert.deepEqual(narrowed.chains[0]?.handlers.map(({ usr }) => usr), ['ts:api/orders.get']);
   assert.deepEqual(route?.calls.map(({ call }) => call.symbol?.usr), ['s:OrdersClient.fetch']);
+  // 선언 측 서비스가 모두 좁힌 범위 안이면 service 없는 host 귀속 호출도 잇는다.
+  const single = workspace((value) => {
+    for (const fact of [...value.files['server/server.http.json'].facts, ...value.files['server/api.openapi.json'].facts]) {
+      fact.service = 'example-api';
+    }
+  });
+  assert.deepEqual(single.gaps, []);
+  assert.deepEqual(single.chains[0]?.routes[0]?.calls.map(({ call }) => call.symbol?.usr), ['kt:OrdersApi.get', 's:OrdersClient.fetch']);
 });
 
 test('선언 측이 여러 서비스인데 link가 좁히지 않으면 선언을 잇지 않고 link-service-ambiguous다', () => {
@@ -258,7 +270,7 @@ test('선언 측이 여러 서비스인데 link가 좁히지 않으면 선언을
   // GET decl과 두 계약이 이름 없는 선언이라 빠지고, 그래서 선택한 GET route의 선언 측이 남지 않는다.
   assert.deepEqual(codes(mixed), ['link-service-ambiguous', 'route-without-decl']);
   assert.match(mixed.gaps.find(({ code }) => code === 'link-service-ambiguous')!.detail,
-    /^3 server declaration\(s\) without a service were excluded/);
+    /^3 server-side declaration\(s\) or contract\(s\) without a service were excluded/);
   assert.deepEqual(mixed.chains, []);
   // 좁히지 않았고 이름 없음 + 이름 하나면 역시 모호하다.
   const unnamedAndNamed = workspace((value) => {
@@ -296,10 +308,17 @@ test('link에 해당 역할로 속하지 않은 member의 http 문서와 member�
   });
   assert.deepEqual(result.gaps.filter(({ code }) => code !== 'relation-use-without-decl')
     .map(({ code, member: name, detail }) => [code, name, detail.slice(0, 30)]), [
-    ['http-member-unlinked', 'web', 'This member has client-role ht'],
-    ['http-member-unlinked', 'server-spec', 'This member has server-role ht'],
+    ['http-member-unlinked', 'web', '1 client-role http document(s)'],
+    ['http-member-unlinked', 'server-spec', '1 server-role http document(s)'],
     ['persistence-unscanned', 'server', 'The member lacks a persistence'],
   ]);
+  // link가 계약 문서를 골라 쓰면 같은 member의 다른 openapi 문서도 빠진다 — member가 link에 있어도 문서 단위로 밝힌다.
+  const extraSpec = workspace((value) => {
+    value.files['server/internal.openapi.json'] = structuredClone(value.files['server/api.openapi.json']);
+    member(value, 'server-spec').documents.push('server/internal.openapi.json');
+  });
+  assert.deepEqual(extraSpec.gaps.map(({ code, member: name, detail }) => [code, name, detail.slice(0, 31)]),
+    [['http-member-unlinked', 'server-spec', '1 server-role http document(s) ']]);
 });
 
 test('workspace 입력이 member 계약을 어기면 부분 결과 없이 거부한다', () => {

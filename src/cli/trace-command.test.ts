@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -236,6 +237,34 @@ test('--strict 종료 코드: gap 없음 0, gap 있음 1(보고서 그대로), s
     assert.deepEqual([broken.code, broken.stdout], [2, '']);
     assert.match(broken.stderr, /link client and server must name members/);
     assert.equal((await runProcess(['trace', '--strict'])).code, 64);
+  } finally {
+    await rm(directoryPath, { recursive: true, force: true });
+  }
+});
+
+test('사전 계산 sha256은 파일 바이트와 같다: 멀티바이트 UTF-8은 통과하고 UTF-8이 아닌 바이트는 2로 막는다', async () => {
+  const name = 'client/ios-reverse.json';
+  const directoryPath = await copyWorkspace(() => {});
+  try {
+    const artifact = JSON.parse(await readFile(join(directoryPath, name), 'utf8'));
+    artifact.reached[0].symbol.qualifiedName = 'OrderStore.새로고침()';
+    const valid = Buffer.from(`${JSON.stringify(artifact)}\n`, 'utf8');
+    // 문자열 안에 UTF-8이 아닌 바이트 하나를 넣는다. 읽기 층이 U+FFFD로 바꾸므로 선언한 바이트 해시와 달라져야 한다.
+    const invalid = Buffer.concat([valid.subarray(0, valid.indexOf('OrderStore')), Buffer.from([0xff]),
+      valid.subarray(valid.indexOf('OrderStore'))]);
+    const context = JSON.parse(await readFile(join(directoryPath, 'context.json'), 'utf8'));
+    const declare = async (bytes: Buffer) => {
+      context.members[2].analyses[1].precomputed.sha256 = createHash('sha256').update(bytes).digest('hex');
+      await writeFile(join(directoryPath, 'context.json'), JSON.stringify(context));
+      await writeFile(join(directoryPath, name), bytes);
+      return runProcess(['trace', join(directoryPath, 'context.json'), '--strict', '--compact']);
+    };
+    const passed = await declare(valid);
+    assert.equal(passed.code, 0);
+    assert.ok(passed.stdout.includes('OrderStore.새로고침()'));
+    const blocked = await declare(invalid);
+    assert.deepEqual([blocked.code, blocked.stdout], [2, '']);
+    assert.match(blocked.stderr, /does not match its precomputed sha256/);
   } finally {
     await rm(directoryPath, { recursive: true, force: true });
   }

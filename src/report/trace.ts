@@ -21,7 +21,7 @@ import type {
 } from '../exchange/trace-context.ts';
 import type { RouteMethod } from '../exchange/route-template.ts';
 import { compareEndpoints, relationDeclKey, type BridgeEndpoint } from '../join/join.ts';
-import { isClientDocument, isDeclarationDocument, type RouteDeclarationFact } from '../join/route-join.ts';
+import type { RouteDeclarationFact } from '../join/route-join.ts';
 import type { RouteMatchQuality } from '../join/route-index.ts';
 import { createPersistenceMatches, toPairEndpoint, type PairEndpoint, type PersistenceMatch } from './pairs.ts';
 import { encodeSortedJson } from './sorted-json.ts';
@@ -903,7 +903,7 @@ class TraceBuilder {
         detail: 'No server-role http document scanned route declarations, so handlers cannot be matched to routes.' });
     }
     if ('routes' in selection) this.unsymbolizedUseGaps();
-    this.unlinkedMemberGaps();
+    this.unlinkedDocumentGaps();
     for (const { link, server, detail } of this.prepared.linkServiceIssues) {
       this.gap({ code: 'link-service-ambiguous', link, member: server, detail });
     }
@@ -935,23 +935,15 @@ class TraceBuilder {
       member.documents.some(({ target }) => target === 'persistence'));
   }
 
-  /** workspace에서 어떤 link에도 해당 역할로 속하지 않은 member의 http 문서를 gap으로 밝힌다. */
-  private unlinkedMemberGaps(): void {
-    const links = this.input.context.workspace?.links;
-    if (links === undefined) return;
-    for (const member of this.members.values()) {
-      const http = member.documents.filter(({ target }) => target === 'http');
-      if (http.some(isClientDocument) && !links.some(({ client }) => client === member.key)) {
-        this.gap({ code: 'http-member-unlinked', member: member.key,
-          detail: 'This member has client-role http documents but no workspace link uses it as a client, so its calls '
-            + 'are not matched to any server.' });
-      }
-      if (http.some(isDeclarationDocument) &&
-        !links.some(({ server, contract }) => server === member.key || contract?.member === member.key)) {
-        this.gap({ code: 'http-member-unlinked', member: member.key,
-          detail: 'This member has server-role http documents but no workspace link uses it as a server or contract, '
-            + 'so its routes are not matched to any caller or handler chain.' });
-      }
+  /** workspace에서 어떤 link에도 그 역할로 들지 않은 http 문서를 member·측별 개수로 밝힌다. */
+  private unlinkedDocumentGaps(): void {
+    for (const { member, side, count } of this.prepared.unlinkedDocuments) {
+      this.gap({ code: 'http-member-unlinked', member,
+        detail: side === 'client'
+          ? `${count} client-role http document(s) of this member are not the client side of any workspace link, so their `
+            + 'calls are not matched to any server.'
+          : `${count} server-role http document(s) of this member are not joined by any workspace link (as server `
+            + 'declarations or listed contract documents), so their routes are not matched to callers or handler chains.' });
     }
   }
 
