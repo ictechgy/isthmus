@@ -184,7 +184,9 @@ export class RouteIndex {
   #nearMiss(probe: RouteProbe): RouteSideOutcome | undefined {
     const toggled = toggleTrailingSlash(probe.segments);
     if (toggled !== undefined) {
-      const slash = preferCompatible(probe, this.#rootCandidates(toggled).map(({ declaration }) => declaration));
+      // 빈 끝 세그먼트↔`{**}`처럼 증명 불가 후보로만 맞는 선언은 "끝 슬래시만 다름"의 근거가 아니다.
+      const slash = preferCompatible(probe, this.#rootCandidates(toggled)
+        .filter(({ unprovable }) => !unprovable).map(({ declaration }) => declaration));
       if (slash.length > 0) return { status: 'near-miss', reason: 'trailing-slash', candidates: slash };
     }
     const cased = new Set<RouteDeclaration>();
