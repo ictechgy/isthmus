@@ -1,0 +1,58 @@
+{
+  "facts": [
+    {
+      "channel": "users",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 5,
+        "path": "server/db/users.ts"
+      },
+      "symbol": {
+        "qualifiedName": "users.findById",
+        "usr": "ts:repo/users.findById"
+      }
+    },
+    {
+      "channel": "users",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 6,
+        "path": "server/db/users.ts"
+      },
+      "method": "email",
+      "symbol": {
+        "qualifiedName": "users.findById",
+        "usr": "ts:repo/users.findById"
+      }
+    },
+    {
+      "channel": "audit_log",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 4,
+        "path": "server/db/audit.ts"
+      },
+      "symbol": {
+        "qualifiedName": "audit.write",
+        "usr": "ts:repo/audit.write"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/trace-example",
+  "target": "persistence",
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

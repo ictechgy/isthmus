@@ -1,0 +1,63 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "graphRevision": "catalog-1",
+  "limitations": [],
+  "platform": "sql",
+  "project": "/work/trace-example",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "reads"
+      ],
+      "roots": [
+        0,
+        1
+      ],
+      "symbol": {
+        "kind": "view",
+        "usr": "main.active_users"
+      },
+      "via": "main.users"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "references"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "kind": "table",
+        "usr": "main.orders"
+      },
+      "via": "main.users"
+    }
+  ],
+  "revision": "rev-1",
+  "roots": [
+    {
+      "id": "main.users",
+      "symbol": {
+        "kind": "table",
+        "usr": "main.users"
+      }
+    },
+    {
+      "id": "main.users.email",
+      "symbol": {
+        "kind": "column",
+        "usr": "main.users.email"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-schema",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

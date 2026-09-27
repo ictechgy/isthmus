@@ -1,0 +1,72 @@
+{
+  "direction": "dependencies",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/trace-example",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "usr": "ts:repo/audit.write"
+      },
+      "via": "ts:api/users.create"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0,
+        1
+      ],
+      "symbol": {
+        "usr": "ts:service/users.load"
+      },
+      "via": "ts:api/users.get"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0,
+        1
+      ],
+      "symbol": {
+        "usr": "ts:repo/users.findById"
+      },
+      "via": "ts:service/users.load"
+    }
+  ],
+  "revision": "rev-1",
+  "roots": [
+    {
+      "id": "ts:api/users.create",
+      "symbol": {
+        "usr": "ts:api/users.create"
+      }
+    },
+    {
+      "id": "ts:api/users.get",
+      "symbol": {
+        "usr": "ts:api/users.get"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-trace",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

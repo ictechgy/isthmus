@@ -18,6 +18,7 @@ import { queryUsage, runQueryCommand } from './query-command.ts';
 import { impactUsage, runImpactCommand } from './impact-command.ts';
 import { runtimeUsage, runRuntimeCommand } from './runtime-command.ts';
 import { preflightUsage, runPreflightCommand } from './preflight-command.ts';
+import { runTraceCommand, traceUsage } from './trace-command.ts';
 import {
   retentionUsage,
   runRetentionsCommand,
@@ -34,6 +35,7 @@ const commandUsages = new Map([
   ['query', queryUsage],
   ['impact', impactUsage],
   ['preflight', preflightUsage],
+  ['trace', traceUsage],
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
   ['serve', serveUsage],
@@ -49,6 +51,7 @@ Commands:
   query        Find both sides of a channel, method, relation:<name>, or route:<template>
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
+  trace        Follow a route, relation, or symbol to DB and client impact candidates
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change
@@ -169,6 +172,8 @@ async function dispatchCommand(
       return runImpactCommand(commandArguments, readTextFile);
     case 'preflight':
       return runPreflightCommand(commandArguments, readTextFile);
+    case 'trace':
+      return runTraceCommand(commandArguments, readTextFile);
     case 'verify-runtime':
       return runRuntimeCommand(commandArguments, readTextFile);
     case 'extract-js':

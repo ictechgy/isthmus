@@ -1,0 +1,43 @@
+{
+  "analyses": [
+    {
+      "id": "server-forward",
+      "path": "server-forward.json",
+      "platform": "js",
+      "role": "forward"
+    },
+    {
+      "id": "server-reverse",
+      "path": "server-reverse.json",
+      "platform": "js",
+      "role": "reverse"
+    },
+    {
+      "id": "db",
+      "path": "db-dependents.json",
+      "platform": "sql",
+      "role": "db-dependents"
+    },
+    {
+      "id": "android-reverse",
+      "path": "android-reverse.json",
+      "platform": "kotlin",
+      "role": "reverse"
+    }
+  ],
+  "documents": [
+    "server.http.json",
+    "server.persistence.json",
+    "db.sql.json",
+    "android.http.json"
+  ],
+  "format": "isthmus-trace-context",
+  "project": "/work/trace-example",
+  "revision": "rev-1",
+  "selection": {
+    "relations": [
+      "users"
+    ]
+  },
+  "version": 1
+}
