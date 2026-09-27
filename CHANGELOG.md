@@ -6,6 +6,21 @@
 
 ### Added
 
+- **`trace` 명령(개발 중, Phase 2 소비자)**: `isthmus trace <trace-context.json> [--strict] [--compact]`가
+  `isthmus-trace-context` v1(단일 project의 http·persistence 문서, 역할별 생산자 순회, routes·relations·
+  symbols 중 한 선택)을 읽어 `isthmus-trace` v1을 낸다. route 선택은 route-decl 핸들러 → 정방향 순회 →
+  relation-use → persistence 조인 → relation-decl VertexId → schemagraph 의존자와, route → 귀속된 호출 →
+  클라이언트 역방향 순회를 잇는다. relation·심볼 선택은 역방향 순회로 핸들러·route·클라이언트를 찾는다.
+  조인·귀속은 check와 같은 코드(`check --pairs` 투영 포함)를 재사용하고, 한쪽 측만 있어도 조인하되 빠진
+  측은 gap으로 밝힌다(조인에 `composition: "trace"` 선택 사항 추가, 기존 명령은 그대로). 결과는 항상
+  `complete: false`이고 출력의 모든 id는 생산자 문자열이며, 귀속되지 않은 호출은 개수만 싣는다. gap 코드
+  24종(`handler-without-symbol`·`relation-use-without-symbol`·`route-without-decl`·`analysis-missing`·
+  `analysis-truncated`·`stale-analysis`·`non-http-entry`·`unattributed-calls-omitted` 등)과 `--strict`(gap이
+  있으면 1). workspace 매니페스트는 Phase 3 원인으로 거부하고 MCP에는 노출하지 않는다([TRACE](docs/TRACE.md)).
+- **[`language-traversal` v1 계약](docs/LANGUAGE-TRAVERSAL.md)과 fail-closed 파서**: 정방향·역방향 순회,
+  정점별 `via`·`depth`·root 인덱스 목록(64개 상한과 `rootsTruncated`), 결정적 순서. trace는 새 형식을
+  우선하고 `schemagraph-impact` v1과 preflight의 kartograph·cartograph·dartograph 어댑터를 대체 경로로 공유한다.
+
 - **http 도메인 Phase 1(개발 중)**: `check`·`query`가 `target: "http"` 문서를 소비한다.
   platform `openapi`(`route-contract` 전용)와 kind `route-decl`·`route-call`·`route-contract`를
   받고, 역할은 kind로 정한다. `roles`로 사실 0건 http 문서도 "스캔했으나 없음"을 표현하며 이

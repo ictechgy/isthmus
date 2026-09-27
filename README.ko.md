@@ -102,7 +102,9 @@ service를 선언하지 않았을 때)만 선언 측에 귀속되고, 귀속되�
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | 자매 도구가 내보내는 브리지 사실의 형식. 자매 저장소들이 공유하는 계약 |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
-| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | `check --pairs`로 코드 → 테이블 → DB 의존자를 잇는 수동 왕복 절차(아직 자동화 안 됨) |
+| [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | `check --pairs`로 코드 → 테이블 → DB 의존자를 잇는 수동 왕복 절차 |
+| [`docs/TRACE.md`](docs/TRACE.md) | `trace`(개발 중): route → 핸들러 → 테이블 → DB 의존자, route → 호출부 → 영향받는 클라이언트 코드를 생산자 id 정확 일치와 명시적 gap으로 잇는다 |
+| [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | 생산자가 `trace`용으로 내는 정방향·역방향 순회 공유 형식 `language-traversal` v1 |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | 고정 공개 플러그인·앱 정밀도 코퍼스(TP/FN/FP 계수) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
 
@@ -279,7 +281,8 @@ isthmus query relation:users code-facts.json sql-facts.json
 같은 이름의 관계가 없으면 이전처럼 그 이름으로 찾는다. 관계도 일치하면 관계가 우선하므로 그
 bridge 키는 qualifiedName(예: `flutter:relation%3Afoo`)으로 질의한다. 이 id들을
 kartograph/cartograph `impact`와 `schemagraph impact`에 넘기는 방법은
-[persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을 본다. 이 연결은 아직 자동화되지 않았다.
+[persistence 수동 왕복 추적](docs/PERSISTENCE-TRACE.md)을 보고, 저장한 생산자 순회를 한 번에 잇으려면
+아래 `trace`를 쓴다.
 
 ### HTTP 경로 (개발 중)
 
@@ -297,6 +300,23 @@ scope, key: {method, template}, quality, uses, decls, contracts}`이고, `key`�
 scope가 붙은 route 키 하나의 귀속 호출·선언·계약과 dynamic 호출의 증명된 접두사 후보를 낸다.
 아직 구현하지 않은 초안 필드(`registration-order`, http `limitationScopes`, workspace 매니페스트)를
 쓴 문서는 종료 코드 2로 실패한다.
+
+### route 영향 추적 (개발 중)
+
+```bash
+isthmus trace trace-context.json --strict --compact
+```
+
+`trace`는 한 project의 http·persistence 문서, 생산자 순회(`language-traversal` v1, 또는 어댑터로 받는
+기존 `schemagraph-impact`·`kartograph-impact`·cartograph `change-impact`·dartograph impact 보고서), 그리고
+선택 하나(routes·relations·symbols)를 적은 `isthmus-trace-context` v1 파일을 읽는다. route를 고르면
+route-decl 핸들러에서 정방향 순회로 닿은 relation-use, persistence 조인이 해석한 schemagraph 정점 id,
+그 DB 의존자까지 잇고, 그 route에 귀속된 호출에서 영향받는 클라이언트 심볼까지 잇는다. relation·심볼은
+반대로 역방향 순회로 route 핸들러를 찾고 route와 클라이언트로 이어 간다. 출력의 모든 id는 생산자가 준
+값이고, 귀속되지 않은 호출은 개수만 싣고, 재실행 출력은 바이트 단위로 같으며, 보고서는 항상
+`complete: false`다. 빠진 심볼·분석, 잘린 순회, 다른 revision, http가 아닌 진입점은 "닿지 않음"이 아니라
+`gaps`로 보고하고, `--strict`는 gap이 남으면 1이다. 단일 project만 받고 workspace 매니페스트는 거부하며
+MCP에는 아직 노출하지 않는다. [`docs/TRACE.md`](docs/TRACE.md)를 본다.
 
 ### 베이스라인
 
@@ -507,7 +527,7 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 | 종료 코드 | 의미 |
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
-| `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
+| `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만, trace는 남은 gap이 있으면 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
 | `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목·persistence·http 쌍 끝점·http suffix 비교), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거, 아직 http를 소비하지 않는 명령에 넘긴 http 문서 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수(형식이 틀린 `route:` 주체 포함) 또는 `query`의 `notFound`·`ambiguous` |
 

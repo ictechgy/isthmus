@@ -1,8 +1,11 @@
 # persistence 수동 왕복 추적
 
 코드가 쓰는 테이블·컬럼과, 그 테이블에 기대는 코드·DB 객체를 손으로 잇는 절차다.
-**아직 자동화되지 않았다.** isthmus는 JSON 파일만 읽고 쓰며 자매 도구를 실행하지 않는다.
+isthmus는 JSON 파일만 읽고 쓰며 자매 도구를 실행하지 않는다.
 아래 명령은 사람이나 에이전트가 차례로 실행하고, isthmus는 그 사이에서 사용↔선언 쌍만 낸다.
+생산자 순회 결과([`language-traversal` v1](LANGUAGE-TRAVERSAL.md) 또는 `schemagraph-impact` v1)를
+이미 갖고 있으면 [`isthmus trace`](TRACE.md)가 4·5단계의 잇기를 한 번에 한다(생산자 실행과 입력
+수집은 여전히 손으로 한다).
 
 이 절차로 답하려는 질문은 두 가지다.
 
@@ -111,5 +114,5 @@ schemagraph facts --document catalog.json --project "$PROJECT" -o sql-facts.json
   생산자 책임이며, 생산자 문서의 지원 범위와 limitation을 함께 본다.
 - `limitations`와 `-unverified` 진단은 그대로 남는다. `catalog-coverage:`가 있으면 선언 쪽이,
   `unjoined-dynamic-relations`가 있으면 사용 쪽이 부분 관찰이다.
-- 이 절차는 한 project 안에서만 동작한다. 여러 저장소(예: 백엔드와 클라이언트)를 한 번에
+- 이 절차와 `trace`는 한 project 안에서만 동작한다. 여러 저장소(예: 백엔드와 클라이언트)를 한 번에
   잇는 것은 아직 지원하지 않는다.

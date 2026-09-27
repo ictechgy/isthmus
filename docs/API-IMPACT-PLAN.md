@@ -93,7 +93,7 @@ schemagraph facts ───────── relation-decl ───┘        
 - **persistence는 member 안에서만** 잇는다. 그래서 클라이언트 로컬 DB(Room 등)와 서버 DB가
   섞이지 않는다. 여러 저장소는 project 단일 규칙을 문서 단위로 지킨 채 `isthmus-workspace`
   매니페스트의 명시 link로 잇고, member 사이 조인은 http만 허용한다.
-- **trace 명령**: 새 `trace`(계획)가 `language-traversal` v1 숲을 생산자 id 정확 일치로만 잇는다.
+- **trace 명령**: 새 `trace`([TRACE](TRACE.md), 단일 project 구현)가 `language-traversal` v1 숲을 생산자 id 정확 일치로만 잇는다.
   이 형식은 정방향 `dependencies`·역방향 `dependents`를 담고 `reached[].roots`로 root 출처를
   보존한다. hop은 언어 내부(A), persistence 경계(B), http 경계(C) 셋이고 체인 키는
   `[member, platform, id]`다. 끊긴 곳은 `gaps[]`(예: `handler-without-symbol`,
@@ -202,6 +202,10 @@ lock sha가 같은 벡터를 통과하고, `npm run verify`가 통과한다.
 - isthmus: platform js의 route-decl, `language-traversal` v1 파서, `isthmus-trace-context` v1 →
   `isthmus-trace` v1(단일 project, 정방향), schemagraph 어댑터, `scripts/capture-trace.mjs`,
   preflight와 모듈 공유, package files 반영.
+  - 진행(2026-09-27): [`language-traversal` v1 계약](LANGUAGE-TRAVERSAL.md)과 파서, `trace` 명령
+    ([TRACE](TRACE.md), 단일 project, route 정방향과 relation·심볼 역방향, 클라이언트 continuation 포함),
+    schemagraph 어댑터(새 형식 + `schemagraph-impact` v1 대체 경로), preflight 어댑터 공유, package
+    files 반영이 들어갔다. `scripts/capture-trace.mjs`와 실제 생산자 출력의 왕복 검증은 남았다.
 - schemagraph: impact의 `language-traversal` v1 출력(dependents, via, roots)과 다중 subject.
 - 카탈로그 capture: 앱 B는 저장소의 SQLite 마이그레이션을 로컬 SQLite에 적용해 schemagraph
   카탈로그를 만든다(wrangler 명령은 착수 시 확인). 앱 A의 카탈로그 원천(Prisma 마이그레이션 또는
