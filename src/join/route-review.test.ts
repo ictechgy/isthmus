@@ -84,6 +84,19 @@ test('리뷰 3: roles에 server가 없는 문서는 route-decl을 실을 수 없
   ), ['warning route-call-without-contract-unverified /b']);
 });
 
+test('리뷰 4: 소비자 계수 한계는 입력 문서 순서와 무관하게 같은 순서다', () => {
+  const server = document('js', ['server'], [decl('GET', '/a'), { ...decl('GET', 'x'), dynamic: true }]);
+  const kotlin = document('kotlin', ['client'], [call('GET', '/z', { service: 'other' }), { ...call('GET', 'y'), dynamic: true }]);
+  const swift = document('swift', ['client'], [{ ...call('GET', 'w'), dynamic: true }]);
+  const forward = joinBridgeDocuments([server, kotlin, swift]).limitations;
+  const backward = joinBridgeDocuments([swift, kotlin, server]).limitations;
+  assert.deepEqual(backward, forward);
+  assert.deepEqual(forward.map(({ platform, message }) => `${platform} ${message.split(':')[0]}`), [
+    'js unjoined-dynamic-routes', 'kotlin unjoined-dynamic-route-calls', 'kotlin unjoined-unbound-route-calls',
+    'swift unjoined-dynamic-route-calls',
+  ]);
+});
+
 test('리뷰 5: 증명 불가 후보만으로 닿는 near-miss도 error로 올리지 않고 불일치 warning으로 남긴다', () => {
   const regex = { paramConstraints: [{ segment: 1, kind: 'regex', pattern: '[0-9]+' }] };
   assert.deepEqual(callCodes(
@@ -115,4 +128,32 @@ test('리뷰 6: 문서 service와 다른 사실 service는 파서가 거부하�
     document('js', ['server'], [decl('GET', '/a', { service: 'two' })]),
     document('kotlin', ['client'], [call('GET', '/b', { service: 'two' })]),
   ]), ['error route-call-without-decl /b']);
+});
+
+test('suffix 비교 예산을 넘으면 조인이 부분 결과 없이 원인과 해결 방향을 담은 입력 오류로 바꾼다', () => {
+  // 선언 2,500개 × 오프셋 20 × base 호출 101개 > 5,000,000번 비교. 어느 후보도 맞지 않아 상한(64)에
+  // 걸려 일찍 끝나지 않는다.
+  const deep = `/${Array.from({ length: 19 }, () => 'a').join('/')}/x`;
+  const decls = Array.from({ length: 2_500 }, () => decl('GET', deep));
+  const calls = Array.from({ length: 101 }, () => call('GET', '/y/x', { pathAnchor: 'base' }));
+  assert.throws(
+    () => joinBridgeDocuments([document('js', ['server'], decls), document('kotlin', ['client'], calls)]),
+    (error: unknown) => error instanceof Error && error.name === 'BridgeJoinValidationError' &&
+      /Http suffix matching exceeds 5000000 comparisons; narrow the inputs/.test(error.message),
+  );
+});
+
+test('매니페스트 없는 입력의 route-call-without-contract는 공백이 없어도 항상 -unverified다', () => {
+  const report = createCheckReport(joinBridgeDocuments([
+    document('js', ['server'], [decl('GET', '/a'), decl('GET', '/b')]),
+    document('openapi', ['server'], [fact('route-contract', 'GET', '/a', { location: { path: 'o.yaml', line: 1, column: 1 } })]),
+    document('kotlin', ['client'], [call('GET', '/a'), call('GET', '/b'), call('POST', '/a')]),
+  ]));
+  const contractSide = report.issues.filter(({ code }) => code.startsWith('route-call-without-contract'));
+  assert.deepEqual(contractSide.map(({ severity, code, method, channel }) => `${severity} ${code} ${method} ${channel}`), [
+    'warning route-call-without-contract-unverified POST /a',
+    'warning route-call-without-contract-unverified GET /b',
+  ]);
+  // 같은 입력의 decl 쪽은 전제가 모두 증명돼 error다 — contract 쪽만 authoritative 선언이 없어 낮춘다.
+  assert.equal(report.issues.find(({ code }) => code === 'route-method-mismatch')?.severity, 'error');
 });

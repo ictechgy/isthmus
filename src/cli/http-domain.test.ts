@@ -189,3 +189,23 @@ test('http 도메인을 아직 소비하지 않는 명령은 원인을 밝혀 �
   assert.equal(preflight.exitCode, 2);
   assert.match(preflight.standardError, /remove http documents from the context/);
 });
+
+test('check --pairs는 http 쌍 상한을 넘으면 stdout 없이 종료 코드 2다', async () => {
+  const server = await read('server.json');
+  const client = (file: number): string => JSON.stringify({
+    ...(JSON.parse(server) as object), platform: 'kotlin', roles: ['client'], dispatch: undefined,
+    facts: Array.from({ length: 50_001 }, (_, index) => ({
+      kind: 'route-call', channel: '/api/v1/items', method: 'GET', dynamic: false, pathAnchor: 'root',
+      location: { path: `app/Calls${file}.kt`, line: index + 1, column: 1 },
+    })),
+  });
+  const inputs: Record<string, string> = { 'server.json': server, 'c0.json': client(0), 'c1.json': client(1) };
+  const result = await runCheckCommand(['check', 'server.json', 'c0.json', 'c1.json', '--pairs'],
+    async (path) => inputs[path]!, undefined, clock, '0.0.0');
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.match(result.standardError, /Cannot produce http pairs with more than 100000/);
+  const plain = await runCheckCommand(['check', 'server.json', 'c0.json', 'c1.json'], async (path) => inputs[path]!,
+    undefined, clock, '0.0.0');
+  assert.equal(plain.exitCode, 0, '--pairs 없이는 같은 입력이 정상 보고된다');
+});

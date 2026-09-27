@@ -275,3 +275,16 @@ test('--pairs의 http 매치는 선언 측 키·품질별로 호출·decl·contr
   const issues: readonly CheckIssue[] = createCheckReport(joined).issues;
   assert.deepEqual(issues.map(({ code }) => code), ['route-decl-without-contract', 'route-call-without-contract-unverified']);
 });
+
+test('http 쌍 끝점이 상한을 넘으면 부분 목록 대신 고정 문구로 실패한다', async () => {
+  const { HttpPairsLimitError, MAX_PAIR_ENDPOINTS } = await import('./pairs.ts');
+  const server = document('js', ['server'], [decl('GET', '/a')]);
+  const perDocument = Math.ceil(MAX_PAIR_ENDPOINTS / 2);
+  const clients = [0, 1].map((file) => document('kotlin', ['client'], Array.from({ length: perDocument }, (_, index) => ({
+    kind: 'route-call', channel: '/a', method: 'GET', dynamic: false, pathAnchor: 'root',
+    location: { path: `app/Calls${file}.kt`, line: index + 1, column: 1 },
+  }))));
+  const joined = joinBridgeDocuments([server, ...clients]);
+  assert.throws(() => createHttpMatches(joined), (error: unknown) =>
+    error instanceof HttpPairsLimitError && !error.message.includes('/a') && /No partial pair list is emitted/.test(error.message));
+});
