@@ -810,9 +810,18 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
     스코프가 정한다.
   - base call ↔ base decl: 잇지 않는다. 두 앵커가 모두 미상이라 꼬리가 같아도 같은 경로라는
     근거가 없다. 이 call은 error 전제 (b)가 거짓이라 `-unverified`로만 남는다.
-- 두 suffix 후보 모두 호출당 64개까지다. 후보가 유일하면 `suffix` match, 여럿이면 ambiguous다.
-  유일성은 method가 맞는 후보의 템플릿 수로 잰다. 64개를 넘으면 모호함이다. 한 조인의 suffix
-  비교는 (호출, 선언, 오프셋) 5,000,000번까지이며 넘으면 부분 결과 대신 입력 오류다.
+- 두 suffix 후보 모두 호출당 64개까지다. 후보는 한 scope의 한 선언 측(decl들 또는 contract들)
+  안에서만 모이며, 그 선언 측은 같은 디스패치 모델을 따른다(decl은 `dispatch: "specificity"`,
+  openapi contract도 같은 구체성 규칙). 그래서 suffix 후보에도 root↔root와 같은 구체성 선택을
+  적용한다: method가 맞는 후보 중 증명 가능한 후보, 그중 호출 파라미터를 decl 리터럴에 기대지 않은
+  후보를 먼저 보고, 구체성 순위는 **호출 세그먼트에 맞춰** 왼쪽부터 비교한다. root 호출↔base 선언
+  에서는 알 수 없는 base가 차지한 호출 앞자리를 어떤 세그먼트 순위보다 낮게 둔다. 최상위가 한
+  템플릿일 때만 `suffix` match이고, 서로 다른 템플릿이 동률이면 ambiguous다(`/a/items/{}`와
+  `/b/items/{}`는 base 호출 `/items/{}`에 대해 여전히 모호하다). 증명 불가 후보만 남으면 템플릿이
+  하나일 때만 match다. 64개를 넘으면 모호함이다. 다른 scope나 decl과 contract의 후보는 함께 순위를
+  매기지 않는다. 품질은 항상 `suffix`이고, suffix 후보 위의 method 불일치가 error 근거가 아니라는
+  규칙은 그대로다. 한 조인의 suffix 비교는 (호출, 선언, 오프셋) 5,000,000번까지이며 넘으면 부분
+  결과 대신 입력 오류다.
   base decl·base contract의 `route-decl-without-call`·`route-contract-without-call`은 항상
   `-unverified`다. 잇지 않은 base call이 그 경로를 불렀을 수 있기 때문이다.
 - root로 승격(`declared-base`)되는 것은 workspace link의 `match.baseRefs`에 `pathPrefix`가
@@ -1090,6 +1099,10 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   차이도 error가 아니라 불일치 warning이다.
 - 이 scope를 불렀을 수 있는 `unjoined-unbound-route-calls`는 미호출 진단을 `-unverified`로 내린다(미결 해소).
 - method를 먼저 거르고, 호출 파라미터는 decl 파라미터가 있으면 리터럴에 붙지 않는다.
+- suffix 후보에도 같은 scope·같은 선언 측 안에서 구체성을 적용한다(초안은 "suffix에는 구체성을
+  적용하지 않고 여럿이면 모호"였다). 생산자 실측에서 base 호출 `/companies/tech`가 root 선언
+  `…/companies/tech`와 `…/companies/{}` 사이에서 모호해져, 같은 선언 측의 디스패치 규칙이 이미 가리는
+  후보를 가리지 못했다. 동률은 여전히 모호하고 suffix는 여전히 error 근거가 아니다.
 - 끝 슬래시·대소문자 불일치는 경로 후보가 없을 때만이며 미매치 진단을 대신한다.
 - 호출 쪽 부분 보간은 dynamic이다(서버 템플릿의 부분 세그먼트와 다르다, HTTP-WRAPPERS).
 - 마스킹·동적 동사 호출은 error 근거가 아니다.
