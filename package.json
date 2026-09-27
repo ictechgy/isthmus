@@ -42,6 +42,8 @@
     "docs/BRIDGE-RN-EVENTS.md",
     "docs/MCP.md",
     "docs/GRAPH-EXCHANGE.md",
+    "docs/HTTP-WRAPPERS.md",
+    "conformance",
     "compatibility.json",
     "LICENSE",
     "README.md",
@@ -56,9 +58,10 @@
     "test": "node scripts/run-tests.mjs",
     "test:phase0:join": "node --test experiments/phase-0/join/join.test.mjs",
     "verify:build": "node scripts/verify-build-contract.mjs",
+    "verify:conformance": "node scripts/verify-conformance.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && node scripts/verify-compatibility.mjs && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs scripts/runtime-harness-failures.test.mjs scripts/runtime-evidence-manifest.test.mjs scripts/verify-installed-compatibility.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && node scripts/verify-compatibility.mjs && node scripts/verify-conformance.mjs && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs scripts/runtime-harness-failures.test.mjs scripts/runtime-evidence-manifest.test.mjs scripts/verify-installed-compatibility.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

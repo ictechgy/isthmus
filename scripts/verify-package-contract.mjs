@@ -50,6 +50,10 @@ for (const requiredPath of [
   'docs/IMPACT.md',
   'docs/PERSISTENCE-TRACE.md',
   'docs/GRAPH-EXCHANGE.md',
+  'docs/HTTP-WRAPPERS.md',
+  'conformance/SHA256SUMS',
+  'conformance/http-template.json',
+  'conformance/url-compose.json',
   'compatibility.json',
   'package.json',
 ]) {
