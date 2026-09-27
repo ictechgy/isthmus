@@ -124,6 +124,15 @@ isthmus trace trace-context.json [--strict] [--compact]
   남긴다 — 문구에 합계, 정점 수, 예시 id 5개(핸들러 먼저, 그다음 문서 순서)를 싣는다. 분석이 잇지 못한
   호출을 아예 신고하지 않으면 0인지 모르므로 `reach-completeness-unknown`을 남긴다. 역방향·DB 분석의
   `unresolvedCalls`는 특정 hop에 귀속할 수 없어 이 gap을 만들지 않는다.
+- **의도한 보수 규칙**: 같은 핸들러를 root로 한 정방향 분석이 여럿이면 분석마다 따로 판정한다. 한 분석이
+  잇지 못한 호출을 신고하고 이 핸들러에서 닿는 곳에 하나도 없어도, 신고하지 않는 다른 분석이 있으면 그 분석의
+  `reach-completeness-unknown`은 그대로 남고 `--strict`는 1이다. 합친 relation-use hop은 신고하지 않는 분석에서만
+  올 수 있고(생산자·버전이 달라 도달 집합이 다를 수 있다), 신고하는 분석의 "0"은 그 분석이 본 그래프에 대한
+  말일 뿐 다른 분석의 정점·간선을 보증하지 않기 때문이다. 이 gap을 없애려면 신고하지 않는 분석을 context에서
+  빼거나 그 생산자가 신고하게 한다.
+- `summary.evidence.direct`가 0보다 크다고 생산자가 direct 등급을 선언했다는 뜻은 아니다. 시작점 자신(depth 0)의
+  도달(예: 핸들러가 직접 감싼 relation-use)은 간선이 없어 분석과 무관하게 `direct`로 세기 때문이다. 생산자의
+  신고 여부는 `analyses[].evidenceReported`로 본다.
 - 호출은 귀속된 정적 호출만 싣는다(check 귀속 게이트와 같다). decl에 match된 호출은 `side: "decl"`,
   decl 쪽이 없거나 맞지 않고 선택 키의 contract에 match된 호출은 `side: "contract"`다. 품질 표기는
   `check --pairs`와 같다.
