@@ -4,7 +4,7 @@ _기록: 2026-09-26 · 상태: 승인된 프로그램, Phase 0 진행 중 · 구
 
 백엔드 API를 바꿀 때 닿는 DB 객체와 그 API를 부르는 클라이언트 코드를 정적으로 판단하기 위한
 다단계 계획이다. isthmus, 언어 생산자(cartograph·kartograph·dartograph 등), schemagraph와
-새 생산자가 대상이다. 공유 계약 초안은 [GRAPH-EXCHANGE의 HTTP 경계 합의 초안](GRAPH-EXCHANGE.md#개발-중-http-경계-합의-초안)에
+새 생산자가 대상이다. 공유 계약 초안은 [GRAPH-EXCHANGE의 HTTP 경계 절](GRAPH-EXCHANGE.md#개발-중-http-경계-v1-확장)에
 있고, bridge 도메인의 기존 실행 순서는 [PLAN](PLAN.md)에 그대로 남는다. 조사·설계·비평의
 원 기록은 저장소 밖 세션 자료라서, 저장소 안에서는 이 문서가 요약 정본이다.
 **모든 기간은 1인 + 에이전트 기준 추측이다.**
@@ -103,7 +103,8 @@ schemagraph facts ───────── relation-decl ───┘        
   url-compose, sql-relations, location-column)와 파일별 sha256 목록을 둔다. 생산자는
   `conformance.lock`으로 벤더링한다. 닫힌 limitation 접두사 목록은 Phase 0에서
   `docs/limitation-prefixes.json`으로 추출해 기계 판독하고 dist에 번들한다. 래퍼 선언용
-  `http-wrappers` v1 스키마도 isthmus docs가 소유한다. 모두 아직 없는 계획 산출물이다.
+  `http-wrappers` v1 스키마도 isthmus docs가 소유한다. http-template·url-compose suite와
+  [`http-wrappers` v1](HTTP-WRAPPERS.md)은 Phase 1에서 추가됐고, 나머지는 아직 계획 산출물이다.
 
 ## 단계 (사용자 앱 우선 재배열)
 

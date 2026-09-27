@@ -9,8 +9,10 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 [EventChannel v2](BRIDGE-EVENTS.md)는 별도 transport 문서다.
 개발 중인 [React Native 이벤트 v2](BRIDGE-RN-EVENTS.md)는 코어 RN 전역 이벤트의
 `event-emit`↔`event-listen`을 다루며 Flutter transport와 섞지 않는다.
-`target: "http"`는 [HTTP 경계 합의 초안](#개발-중-http-경계-합의-초안)만 있으며 아직 어떤 소비
-명령도 받지 않는다. 아래 규범 절은 그 초안이 합의·구현될 때까지 그대로 유효하다.
+`target: "http"`는 [HTTP 경계](#개발-중-http-경계-v1-확장) 절의 Phase 1 범위를 `check`(`--pairs`
+포함)와 `query`(`route:` 주체)가 소비한다. `graph`·`diff`·`impact`·`retentions`·`preflight`는
+http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
+필드는 입력 오류로 거부한다.
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
 `diff`는 literal v2 경계의 추가·삭제와 v2 진단의 introduced/resolved를 싣는다.
@@ -35,8 +37,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
-  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "rust" | "sql",
-  "target": "flutter" | "react-native" | "capacitor" | "persistence" | null,  // 경계 메커니즘
+  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "rust" | "sql" | "openapi",
+  "target": "flutter" | "react-native" | "capacitor" | "persistence" | "http" | null,  // 경계 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
   "facts": [ Fact, ... ],
   "limitations": [ "dynamic-channel-names: 3 channel constructors use a non-literal name", ... ]
@@ -84,7 +86,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 {
   "kind": "channel-create" | "channel-register" | "method-invoke" | "method-handle"
         | "module-export" | "module-import" | "component-export" | "component-require"
-        | "relation-use" | "relation-decl",
+        | "relation-use" | "relation-decl"
+        | "route-decl" | "route-call" | "route-contract",   // http target 전용
   "channel": "com.example/camera",     // 귀속할 수 없으면 null. dynamic 이면 원문 표현식.
                                        // relation-* 에서는 관계 이름(아래 persistence 절)
   "method": "takePhoto",               // method-* 에만. relation-* 에서는 선택적 컬럼 이름
@@ -325,6 +328,9 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
 | `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
+| `route-decl` | kotlin·js(서버) | 서버 라우트 선언 — [HTTP 경계](#개발-중-http-경계-v1-확장) |
+| `route-call` | kotlin·swift·dart·js(클라이언트) | 클라이언트 HTTP 호출 |
+| `route-contract` | openapi | 스펙 operation |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
 
@@ -410,20 +416,24 @@ require에는 싣지 않는다.
   찾지 못한 kotlin·swift·dart persistence 생산 결과(사실 0건, `target: null`)도
   bridge 문서로 세지며, persistence 입력에 이런 문서만 bridge 쪽으로 남아 요건을
   못 채우면 isthmus는 그 원인(null target)을 오류 문구에 밝힌다. persistence 도메인의
-  구성 요건은 위 persistence 절을 따른다
+  구성 요건은 위 persistence 절을 따른다. target `http` 문서는 platform이 kotlin·swift·dart·js여도
+  bridge·persistence 어느 쪽 요건도 채우지 않으며, http 도메인의 구성 요건은
+  [HTTP 경계](#개발-중-http-경계-v1-확장) 절을 따른다
 - 같은 판정이 조인 밖에서 bridge 역할을 묻는 곳에도 그대로 적용된다(isthmus 구현
   기준): `retentions`의 수신 측 문서 요건(같은 플랫폼의 persistence 문서는 근거가
   아니라 종료 코드 2), 수신 측 공백 한계의 완화 근거, `impact --runtime`의 정적 후보
   플랫폼, preflight context의 bridge 문서(persistence 문서는 원인 문구로 거부),
   `diff`의 스냅샷 구성. `diff`는 아직 persistence 비교를 지원하지 않으므로
   `persistence` target 문서나 sql 문서가 한 스냅샷에라도 있으면 일반 구성 문구가 아닌
-  원인 문구로 거부한다
+  원인 문구로 거부한다. http 문서(target `http`, 또는 사실 0건이라도 platform `openapi`)도
+  `graph`·`diff`·`impact`·`retentions`·preflight context가 같은 방식으로 거부한다
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 
 ### `target` 호환 규칙
 
-- 사실이 없을 때만 문서의 `target`은 `null`이다
+- 사실이 없을 때만 문서의 `target`은 `null`이다. 예외는 http 하나다. `roles`를 선언한 target
+  `http` 문서는 사실이 0건이어도 `http`를 유지한다([문서 필드와 사실 0건 문서](#문서-필드와-사실-0건-문서))
 - 사실이 하나 이상이고 한 브리지 메커니즘만 담으면 그 값을 쓴다
 - 버전 1에는 사실별 `target`이 없다. 한 Swift 프로젝트에 Flutter와 React Native 사실이
   함께 있으면 생산자는 결정적인 대표값을 쓰고 정확히 `mixed-targets:`로 시작하는
@@ -431,7 +441,8 @@ require에는 싣지 않는다.
 - 소비자는 `mixed-targets` 문서에서 사실별 메커니즘을 복원할 수 없으므로 조인을 보류한다. 생산자는 위의 정확한 표기를 써야 하며, 소비자는 대소문자·앞 공백·콜론 누락처럼 명백한 변형도 fail-closed로 보류한다. 단, `non-mixed-targets`나 `mixed-targets-like`처럼 낱말 내부에 포함된 표기는 다른 의미의 산문이므로 보류 근거로 삼지 않고 단어 경계와 대소문자 무시(`(?<![\w-])mixed-targets(?![\w-])/i`)로 판정한다. CLI 명령은 빈 정상 결과를 내지 않고 도구 실패(종료 코드 2)를 반환한다. 안전한 혼합 프로젝트 지원은 문서를 target별로 나누거나 다음 형식 버전에 사실별 target을 추가한 뒤 제공한다
 
 소비자는 `platform`과 fact 역할도 함께 검증한다. Dart/JS는 호출 측 종류만,
-Swift/Kotlin은 수신 측 종류만 생산할 수 있다.
+Swift/Kotlin은 수신 측 종류만 생산할 수 있다. target `http`는 예외로, 역할을 kind로 정하고
+(kind, platform) 조합표만 허용한다.
 
 ### 입력 자원 상한
 
@@ -531,19 +542,34 @@ cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스�
 - **Swift 조건부 컴파일**: Flutter를 import한 파일에 `#if`가 있으면 활성 구성을 추측하지 않고 compiler-indexed 추출이 필요하다고 실패한다
 - **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다
 
-## 개발 중: HTTP 경계 합의 초안
+## 개발 중: HTTP 경계 (v1 확장)
 
-> **개발 중 — 합의 초안, 아직 어떤 소비 명령도 받지 않음.**
-> 현재 isthmus는 `target: "http"`와 `platform: "openapi"`·`"python"` 문서를 입력 오류로
-> 거부한다. 이 절은 [API 변경 영향 계획](API-IMPACT-PLAN.md)의 계약 제안이다. 위 절들의
-> 규범 문장(문서 스키마의 열거, `target` 호환 규칙, project 단일 규칙, 플랫폼 역할 검증,
-> 조인 입력 구성 요건)은 이 초안이 합의·구현될 때까지 그대로 유효하다. 구현은 계획의
-> Phase마다 필요한 필드만 옮기며, 그때 위 절들을 함께 개정한다.
+> **개발 중 — Phase 1 소비자 구현.** isthmus는 이 절 중 [아래 구현 상태](#구현-상태-isthmus-phase-1)의
+> "구현" 항목을 `check`(`--pairs` 포함)와 `query`에서 소비한다. "초안" 항목은 아직 합의 초안이며,
+> 그 필드·값을 실은 문서는 조용히 무시하지 않고 원인을 밝힌 입력 오류(종료 코드 2)로 거부한다.
+> 이 절은 [API 변경 영향 계획](API-IMPACT-PLAN.md)의 계약이고, 프레임워크별 값은 착수할 때 공식
+> 소스로 확인해 [적합성 벡터](#공유-적합성-벡터)에 고정한다. 계획대로 Phase 4까지 '개발 중'으로 둔다.
 
 REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스펙 operation을
 (HTTP method, 정규 경로 템플릿)으로 잇는다. host는 조인 키가 아니다. GraphQL·gRPC는 키의
 의미가 달라 이 target에 넣지 않는다. 결과는 route 단위이며, 요청·응답 본문 필드, query
 파라미터, 헤더의 호환성은 판정하지 않는다.
+
+### 구현 상태 (isthmus Phase 1)
+
+| 항목 | 상태 | 초안 항목을 쓰면 |
+|---|---|---|
+| target `http`, platform `openapi`, kind 세 종류, `roles`, 사실 0건 http 문서, `dispatch: "specificity"`, `sourceSets`, `service`(문서·사실) | 구현 | — |
+| route 사실 필드: `method`(ANY·`methodDynamic`), `pathAnchor`, `authority`, `baseRef`, `service`, `trailingSlash`, `caseInsensitive`, `narrowed`, `paramConstraints`, `configDefault`, `catchAllPrefix`, `queryTailStripped`, `channelPrefix`, `maskedSegments`, `operationId`, `testSource` | 구현 | — |
+| 정규 경로 템플릿 문법, 세그먼트 매칭·구체성·경로 제약·HEAD/OPTIONS·앵커 네 조합·suffix 후보 | 구현 | — |
+| 매니페스트 없는 귀속 게이트(service 일치·단일 서비스 규칙), 소비자 계수 세 가지 | 구현 | — |
+| check 진단(아래 표에서 `route-decl-shadowed` 제외), 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
+| `dispatch: "registration-order"`, `order`, `route-decl-shadowed` | 초안 | 문서를 입력 오류로 거부 |
+| http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`) | 초안 | http 문서의 `limitationScopes`를 입력 오류로 거부. 한계는 문서 전체에 적용 |
+| `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | 초안 | 매니페스트 파일을 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
+| platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
+| graph route 간선, impact의 http blocker, diff, trace, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부 |
+| `docs/limitation-prefixes.json` 추출 | 초안 | 닫힌 목록은 이 절과 `src/report/route-issues.ts`가 정본 |
 
 ### target과 kind
 
@@ -568,29 +594,39 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 
 ### 문서 필드와 사실 0건 문서
 
-- `roles`는 `["server"]`·`["client"]`·`["server", "client"]` 중 하나이며 target `http` 문서에
-  필수다. `route-decl`은 roles에 server가, `route-call`은 client가 있는 문서에만 둘 수 있다.
+- `roles`는 `["server"]`·`["client"]`·`["server", "client"]` 중 하나이며(순서가 다른 표기도 거부)
+  target `http` 문서에 필수이고 다른 target 문서에는 올 수 없다. `route-decl`은 roles에 server가,
+  `route-call`은 client가 있는 문서에만 둘 수 있다. openapi 문서의 roles는 정확히 `["server"]`다
+  (계약은 선언 측이다). 사실 0건 스펙 문서는 `roles: ["server"]`로 target `http`를 유지하고
+  contract 문서로 센다. roles 없는 사실 0건 openapi 문서는 target `null`이며 어느 도메인도 만들지 않는다.
 - 기존 "사실이 없을 때만 `target`은 `null`" 규칙에 **http 한정 예외**를 둔다. roles가 비어
   있지 않은 문서는 사실이 0건이어도 target `http`를 유지하고, roles가 없는 0건 문서는 기존대로
   `null`이다. 이 예외는 (1) 호출이 0건인 클라이언트를 "스캔 안 함"과 구분하고, (2) 0건
   kotlin·swift 라우트 문서가 `null`이 되어 bridge 수신 요건을 채우는 누수를 막으며, (3) 사실
   0건 bridge 문서를 분석 근거로 인정하는 기존 규칙을 그대로 둔다.
 - `dispatch: "specificity" | "registration-order"`는 `route-decl`을 담은 문서에 필수다(아래
-  디스패치 모델).
+  디스패치 모델). roles에 server가 있는 비 openapi 문서만 가질 수 있다. `registration-order`는
+  초안이라 이 버전은 입력 오류로 거부한다.
 - 선택 필드: `service`(서비스 신원 문자열), `sourceSets: {"tests": "excluded" | "included"}`
-  (테스트 소스를 스캔했는지 선언).
+  (테스트 소스를 스캔했는지 선언). `sourceSets`에는 `tests` 키만 올 수 있다.
 - `service`는 문서와 route 사실 양쪽에 둘 수 있다. 사실의 **유효 service**는 사실 값이 있으면 그
   값, 없으면 문서 값이다. 둘 다 있는데 다르면 입력 오류(종료 코드 2)다. 여러 서비스를 부르는
   클라이언트 문서는 문서 값을 생략하고 사실마다 싣는다. 귀속 게이트와 진단 신원 `scope`는 유효
   service만 쓴다. 해석이 갈려 귀속과 baseline이 달라지지 않게 하기 위해서다.
+- 매니페스트가 없을 때 선언 측 문서·사실은 **모두** service를 선언하거나 **모두** 선언하지 않아야
+  한다(사실 0건 선언 측 문서는 문서 값으로 판단). 일부만 선언하면 이름 없는 선언을 어느 scope에
+  둘지 정할 수 없으므로 입력 오류(종료 코드 2)다.
 - bridge 도메인 판정은 명시 규칙으로 바꾼다. target이 `flutter`·`react-native`·`capacitor`
   이거나, target이 `null`이고 platform이 dart·js·swift·kotlin인 문서만 bridge 도메인 문서다.
   target `http`·`persistence` 문서는 bridge 어느 쪽 요건도 채우지 않는다.
 - 입력 구성: target `http` 문서가 있으면 link마다(매니페스트가 없으면 조인 전체) 선언 측
   문서(`route-decl`·`route-contract` 사실이 있거나 roles에 server가 있는 문서)와 호출 측
   문서(roles에 client가 있는 문서)가 각각 하나 이상 필요하다. 한쪽만 있으면 입력 오류(종료
-  코드 2)다. 예외는 decl과 contract만 비교하는 드리프트 모드와 diff surface 모드다. 선언 측을
-  contract 문서만으로 채운 link는 받지만, decl 기반 진단은 평가하지 않는다(아래 error 전제 (f)).
+  코드 2)다. 예외는 decl과 contract만 비교하는 드리프트 모드와 diff surface 모드다. 드리프트
+  모드는 route-decl을 스캔한 서버 문서와 openapi 문서가 모두 있어야 하며, 호출 측이 없으므로
+  `*-without-call` 진단을 내지 않는다(diff surface 모드는 초안). 선언 측을 contract 문서만으로
+  채운 link는 받지만, decl 기반 진단은 평가하지 않는다(아래 error 전제 (f)).
+- target `http` 문서에 `mixed-targets` 한계가 있으면 다른 문서와 같이 조인 전체를 보류한다.
 
 ### route 사실 필드
 
@@ -609,24 +645,39 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 }
 ```
 
-- `method`는 `GET`·`HEAD`·`POST`·`PUT`·`PATCH`·`DELETE`·`OPTIONS`·`TRACE` 중 하나이거나 `ANY`다.
+- `channel`: dynamic이 아니면 정규 경로 템플릿(최대 2,048자)이다. route-call 템플릿에는 `{**}`가
+  올 수 없다. dynamic이면 원문 식(최대 2,048자)이나 `null`이다.
+- `method`는 `GET`·`HEAD`·`POST`·`PUT`·`PATCH`·`DELETE`·`OPTIONS`·`TRACE` 중 하나이거나 `ANY`다
+  (대문자 그대로).
   `ANY`는 `route-decl` 전용이다(method 없는 `@RequestMapping`, `app.all`, Django 함수 뷰).
   `route-call`의 동사가 리터럴이 아니면 `method`를 생략하고 `methodDynamic: true`를 단다.
   선언된 래퍼나 라이브러리에 기본 동사가 있으면 그 값을 쓴다.
 - `pathAnchor`(필수): `root`는 템플릿이 서버 경로 루트부터 확정됐다는 뜻이다. `base`는 정적으로
   알 수 없는 base 경로 뒤에 붙는다는 뜻이다.
-- `authority`는 userinfo를 뗀 리터럴 host다. `baseRef`는 base URL 식의 생산자 id이고 `service`는
-  서비스 신원 문자열이다. 셋은 귀속 게이트의 입력이며 조인 키가 아니다.
+- `authority`는 userinfo를 뗀 리터럴 host다. 소문자 `host[:port]`(IPv6는 `[...]`)만 받고 대문자·
+  scheme·경로가 섞이면 입력 오류다. 기본 포트 정규화는 미결이다. `baseRef`는 base URL 식의 생산자
+  id이고 `service`는 서비스 신원 문자열이다. 셋은 귀속 게이트의 입력이며 조인 키가 아니다. 이
+  버전의 출력에는 `authority`·`baseRef`를 싣지 않는다.
 - `route-decl` 전용: `trailingSlash: "strict" | "optional"`(생략은 unknown),
   `caseInsensitive: true`(증명한 경우만), `narrowed: true`(params·headers·consumes·produces·version
   조건으로 같은 키를 나눈 핸들러), `paramConstraints: [{segment, kind, pattern?}]`(kind는
-  `int`·`uuid`·`slug`·`path`·`regex`), `order: {group, index}`(registration-order 문서에서만),
-  `configDefault: true`(아래 base 접두사), `catchAllPrefix: true`(아래 0세그먼트 catch-all 펼침).
+  `int`·`uuid`·`slug`·`path`·`regex`), `order: {group, index}`(registration-order 문서에서만, 초안이라
+  이 버전은 입력 오류), `configDefault: true`(아래 base 접두사), `catchAllPrefix: true`(아래
+  0세그먼트 catch-all 펼침).
+- `paramConstraints`의 `segment`는 템플릿 세그먼트의 0부터 시작하는 인덱스이고 파라미터가 있는
+  세그먼트(`{}`·부분 세그먼트·`{**}`)만 가리킨다. 세그먼트마다 하나이며 `pattern`은 `regex` 전용
+  정보 필드다. 닫힌 종류는 가장 넓은 정의로도 어길 때만 후보에서 뺀다: `int`는 `[+-]?[0-9]+`,
+  `uuid`는 하이픈 있는 8-4-4-4-12 또는 32자 hex(대소문자 무관), `slug`는 `[-A-Za-z0-9_]+`다.
+  퍼센트 인코딩이 든 값은 평가하지 않는다. `path`는 제약으로 치지 않는다.
 - `route-call` 전용: `queryTailStripped: true`(끝 보간이 query임을 증명하고 떼어 냄),
-  `channelPrefix`(dynamic 호출에서 증명된 리터럴 접두사 템플릿. 후보 표시용이며 판정에 쓰지
-  않음), `maskedSegments`(마스킹한 세그먼트 수).
+  `channelPrefix`(dynamic 호출에서 증명된 리터럴 접두사 템플릿. `{**}` 없는 정규 템플릿. 후보
+  표시용이며 판정에 쓰지 않음), `maskedSegments`(마스킹한 세그먼트 수. 양의 정수이며 정적
+  템플릿이면 `{}` 세그먼트 수를 넘지 않음), `methodDynamic: true`, `authority`, `baseRef`.
 - `route-contract`와 생성 클라이언트의 `route-call`은 증거로 `operationId`를 실을 수 있다.
-  `--include-tests`로 낸 사실에는 `testSource: true`를 단다.
+  `--include-tests`로 낸 사실(`route-decl`·`route-call`)에는 `testSource: true`를 단다. 이 표식은
+  `sourceSets.tests`가 `"included"`인 문서에만 올 수 있다. 존재 자체가 증거인 표식(`caseInsensitive`·
+  `narrowed`·`configDefault`·`catchAllPrefix`·`queryTailStripped`·`testSource`·`methodDynamic`)은
+  `true`만 허용한다. openapi `symbol`에 `usr`가 있으면 입력 오류다.
 - `location`은 모든 route kind에 필수다. 바이트코드 원천이면 값과 usr는 바이트코드에서, 위치는
   소스의 어노테이션 토큰에서 얻는다. 위치를 찾지 못하면 사실을 내지 않고 측에 맞는 접두사로
   센다(decl은 `route-coverage:`, call은 `route-call-coverage:`).
@@ -634,7 +685,10 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
   impact id다.
 - 잘못 놓인 필드(call의 `trailingSlash`·`order`, decl의 `baseRef`·`queryTailStripped`, 다른
   target 문서의 route 필드)는 모르는 필드로 버리지 않고 문서를 거부한다. `mechanism`과 같은
-  규칙이며, 추가 필드 제거는 정의되지 않은 필드에만 적용된다.
+  규칙이며, 추가 필드 제거는 정의되지 않은 필드에만 적용된다. 예외는 `channelPrefix` 하나다.
+  v2 메시지 계약이 같은 이름을 정의하고 배포된 v1 persistence 생산자가 이미 모르는 필드로 싣고
+  있어, 다른 target 문서의 `channelPrefix`는 기존처럼 버린다. route 사실의 `mechanism`·`optional`·
+  `sourceLanguage`·`handlerScope`·`dependencies`도 입력 오류다.
 
 ### 정규 경로 템플릿
 
@@ -681,7 +735,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   dynamic과 스코프가 있는 `route-coverage:`로 낸다.
 - isthmus가 검증하는 것은 `/` 시작, pchar·`/`·`{}`·`{**}` 토큰만 있는지, `{**}`가 끝 세그먼트
   전체인지, 제어 문자가 없는지, `%XX`가 대문자 hex인지, unreserved 문자(`A-Z`·`a-z`·`0-9`·`-`·
-  `.`·`_`·`~`)를 인코딩하지 않았는지다. 뒤의 둘을 받아 주면 `%2f`와 `%2F`처럼 다르게 정규화한
+  `.`·`_`·`~`)를 인코딩하지 않았는지, 길이가 2,048자 이하인지다. 거부 사유 코드(`not-rooted`·
+  `too-long`·`invalid-character`·`malformed-percent`·`lowercase-percent-hex`·`encoded-unreserved`·
+  `stray-brace`·`multiple-parameters`·`catch-all-partial`·`catch-all-not-last`)는 오류 문구와
+  http-template 벡터가 같이 쓴다. 뒤의 둘을 받아 주면 `%2f`와 `%2F`처럼 다르게 정규화한
   생산자끼리 조용히 조인되지 않는다. `:id`처럼 합법 문자로 된 미변환 표기는 소비자가 구분할 수
   없으므로 생산자 적합성 벡터(http-template)가 책임진다. 프레임워크·클라이언트별 변환표(Spring
   `{id:정규식}`, Django `<int:pk>`, Express `:id(정규식)`, AntPathMatcher 조립 차이)도 이 문서가
@@ -709,13 +766,24 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 
 - 세그먼트 단위로 맞춘다. 리터럴 세그먼트는 정확히 같아야 한다. decl의 `{}`는 비어 있지 않은
   단일 세그먼트와, `{**}`는 세그먼트 1개 이상과 맞는다. call의 `{}`(마스킹된 세그먼트 포함)가
-  decl 리터럴에만 맞으면 `param-to-literal` 품질이다.
+  decl 리터럴에만 맞으면 `param-to-literal` 품질이다. "에만"은 호출 파라미터를 decl 리터럴·부분
+  세그먼트에 기대지 않는 후보가 하나라도 있으면 그 후보들만 비교한다는 뜻이다. 그래서
+  `/users/{}` 호출은 `/users/{}` decl이 있으면 `/users/me`에 붙지 않는다.
+- 남은 것이 빈 끝 세그먼트 하나뿐인 경로(`/files/` ↔ `/files/{**}`)는 증명 불가 후보다. match는
+  되지만(거짓 `route-call-without-decl` 방지) 구체성 비교·error 근거·끝 슬래시 불일치 근거로 쓰지 않는다.
 - `paramConstraints`의 닫힌 종류(`int`·`uuid`·`slug`)는 call 리터럴이 명백히 어길 때 후보에서
   뺀다. `regex`는 방언 차이와 ReDoS 위험 때문에 평가하지 않고 `param-to-literal-constrained`
   후보로 둔다. 이 후보는 구체성 비교에서 빼고 error 근거로 쓰지 않는다.
 - method는 정확히 같아야 한다. 예외는 decl `ANY`(`any-method`), call HEAD ↔ decl
   GET(`head-as-get`), call OPTIONS ↔ 같은 경로의 decl(`options-any`)이다. `methodDynamic` call은
-  경로만으로 잇되 error 근거가 되지 않는다.
+  경로만으로 잇되 error 근거가 되지 않는다. method가 맞는 후보를 **먼저** 거른 뒤 구체성을
+  비교한다. 경로를 먼저 고르는 프레임워크(파일 라우터 등)에서는 거짓 match가 될 수 있지만 거짓
+  error는 만들지 않는 쪽이다. 경로 후보가 있는데 method가 맞는 후보가 없을 때만 method 불일치다.
+- 구체성 최상위가 한 템플릿이면 그 템플릿의 후보가 모두 match 대상이다(narrowed·경로 제약만
+  다른 decl 포함). 단 catch-all 접두사 decl은 같은 템플릿의 명시적 decl이 이기면 대상이 아니다.
+  최상위가 서로 다른 템플릿으로 동률이면 `ambiguous-route-call`이다. 증명 불가 후보(정규식 제약,
+  호출 부분 세그먼트↔decl 리터럴, 빈 끝 세그먼트↔`{**}`)만 있으면 모두 match 대상이고 모호함으로
+  보지 않는다.
 - 부분 세그먼트 `p{}s`(p·s는 리터럴, 둘 중 하나는 비어도 됨):
   - decl의 `p{}s`는 call 리터럴 세그먼트가 p로 시작하고 s로 끝나며 그 사이가 비어 있지 않을
     때 맞는다. 품질은 `param-to-literal`이고 구체성 순위는 "부분 세그먼트"다.
@@ -723,7 +791,9 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
     decl 리터럴 세그먼트와는 증명할 수 없으므로 `param-to-literal` 후보로만 잇고 error 근거로
     쓰지 않는다.
 - 끝 슬래시만 다르면 `route-trailing-slash-mismatch`(decl이 `trailingSlash: "optional"`이면
-  match), 대소문자만 다르면 `route-case-mismatch`(decl이 `caseInsensitive`면 match)다.
+  match), 대소문자만 다르면 `route-case-mismatch`(decl이 `caseInsensitive`면 match)다. 이 둘은
+  경로 후보가 전혀 없을 때만 보고하며 그때는 `route-call-without-decl`을 대신한다(contract
+  쪽도 같아 `route-call-without-contract`를 대신한다).
 - pathAnchor 조합은 넷이다. decl 자리의 contract(서버 변수를 해석하지 못해 base인 contract
   포함)도 같은 규칙을 쓴다.
   - root call ↔ root decl: 정확 매칭이다.
@@ -737,6 +807,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   - base call ↔ base decl: 잇지 않는다. 두 앵커가 모두 미상이라 꼬리가 같아도 같은 경로라는
     근거가 없다. 이 call은 error 전제 (b)가 거짓이라 `-unverified`로만 남는다.
 - 두 suffix 후보 모두 호출당 64개까지다. 후보가 유일하면 `suffix` match, 여럿이면 ambiguous다.
+  유일성은 method가 맞는 후보의 템플릿 수로 잰다. 64개를 넘으면 모호함이다. 한 조인의 suffix
+  비교는 (호출, 선언, 오프셋) 5,000,000번까지이며 넘으면 부분 결과 대신 입력 오류다.
   base decl·base contract의 `route-decl-without-call`·`route-contract-without-call`은 항상
   `-unverified`다. 잇지 않은 base call이 그 경로를 불렀을 수 있기 때문이다.
 - root로 승격(`declared-base`)되는 것은 workspace link의 `match.baseRefs`에 `pathPrefix`가
@@ -755,6 +827,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   유일할 때만 match이고, 동률이면 `ambiguous-route-call`이다. `registration-order`에서는 같은
   `order.group` 안에서 `index`가 가장 작은 decl이 match이고, group이 다르거나 order가 없으면
   ambiguous다.
+- `registration-order`와 `order`·`route-decl-shadowed`는 초안이다. 이 버전은 해당 문서를 입력
+  오류로 거부한다(구체성으로 잘못 판정하지 않기 위해서다).
 - registration-order 생산자는 같은 라우터 체인 안에서 증명한 등록 순서만 `order`로 싣는다.
   증명하지 못하면 `route-dispatch-order-unknown:`을 낸다. 앞선 파라미터 decl이 뒤의 더 구체적인
   decl을 가리면 `route-decl-shadowed` warning이다.
@@ -777,7 +851,12 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   있으면 귀속하지 않는다. 서비스가 둘 이상일 수 있는 입력에서 이름 없는 호출을 추측해 잇지
   않기 위해서다.
 - 귀속되지 않은 호출은 판정 전제에서 빼고 `unjoined-unbound-route-calls`로 개수만 센다. host
-  휴리스틱으로 귀속하지 않는다.
+  휴리스틱으로 귀속하지 않는다. dynamic 호출은 귀속과 무관하게 `unjoined-dynamic-route-calls`로 센다.
+- 위 매니페스트 기반 귀속(`hosts`·`baseRefs`·`interfaces`)은 초안이다. 이 버전은 매니페스트가
+  없는 규칙(service 일치, 단일 서비스)만 구현한다.
+- 호출 측 문서·호출이 scope에 닿을 수 있는지는 같은 규칙으로 정한다: 둘 다 service가 있고 서로
+  다를 때만 닿지 않는다. 호출 측 문서의 한계와 귀속되지 않은 호출은 닿을 수 있는 scope의 호출 측
+  공백이 된다(그래서 단일 서비스 입력에서는 service가 붙은 미귀속 호출도 공백이다).
 
 ### check 진단 (http)
 
@@ -785,10 +864,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 |---|---|---|
 | `route-call-without-decl` | error | 아래 (a)~(f)가 모두 증명될 때만. (f)가 거짓이면 평가하지 않는다. 그 밖에 하나라도 빠지면 `route-call-without-decl-unverified` warning |
 | `route-method-mismatch` | error | (a)~(f)에 더해 method가 확정됨. (f)가 거짓이면 평가하지 않고, 그 밖에는 `-unverified` warning |
-| `route-call-without-contract` | error | `link.contract.authoritative`, (a), (b), contract 측 `unresolved-contract-servers:`·`contract-coverage:` 없음, (e)가 모두 성립할 때만. 아니면 `-unverified` warning |
-| `route-decl-without-call`, `route-contract-without-call` | warning | 문구는 "스캔한 클라이언트 기준 미관찰". 호출 측 공백이 있거나 client roles 문서가 없으면 `-unverified` |
-| `route-contract-without-decl`, `route-decl-without-contract` | warning | 같은 link에 decl과 contract가 모두 있을 때의 드리프트 |
-| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키 decl의 중복(`catchAllPrefix` decl은 제외) |
+| `route-call-without-contract` | error | `link.contract.authoritative`, (a), (b), contract 측 `unresolved-contract-servers:`·`contract-coverage:` 없음, (e)가 모두 성립할 때만. 아니면 `-unverified` warning. 매니페스트가 없는 이 버전은 항상 `-unverified`다. 경로만 맞고 method가 다른 operation도 이 코드이며 증거에 그 operation을 싣는다 |
+| `route-decl-without-call`, `route-contract-without-call` | warning | 문구는 "스캔한 클라이언트 기준 미관찰". 호출 측 공백(호출 측 접두사 한계, dynamic 호출, 이 scope를 불렀을 수 있는 미귀속 호출)이 있거나 이 scope에 닿을 수 있는 client roles 문서가 없거나 base 앵커면 `-unverified`. catch-all 접두사 decl과 테스트 소스 decl은 싣지 않으며, 접두사 decl로 닿은 호출은 원본 `{**}` decl도 부른 것으로 본다 |
+| `route-contract-without-decl`, `route-decl-without-contract` | warning | 같은 link에 decl과 contract가 모두 있을 때의 드리프트. root 앵커 정적 사실만 같은 템플릿 문자열과 method(decl `ANY`는 모든 method)로 비교한다. catch-all 접두사·테스트 소스 decl은 뺀다 |
+| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키(앵커·method·템플릿) decl의 중복(`catchAllPrefix`·테스트 소스 decl은 제외). `route-decl-shadowed`는 초안(registration-order 전용)이다. decl과 contract가 같은 신원의 진단을 내면 하나로 합친다 |
 
 error 전제는 다음과 같다. "서버 측"은 link의 server member이고, 매니페스트가 없으면 귀속 게이트가
 고른 선언 측 문서들이다.
@@ -796,9 +875,11 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 - (a) 호출이 link에 귀속됐다.
 - (b) `pathAnchor`가 `root`이거나 `declared-base`로 승격됐다.
 - (c) 서버 측에 이 호출 템플릿을 덮는 서버 측 limitation이 없다. 스코프가 있으면 스코프 기준,
-  없으면 서버 측 전체 기준이다.
+  없으면 서버 측 전체 기준이다(http 스코프가 초안인 이 버전은 항상 서버 측 전체 기준).
 - (d) 이 템플릿을 덮는 `unjoined-dynamic-routes`가 0이다.
-- (e) 테스트 소스 사실(`testSource`)이 아니다.
+- (e) 테스트 소스 사실(`testSource`)이 아니다. 마스킹된 호출(`maskedSegments`)과 동사가 동적인
+  호출(`methodDynamic`)도 error 근거가 아니다. method 불일치는 모든 경로 후보가 증명 가능하고
+  suffix 후보가 아닐 때만 error다.
 - (f) 서버 측에 route-decl을 스캔한 문서가 하나 이상 있다. platform이 `openapi`가 아니고
   roles에 server가 있는 http 문서를 말하며, 사실이 0건이어도 센다("스캔했으나 없음").
 
@@ -811,14 +892,18 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 매니페스트가 없으면 service 문자열, service도 없는 단일 서비스 입력이면 고정값 `"default"`)를
 더한다. 선언 측 진단(`route-decl-conflict`·`route-decl-shadowed`)도 같은 규칙을 쓴다. 두 link가 같은 (method, template)에 진단을 내도
 baseline 억제와 codequality 지문이 섞이지 않게 하기 위해서다. scope가 없는 기존 키는 바이트
-단위로 유지한다.
+단위로 유지한다. 베이스라인 항목의 `scope`는 target `http` 항목에 필수이고 다른 target 항목에
+있으면 입력 오류다. SARIF는 `properties.scope`와 메시지에, Code Quality는 설명에 scope를 싣는다.
+SARIF 규칙 목록은 http 입력이 있을 때만 http 규칙을 싣는다(http 없는 입력의 SARIF 바이트 유지).
 
 ### limitation 접두사와 측
 
 http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문서가 서버와 클라이언트를 겸할 수
 있기 때문이다. 목록은 닫혀 있다. 모르는 접두사는 공백으로 읽지 않으므로 그 진단은 error로
 남는다(안전한 방향). 목록은 계획의 Phase 0에서 기계 판독용 `docs/limitation-prefixes.json`으로
-추출할 예정이다.
+추출할 예정이다. 그 전까지 정본은 이 표와 `src/report/route-issues.ts`의 목록이다.
+소비자 계수(`unjoined-*`)는 문구가 아니라 isthmus가 사실에서 직접 센 값으로 판정하므로 생산자가
+같은 접두사를 신고해도 효과가 없다.
 
 | 측 | 접두사 | 완화하는 진단 |
 |---|---|---|
@@ -839,6 +924,9 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 
 ### http limitation 스코프
 
+> **초안.** 이 버전은 http 문서의 `limitationScopes`를 입력 오류로 거부한다. 한계는 문서의 서버 측·
+> 호출 측 전체에 적용된다.
+
 - 기존 `limitationScopes`를 http 문서용으로 확장한다. 항목 형태는 `{limitationIndex, templates?,
   templatePrefixes?, templateSuffixes?}`이고, http 문서의 스코프 항목은 `channels` 대신 이 세 필드
   중 하나 이상을 비어 있지 않게 쓴다.
@@ -858,7 +946,9 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   `src/androidTest`, `Tests/`, `*.test.ts`, `test_*.py` 등)은 벡터로 고정한다. JVM은 테스트 class
   root를 넘기지 않는 방식으로 제외한다.
 - `--include-tests`로 포함하면 `sourceSets.tests: "included"`를 선언하고 사실에 `testSource: true`를
-  단다. 이 사실은 check error 근거가 되지 않으며 trace에서도 기본 제외한다.
+  단다. 이 사실은 check error 근거가 되지 않으며 trace에서도 기본 제외한다. 테스트 소스 호출도
+  match 대상이다(선언을 "호출됨"으로 만든다). 테스트 소스 decl은 match 대상이지만 미호출·충돌·
+  드리프트 진단에서는 뺀다.
 - 테스트의 가짜 host 호출과 목 객체가 authoritative contract 아래에서 거짓 error가 되는 것을
   막기 위한 정책이다. persistence 사실에도 같은 정책을 적용할지는 persistence 절을 개정할 때
   합의한다.
@@ -880,10 +970,14 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   낸다. check(json·SARIF·codequality), baseline 파일, query, `--pairs`, graph, diff, impact,
   trace, `serve`(MCP) 응답, 입력 오류 문구가 모두 대상이고 앞으로 추가하는 출력도 같다. 입력
   오류는 원문 대신 문서 경로와 사실 순번으로 가리킨다. dynamic 원문에는 길이 상한을 둔다.
+  이 버전에서 http를 소비하는 check·query·`--pairs`·SARIF·codequality·baseline·MCP check/query가
+  이 규칙을 지키고, 나머지 명령은 http 문서를 거부한다. query는 요청 문자열만 되돌려 싣는다.
 - 스펙 입력은 크기·YAML alias 확장·깊이에 상한을 두고, 외부 `$ref`와 네트워크를 쓰지 않는다.
   오류와 증거에는 스펙 원문과 절대경로를 넣지 않는다.
 
 ### 다중 저장소: workspace 매니페스트 예외
+
+> **초안.** 이 버전은 `format: "isthmus-workspace"` 파일을 원인 문구와 함께 입력 오류로 거부한다.
 
 기존 "한 조인의 모든 문서는 정확히 같은 `project`" 규칙은 **문서·member 단위로 유지**한다.
 예외는 하나다. `isthmus-workspace` 매니페스트가 선언한 link에 한해 http 도메인만 member 사이
@@ -924,11 +1018,81 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 - `libraries[{consumer, provider}]`는 공유 SDK 저장소용으로 이름만 예약한다.
 - 상세 규칙(revision 검사, 사전 계산 분석, 카탈로그 재발행)은 구현할 때 별도 문서로 옮긴다.
 
+### 출력 (check·`--pairs`·query)
+
+- check 진단은 `target: "http"`, `channel`(호출 측 코드는 호출 템플릿, 선언 측 코드는 선언
+  템플릿), `method`(호출 동사, 동적이면 없음), `scope`를 싣는다. 증거 끝점은 `route: {kind,
+  method?, template?, pathAnchor, testSource?}`를 함께 싣는다. 요약에는 http 입력이 있을 때만
+  `matchedRoutes`(선언 측과 match된 귀속 호출 키 수)가 실린다.
+- `check --pairs`의 http 매치는 `{domain: "http", scope, key: {method, template}, quality, uses,
+  decls, contracts}`다. `key`는 호출이 닿은 선언 측 사실의 (method, 템플릿)이고, 같은 scope·키·
+  품질의 호출끼리 묶는다. 모호·불일치·미매치 호출은 check 진단에만 있다. 끝점 총상한은 persistence와
+  같은 100,000개다.
+- `query route:[<METHOD> ]<template>[ <scope>]`: METHOD는 동사·`ANY`·`?`(동적 동사 호출)이며 생략하면
+  모든 method다. 템플릿은 정규 문법이어야 하고(아니면 사용 오류 64) 공백을 담을 수 없어 뒤의 나머지
+  전체가 scope다. 요청 템플릿과 정확히 같은 선언 측 키와 귀속 호출 키를 (scope, method)별 주체로 모으고
+  여럿이면 `route:<METHOD> <template> <scope>` qualifiedName 후보로 모호함(64)을 돌려준다. 결과는
+  `usedBy`(귀속 호출), `dependsOn`(decl·contract), 그 키의 `issues`, `prefixCandidates`(요청 템플릿이
+  `channelPrefix`로 시작하는 귀속 dynamic 호출)다. route로 찾지 못하면 이전처럼 요청 문자열 그대로의
+  bridge 키를 찾는다.
+
+### 공유 적합성 벡터
+
+`conformance/`는 여러 생산자와 isthmus가 공유하는 규칙 벡터다. 파일과 sha256 목록
+(`conformance/SHA256SUMS`)은 npm 패키지에도 실린다. 생산자는 파일을 벤더링하고
+`conformance.lock`에 isthmus 커밋과 파일별 sha256을 적어 CI에서 대조한다.
+
+```jsonc
+{
+  "format": "isthmus-conformance", "version": 1,
+  "suite": "http-template",                 // 파일 이름과 같다
+  "contract": "docs/GRAPH-EXCHANGE.md#…",   // 정본 절
+  "cases": [{
+    "id": "match/call-param-prefers-decl-param",   // 파일 안에서 유일, 바꾸지 않는다
+    "ruleId": "match.param",                        // 규칙 식별자(러너 선택 기준)
+    "provenance": "contract",       // contract > verified-run > verified-source > verified-doc > unverified
+    "source": "docs/GRAPH-EXCHANGE.md#조인-규칙-http",   // 근거(문서 절 또는 공식 출처 URL)
+    "versionRange": ">=2.0",        // 선택: 프레임워크 버전 범위
+    "appliesTo": ["consumer"],      // consumer | producer | producer:<이름>
+    "input": { … },
+    "expect": { … },                // 적힌 키만 비교한다. 배열은 순서 없이 비교한다
+    "expectDynamic": true,          // 선택: dynamic으로 내야 한다
+    "expectLimitation": "ambiguous-base-join:"   // 선택: 이 접두사의 한계를 내야 한다
+  }]
+}
+```
+
+- `contract` 등급은 이 문서가 정한 규범 규칙이다. 프레임워크 동작은 실행(`verified-run`)·소스
+  (`verified-source`)·공식 문서(`verified-doc`) 순으로 근거를 적는다. `unverified` 케이스는 구체적인
+  결과(`expect`)를 주장할 수 없고 `expectDynamic`·`expectLimitation`만 쓴다.
+- `http-template`: 정규 문법(`template.grammar`), 생산자 정규화(`template.normalize`), 프레임워크
+  변환(`framework.*`), 소비자 매칭(`match.*`). `url-compose`: 호출 조립·base 결합·제거·마스킹·래퍼
+  인자 바인딩([HTTP-WRAPPERS](HTTP-WRAPPERS.md)).
+- isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
+  케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
+- 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
+  OpenAPI 경로 템플릿만 있다.
+
+### Phase 1 결정 (초안 개정 기록)
+
+초안의 모호하거나 충돌하는 문장은 안전한 쪽(거짓 error를 만들지 않는 쪽, 모르는 입력을 거부하는
+쪽)으로 정하고 위 본문을 고쳤다.
+
+- openapi 문서의 roles는 `["server"]`다. 사실 0건 스펙 문서도 이 roles로 contract 문서가 된다.
+- 선언 측 service는 전부 있거나 전부 없어야 한다. 섞이면 scope를 정할 수 없어 입력 오류다.
+- 다른 target 문서의 route 필드는 거부하되 `channelPrefix`는 기존 계약 필드라 버린다.
+- `authority`는 소문자 `host[:port]`만 받는다(대소문자 미결 해소, 기본 포트는 미결).
+- 빈 끝 세그먼트↔`{**}`는 증명 불가 후보다(미결 해소).
+- 이 scope를 불렀을 수 있는 `unjoined-unbound-route-calls`는 미호출 진단을 `-unverified`로 내린다(미결 해소).
+- method를 먼저 거르고, 호출 파라미터는 decl 파라미터가 있으면 리터럴에 붙지 않는다.
+- 끝 슬래시·대소문자 불일치는 경로 후보가 없을 때만이며 미매치 진단을 대신한다.
+- 호출 쪽 부분 보간은 dynamic이다(서버 템플릿의 부분 세그먼트와 다르다, HTTP-WRAPPERS).
+- 마스킹·동적 동사 호출은 error 근거가 아니다.
+- registration-order·http limitationScopes·workspace 매니페스트는 구현 전까지 입력 오류로 거부한다.
+
 ### 미결 항목
 
-- openapi 문서의 `roles` 값(server를 재사용할지, contract 역할을 새로 둘지)과 사실 0건 스펙
-  문서의 표현.
-- `authority` 정규화(대소문자, 기본 포트).
-- 빈 끝 세그먼트만 남은 경로가 `{**}`와 맞는지. 0세그먼트 펼침과 함께 http-template 벡터로
-  확정한다.
-- `unjoined-unbound-route-calls`가 `route-decl-without-call`을 `-unverified`로 내리는지.
+- `authority`의 기본 포트 정규화.
+- registration-order 디스패치와 `route-decl-shadowed`, http limitationScopes, workspace 매니페스트의
+  구현 시점 세부 규칙.
+- `docs/limitation-prefixes.json` 추출.

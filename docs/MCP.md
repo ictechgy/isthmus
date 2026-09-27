@@ -29,13 +29,16 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 ## 도구
 
 모든 도구의 `documents`는 GRAPH-EXCHANGE v1/v2 브리지 사실 문서 경로 2개 이상이다.
+`check`·`query`는 target `http` 문서도 받아 CLI와 같은 http 진단(`scope` 포함)과 `route:` 주체를
+내고, 나머지 도구는 http 문서를 CLI와 같은 원인 문구로 거부한다. 귀속되지 않은 호출의 경로·host는
+어떤 응답에도 싣지 않는다.
 경로는 서버 프로세스의 작업 디렉터리 기준으로 해석된다 — 클라이언트는 읽을 수 있는
 경로만 넘겨야 한다.
 
 | 도구 | 대응 명령 | 선택 인자 |
 |---|---|---|
 | `check` | `isthmus check` | `strict` |
-| `query` | `isthmus query` | `name`(필수, `relation:<name>`이면 persistence 관계 질의) |
+| `query` | `isthmus query` | `name`(필수, `relation:<name>`이면 persistence 관계, `route:[<METHOD> ]<template>`이면 http route 질의) |
 | `graph` | `isthmus graph` | `format: json\|dot\|mermaid` |
 | `diff` | `isthmus diff` | `before`/`after`(필수), `strict` |
 | `impact` | `isthmus impact` | `file`·`symbol`·`changes` 중 정확히 하나(필수), `runtime`, `revision`, `strict`, `compact` |
