@@ -104,6 +104,8 @@ isthmus trace trace-context.json [--strict] [--compact]
   시작하면 `witnessRoot`를 싣는다 — 그때 depth·path는 그 root 기준이고, 시작 root에서의 거리는 depth
   이상이라는 것만 안다(경로를 지어내지 않는다). 같은 정점에 근거가 여럿이면 시작 root 자신의 경로,
   depth, 분석 id 순으로 하나만 싣는다.
+- 순회에서 다른 root에서 닿은 root 항목도 도달 정점으로 쓴다. 그래서 테이블 A의 DB 의존자에는 B가
+  함께 root로 주어졌어도 B가 실린다. B 너머의 정점은 B에서 시작하는 목격 경로와 `witnessRoot: B`를 싣는다.
 - 호출은 귀속된 정적 호출만 싣는다(check 귀속 게이트와 같다). decl에 match된 호출은 `side: "decl"`,
   decl 쪽이 없거나 맞지 않고 선택 키의 contract에 match된 호출은 `side: "contract"`다. 품질 표기는
   `check --pairs`와 같다.

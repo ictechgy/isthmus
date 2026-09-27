@@ -18,7 +18,9 @@
   `analysis-truncated`·`stale-analysis`·`non-http-entry`·`unattributed-calls-omitted` 등)과 `--strict`(gap이
   있으면 1). workspace 매니페스트는 Phase 3 원인으로 거부하고 MCP에는 노출하지 않는다([TRACE](docs/TRACE.md)).
 - **[`language-traversal` v1 계약](docs/LANGUAGE-TRAVERSAL.md)과 fail-closed 파서**: 정방향·역방향 순회,
-  정점별 `via`·`depth`·root 인덱스 목록(64개 상한과 `rootsTruncated`), 결정적 순서. trace는 새 형식을
+  정점별 `via`·`depth`·root 인덱스 목록(64개 상한과 `rootsTruncated`), 결정적 순서. 다른 root에서 닿은
+  root도 `reached`에 싣고 그 항목의 `roots`에는 자기 인덱스를 넣지 않는다(다중 root DB 순회에서 root
+  테이블끼리의 FK 의존자가 사라지지 않게 하기 위해서다). trace는 새 형식을
   우선하고 `schemagraph-impact` v1과 preflight의 kartograph·cartograph·dartograph 어댑터를 대체 경로로 공유한다.
 
 - **http 도메인 Phase 1(개발 중)**: `check`·`query`가 `target: "http"` 문서를 소비한다.

@@ -111,6 +111,23 @@ test('같은 입력은 문서·분석 순서와 무관하게 바이트 단위로
     encodeSortedJson(createTraceReport(relation)));
 });
 
+test('다른 root에서 닿은 root 테이블도 DB 의존자로 싣고 그 너머는 목격 root를 표시한다', () => {
+  const result = report((value) => {
+    const db = value.analyses.db;
+    db.roots.push({ id: 'main.orders', symbol: { usr: 'main.orders', kind: 'table' } });
+    db.reached.push({ symbol: { usr: 'main.order_items', kind: 'table' }, via: 'main.orders', depth: 1, roots: [0, 2],
+      relationships: ['references'] });
+    db.reached.sort((left: any, right: any) => left.depth - right.depth || (left.symbol.usr < right.symbol.usr ? -1 : 1));
+  });
+  assert.deepEqual(result.gaps, []);
+  const users = result.chains[0]!.database.find(({ vertex }) => vertex === 'main.users')!;
+  assert.deepEqual(users.dependents.map(({ usr, path, witnessRoot }) => [usr, path, witnessRoot]), [
+    ['main.active_users', ['main.users', 'main.active_users'], undefined],
+    ['main.order_items', ['main.orders', 'main.order_items'], 'main.orders'],
+    ['main.orders', ['main.users', 'main.orders'], undefined],
+  ]);
+});
+
 test('같은 root의 분석이 여럿이면 root 자신의 경로, depth, 분석 id 순으로 한 근거만 싣는다', () => {
   const result = report((value) => {
     for (const id of ['server-forward', 'android-reverse']) {

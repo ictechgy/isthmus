@@ -220,11 +220,13 @@ export function traversalGraphFromImpact(impact: LanguageImpact, source: Travers
 /**
  * root·도달 정점의 그래프 불변식을 검사한다. 파서와 어댑터가 같은 규칙을 쓴다.
  *
- * - root id와 도달 usr는 서로 겹치지 않고 각각 유일하다.
- * - `via`는 root id거나 다른 도달 정점이고 `depth`는 부모 depth + 1이다(root는 0).
- * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다. via가 root면 그 root를 포함한다.
- * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모의 root 집합이 자식에
- *   포함된다 — 부모에 닿는 root는 간선을 따라 자식에도 닿기 때문이다.
+ * - root id와 도달 usr는 각각 유일하다. 다른 root에서 닿은 root도 도달 정점으로 싣는다 — 이때
+ *   `roots`에는 자기 인덱스를 넣지 않는다(자기 자신에서만 닿는 순환 root는 싣지 않는다).
+ * - `via`는 root id거나 다른 도달 정점이다. via가 root id면 depth는 1이고 그 root 인덱스를
+ *   포함한다(64개 상한으로 잘린 목록은 큰 인덱스가 빠질 수 있어 예외). 그 밖에는 부모 depth + 1이다.
+ * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다.
+ * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모에 닿는 root(부모가 root면
+ *   그 root와, 그 root가 다른 root에서 닿았다면 그 root들)가 자기 자신을 빼고 모두 자식에 포함된다.
  */
 export function validateTraversalGraph(
   roots: readonly TraversalRoot[],
@@ -238,7 +240,7 @@ export function validateTraversalGraph(
   });
   const rows = new Map<string, TraversalReached>();
   for (const row of reached) {
-    if (rootIndex.has(row.symbol.usr) || rows.has(row.symbol.usr)) fail('Traversal symbol ids must be unique.');
+    if (rows.has(row.symbol.usr)) fail('Traversal symbol ids must be unique.');
     rows.set(row.symbol.usr, row);
   }
   const checkSubset = !flags.truncated && !flags.rootsTruncated;
@@ -248,16 +250,25 @@ export function validateTraversalGraph(
         (position > 0 && index <= row.roots[position - 1]!))) {
       fail('Traversal root indices must be sorted, unique and in range.');
     }
+    const own = rootIndex.get(row.symbol.usr);
+    if (own !== undefined && row.roots.includes(own)) fail('A reached root must not list its own root index.');
+    if (row.via === row.symbol.usr) fail('Traversal via must differ from the reached symbol.');
     const viaRoot = rootIndex.get(row.via);
+    let inherited: readonly number[];
     if (viaRoot !== undefined) {
-      if (row.depth !== 1 || !row.roots.includes(viaRoot)) fail('Traversal depth or roots do not match the via root.');
-      continue;
+      const capped = row.roots.length === MAX_ROOTS_PER_REACHED && viaRoot > row.roots[row.roots.length - 1]!;
+      if (row.depth !== 1 || (!row.roots.includes(viaRoot) && !capped)) {
+        fail('Traversal depth or roots do not match the via root.');
+      }
+      inherited = [viaRoot, ...(rows.get(row.via)?.roots ?? [])];
+    } else {
+      const parent = rows.get(row.via);
+      if (parent === undefined || parent.depth + 1 !== row.depth) {
+        fail('Traversal depth does not match its observed parent.');
+      }
+      inherited = parent.roots;
     }
-    const parent = rows.get(row.via);
-    if (parent === undefined || parent.depth + 1 !== row.depth) {
-      fail('Traversal depth does not match its observed parent.');
-    }
-    if (checkSubset && parent.roots.some((index) => !row.roots.includes(index))) {
+    if (checkSubset && inherited.some((index) => index !== own && !row.roots.includes(index))) {
       fail('Traversal roots must include every root of the parent.');
     }
   }
@@ -271,13 +282,28 @@ export function validateTraversalGraph(
  */
 export function traversalPath(graph: TraversalGraph, usr: string): string[] {
   const rows = rowIndex(graph);
+  const rootIds = rootIdSet(graph);
   const path = [usr];
   let current = rows.get(usr);
+  // via가 root id면 거기서 멈춘다. 그 root가 다른 root에서도 닿았더라도 목격 경로는 그 root에서 시작한다.
   while (current !== undefined) {
     path.push(current.via);
-    current = rows.get(current.via);
+    current = rootIds.has(current.via) ? undefined : rows.get(current.via);
   }
   return path.reverse();
+}
+
+/** 순회 숲의 root id 집합을 한 번만 만든다. */
+const rootIdSets = new WeakMap<TraversalGraph, Set<string>>();
+
+/** root id 집합이다. */
+function rootIdSet(graph: TraversalGraph): Set<string> {
+  let ids = rootIdSets.get(graph);
+  if (ids === undefined) {
+    ids = new Set(graph.roots.map(({ id }) => id));
+    rootIdSets.set(graph, ids);
+  }
+  return ids;
 }
 
 /** 순회 숲의 usr별 도달 정점 색인을 한 번만 만든다. */

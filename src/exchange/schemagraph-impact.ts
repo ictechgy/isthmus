@@ -48,7 +48,8 @@ function adaptLegacyImpact(raw: unknown): TraversalGraph {
   if (!Array.isArray(raw.impacted) || raw.impacted.length > MAX_TRAVERSAL_REACHED) {
     fail('Invalid schemagraph impacted vertices.');
   }
-  const reached = raw.impacted.map(parseImpacted).sort(compareReached);
+  // subject 자신으로 돌아오는 순환은 root 자신만의 도달이라 language-traversal v1처럼 싣지 않는다.
+  const reached = raw.impacted.map(parseImpacted).filter(({ symbol }) => symbol.usr !== subjectId).sort(compareReached);
   if (typeof raw.truncated !== 'boolean') fail('Invalid schemagraph impact truncation flag.');
   const truncationReasons = raw.truncationReasons === undefined ? []
     : strings(raw.truncationReasons, 'Invalid schemagraph truncation reasons.');

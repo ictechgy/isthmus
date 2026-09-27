@@ -51,6 +51,44 @@ test('language-traversal v1을 검증하고 root 출처·대표 경로를 보존
   assert.equal(truncated.revision, undefined);
 });
 
+/** root B가 root A의 의존자이고, C는 B를 거쳐 두 root 모두에서 닿는 순회다. */
+function rootToRoot(): any {
+  return {
+    ...document(), direction: 'dependents',
+    roots: [{ id: 'A', symbol: { usr: 'A' } }, { id: 'B', symbol: { usr: 'B' } }],
+    reached: [
+      { symbol: { usr: 'B' }, via: 'A', depth: 1, roots: [0] },
+      { symbol: { usr: 'C' }, via: 'B', depth: 1, roots: [0, 1] },
+      { symbol: { usr: 'D' }, via: 'C', depth: 2, roots: [0, 1] },
+    ],
+  };
+}
+
+test('다른 root에서 닿은 root도 reached에 싣고 자기 인덱스는 roots에 넣지 않는다', () => {
+  const graph = traversalGraphFromDocument(parseLanguageTraversal(rootToRoot()));
+  assert.deepEqual(graph.reached.map(({ symbol, roots }) => [symbol.usr, roots]), [['B', [0]], ['C', [0, 1]], ['D', [0, 1]]]);
+  // 경로는 via가 root id인 곳에서 멈춘다. B가 A에서 닿았어도 C의 목격 경로는 B에서 시작한다.
+  assert.deepEqual(traversalPath(graph, 'B'), ['A', 'B']);
+  assert.deepEqual(traversalPath(graph, 'D'), ['B', 'C', 'D']);
+  const cycle = rootToRoot();
+  cycle.reached = [{ symbol: { usr: 'A' }, via: 'B', depth: 1, roots: [1] }, { symbol: { usr: 'B' }, via: 'A', depth: 1, roots: [0] }];
+  assert.deepEqual(traversalPath(traversalGraphFromDocument(parseLanguageTraversal(cycle)), 'A'), ['B', 'A']);
+  for (const mutate of [
+    (value: any) => { value.reached[0].roots = [0, 1]; },
+    (value: any) => { value.reached[1].roots = [1]; },
+    (value: any) => { value.reached[1].via = 'C'; },
+    (value: any) => { value.reached[2].roots = [1]; },
+  ]) {
+    const value = rootToRoot();
+    mutate(value);
+    assert.throws(() => parseLanguageTraversal(value), TraversalValidationError);
+  }
+  // 64개 상한으로 잘린 목록에서는 via root의 큰 인덱스가 빠질 수 있다.
+  const roots = Array.from({ length: 66 }, (_, index) => ({ id: `r${String(index).padStart(2, '0')}` }));
+  assert.doesNotThrow(() => validateTraversalGraph(roots, [{ symbol: { usr: 'x' }, via: 'r65', depth: 1,
+    roots: Array.from({ length: 64 }, (_, index) => index) }], { rootsTruncated: true, truncated: false }));
+});
+
 test('잘린 순회는 부모 root 포함 규칙을 강제하지 않지만 그 밖의 불변식은 그대로 본다', () => {
   const value = document();
   value.truncated = true;

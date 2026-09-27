@@ -49,11 +49,16 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
   relation-use)에 싣는 문자열과 같아야 한다.** isthmus는 문자열을 정규화·추측하지 않는다.
   `platform: "sql"`(schemagraph)은 VertexId를 쓰며 이것은 facts의 `relation-decl` `symbol.usr`와
   같다(예: `main.users`, `main.users.email`).
-- `via`는 가장 짧은 경로 하나의 직전 정점(도달 정점의 usr 또는 root id)이고 `depth`는 가장 가까운
-  root까지의 간선 수다(root는 0이며 `reached`에 다시 싣지 않는다). root끼리의 도달("A를 바꾸면
-  root B가 깨진다")은 v1에서 표현하지 않는다. B 너머의 정점은 A·B 두 인덱스를 모두 싣는다.
-- `reached[].roots`는 이 정점에 닿는 **모든** root 인덱스의 오름차순 목록이다(비어 있지 않음).
-  64개를 넘으면 가장 작은 인덱스 64개만 싣고 문서에 `rootsTruncated: true`를 단다. 입력 root
+- `reached`는 **자기 자신이 아닌 root 하나 이상에서 닿은 모든 정점**이다. 다른 root에서 닿은 root도
+  싣는다(예: 테이블 23개 전부를 root로 준 DB 의존자 순회에서, FK로 다른 root 테이블에 기대는 root
+  테이블). 그런 항목의 `roots`에는 그 정점에 닿는 **다른** root만 싣고 자기 인덱스는 넣지 않는다.
+  자기 자신에서만 닿는(순환) root는 싣지 않는다.
+- `via`는 가장 짧은 경로 하나의 직전 정점(root id 또는 다른 도달 정점의 usr)이고 `depth`는 그 정점에
+  닿는 root 중 가장 가까운 것까지의 간선 수다. via가 root id면 depth는 1이다 — via root가 다른 root에서
+  닿았더라도 경로는 그 root에서 시작한다. 예: root A(0)·B(1)이고 B가 A의 의존자, C가 B의 의존자면
+  `{usr: B, via: A, depth: 1, roots: [0]}`, `{usr: C, via: B, depth: 1, roots: [0, 1]}`이다.
+- `reached[].roots`는 이 정점에 닿는 **모든**(자기 제외) root 인덱스의 오름차순 목록이다(비어 있지
+  않음). 64개를 넘으면 가장 작은 인덱스 64개만 싣고 문서에 `rootsTruncated: true`를 단다. 입력 root
   수의 상한이 아니다.
 - `relationships`는 생산자가 관찰한 간선 종류(`call`·`reference`·`reads` 등)의 정렬된 목록이다.
   32개까지. 의미는 생산자 문서가 정한다.
@@ -68,13 +73,17 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
 
 isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 코드 2)로 거부한다.
 
-- 정의되지 않은 필드(문서·root·reached·symbol·location·tool)는 거부한다. 필드 추가는 이 문서의
-  개정과 함께 한다.
-- root id는 유일하고, 도달 usr는 서로·root id와 겹치지 않는다.
-- `via`는 root id이거나 다른 도달 정점이다. `depth`는 1~128이고 부모 depth + 1이다(root 부모면 1).
-- `roots`는 범위 안의 엄격한 오름차순 인덱스이며 1~64개다. via가 root면 그 root의 인덱스를 포함한다.
-- `truncated`와 `rootsTruncated`가 모두 거짓이면 부모의 root 집합이 자식에 포함된다(부모에 닿는
-  root는 그 간선으로 자식에도 닿는다).
+- 정의되지 않은 필드(문서·root·reached·symbol·location·tool)는 거부한다. bridge-facts v1은 정의되지
+  않은 필드를 버리고 읽지만, 이 형식은 v1부터 새 형식이라 의미가 다른 필드가 조용히 무시되는 쪽보다
+  거부를 택했다. 필드 추가는 이 문서의 개정과 함께 한다.
+- root id는 서로 유일하고, 도달 usr도 서로 유일하다. 도달 usr가 `roots[i].id`와 같으면 그 항목의
+  `roots`에 `i`가 없어야 한다. `via`는 자기 자신일 수 없다.
+- `via`는 root id이거나 다른 도달 정점이다. `depth`는 1~128이고, via가 root id면 1, 아니면 부모
+  depth + 1이다.
+- `roots`는 범위 안의 엄격한 오름차순 인덱스이며 1~64개다. via가 root면 그 root의 인덱스를 포함한다
+  (64개로 잘린 목록에서 via root 인덱스가 마지막 인덱스보다 크면 예외).
+- `truncated`와 `rootsTruncated`가 모두 거짓이면 부모에 닿는 root가 자식의 자기 인덱스를 빼고 모두
+  자식에 포함된다. 부모가 root면 그 root와, 그 root가 다른 root에서 닿았다면 그 root들이 대상이다.
 - `reached`는 (depth, usr) 엄격한 오름차순이다(UTF-16 코드 단위 비교, locale 무관).
 - `truncationReasons`는 정렬된 유일한 문자열이고 `truncated: true`일 때만 비어 있지 않을 수 있다.
 - 상한: root 10,000개, 도달 정점 100,000개, 정점당 root 인덱스 64개, 관계 32개, depth 128.
@@ -86,7 +95,7 @@ trace는 새 형식을 우선하고, 이미 배포된 형식은 어댑터로 같
 
 | 형식 | 역할 | 투영 |
 |---|---|---|
-| `schemagraph-impact` v1 | `db-dependents`(sql) | `subject.id`가 root, `impacted[].{id, via, distance, edges}`가 도달 정점·via·depth·관계. 선택 키(`complete`·`visited` 등)는 무시한다. `via`가 없는 옛 보고서는 거부한다 |
+| `schemagraph-impact` v1 | `db-dependents`(sql) | `subject.id`가 root, `impacted[].{id, via, distance, edges}`가 도달 정점·via·depth·관계. subject 자신으로 돌아온 항목(순환)은 뺀다. 선택 키(`complete`·`visited` 등)는 무시한다. `via`가 없는 옛 보고서는 거부한다 |
 | `kartograph-impact` v1 | `reverse`(kotlin) | preflight의 kartograph 어댑터를 공유한다(current 경로만) |
 | `change-impact` v1 | `reverse`(swift) | preflight의 cartograph 어댑터를 공유한다 |
 | dartograph impact v1 | `reverse`(dart) | preflight의 dartograph 어댑터를 공유한다 |

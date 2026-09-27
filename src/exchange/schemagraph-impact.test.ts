@@ -69,7 +69,6 @@ test('via 없는 옛 보고서·깨진 그래프·타입 오류를 거부한다'
     (value) => { value.truncated = 'no'; },
     (value) => { value.truncationReasons = 'depth'; },
     (value) => { value.limitations = null; },
-    (value) => { value.impacted.push({ id: 'main.users', via: 'main.users', distance: 1 }); },
   ];
   for (const mutate of mutations) {
     const value = legacy();
@@ -77,4 +76,8 @@ test('via 없는 옛 보고서·깨진 그래프·타입 오류를 거부한다'
     assert.throws(() => adaptSchemagraphImpact(value), TraversalValidationError);
   }
   assert.throws(() => adaptSchemagraphImpact('nope'), TraversalValidationError);
+  // subject 자신으로 돌아오는 순환은 root 자신만의 도달이라 싣지 않는다.
+  const cycle = legacy();
+  cycle.impacted.push({ id: 'main.users', kind: 'table', via: 'main.report', distance: 3 });
+  assert.ok(adaptSchemagraphImpact(cycle).reached.every(({ symbol }) => symbol.usr !== 'main.users'));
 });
