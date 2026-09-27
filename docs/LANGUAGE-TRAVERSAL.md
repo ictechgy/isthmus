@@ -87,7 +87,7 @@ isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 
 - `via`는 root id이거나 다른 도달 정점이다. `depth`는 1~128이고, via가 root id면 1, 아니면 부모
   depth + 1이다. 단 root 항목(usr가 root id)은 via가 도달 정점일 때 depth 관계를 검사하지 않는다(위 순환).
 - `roots`는 범위 안의 엄격한 오름차순 인덱스이며 1~64개다. via가 root면 그 root의 인덱스를 포함한다
-  (64개로 잘린 목록에서 via root 인덱스가 마지막 인덱스보다 크면 예외).
+  (`rootsTruncated: true` 문서에서 64개로 잘린 목록의 via root 인덱스가 마지막 인덱스보다 크면 예외).
 - `truncated`와 `rootsTruncated`가 모두 거짓이면 부모에 닿는 root가 자식의 자기 인덱스를 빼고 모두
   자식에 포함된다. 부모가 root면 그 root와, 그 root가 다른 root에서 닿았다면 그 root들이 대상이다.
   이 규칙은 root 항목에도 적용한다 — via 간선이 실제로 있으므로 via에 닿는 다른 root는 이 root에도 닿는다.

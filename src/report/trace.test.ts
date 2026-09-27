@@ -403,6 +403,23 @@ test('relation 선택도 dynamic 사용을 gap으로 밝히고 사용 없음 문
   assert.deepEqual(result.chains[0]?.relationUses, []);
 });
 
+test('dynamic relation-use는 이름이 우연히 해석돼도 hop이 아니고 선택마다 gap 하나다', () => {
+  // 원문 식이 선언 이름과 같아도 조인은 dynamic 사실을 잇지 않는다(join의 unjoined-dynamic-relations).
+  const addDynamic = (value: Fixture) => {
+    value.docs.persistence.facts.push({ ...value.docs.persistence.facts[0], dynamic: true,
+      location: { path: 'server/db/users.ts', line: 9, column: 1 } });
+  };
+  const count = (result: TraceReport) => result.gaps.filter(({ code }) => code === 'dynamic-relation-use').length;
+  const route = report(addDynamic);
+  assert.equal(count(route), 1);
+  assert.equal(route.gaps.length, 1);
+  assert.equal(route.chains[0]!.relationUses.length, 2);
+  const relation = report((value) => { addDynamic(value); value.context.selection = { relations: ['users', 'main.users'] }; });
+  assert.equal(count(relation), 2);
+  assert.equal(new Set(relation.gaps.map(({ selector }) => JSON.stringify(selector))).size, 2);
+  assert.ok(relation.chains.every(({ relationUses }) => relationUses.length === 2));
+});
+
 test('선언이나 사용이 없는 relation 선택은 없음이 아니라 gap이다', () => {
   const ghost = report((value) => {
     value.docs.persistence.facts.push({ ...value.docs.persistence.facts[0], channel: 'ghosts',

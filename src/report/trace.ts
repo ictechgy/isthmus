@@ -257,7 +257,8 @@ interface UseRecord {
   readonly endpoint: PairEndpoint;
   readonly usr?: string;
   readonly match?: PersistenceMatch;
-  readonly outcome: 'resolved' | 'missing' | 'ambiguous' | 'column-missing';
+  /** dynamic 사실은 조인이 잇지 않으므로 이름 해석과 무관하게 항상 `dynamic`이다. */
+  readonly outcome: 'resolved' | 'missing' | 'ambiguous' | 'column-missing' | 'dynamic';
   /** 모호한 비한정 사용의 후보 선언 이름이다. */
   readonly candidates?: readonly string[];
 }
@@ -374,7 +375,7 @@ class TraceBuilder {
     }
     const target = outcome.status === 'resolved'
       ? this.resolver.declKey(outcome.channel) : this.resolver.useKey(selector.relation);
-    const uses = this.uses.filter((use) => !use.fact.dynamic && this.resolver.useKey(use.fact.channel!) === target);
+    const uses = this.uses.filter((use) => use.outcome !== 'dynamic' && this.resolver.useKey(use.fact.channel!) === target);
     if (outcome.status === 'resolved') {
       for (const use of this.uses) {
         if (use.candidates?.includes(outcome.channel) === true) {
@@ -384,7 +385,7 @@ class TraceBuilder {
       }
     }
     // dynamic 사용은 원문 식이 이름이 아니라 어느 relation을 가리키는지 모른다. hop으로 싣지 않고 모두 gap으로 밝힌다.
-    const dynamicUses = this.uses.filter((use) => use.fact.dynamic);
+    const dynamicUses = this.uses.filter((use) => use.outcome === 'dynamic');
     for (const use of dynamicUses) this.useOutcomeGap(selector, use);
     if (outcome.status === 'missing') {
       this.gap({ code: 'relation-without-decl', selector,
@@ -547,7 +548,7 @@ class TraceBuilder {
     for (const [usr, via] of reach) {
       for (const use of this.usesBySymbol.get(symbolKey(platform, usr)) ?? []) {
         // dynamic 사용의 원문 식은 관계 이름이 아니므로 hop으로 싣지 않고 gap 증거로만 남긴다.
-        if (!use.fact.dynamic) addUse(uses, use, via);
+        if (use.outcome !== 'dynamic') addUse(uses, use, via);
         this.useOutcomeGap(selector, use);
       }
     }
@@ -561,13 +562,9 @@ class TraceBuilder {
       ambiguous: ['relation-use-ambiguous', 'The unqualified relation use matches several declarations; no schema vertex is guessed.'],
       'column-missing': ['column-use-without-decl',
         'The column use has no matching column declaration, so no column vertex can be followed.'],
+      dynamic: ['dynamic-relation-use', 'The relation use has a non-literal name and was not joined.'],
     }[use.outcome];
-    if (use.fact.dynamic) {
-      this.gap({ code: 'dynamic-relation-use', selector, evidence: use.endpoint,
-        detail: 'The relation use has a non-literal name and was not joined.' });
-    } else if (gap !== undefined) {
-      this.gap({ code: gap[0]!, selector, evidence: use.endpoint, detail: gap[1]! });
-    }
+    if (gap !== undefined) this.gap({ code: gap[0]!, selector, evidence: use.endpoint, detail: gap[1]! });
   }
 
   /** relation-decl VertexId별 schemagraph 의존자다. */
@@ -692,13 +689,15 @@ class TraceBuilder {
         const endpoint = toPairEndpoint({ platform: document.platform,
           ...(fact.location === undefined ? {} : { location: fact.location }),
           ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }) });
-        const resolution = this.resolver.resolveUse(fact.channel);
-        const match = resolution.status === 'resolved' ? byKey.get(this.resolver.useKey(fact.channel, fact.method)) : undefined;
-        const outcome = resolution.status !== 'resolved' ? resolution.status : match === undefined ? 'column-missing' : 'resolved';
+        // dynamic 원문 식은 관계 이름이 아니다. 우연히 선언 이름과 같아도 해석하지 않는다(조인과 같다).
+        const resolution = fact.dynamic ? undefined : this.resolver.resolveUse(fact.channel);
+        const match = resolution?.status === 'resolved' ? byKey.get(this.resolver.useKey(fact.channel, fact.method)) : undefined;
+        const outcome = resolution === undefined ? 'dynamic'
+          : resolution.status !== 'resolved' ? resolution.status : match === undefined ? 'column-missing' : 'resolved';
         const record: UseRecord = { platform: document.platform, fact, endpoint,
           ...(fact.symbol?.usr === undefined ? {} : { usr: fact.symbol.usr }),
-          ...(match === undefined || fact.dynamic ? {} : { match }), outcome,
-          ...(resolution.status === 'ambiguous' && !fact.dynamic ? { candidates: resolution.candidates } : {}) };
+          ...(match === undefined ? {} : { match }), outcome,
+          ...(resolution?.status === 'ambiguous' ? { candidates: resolution.candidates } : {}) };
         this.uses.push(record);
         if (record.usr !== undefined) {
           const key = symbolKey(record.platform, record.usr);
@@ -768,8 +767,9 @@ class TraceBuilder {
       for (const reach of handler.reachedFrom) if (reach.witnessPartial) partial(reach.analysis, handler.platform, handler.usr);
     }
     for (const use of chain.relationUses) {
+      // 도달 근거의 경로 끝은 그 사용을 감싼 심볼의 생산자 id다. 사실의 symbol 필드에 기대지 않는다.
       for (const reach of use.reachedFrom) {
-        if (reach.witnessPartial) partial(reach.analysis, use.use.platform, use.use.symbol!.usr!);
+        if (reach.witnessPartial) partial(reach.analysis, use.use.platform, reach.path[reach.path.length - 1]!);
       }
     }
   }

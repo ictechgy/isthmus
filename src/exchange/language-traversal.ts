@@ -223,7 +223,7 @@ export function traversalGraphFromImpact(impact: LanguageImpact, source: Travers
  * - root id와 도달 usr는 각각 유일하다. 다른 root에서 닿은 root도 도달 정점으로 싣는다 — 이때
  *   `roots`에는 자기 인덱스를 넣지 않는다(자기 자신에서만 닿는 순환 root는 싣지 않는다).
  * - `via`는 root id거나 다른 도달 정점이다. via가 root id면 depth는 1이고 그 root 인덱스를
- *   포함한다(64개 상한으로 잘린 목록은 큰 인덱스가 빠질 수 있어 예외). 그 밖에는 부모 depth + 1이다.
+ *   포함한다(`rootsTruncated` 문서에서 64개로 잘린 목록은 큰 인덱스가 빠질 수 있어 예외). 그 밖에는 부모 depth + 1이다.
  *   단 root 항목은 depth가 기준이고 via는 그 root를 거쳐 돌아올 수 있는 목격이라 depth 관계를 보지 않는다.
  * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다.
  * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모에 닿는 root(부모가 root면
@@ -257,7 +257,8 @@ export function validateTraversalGraph(
     const viaRoot = rootIndex.get(row.via);
     let inherited: readonly number[];
     if (viaRoot !== undefined) {
-      const capped = row.roots.length === MAX_ROOTS_PER_REACHED && viaRoot > row.roots[row.roots.length - 1]!;
+      const capped = flags.rootsTruncated && row.roots.length === MAX_ROOTS_PER_REACHED &&
+        viaRoot > row.roots[row.roots.length - 1]!;
       if (row.depth !== 1 || (!row.roots.includes(viaRoot) && !capped)) {
         fail('Traversal depth or roots do not match the via root.');
       }

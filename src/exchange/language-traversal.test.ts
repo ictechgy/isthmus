@@ -86,8 +86,10 @@ test('다른 root에서 닿은 root도 reached에 싣고 자기 인덱스는 roo
   }
   // 64개 상한으로 잘린 목록에서는 via root의 큰 인덱스가 빠질 수 있다.
   const roots = Array.from({ length: 66 }, (_, index) => ({ id: `r${String(index).padStart(2, '0')}` }));
-  assert.doesNotThrow(() => validateTraversalGraph(roots, [{ symbol: { usr: 'x' }, via: 'r65', depth: 1,
-    roots: Array.from({ length: 64 }, (_, index) => index) }], { rootsTruncated: true, truncated: false }));
+  const capped = [{ symbol: { usr: 'x' }, via: 'r65', depth: 1, roots: Array.from({ length: 64 }, (_, index) => index) }];
+  assert.doesNotThrow(() => validateTraversalGraph(roots, capped, { rootsTruncated: true, truncated: false }));
+  // rootsTruncated를 선언하지 않은 문서에서는 via root 인덱스 누락을 상한 탓으로 돌리지 않는다.
+  assert.throws(() => validateTraversalGraph(roots, capped, { rootsTruncated: false, truncated: true }), /via root/);
 });
 
 test('root 항목의 depth는 다른 root 기준이라 via 목격이 그 root를 거쳐 돌아올 수 있다', () => {
