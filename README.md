@@ -93,8 +93,9 @@ four path-anchor combinations. Calls are attributed to a declaration side only b
 strings (or when nobody declares one); unattributed calls are counted, never printed. Errors are
 reported only when every precondition is proven, and a spec-only side never produces
 `route-call-without-decl`. No producer emits these documents yet; request/response fields, query
-parameters, and headers are not compared. `graph`, `diff`, `impact`, `retentions`, and `preflight`
-reject http documents for now. See the HTTP section of
+parameters, and headers are not compared. `diff --http` compares the route surface of two revisions
+and reports client calls that stop binding ([`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)). `graph`,
+`impact`, `retentions`, `preflight`, and `diff` without `--http` reject http documents for now. See the HTTP section of
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) and [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md).
 
 Change predictions are measured against a pinned public precision corpus —
@@ -117,6 +118,7 @@ measured.
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace` (in development): route → handler → tables → DB dependents, and route → call sites → affected client code, joined by exact producer ids with explicit gaps |
+| [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http` (in development): base vs head route surface of one server/spec or a workspace, calls that bound at base and no longer bind at head, `--fail-on` exit codes, and a base..head CI example |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | `language-traversal` v1, the shared forward/reverse traversal format producers emit for `trace` |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |
@@ -581,7 +583,7 @@ unattributed is counted as dynamic only.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success. In default mode, issues are reported but do not fail the run |
-| `1` | `--strict` found error issues (for `diff`: newly observed errors only; for `trace`: any remaining gap). `-unverified` warnings and baseline-suppressed errors do not fail |
+| `1` | `--strict` found error issues (for `diff`: newly observed errors only; for `diff --http`: any finding matched by `--fail-on`/`--strict`; for `trace`: any remaining gap). `-unverified` warnings and baseline-suppressed errors do not fail |
 | `2` | Tool failure: file read, JSON, exchange contract, project mismatch, missing platform composition, deferred join, size limits (input text, graph edges, baseline entries, persistence or http pair endpoints, http suffix comparisons), baseline file or write errors, retention evidence that cannot be built, http documents passed to a command that does not consume them yet. stderr distinguishes the cause |
 | `64` | Bad command, option, or input count (including a malformed `route:` subject); or `query` `notFound`/`ambiguous` |
 
@@ -654,6 +656,27 @@ files are capped at 256 total, and the text size limits match the rest of the CL
 targets or incomparable inputs are refused with exit code 2. `generatedAt` is the fact
 extraction time, not an indicator of revision order — the comparison direction comes from the
 `--before` and `--after` arguments, so you must point them at the right revisions.
+
+### HTTP route surface (in development)
+
+```bash
+isthmus diff --http --before base.http.json --after head.http.json \
+  --clients clients.http.json --fail-on error,incomplete
+isthmus diff --http --before base.workspace.json --after head.workspace.json --strict
+```
+
+`diff --http` compares one server's (or spec's) http documents at two revisions and evaluates **one fixed
+set of client calls** against both: calls from `--clients` (surface mode), or from the client members of
+the head `isthmus-workspace` manifest (workspace mode, when server and clients live in separate
+repositories). It outputs `isthmus-http-diff` v1 findings: added/removed routes (method + canonical
+template), changed path constraints, trailing-slash, catch-all, and case sensitivity; and, per removed or
+changed route, the calls that bound at base and no longer bind at head (`removed-bound-route`,
+`changed-bound-route`, and `-unverified` variants with the unproven preconditions listed per call) or now
+bind a different route (`rebound-route-calls`). Unattributed, dynamic, or unscanned calls and declaration
+coverage gaps always produce explicit incompleteness findings, so an empty result never claims that no
+client breaks. `--fail-on` takes finding codes, `error`, `warning`, or `incomplete`; unknown tokens are a
+usage error (64). The `--http` flag must directly follow `diff`. See
+[`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) for the design, the CI procedure, and a sample workflow.
 
 ## Coding-agent skill
 

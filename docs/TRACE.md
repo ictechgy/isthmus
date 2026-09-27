@@ -342,8 +342,9 @@ gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`
 - **형제 전파 opt-in은 보류**한다. 계획은 이름만 적고(`형제 전파 opt-in`) 무엇을 형제로 볼지(같은 핸들러의 다른
   route, 같은 테이블의 다른 컬럼, 같은 인터페이스의 다른 구현 등)와 전파 범위를 정의하지 않는다. 정의 없이 넣으면
   과대 근사의 크기를 소비자가 가늠할 수 없으므로 계획이 정의할 때까지 넣지 않는다.
-- 남은 일: http diff(surface·workspace·base..head CI 모드), link match의 `interfaces`와 `baseRefs[].pathPrefix`
+- 남은 일: link match의 `interfaces`와 `baseRefs[].pathPrefix`
   (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류), MCP 노출(출력 상한과 함께 결정).
+  http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
 - 입력 수집 스크립트(`scripts/capture-trace.mjs`)는 아직 없다. 생산자 명령을 차례로 실행하고 context를
   손으로 쓴다. 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
   있다(실제 앱 입력으로 쓸 수 없다).

@@ -34,6 +34,7 @@ verifyRelationPrefixedBridgeQuery();
 verifyHttpDomain();
 verifyGraph();
 verifyDiff();
+verifyHttpDiff();
 verifyImpact();
 verifyRuntime();
 verifyPreflight();
@@ -454,6 +455,33 @@ function verifyDiff() {
   verify(run(['diff']).status === 64, 'diff usage');
   verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,
     'diff input failure');
+}
+
+/**
+ * `diff --http`가 빌드된 CLI에서 surface·workspace fixture의 깨진 호출을 결정적으로 보고하고, `--fail-on`·`--strict`의
+ * 0/1, 입력 오류 2, 모르는 토큰 64를 지키는지 확인한다.
+ */
+function verifyHttpDiff() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/http-diff/${name}`, import.meta.url));
+  const surface = ['diff', '--http', '--before', fixture('surface/before.server.json'), '--after',
+    fixture('surface/after.server.json'), '--clients', fixture('surface/clients.json'), '--compact'];
+  const plain = run(surface);
+  verify(plain.status === 0 && plain.stderr === '' && plain.stdout === run(surface).stdout, 'http diff deterministic success');
+  const report = JSON.parse(plain.stdout);
+  verify(report.format === 'isthmus-http-diff' && report.mode === 'surface' && report.summary.callImpact === 'breaks-found',
+    'http diff document');
+  verify(report.findings.filter(({ code }) => code === 'removed-bound-route').length === 2, 'http diff removed bound routes');
+  const failed = run([...surface, '--fail-on', 'removed-bound-route']);
+  verify(failed.status === 1 && failed.stdout === plain.stdout && failed.stderr.includes('removed-bound-route (2)'),
+    'http diff fail-on');
+  verify(run([...surface, '--fail-on', 'route-case-sensitivity-changed']).status === 0, 'http diff unmatched fail-on');
+  verify(run([...surface, '--fail-on', 'removed-route']).status === 64, 'http diff unknown fail-on token');
+  const workspace = run(['diff', '--http', '--before', fixture('workspace/before.workspace.json'), '--after',
+    fixture('workspace/after.workspace.json'), '--strict', '--compact']);
+  verify(workspace.status === 1 && JSON.parse(workspace.stdout).workspace.links[0].name === 'mobile->api', 'http diff workspace');
+  verify(run(['diff', '--http', '--before', fixture('workspace/before.workspace.json'), '--after',
+    fixture('surface/after.server.json')]).status === 2, 'http diff mixed modes');
+  verify(run(['diff', '--http']).status === 64, 'http diff usage');
 }
 
 /** 발행 CLI의 MCP stdio 세션이 초기화·도구 호출·알림 무시를 지키는지 검증한다. */

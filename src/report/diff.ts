@@ -212,8 +212,8 @@ function validateSnapshots(before: readonly BridgeFactsDocument[], after: readon
   // http 문서도 같은 이유로 거부한다 — route 차이는 보고되지 않은 채 빈 차이로 읽힌다.
   if (all.some((doc) => doc.target === 'http' || doc.platform === 'openapi')) {
     throw new BridgeJoinValidationError(
-      'Diff does not support http documents yet; remove http-target and openapi documents '
-      + 'from both snapshots and compare the bridge documents only.',
+      'Diff does not support http documents yet without --http; compare http-target and openapi documents '
+      + 'with isthmus diff --http, and keep only bridge documents in this comparison.',
     );
   }
   // diff는 bridge 논리 연결(메서드·모듈·컴포넌트)만 비교한다. persistence 문서를 받으면

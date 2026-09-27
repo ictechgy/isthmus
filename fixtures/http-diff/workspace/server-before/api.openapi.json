@@ -1,0 +1,66 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-http-diff",
+    "version": "0.0.0"
+  },
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "platform": "openapi",
+  "target": "http",
+  "project": "/work/example-server",
+  "roles": [
+    "server"
+  ],
+  "facts": [
+    {
+      "kind": "route-contract",
+      "method": "GET",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "openapi.yaml",
+        "line": 20,
+        "column": 5
+      },
+      "symbol": {
+        "qualifiedName": "getOrder"
+      },
+      "operationId": "getOrder"
+    },
+    {
+      "kind": "route-contract",
+      "method": "POST",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "openapi.yaml",
+        "line": 40,
+        "column": 5
+      },
+      "symbol": {
+        "qualifiedName": "createOrder"
+      },
+      "operationId": "createOrder"
+    },
+    {
+      "kind": "route-contract",
+      "method": "DELETE",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "openapi.yaml",
+        "line": 60,
+        "column": 5
+      },
+      "symbol": {
+        "qualifiedName": "cancelOrder"
+      },
+      "operationId": "cancelOrder"
+    }
+  ],
+  "limitations": []
+}

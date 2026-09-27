@@ -1,0 +1,142 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-http-diff",
+    "version": "0.0.0"
+  },
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "platform": "js",
+  "target": "http",
+  "project": "/work/example-api",
+  "roles": [
+    "server"
+  ],
+  "dispatch": "specificity",
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "facts": [
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 10,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "users.get",
+        "usr": "ts:users.get"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/users/me",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 14,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "users.me",
+        "usr": "ts:users.me"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "DELETE",
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 18,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "users.delete",
+        "usr": "ts:users.delete"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/files/{**}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 22,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "files.read",
+        "usr": "ts:files.read"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/files",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 22,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "files.read",
+        "usr": "ts:files.read"
+      },
+      "catchAllPrefix": true
+    },
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 30,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "orders.get",
+        "usr": "ts:orders.get"
+      },
+      "paramConstraints": [
+        {
+          "segment": 2,
+          "kind": "int"
+        }
+      ],
+      "trailingSlash": "strict"
+    },
+    {
+      "kind": "route-decl",
+      "method": "POST",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 34,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "orders.create",
+        "usr": "ts:orders.create"
+      }
+    }
+  ],
+  "limitations": []
+}

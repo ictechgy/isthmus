@@ -1,0 +1,55 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-http-diff",
+    "version": "0.0.0"
+  },
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "platform": "kotlin",
+  "target": "http",
+  "project": "/work/example-client",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "facts": [
+    {
+      "kind": "route-call",
+      "method": "GET",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 14,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "OrdersApi.get",
+        "usr": "kt:OrdersApi.get"
+      },
+      "authority": "api.example.com"
+    },
+    {
+      "kind": "route-call",
+      "method": "DELETE",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 20,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "OrdersApi.cancel",
+        "usr": "kt:OrdersApi.cancel"
+      },
+      "authority": "api.example.com"
+    }
+  ],
+  "limitations": []
+}

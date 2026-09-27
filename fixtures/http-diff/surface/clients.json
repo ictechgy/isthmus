@@ -1,0 +1,133 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-http-diff",
+    "version": "0.0.0"
+  },
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "platform": "kotlin",
+  "target": "http",
+  "project": "/work/example-api",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "facts": [
+    {
+      "kind": "route-call",
+      "method": "GET",
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 12,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "UsersApi.get",
+        "usr": "kt:UsersApi.get"
+      }
+    },
+    {
+      "kind": "route-call",
+      "method": "GET",
+      "channel": "/api/users/me",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 16,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "UsersApi.me",
+        "usr": "kt:UsersApi.me"
+      }
+    },
+    {
+      "kind": "route-call",
+      "method": "DELETE",
+      "channel": "/api/users/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 20,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "UsersApi.delete",
+        "usr": "kt:UsersApi.delete"
+      }
+    },
+    {
+      "kind": "route-call",
+      "method": "GET",
+      "channel": "/api/orders/42",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 24,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "OrdersApi.sample",
+        "usr": "kt:OrdersApi.sample"
+      }
+    },
+    {
+      "kind": "route-call",
+      "method": "POST",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 28,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "OrdersApi.create",
+        "usr": "kt:OrdersApi.create"
+      }
+    },
+    {
+      "kind": "route-call",
+      "methodDynamic": true,
+      "channel": "/api/orders",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 32,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "OrdersApi.send",
+        "usr": "kt:OrdersApi.send"
+      }
+    },
+    {
+      "kind": "route-call",
+      "method": "GET",
+      "channel": null,
+      "dynamic": true,
+      "pathAnchor": "root",
+      "location": {
+        "path": "app/src/main/java/example/Api.kt",
+        "line": 36,
+        "column": 9
+      },
+      "symbol": {
+        "qualifiedName": "Dynamic.fetch",
+        "usr": "kt:Dynamic.fetch"
+      }
+    }
+  ],
+  "limitations": []
+}

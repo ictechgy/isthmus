@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+### Added — http diff (개발 중, Phase 3 소비자)
+
+- **`isthmus diff --http`**([HTTP-DIFF](docs/HTTP-DIFF.md)): 한 서버·스펙의 http route 표면을 두 시점에서 비교하고, base에서
+  결합하던 클라이언트 호출이 head에서 결합하지 않게 되는 곳을 보고한다. 새 출력 형식 `isthmus-http-diff` v1(bridge
+  `isthmus-diff` v1은 그대로). `--http`는 `diff` 바로 다음 인수여야 하며(경로 문자열이 모드를 바꾸지 못하게), `--http` 없는
+  bridge diff와 MCP `diff` 도구는 바뀌지 않는다.
+  - surface 모드: `--before`·`--after`의 선언 측 문서와 `--clients`로 한 번만 받은 호출을 교차 평가한다(같은 호출을 base·head
+    선언 측에 따로 조인). workspace 모드: base·head `isthmus-workspace` 매니페스트 두 개 — link마다 base의 server·contract
+    문서와 head의 client member 호출, head의 server·contract 문서와 같은 호출을 조인한다. 매니페스트 파싱과 link 조인(귀속·
+    서비스 범위)은 trace와 같은 코드다(`parseWorkspaceManifest`, `joinWorkspaceLink`로 공유).
+  - route 신원은 (scope, 측, pathAnchor, method, 정규 템플릿)이고 rename을 추론하지 않는다. 입력 구성 차이(project·선언 측
+    인벤토리·link 정의)는 입력 오류(2)다.
+  - finding 19종: surface(`route-added`·`route-removed`·`route-param-constraints-changed`·`route-trailing-slash-changed`·
+    `route-catch-all-changed`·`route-case-sensitivity-changed`), impact(`removed-bound-route`·`changed-bound-route`와
+    `-unverified` 변형, `rebound-route-calls`), incompleteness(`clients-unscanned`·`calls-unattributed`·`calls-dynamic`·
+    `client-coverage-gap`·`declaration-coverage-gap`·`declarations-dynamic`·`link-service-ambiguous`·`http-member-unlinked`).
+    error는 check의 전제를 옮긴 10가지 전제가 모두 증명될 때만이고, 빠진 전제는 호출마다 `reasons`로 싣는다. contract 측
+    깨짐의 error는 link `contract.authoritative: true`에서만이다. 귀속되지 않은 호출은 개수만 싣는다.
+  - `--fail-on <code|error|warning|incomplete>[,...]`와 `--strict`(= `--fail-on error`): 걸린 finding이 있으면 1, 모르는 토큰은 64.
+  - base..head CI 절차와 GitHub Actions 예시(비밀값 없음), 합성 fixture `fixtures/http-diff/`(surface·분리된 두 저장소
+    workspace), 코드마다의 음성 fixture·종료 코드·결정성 테스트, 문서 코드 표 대조 테스트, CLI 계약 스크립트 검사.
+- bridge `diff`가 http 문서를 거부할 때 `isthmus diff --http`를 안내한다.
+
 ### Added
 
 - **trace workspace(개발 중, Phase 3 소비자)**: 서버와 클라이언트가 다른 git 저장소에 있어도 `isthmus trace` 한

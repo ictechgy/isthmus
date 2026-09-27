@@ -53,6 +53,8 @@ for (const requiredPath of [
   'docs/PERSISTENCE-TRACE.md',
   'docs/LANGUAGE-TRAVERSAL.md',
   'docs/TRACE.md',
+  'docs/HTTP-DIFF.md',
+  'dist/cli/http-diff-command.js',
   'docs/GRAPH-EXCHANGE.md',
   'docs/HTTP-WRAPPERS.md',
   'conformance/SHA256SUMS',

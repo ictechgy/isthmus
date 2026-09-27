@@ -12,7 +12,8 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 `event-emit`↔`event-listen`을 다루며 Flutter transport와 섞지 않는다.
 `target: "http"`는 [HTTP 경계](#개발-중-http-경계-v1-확장) 절의 Phase 1 범위를 `check`(`--pairs`
 포함)와 `query`(`route:` 주체)가 소비하고, `trace`가 같은 조인 결과를 persistence·순회와 잇는다.
-`graph`·`diff`·`impact`·`retentions`·`preflight`는 http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
+`diff --http`([HTTP-DIFF](HTTP-DIFF.md))가 같은 조인으로 두 시점의 route 표면과 깨진 호출을 비교한다.
+`graph`·`impact`·`retentions`·`preflight`와 `--http` 없는 `diff`는 http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
 필드는 입력 오류로 거부한다.
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
@@ -427,7 +428,8 @@ require에는 싣지 않는다.
   `diff`의 스냅샷 구성. `diff`는 아직 persistence 비교를 지원하지 않으므로
   `persistence` target 문서나 sql 문서가 한 스냅샷에라도 있으면 일반 구성 문구가 아닌
   원인 문구로 거부한다. http 문서(target `http`, 또는 사실 0건이라도 platform `openapi`)도
-  `graph`·`diff`·`impact`·`retentions`·preflight context가 같은 방식으로 거부한다
+  `graph`·`diff`(bridge 모드)·`impact`·`retentions`·preflight context가 같은 방식으로 거부한다. http 비교는
+  `diff --http`가 따로 한다([HTTP-DIFF](HTTP-DIFF.md))
 
 생산자는 채널 생성자와 핸들러 등록 사이의 변수 참조를 따라 채널 이름을 `channel-register`에 옮긴다. `FlutterMethodChannel` 객체를 만들기만 하고 핸들러를 달지 않은 코드는 등록 사실이 아니다.
 
@@ -567,10 +569,11 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | check 진단(아래 표에서 `route-decl-shadowed` 제외), 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
 | `dispatch: "registration-order"`, `order`, `route-decl-shadowed` | 초안 | 문서를 입력 오류로 거부 |
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`) | 초안 | http 문서의 `limitationScopes`를 입력 오류로 거부. 한계는 문서 전체에 적용 |
-| `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
+| `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | `diff --http`: 맨 매니페스트를 trace와 같은 member·link 파서로 받고 `contract.authoritative`를 contract 측 깨짐의 error 전제로 쓴다. trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
 | `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
-| graph route 간선, impact의 http blocker, diff, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부 |
+| `diff --http`(surface·workspace·base..head CI, [HTTP-DIFF](HTTP-DIFF.md)) — 같은 조인·귀속 규칙으로 같은 호출 집합을 base·head 선언 측에 교차 평가 | 구현(Phase 3 소비자) | — |
+| graph route 간선, impact의 http blocker, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부(bridge `diff`도 `--http` 없이는 거부) |
 | `docs/limitation-prefixes.json` 추출 | 초안 | 닫힌 목록은 이 절과 `src/report/route-issues.ts`가 정본 |
 
 ### target과 kind
@@ -626,7 +629,8 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
   문서(roles에 client가 있는 문서)가 각각 하나 이상 필요하다. 한쪽만 있으면 입력 오류(종료
   코드 2)다. 예외는 decl과 contract만 비교하는 드리프트 모드와 diff surface 모드다. 드리프트
   모드는 route-decl을 스캔한 서버 문서와 openapi 문서가 모두 있어야 하며, 호출 측이 없으므로
-  `*-without-call` 진단을 내지 않는다(diff surface 모드는 초안). 선언 측을 contract 문서만으로
+  `*-without-call` 진단을 내지 않는다. diff surface 모드(`diff --http`)는 호출 측 없이도 받고, 빠진 호출 측을
+  `clients-unscanned`로 밝힌다([HTTP-DIFF](HTTP-DIFF.md)). 선언 측을 contract 문서만으로
   채운 link는 받지만, decl 기반 진단은 평가하지 않는다(아래 error 전제 (f)).
 - target `http` 문서에 `mixed-targets` 한계가 있으면 다른 문서와 같이 조인 전체를 보류한다.
 
@@ -985,15 +989,17 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   낸다. check(json·SARIF·codequality), baseline 파일, query, `--pairs`, graph, diff, impact,
   trace, `serve`(MCP) 응답, 입력 오류 문구가 모두 대상이고 앞으로 추가하는 출력도 같다. 입력
   오류는 원문 대신 문서 경로와 사실 순번으로 가리킨다. dynamic 원문에는 길이 상한을 둔다.
-  이 버전에서 http를 소비하는 check·query·`--pairs`·SARIF·codequality·baseline·MCP check/query가
-  이 규칙을 지키고, 나머지 명령은 http 문서를 거부한다. query는 요청 문자열만 되돌려 싣는다.
+  이 버전에서 http를 소비하는 check·query·`--pairs`·SARIF·codequality·baseline·MCP check/query·trace·
+  `diff --http`가 이 규칙을 지키고, 나머지 명령은 http 문서를 거부한다(`diff --http`는 base 조인에서 귀속된
+  호출만 끝점으로 싣는다). query는 요청 문자열만 되돌려 싣는다.
 - 스펙 입력은 크기·YAML alias 확장·깊이에 상한을 두고, 외부 `$ref`와 네트워크를 쓰지 않는다.
   오류와 증거에는 스펙 원문과 절대경로를 넣지 않는다.
 
 ### 다중 저장소: workspace 매니페스트 예외
 
-> **초안(check·query) / 구현(trace).** check·query는 `format: "isthmus-workspace"` 파일을 원인 문구와 함께
-> 입력 오류로 거부한다. trace는 같은 member·link 모양을 [workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)
+> **초안(check·query) / 구현(trace·`diff --http`).** check·query는 `format: "isthmus-workspace"` 파일을 원인 문구와 함께
+> 입력 오류로 거부한다. `diff --http`는 맨 매니페스트를 base·head 두 개로 받는다(같은 member·link 파서, member
+> `analyses`는 받지 않음, [HTTP-DIFF](HTTP-DIFF.md#workspace-모드)). trace는 같은 member·link 모양을 [workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)
 > 안에서 받는다(member별 `analyses`를 더하고, `match.interfaces`·`baseRefs[].pathPrefix`는 거부한다). trace의
 > link 조인에서 link 이름이 scope다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은
 > 귀속하지 않으며, 좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않고 gap으로 밝힌다. revision 검사·사전 계산 분석·
