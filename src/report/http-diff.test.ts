@@ -99,11 +99,22 @@ test('surface fixture: 삭제·변경·rebound·속성 변화와 dynamic 호출 
   assert.deepEqual(only(report, 'calls-dynamic').counts, { before: 1, after: 1 });
   assert.equal(report.summary.callImpact, 'breaks-found');
   assert.equal(report.summary.brokenCalls, 4);
+  assert.equal(report.summary.provenBrokenCalls, 3);
   assert.equal(report.summary.errors, 3);
   assert.equal(report.summary.routesChanged, 2);
-  // 입력 순서와 무관하게 바이트 단위로 같다.
-  const reordered = createHttpSurfaceDiff({ ...inputs, clients: [inputs.clients[0]!] });
-  assert.equal(encodeSortedJson(reordered), encodeSortedJson(report));
+  // 입력 순서와 무관하게 바이트 단위로 같다(선언 측 문서를 둘로 나눠 순서를 뒤집는다).
+  // catch-all 접두사 선언은 원본과 같은 문서에 있어야 하므로 핸들러 심볼 단위로 나눈다.
+  const split = (document: BridgeFactsDocument, half: 0 | 1) => {
+    const handlers = [...new Set(document.facts.map(({ symbol }) => symbol?.usr))];
+    return parseBridgeFactsDocument({ ...JSON.parse(JSON.stringify(document)),
+      facts: document.facts.filter(({ symbol }) => handlers.indexOf(symbol?.usr) % 2 === half) });
+  };
+  const halves = (document: BridgeFactsDocument) => [split(document, 0), split(document, 1)];
+  const forward = createHttpSurfaceDiff({ ...inputs, before: halves(inputs.before[0]!), after: halves(inputs.after[0]!) });
+  const backward = createHttpSurfaceDiff({ ...inputs, before: halves(inputs.before[0]!).reverse(),
+    after: halves(inputs.after[0]!).reverse() });
+  assert.equal(encodeSortedJson(backward), encodeSortedJson(forward));
+  assert.deepEqual(forward.findings, report.findings);
 });
 
 test('선언이 같으면 finding이 없고 호출 영향은 no-breaks-observed다(완전성 주장이 아니다)', () => {
@@ -223,6 +234,16 @@ test('모호하게 닿던 호출은 결합 후보로 보고 head에서 후보 �
   assert.equal(findings[0]!.calls![0]!.before.status, 'ambiguous');
 });
 
+test('head에서 모호해진 호출은 base route가 후보에 남아도 증명된 결합이 아니라 -unverified 깨짐이다', () => {
+  const report = createHttpSurfaceDiff({ before: [server([decl('GET', '/files/{}.json')])],
+    after: [server([decl('GET', '/files/{}.json'), decl('GET', '/files/data.{}')])], clients: [clients([call('GET', '/files/data.json')])] });
+  const changed = only(report, 'changed-bound-route-unverified');
+  assert.equal(changed.calls![0]!.after.status, 'ambiguous');
+  assert.ok(changed.calls![0]!.after.routes!.some(({ template }) => template === '/files/{}.json'));
+  assert.ok(changed.calls![0]!.reasons!.includes('after-outcome-unproven'));
+  assert.equal(report.summary.provenBrokenCalls, 0);
+});
+
 test('서버·클라이언트를 겸하는 문서는 선언 측과 호출 측으로 각각 투영한다', () => {
   const bff = (facts: unknown[]) => doc('js', ['server', 'client'], facts);
   const report = createHttpSurfaceDiff({ before: [bff([decl('GET', '/a'), decl('GET', '/b'), call('GET', '/x')])],
@@ -239,6 +260,8 @@ test('surface 입력 구성 차이는 관찰 차이가 아니라 입력 오류�
   const cases: Array<[() => unknown, RegExp]> = [
     [() => createHttpSurfaceDiff({ before: [declarations], after: [other], clients: [] }), /one project/],
     [() => createHttpSurfaceDiff({ before: [declarations], after: [declarations, spec([])], clients: [] }), /same producers/],
+    [() => createHttpSurfaceDiff({ before: [declarations], after: [server([decl('GET', '/a')], { sourceSets: { tests: 'included' } })],
+      clients: [] }), /same producers/],
     [() => createHttpSurfaceDiff({ before: [declarations], after: [clients([])], clients: [] }), /client-only documents/],
     [() => createHttpSurfaceDiff({ before: [declarations], after: [declarations], clients: [declarations] }), /client role/],
     [() => createHttpSurfaceDiff({ before: [declarations, persistence], after: [declarations], clients: [] }), /only http-target/],
@@ -294,6 +317,19 @@ test('workspace: 서비스 범위를 못 정한 link와 link 밖 client 문서�
   const unlinked = createHttpWorkspaceDiff(before, moved);
   const finding = only(unlinked, 'http-member-unlinked');
   assert.deepEqual([finding.member, finding.counts], ['web', { after: 1 }]);
+});
+
+test('workspace: server member 문서의 호출은 평가하지 않는다(호출은 head client member에서만 온다)', async () => {
+  const bff = (manifestDocument: BridgeFactsDocument) => parseBridgeFactsDocument({ ...JSON.parse(JSON.stringify(manifestDocument)),
+    roles: ['server', 'client'], facts: [...JSON.parse(JSON.stringify(manifestDocument.facts)), { kind: 'route-call', method: 'GET',
+      channel: '/api/orders/{}', dynamic: false, pathAnchor: 'root', authority: 'api.example.com',
+      location: { path: 'src/bff.ts', line: 1, column: 1 }, symbol: { qualifiedName: 'bff', usr: 'ts:bff' } }] });
+  const plain = await workspaceSnapshot('before.workspace.json');
+  const path = 'server-before/server.http.json';
+  const before = await workspaceSnapshot('before.workspace.json', () => {}, { [path]: bff(plain.documents.get(path)!) });
+  const report = createHttpWorkspaceDiff(before, await workspaceSnapshot('after.workspace.json'));
+  assert.ok(!encodeSortedJson(report).includes('ts:bff'));
+  assert.equal(report.summary.brokenCalls, 1);
 });
 
 test('workspace: link 정의·서버 project·인벤토리가 다르면 입력 오류다', async () => {

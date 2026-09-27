@@ -55,8 +55,8 @@ diff 도구를 함께 쓴다. 조인·귀속·매칭 규칙은 [GRAPH-EXCHANGE�
 - **스펙 측 깨짐의 error는 authoritative 계약에서만.** 스펙에서 operation이 빠져도 서버가 그 경로를 계속 받을
   수 있다. workspace link의 `contract.authoritative: true`("이 클라이언트는 이 스펙에 있는 것만 부른다")일 때만
   error이고, 매니페스트가 없는 surface 모드의 contract 측 깨짐은 항상 `-unverified`다.
-- **입력 구성 차이는 관찰 차이가 아니다.** 두 시점의 선언 측 문서 인벤토리(platform·도구 이름·스펙 여부별 개수)가
-  다르면 2로 거부한다. 부분 추출과 전체 추출을 비교하면 모든 route가 삭제·추가로 보이기 때문이다(bridge diff와
+- **입력 구성 차이는 관찰 차이가 아니다.** 두 시점의 선언 측 문서 인벤토리(platform·도구 이름·`sourceSets.tests`
+  설정별 문서 수)가 다르면 2로 거부한다. 부분 추출과 전체 추출을 비교하면 모든 route가 삭제·추가로 보이기 때문이다(bridge diff와
   같은 규칙). project도 두 시점(surface는 `--clients`까지)이 같아야 한다 — 같은 checkout 경로에서 revision만
   바꿔 생산한다.
 
@@ -189,7 +189,7 @@ jobs:
   "limitations": { "before": [ /* base 조인 한계 */ ], "after": [ /* head 조인 한계 */ ] },
   "producers": { "before": [], "after": [], "clients": [] },
   "summary": { "findings": 1, "errors": 1, "warnings": 0, "info": 0, "routesAdded": 0, "routesRemoved": 1,
-               "routesChanged": 0, "brokenCalls": 1, "reboundCalls": 0, "incompleteness": 0,
+               "routesChanged": 0, "brokenCalls": 1, "provenBrokenCalls": 1, "reboundCalls": 0, "incompleteness": 0,
                "callImpact": "breaks-found" }
 }
 ```
@@ -202,7 +202,9 @@ jobs:
   `not-evaluated`(head scope에 그 측의 선언 문서가 없음). `-unverified` finding의 호출은 `reasons`를 싣는다.
 - 호출 끝점은 base 조인에서 이 scope에 **귀속된** 호출만 싣는다. 어느 조인에서도 귀속되지 않은 호출은
   `calls-unattributed`의 개수로만 나온다.
-- `summary.callImpact`: `breaks-found`(impact 깨짐 finding이 하나라도 있음), `no-breaks-observed`(없음 — 완전성
+- `summary.brokenCalls`는 `-unverified`를 포함한 깨짐 호출 수이고 `provenBrokenCalls`는 그중 error 호출 수다. head에서 모호해진
+  호출처럼 여전히 base route에 닿을 수 있는 호출도 증명된 결합이 아니므로 `-unverified` 깨짐으로 센다(거짓 "깨짐 없음"을 피하는 쪽).
+- `summary.callImpact`: `breaks-found`(impact 깨짐 finding이 하나라도 있음, `-unverified` 포함), `no-breaks-observed`(없음 — 완전성
   주장이 아니다, `summary.incompleteness`를 함께 본다), `not-assessed`(평가할 호출 측 문서가 하나도 없음).
 - 같은 입력이면 바이트 단위로 같은 출력이다. finding은 scope·측·템플릿·method·앵커·코드 순, 끝점은 조인과 같은
   순서다. 목록에 싣는 호출 끝점이 합계 100,000개를 넘으면 부분 결과 없이 2다.
@@ -232,7 +234,7 @@ jobs:
 | `http-member-unlinked` | warning | incompleteness | head 매니페스트에서 어느 link에도 client로 들지 않은 member의 client http 문서(`counts.after`) — 그 호출은 평가하지 않았다 |
 
 - 호출 측 incompleteness(`clients-unscanned`·`calls-unattributed`·`calls-dynamic`·`client-coverage-gap`)는 표면
-  finding이 하나 이상 있는 scope에만 낸다. 선언이 같으면 결합도 같아 깨질 수 없기 때문이다(속성까지 같은 키 집합은
+  finding이나 impact finding이 하나 이상 있는 scope에만 낸다. 선언이 같으면 결합도 같아 깨질 수 없기 때문이다(속성까지 같은 키 집합은
   매처 입력이 같다). 선언 측 incompleteness는 표면 변화와 무관하게 낸다 — 보이지 않는 선언의 변화는 감지할 수 없다.
 - 호출이 깨졌는지는 표면 finding과 무관하게 모든 결합 호출에서 계산한다. 그래서 속성이 그대로인 route에도
   `changed-bound-route`가 날 수 있다(예: 다른 선언 추가로 모호해짐).

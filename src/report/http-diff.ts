@@ -81,7 +81,10 @@ export interface HttpDiffSummary {
   readonly routesAdded: number;
   readonly routesRemoved: number;
   readonly routesChanged: number;
+  /** 깨짐 finding(`-unverified` 포함)의 호출 수다. */
   readonly brokenCalls: number;
+  /** 그중 error 전제가 모두 증명된 호출 수다. */
+  readonly provenBrokenCalls: number;
   readonly reboundCalls: number;
   readonly incompleteness: number;
   readonly callImpact: 'breaks-found' | 'no-breaks-observed' | 'not-assessed';
@@ -171,10 +174,13 @@ function isDeclarationSide(document: BridgeFactsDocument): boolean {
   return isDeclarationDocument(document) || document.platform === 'openapi';
 }
 
-/** 선언 측 문서 인벤토리(platform·도구 이름별 문서 수)의 결정적 직렬화다. 도구 버전 변화는 허용한다. */
+/**
+ * 선언 측 문서 인벤토리(platform·도구 이름·테스트 소스 스캔 설정별 문서 수)의 결정적 직렬화다. 도구 버전 변화는
+ * 허용한다. 테스트 소스 포함 여부가 시점마다 다르면 테스트 소스 선언만큼 거짓 추가·삭제가 보이므로 설정 차이로 거부한다.
+ */
 function inventory(documents: readonly BridgeFactsDocument[]): string {
-  return JSON.stringify(documents.map((document) => JSON.stringify([document.platform, document.tool.name]))
-    .sort(compareStrings));
+  return JSON.stringify(documents.map((document) =>
+    JSON.stringify([document.platform, document.tool.name, document.sourceSets?.tests ?? null])).sort(compareStrings));
 }
 
 /** 서버·클라이언트를 겸하는 문서를 선언 측으로만 투영한다. 순수 선언 문서는 그대로다. */
@@ -399,6 +405,7 @@ function summarize(findings: readonly HttpDiffFinding[], hasClients: boolean): H
     routesChanged: new Set(findings.filter(({ code }) => changedCodes.includes(code))
       .map(({ scope, side, route }) => JSON.stringify([scope, side, route]))).size,
     brokenCalls,
+    provenBrokenCalls: calls(['removed-bound-route', 'changed-bound-route']),
     reboundCalls: calls(['rebound-route-calls']),
     incompleteness: count(({ category }) => category === 'incompleteness'),
     callImpact: brokenCalls > 0 ? 'breaks-found' : hasClients ? 'no-breaks-observed' : 'not-assessed',

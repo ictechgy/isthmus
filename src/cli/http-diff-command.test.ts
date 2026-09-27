@@ -92,6 +92,9 @@ test('입력 구성 오류는 원인 문구와 코드 2이고 stdout을 비운�
       '/fx/surface/after.server.json'], {}, /client-only documents/],
     [workspace, { 'workspace/server-after/server.http.json': files.get('workspace/server-after/server.http.json')!
       .replace('/work/example-server', '/work/other') }, /member project/],
+    [['diff', '--http', '--before', '/fx/surface/before.server.json', '/fx/named.json', '--after',
+      '/fx/surface/after.server.json', '/fx/named.json'], { 'named.json': files.get('surface/after.server.json')!
+      .replace('"project"', '"service": "api", "project"') }, /all declare a service or none/],
     [['diff', '--http', '--before', '/fx/surface/before.server.json', '--after', '/fx/big.json'],
       { 'big.json': ' '.repeat(16 * 1024 * 1024 + 1) }, /exceeds the input size limit/],
   ];

@@ -125,7 +125,8 @@ export function createHttpDiffFindings(pairs: readonly HttpDiffScopePair[]): Htt
 function pairFindings(pair: HttpDiffScopePair): HttpDiffFinding[] {
   const surface = sides.flatMap((side) => surfaceFindings(pair, side));
   const impact = sides.flatMap((side) => impactFindings(pair, side));
-  const clientGaps = surface.length > 0 ? clientIncompleteness(pair) : [];
+  // 결합이 바뀔 수 있는 scope(표면 또는 결합 변화가 보인 곳)에는 호출 측 공백을 반드시 밝힌다.
+  const clientGaps = surface.length + impact.length > 0 ? clientIncompleteness(pair) : [];
   return [...surface, ...impact, ...clientGaps, ...declarationIncompleteness(pair)];
 }
 
