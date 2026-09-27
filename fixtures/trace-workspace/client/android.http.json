@@ -1,0 +1,55 @@
+{
+  "facts": [
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 14,
+        "path": "android/app/src/main/java/example/OrdersApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.get",
+        "usr": "kt:OrdersApi.get"
+      }
+    },
+    {
+      "baseRef": "kt:NetworkModule.baseUrl",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 20,
+        "path": "android/app/src/main/java/example/OrdersApi.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.create",
+        "usr": "kt:OrdersApi.create"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-client",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

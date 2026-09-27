@@ -1148,6 +1148,16 @@ const paramConstraintKinds = new Set<unknown>(['int', 'uuid', 'slug', 'path', 'r
  */
 const authorityPattern = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?$/u;
 
+/**
+ * route-call `authority`와 같은 형식(소문자 `host[:port]`)인지 확인한다.
+ *
+ * workspace link의 `match.hosts`가 사실의 authority와 문자열로만 비교되므로 같은 문법을 강제한다 —
+ * 대문자·scheme이 섞인 선언이 조용히 아무 호출에도 걸리지 않는 일을 막기 위해서다.
+ */
+export function isRouteAuthority(value: unknown): value is string {
+  return typeof value === 'string' && authorityPattern.test(value);
+}
+
 /** 버전 1이 정의한 사실 종류 집합이다. */
 const bridgeFactKinds = new Set<unknown>([
   'channel-create',

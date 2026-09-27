@@ -6,6 +6,30 @@
 
 ### Added
 
+- **trace workspace(개발 중, Phase 3 소비자)**: 서버와 클라이언트가 다른 git 저장소에 있어도 `isthmus trace` 한
+  번으로 route → 테이블·DB 의존자 → 호출부 → 클라이언트 영향 심볼을 잇는다. `isthmus-trace-context` v1에 서로
+  배타적인 추가 필드 `members`·`links`를 더했다(v2 없음 — 옛 isthmus는 모르는 필드를 거부하고 단일 project
+  context와 출력은 바이트 단위로 그대로다). member·link 모양은 GRAPH-EXCHANGE `isthmus-workspace` 초안을 재사용하고
+  member에 `analyses`를 더한다. member `revision`은 필수이고 분석 revision은 member마다 비교하며(`stale-analysis`·
+  `analysis-revision-unknown` 재사용), `catalog.graphSha`가 있으면 sql 분석 graphRevision과 비교한다. link `match`는
+  `hosts`·`services`·`baseRefs[].ref`를 구현하고 `interfaces`·`baseRefs[].pathPrefix`는 거부한다. persistence·언어
+  순회는 member 안에서만, http는 link 쌍에서만 잇고(체인 키 `[member, platform, id]`), 출력 끝점·hop·gap·분석 요약에
+  `member`를 싣는다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은 귀속하지 않으며,
+  좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않는다. 새 gap `http-member-unlinked`·`link-service-ambiguous`. 조인에 `link` 선택 사항(trace 구성 전용)을 추가했다.
+- **trace 사전 계산 분석**: 분석 참조의 `precomputed: {sha256, revision, generatedAt?}`로 다른 곳(예: 클라이언트
+  macOS CI)에서 만든 artifact를 받는다. CLI가 파일 SHA-256을 대조하고(다르면 2), revision 없는 옛 형식은 증언
+  revision으로 비교하되(`revisionSource: "attested"`) 보수적으로 `analysis-revision-unknown`을 남긴다. 문서 revision과
+  증언이 다르면 입력 오류다.
+- **trace files 선택**: `files: [path]`(workspace는 `[{member, path}]`)가 파일에 놓인 분석 심볼과 사실 위치
+  fallback의 심볼로 역방향 체인을 만들고, 파일의 relation-use를 hop·DB 의존자로 싣는다. 파일 단위 과대 근사라
+  항상 알림 `file-selection-coarse`를 남긴다. 분석 위치 없이 사실 위치로만 대신하면 gap
+  `file-selection-fact-fallback`, 찾은 것이 없으면 `file-without-symbols`.
+- **trace 알림(notice) 등급**: 과대 보고만 할 수 있고 영향을 숨기지 않는 코드(`TRACE_NOTICE_CODES`, 지금은
+  `file-selection-coarse`)는 최상위 `notices`와 `summary.notices`에 싣고 `gaps`·`--strict` 실패에서 뺀다. 모든 trace
+  출력에 `notices`·`summary.notices`가 추가된다. 형제 전파 opt-in은 계획이 정의하지 않아 보류했다.
+- 분리된 두 저장소 합성 fixture(`fixtures/trace-workspace/`), TRACE.md gap 코드 전수(33종) 음성 fixture와 문서 대조
+  테스트, 실제 CLI 프로세스로 고정한 `--strict` 종료 코드 의미, CLI 계약 스크립트의 workspace trace 검사.
+
 - **`trace` 명령(개발 중, Phase 2 소비자)**: `isthmus trace <trace-context.json> [--strict] [--compact]`가
   `isthmus-trace-context` v1(단일 project의 http·persistence 문서, 역할별 생산자 순회, routes·relations·
   symbols 중 한 선택)을 읽어 `isthmus-trace` v1을 낸다. route 선택은 route-decl 핸들러 → 정방향 순회 →
@@ -16,7 +40,7 @@
   `complete: false`이고 출력의 모든 id는 생산자 문자열이며, 귀속되지 않은 호출은 개수만 싣는다. gap 코드
   30종(`handler-without-symbol`·`relation-use-without-symbol`·`route-without-decl`·`analysis-missing`·
   `analysis-truncated`·`stale-analysis`·`non-http-entry`·`unattributed-calls-omitted` 등)과 `--strict`(gap이
-  있으면 1). workspace 매니페스트는 Phase 3 원인으로 거부하고 MCP에는 노출하지 않는다([TRACE](docs/TRACE.md)).
+  있으면 1). MCP에는 노출하지 않는다([TRACE](docs/TRACE.md)).
 - **[`language-traversal` v1 계약](docs/LANGUAGE-TRAVERSAL.md)과 fail-closed 파서**: 정방향·역방향 순회,
   정점별 `via`·`depth`·root 인덱스 목록(64개 상한과 `rootsTruncated`), 결정적 순서. 다른 root에서 닿은
   root도 `reached`에 싣고 그 항목의 `roots`에는 자기 인덱스를 넣지 않는다(다중 root DB 순회에서 root

@@ -1,0 +1,38 @@
+{
+  "facts": [
+    {
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 9,
+        "line": 22,
+        "path": "ios/App/Network/OrdersClient.swift"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "service": "example-api",
+      "symbol": {
+        "qualifiedName": "OrdersClient.fetch(id:)",
+        "usr": "s:OrdersClient.fetch"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "swift",
+  "project": "/work/example-client",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

@@ -38,6 +38,7 @@ verifyImpact();
 verifyRuntime();
 verifyPreflight();
 verifyTrace();
+verifyWorkspaceTrace();
 verifyServe();
 verifyExtractJs();
 verifyDoctorInit();
@@ -97,6 +98,35 @@ function verifyTrace() {
   verify(run(['trace', fixture('server-forward.json')]).status === 2, 'trace invalid context');
   verify(run(['trace']).status === 64, 'trace usage');
   verify(run(['help', 'trace']).stdout.startsWith('Usage: isthmus trace'), 'trace help');
+}
+
+/**
+ * 분리된 두 저장소 workspace trace가 빌드된 CLI에서 API·테이블·DB 의존자·호출부·클라이언트 영향을 한 명령으로
+ * 잇고, 파일 선택의 과대 근사는 알림이라 --strict가 0인지 확인한다.
+ */
+function verifyWorkspaceTrace() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/trace-workspace/${name}`, import.meta.url));
+  const args = ['trace', fixture('context.json'), '--strict', '--compact'];
+  const first = run(args);
+  verify(first.status === 0 && first.stdout === run(args).stdout, 'workspace trace deterministic success');
+  const report = JSON.parse(first.stdout);
+  verify(report.project === undefined && report.workspace?.links?.[0]?.name === 'mobile->api' && report.gaps.length === 0,
+    'workspace trace document');
+  const [chain] = report.chains;
+  const [route] = chain.routes;
+  verify(route.declarations[0].member === 'server' && route.contracts[0].member === 'server-spec', 'workspace trace API');
+  verify(chain.database.some(({ vertex, member, dependents }) => vertex === 'main.orders' && member === 'server' &&
+    dependents.some(({ usr }) => usr === 'main.order_items')), 'workspace trace tables and DB dependents');
+  verify(route.calls.map(({ call }) => `${call.member}:${call.symbol.usr}`).join(',') ===
+    'client:kt:OrdersApi.get,client:s:OrdersClient.fetch', 'workspace trace call sites');
+  verify(route.calls[1].affected.some(({ usr }) => usr === 's:OrderDetailView.body') &&
+    report.analyses.find(({ id }) => id === 'ios-reverse')?.precomputed?.revision === 'cli-41d9e0b', 'workspace trace client impact');
+  const relation = run(['trace', fixture('context-relation.json'), '--strict', '--compact']);
+  verify(relation.status === 0 && JSON.parse(relation.stdout).summary.routes === 2, 'workspace trace table to client');
+  const files = run(['trace', fixture('context-files.json'), '--strict', '--compact']);
+  const filesReport = JSON.parse(files.stdout);
+  verify(files.status === 0 && filesReport.gaps.length === 0 && filesReport.notices[0]?.code === 'file-selection-coarse',
+    'workspace trace files notice');
 }
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */

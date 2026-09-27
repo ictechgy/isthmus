@@ -1,0 +1,38 @@
+{
+  "affected": [
+    {
+      "depth": 1,
+      "relationship": "call",
+      "symbol": {
+        "location": {
+          "column": 10,
+          "line": 31,
+          "path": "/work/example-client/ios/App/Stores/OrderStore.swift"
+        },
+        "qualifiedName": "OrderStore.refresh()",
+        "usr": "s:OrderStore.refresh"
+      },
+      "via": "s:OrdersClient.fetch"
+    },
+    {
+      "depth": 2,
+      "relationship": "reference",
+      "symbol": {
+        "qualifiedName": "OrderDetailView.body",
+        "usr": "s:OrderDetailView.body"
+      },
+      "via": "s:OrderStore.refresh"
+    }
+  ],
+  "changeScope": [
+    {
+      "qualifiedName": "OrdersClient.fetch(id:)",
+      "usr": "s:OrdersClient.fetch"
+    }
+  ],
+  "format": "change-impact",
+  "level": "symbol",
+  "limitations": [],
+  "truncated": false,
+  "version": 1
+}

@@ -20,10 +20,10 @@ import {
 /**
  * http 도메인의 귀속 게이트와 scope별 route 조인이다.
  *
- * 매니페스트가 없는 입력만 다룬다(workspace 매니페스트는 아직 입력으로 받지 않는다). 호출은
- * 유효 service가 선언 측 service와 정확히 같거나, 선언 측이 service를 전혀 선언하지 않은 단일
- * 서비스 입력에서 호출에도 service가 없을 때만 귀속된다. 귀속되지 않은 호출은 개수만 센다 —
- * 그 경로·host는 이 모듈 밖으로 나가지 않는다. 심각도 정책은 보고 층이 정한다.
+ * 매니페스트가 없는 입력은 유효 service가 선언 측 service와 정확히 같거나, 선언 측이 service를 전혀
+ * 선언하지 않은 단일 서비스 입력에서 호출에도 service가 없을 때만 귀속한다. workspace link 하나를 조인할
+ * 때(`joinLinkRouteFacts`, 현재 trace 전용)는 link의 `match`가 귀속을 정한다. 귀속되지 않은 호출은
+ * 개수만 센다 — 그 경로·host는 이 모듈 밖으로 나가지 않는다. 심각도 정책은 보고 층이 정한다.
  */
 
 /** 선언 측 사실(decl 또는 contract) 하나와 보고용 증거다. */
@@ -132,7 +132,122 @@ export function joinRouteFacts(
   return {
     driftOnly: !http.some(isClientDocument),
     scopes,
-    limitations: routeConsumerLimitations(http, services),
+    limitations: routeConsumerLimitations(http, {
+      countsDeclarations: () => true,
+      countsCalls: () => true,
+      isAttributed: (document, fact) => attributedScope(effectiveService(document, fact), services) !== undefined,
+    }),
+  };
+}
+
+/**
+ * workspace link 하나의 조인 규칙이다.
+ *
+ * link는 member 사이 http 조인을 허용하는 유일한 예외다. 선언 측은 server member(와 contract member)의
+ * 문서, 호출 측은 client member의 문서로 **문서 신원**으로 정한다 — 한 문서가 server·client roles를
+ * 겸해도 다른 member의 호출이 섞이지 않게 하기 위해서다. link 하나가 scope 하나이고 이름이 link 이름이며,
+ * 선언 측 사실 중 어느 것을 이 link의 선언으로 볼지(서비스 범위)는 `includesDeclaration`이 정한다.
+ */
+export interface RouteLinkRule {
+  /** 진단 신원·trace route 키의 scope가 되는 link 이름이다. */
+  readonly scope: string;
+  /** 선언 측(server member 또는 contract) 문서인지다. */
+  readonly isServerDocument: (document: BridgeFactsDocument) => boolean;
+  /** 호출 측(client member) 문서인지다. */
+  readonly isClientDocument: (document: BridgeFactsDocument) => boolean;
+  /** 호출 하나가 link `match`에 걸리는지다. 걸리지 않으면 개수만 센다. */
+  readonly attributes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+  /**
+   * 선언 측 사실(route-decl·route-contract) 하나가 이 link의 선언인지다. 선언 측 member가 여러 서비스를 낼 때
+   * link가 좁힌 서비스의 선언만 잇기 위해서다 — 다른 서비스의 선언에 호출을 잇지 않는다.
+   */
+  readonly includesDeclaration: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+}
+
+/**
+ * workspace link 하나의 http 사실을 scope 하나로 조인한다.
+ *
+ * 입력 문서의 project가 서로 달라도 된다(member 단위 project 검사는 호출자가 한다). 매칭·구체성·
+ * 끝점 규칙은 매니페스트 없는 조인과 같고, 귀속만 `rule.attributes`가 정한다. client member의
+ * 귀속되지 않은 호출은 모두 이 link를 불렀을 수 있으므로 `unboundCalls`로 센다.
+ */
+export function joinLinkRouteFacts(
+  documents: readonly BridgeFactsDocument[],
+  rule: RouteLinkRule,
+  compareEndpoints: CompareEndpoints,
+): RouteJoinResult {
+  const http = documents.filter(({ target }) => target === 'http');
+  const servers = http.filter((document) => rule.isServerDocument(document) && isDeclarationDocument(document));
+  const clients = http.filter((document) => rule.isClientDocument(document) && isClientDocument(document));
+  const attributed = (document: BridgeFactsDocument, fact: BridgeFact) =>
+    clients.includes(document) && rule.attributes(document, fact);
+  const scope = buildLinkScope(servers, clients, rule, attributed, compareEndpoints);
+  return {
+    driftOnly: clients.length === 0,
+    scopes: [scope],
+    limitations: routeConsumerLimitations(http, {
+      countsDeclarations: (document, fact) => servers.includes(document) && rule.includesDeclaration(document, fact),
+      countsCalls: (document) => clients.includes(document),
+      isAttributed: attributed,
+    }),
+  };
+}
+
+/** link 하나의 scope를 만든다. 선언 측은 server 문서 전체, 호출은 client 문서의 귀속된 호출이다. */
+function buildLinkScope(
+  servers: readonly BridgeFactsDocument[],
+  clients: readonly BridgeFactsDocument[],
+  rule: RouteLinkRule,
+  attributed: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
+  compareEndpoints: CompareEndpoints,
+): RouteScope {
+  const included = rule.includesDeclaration;
+  const decls = collectDeclarations(servers, 'route-decl', included, compareEndpoints);
+  const contracts = collectDeclarations(servers, 'route-contract', included, compareEndpoints);
+  const declScanned = servers.some((document) =>
+    document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
+  const contractDocuments = servers.filter(({ platform }) => platform === 'openapi').length;
+  const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
+  const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
+  const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
+  const calls: RouteCallResult[] = [];
+  const prefixCalls: RoutePrefixCall[] = [];
+  let dynamicCalls = 0;
+  let unboundCalls = 0;
+  for (const document of clients) {
+    for (const fact of document.facts) {
+      if (fact.kind !== 'route-call') continue;
+      if (!attributed(document, fact)) {
+        unboundCalls += 1;
+        continue;
+      }
+      const endpoint = routeEndpoint(document.platform, fact);
+      if (fact.dynamic || fact.channel === null) {
+        dynamicCalls += 1;
+        if (fact.channelPrefix !== undefined) {
+          prefixCalls.push({ endpoint, channelPrefix: fact.channelPrefix, ...methodField(fact) });
+        }
+        continue;
+      }
+      calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
+        contractDocuments > 0 ? contractIndex : undefined));
+    }
+  }
+  return {
+    scope: rule.scope,
+    declScanned,
+    contractDocuments,
+    clientDocuments: clients.length,
+    serverLimitations: servers.flatMap(({ limitations }) => limitations),
+    clientLimitations: clients.flatMap(({ limitations }) => limitations),
+    dynamicDecls: countDynamic(servers, 'route-decl', included),
+    dynamicContracts: countDynamic(servers, 'route-contract', included),
+    dynamicCalls,
+    unboundCalls,
+    decls: markCalled(decls, calls, 'decl'),
+    contracts: markCalled(contracts, calls, 'contract'),
+    calls: uniqueCalls(calls, compareEndpoints),
+    prefixCalls: prefixCalls.sort((left, right) => compareEndpoints(left.endpoint, right.endpoint)),
   };
 }
 
@@ -452,6 +567,16 @@ function factKey(platform: BridgePlatform, fact: BridgeFact): string {
     fact.location?.path ?? null, fact.location?.line ?? null, fact.location?.column ?? null]);
 }
 
+/** 소비자 계수가 어느 문서의 어떤 사실을 세는지다. 매니페스트 없는 조인과 link 조인이 같은 계수기를 쓴다. */
+interface ConsumerCountRule {
+  /** 이 문서의 이 dynamic 선언 측 사실을 센다(link 조인은 그 link의 서비스 범위 밖 선언을 세지 않는다). */
+  readonly countsDeclarations: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+  /** 이 문서의 호출(dynamic·미귀속)을 센다. */
+  readonly countsCalls: (document: BridgeFactsDocument) => boolean;
+  /** 호출이 선언 측에 귀속됐는지다. */
+  readonly isAttributed: (document: BridgeFactsDocument, fact: BridgeFact) => boolean;
+}
+
 /**
  * 소비자가 직접 센 http 한계다. 플랫폼별로 dynamic 선언 측 사실, dynamic 호출, 귀속되지
  * 않은 정적 호출을 센다. 문구에는 개수만 싣는다 — 귀속되지 않은 호출의 경로·host는
@@ -459,7 +584,7 @@ function factKey(platform: BridgePlatform, fact: BridgeFact): string {
  */
 function routeConsumerLimitations(
   documents: readonly BridgeFactsDocument[],
-  services: Set<string> | undefined,
+  rule: ConsumerCountRule,
 ): JoinLimitation[] {
   const counts = new Map<string, { platform: BridgePlatform; prefix: string; subject: string; keys: Set<string> }>();
   const add = (platform: BridgePlatform, prefix: string, subject: string, fact: BridgeFact): void => {
@@ -471,11 +596,15 @@ function routeConsumerLimitations(
   for (const document of documents) {
     for (const fact of document.facts) {
       const dynamic = fact.dynamic || fact.channel === null;
-      if (isDeclarationFact(fact) && dynamic) {
-        add(document.platform, 'unjoined-dynamic-routes', 'route declaration or contract facts with a non-literal template', fact);
-      } else if (fact.kind === 'route-call' && dynamic) {
+      if (isDeclarationFact(fact)) {
+        if (dynamic && rule.countsDeclarations(document, fact)) {
+          add(document.platform, 'unjoined-dynamic-routes', 'route declaration or contract facts with a non-literal template', fact);
+        }
+      } else if (fact.kind !== 'route-call' || !rule.countsCalls(document)) {
+        continue;
+      } else if (dynamic) {
         add(document.platform, 'unjoined-dynamic-route-calls', 'route call facts with a non-literal template', fact);
-      } else if (fact.kind === 'route-call' && attributedScope(effectiveService(document, fact), services) === undefined) {
+      } else if (!rule.isAttributed(document, fact)) {
         add(document.platform, 'unjoined-unbound-route-calls',
           'route call facts without an attributed declaration side (paths and hosts are not reported)', fact);
       }

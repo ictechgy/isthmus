@@ -1,0 +1,58 @@
+{
+  "facts": [
+    {
+      "channel": "orders",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 8,
+        "path": "src/db/orders.ts"
+      },
+      "symbol": {
+        "qualifiedName": "orders.findById",
+        "usr": "ts:repo/orders.findById"
+      }
+    },
+    {
+      "channel": "orders",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 9,
+        "path": "src/db/orders.ts"
+      },
+      "method": "status",
+      "symbol": {
+        "qualifiedName": "orders.findById",
+        "usr": "ts:repo/orders.findById"
+      }
+    },
+    {
+      "channel": "orders",
+      "dynamic": false,
+      "kind": "relation-use",
+      "location": {
+        "column": 10,
+        "line": 20,
+        "path": "src/db/orders.ts"
+      },
+      "symbol": {
+        "qualifiedName": "orders.insert",
+        "usr": "ts:repo/orders.insert"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "js",
+  "project": "/work/example-server",
+  "target": "persistence",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

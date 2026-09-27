@@ -567,9 +567,9 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | check 진단(아래 표에서 `route-decl-shadowed` 제외), 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
 | `dispatch: "registration-order"`, `order`, `route-decl-shadowed` | 초안 | 문서를 입력 오류로 거부 |
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`) | 초안 | http 문서의 `limitationScopes`를 입력 오류로 거부. 한계는 문서 전체에 적용 |
-| `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | 초안 | 매니페스트 파일을 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
+| `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
-| `trace`(단일 project, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 2 소비자) | — |
+| `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
 | graph route 간선, impact의 http blocker, diff, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부 |
 | `docs/limitation-prefixes.json` 추출 | 초안 | 닫힌 목록은 이 절과 `src/report/route-issues.ts`가 정본 |
 
@@ -992,7 +992,12 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 
 ### 다중 저장소: workspace 매니페스트 예외
 
-> **초안.** 이 버전은 `format: "isthmus-workspace"` 파일을 원인 문구와 함께 입력 오류로 거부한다.
+> **초안(check·query) / 구현(trace).** check·query는 `format: "isthmus-workspace"` 파일을 원인 문구와 함께
+> 입력 오류로 거부한다. trace는 같은 member·link 모양을 [workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)
+> 안에서 받는다(member별 `analyses`를 더하고, `match.interfaces`·`baseRefs[].pathPrefix`는 거부한다). trace의
+> link 조인에서 link 이름이 scope다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은
+> 귀속하지 않으며, 좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않고 gap으로 밝힌다. revision 검사·사전 계산 분석·
+> 카탈로그 기록의 trace 규칙은 TRACE에 있다.
 
 기존 "한 조인의 모든 문서는 정확히 같은 `project`" 규칙은 **문서·member 단위로 유지**한다.
 예외는 하나다. `isthmus-workspace` 매니페스트가 선언한 link에 한해 http 도메인만 member 사이
@@ -1031,7 +1036,8 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 - `contract.authoritative`는 "이 클라이언트는 이 스펙에 있는 것만 부른다"는 사용자 선언이며,
   증거에는 선언 출처(workspace)를 표시한다.
 - `libraries[{consumer, provider}]`는 공유 SDK 저장소용으로 이름만 예약한다.
-- 상세 규칙(revision 검사, 사전 계산 분석, 카탈로그 재발행)은 구현할 때 별도 문서로 옮긴다.
+- 상세 규칙(revision 검사, 사전 계산 분석, 카탈로그 기록)의 trace 쪽은 [TRACE](TRACE.md)로 옮겼다. 카탈로그
+  재발행과 check 쪽 규칙은 check가 매니페스트를 받을 때 정한다.
 
 ### 출력 (check·`--pairs`·query)
 

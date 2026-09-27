@@ -1,0 +1,58 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "swift",
+  "project": "/work/example-client",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "column": 10,
+          "line": 31,
+          "path": "ios/App/Stores/OrderStore.swift"
+        },
+        "qualifiedName": "OrderStore.refresh()",
+        "usr": "s:OrderStore.refresh"
+      },
+      "via": "s:OrdersClient.fetch"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "reference"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "qualifiedName": "OrderDetailView.body",
+        "usr": "s:OrderDetailView.body"
+      },
+      "via": "s:OrderStore.refresh"
+    }
+  ],
+  "revision": "cli-41d9e0b",
+  "roots": [
+    {
+      "id": "s:OrdersClient.fetch",
+      "symbol": {
+        "usr": "s:OrdersClient.fetch"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}
