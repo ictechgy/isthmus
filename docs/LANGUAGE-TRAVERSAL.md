@@ -57,6 +57,12 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
   닿는 root 중 가장 가까운 것까지의 간선 수다. via가 root id면 depth는 1이다 — via root가 다른 root에서
   닿았더라도 경로는 그 root에서 시작한다. 예: root A(0)·B(1)이고 B가 A의 의존자, C가 B의 의존자면
   `{usr: B, via: A, depth: 1, roots: [0]}`, `{usr: C, via: B, depth: 1, roots: [0, 1]}`이다.
+- **root 항목의 depth는 기준값이고 via는 목격이다.** root 항목의 depth는 다른 root 기준이지만, 그 via
+  정점 V의 depth·roots는 이 root를 포함한 모든 root 기준이다. V에 닿는 짧은 경로가 이 root를 거치면(호출
+  그래프의 재귀, FK 순환) V의 depth가 root 항목의 depth - 1보다 작고, via를 따라가면 이 root로 돌아온다.
+  예: root A(0)·R(1), 간선 A→W→V→R과 R→V면 `{usr: V, via: R, depth: 1, roots: [0, 1]}`,
+  `{usr: R, via: V, depth: 3, roots: [0]}`이다. 소비자는 root 항목의 depth를 믿고, via 사슬이 그 root로
+  돌아오면 경로를 부분 목격으로만 다룬다(trace는 `witnessPartial`과 `witness-partial` gap).
 - `reached[].roots`는 이 정점에 닿는 **모든**(자기 제외) root 인덱스의 오름차순 목록이다(비어 있지
   않음). 64개를 넘으면 가장 작은 인덱스 64개만 싣고 문서에 `rootsTruncated: true`를 단다. 입력 root
   수의 상한이 아니다.
@@ -79,11 +85,12 @@ isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 
 - root id는 서로 유일하고, 도달 usr도 서로 유일하다. 도달 usr가 `roots[i].id`와 같으면 그 항목의
   `roots`에 `i`가 없어야 한다. `via`는 자기 자신일 수 없다.
 - `via`는 root id이거나 다른 도달 정점이다. `depth`는 1~128이고, via가 root id면 1, 아니면 부모
-  depth + 1이다.
+  depth + 1이다. 단 root 항목(usr가 root id)은 via가 도달 정점일 때 depth 관계를 검사하지 않는다(위 순환).
 - `roots`는 범위 안의 엄격한 오름차순 인덱스이며 1~64개다. via가 root면 그 root의 인덱스를 포함한다
   (64개로 잘린 목록에서 via root 인덱스가 마지막 인덱스보다 크면 예외).
 - `truncated`와 `rootsTruncated`가 모두 거짓이면 부모에 닿는 root가 자식의 자기 인덱스를 빼고 모두
   자식에 포함된다. 부모가 root면 그 root와, 그 root가 다른 root에서 닿았다면 그 root들이 대상이다.
+  이 규칙은 root 항목에도 적용한다 — via 간선이 실제로 있으므로 via에 닿는 다른 root는 이 root에도 닿는다.
 - `reached`는 (depth, usr) 엄격한 오름차순이다(UTF-16 코드 단위 비교, locale 무관).
 - `truncationReasons`는 정렬된 유일한 문자열이고 `truncated: true`일 때만 비어 있지 않을 수 있다.
 - 상한: root 10,000개, 도달 정점 100,000개, 정점당 root 인덱스 64개, 관계 32개, depth 128.

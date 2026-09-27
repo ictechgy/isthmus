@@ -3,7 +3,7 @@ import type { BridgeFact, BridgeFactsDocument, BridgePlatform } from '../exchang
 import { isBridgeDomainDocument } from '../exchange/parse.ts';
 import {
   MAX_ROOTS_PER_REACHED,
-  traversalPath,
+  traversalWitness,
   type TraversalLocation,
   type TraversalPlatform,
   type TraversalReached,
@@ -80,6 +80,8 @@ export interface TraceAffected {
   readonly path: readonly string[];
   /** 목격 경로가 이 hop의 시작 root가 아닌 다른 root에서 시작하면 그 root id다. */
   readonly witnessRoot?: string;
+  /** root 항목의 목격이 그 root 자신으로 돌아와 경로 앞부분을 알 수 없다(`witness-partial` gap). */
+  readonly witnessPartial?: true;
 }
 
 /**
@@ -92,6 +94,7 @@ export interface TraceReach {
   readonly depth: number;
   readonly path: readonly string[];
   readonly witnessRoot?: string;
+  readonly witnessPartial?: true;
 }
 
 /** route에 match된 귀속 호출 하나와 그 호출을 감싼 심볼의 클라이언트 영향이다. */
@@ -744,11 +747,31 @@ class TraceBuilder {
 
   /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. */
   private count(chain: TraceChain): TraceChain {
+    this.witnessGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
       route.calls.length + affected(route.calls), 0) + chain.handlers.length + chain.relationUses.length +
       chain.database.reduce((sum, hop) => sum + 1 + hop.dependents.length, 0));
     return chain;
+  }
+
+  /** 목격 경로가 부분적인 정점마다 gap을 남긴다. 경로를 지어내지 않았다는 표시다. */
+  private witnessGaps(chain: TraceChain): void {
+    const partial = (analysis: string | undefined, platform: string, usr: string) => this.gap({
+      code: 'witness-partial', selector: chain.selector, ...(analysis === undefined ? {} : { analysis }), symbol: { platform, usr },
+      detail: 'The producer witness for this root entry leads back to the root itself (a cycle); the depth is authoritative '
+        + 'but the path from the other root is unknown and not reconstructed.' });
+    const affected = [...chain.routes.flatMap(({ calls }) => calls.flatMap((call) => call.affected)),
+      ...chain.database.flatMap(({ dependents }) => dependents)];
+    for (const row of affected) if (row.witnessPartial) partial(row.analysis, row.platform, row.usr);
+    for (const handler of chain.handlers) {
+      for (const reach of handler.reachedFrom) if (reach.witnessPartial) partial(reach.analysis, handler.platform, handler.usr);
+    }
+    for (const use of chain.relationUses) {
+      for (const reach of use.reachedFrom) {
+        if (reach.witnessPartial) partial(reach.analysis, use.use.platform, use.use.symbol!.usr!);
+      }
+    }
   }
 
   private bump(items: number): void {
@@ -824,11 +847,14 @@ function keepNearest(target: Map<string, TraceReach>, key: string, reach: TraceR
  * 도달 근거의 우선순위다. 시작점 자신의 경로(`witnessRoot` 없음)가 다른 root의 목격보다 앞서고,
  * 그다음 depth, 분석 id 순이다.
  */
-function compareNearness(left: Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot'>,
-  right: Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot'>): number {
-  return Number(left.witnessRoot !== undefined) - Number(right.witnessRoot !== undefined) ||
-    left.depth - right.depth || compareStrings(left.analysis ?? '', right.analysis ?? '');
+function compareNearness(left: NearnessKey, right: NearnessKey): number {
+  const indirect = (reach: NearnessKey) => Number(reach.witnessRoot !== undefined || reach.witnessPartial === true);
+  return indirect(left) - indirect(right) || left.depth - right.depth ||
+    compareStrings(left.analysis ?? '', right.analysis ?? '');
 }
+
+/** 도달 근거 비교에 쓰는 필드다. */
+type NearnessKey = Pick<TraceReach, 'depth' | 'analysis' | 'witnessRoot' | 'witnessPartial'>;
 
 /**
  * 생산자 via 목격으로 도달 근거를 만든다.
@@ -837,8 +863,9 @@ function compareNearness(left: Pick<TraceReach, 'depth' | 'analysis' | 'witnessR
  * 그 root 기준이며, 시작 root에서의 거리는 depth보다 짧지 않다는 것만 알 수 있다(경로를 지어내지 않는다).
  */
 function reachOf(from: string, analysis: TraceAnalysis, row: TraversalReached): TraceReach {
-  const path = traversalPath(analysis.graph, row.symbol.usr);
-  return { from, analysis: analysis.id, depth: row.depth, path, ...(path[0] === from ? {} : { witnessRoot: path[0]! }) };
+  const { path, partial } = traversalWitness(analysis.graph, row.symbol.usr);
+  return { from, analysis: analysis.id, depth: row.depth, path,
+    ...(partial ? { witnessPartial: true as const } : path[0] === from ? {} : { witnessRoot: path[0]! }) };
 }
 
 /** 적중한 분석들의 도달 정점을 (플랫폼, usr)별 가장 가까운 것 하나로 줄인다. */
@@ -847,7 +874,7 @@ function affectedRows(hits: ReadonlyArray<{ analysis: TraceAnalysis; root: strin
   const best = new Map<string, TraceAffected>();
   for (const { analysis, root, rows } of hits) {
     for (const row of rows) {
-      const { path, witnessRoot } = reachOf(root, analysis, row);
+      const { path, witnessRoot, witnessPartial } = reachOf(root, analysis, row);
       const candidate: TraceAffected = {
         platform: analysis.platform, usr: row.symbol.usr,
         ...(row.symbol.qualifiedName === undefined ? {} : { qualifiedName: row.symbol.qualifiedName }),
@@ -855,6 +882,7 @@ function affectedRows(hits: ReadonlyArray<{ analysis: TraceAnalysis; root: strin
         ...(row.symbol.location === undefined ? {} : { location: row.symbol.location }),
         ...(row.relationships === undefined ? {} : { relationships: row.relationships }),
         analysis: analysis.id, depth: row.depth, path, ...(witnessRoot === undefined ? {} : { witnessRoot }),
+        ...(witnessPartial === undefined ? {} : { witnessPartial }),
       };
       const current = best.get(row.symbol.usr);
       if (current === undefined || compareNearness(candidate, current) < 0) best.set(row.symbol.usr, candidate);

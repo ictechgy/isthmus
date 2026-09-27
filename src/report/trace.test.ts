@@ -128,6 +128,55 @@ test('다른 root에서 닿은 root 테이블도 DB 의존자로 싣고 그 너�
   ]);
 });
 
+test('root를 거쳐 돌아오는 목격 경로는 지어내지 않고 witness-partial로 표시한다', () => {
+  const result = report((value) => {
+    const db = value.analyses.db;
+    db.roots.push({ id: 'main.orders', symbol: { usr: 'main.orders' } });
+    db.reached = [
+      { symbol: { usr: 'main.audit_view' }, via: 'main.users', depth: 1, roots: [0] },
+      { symbol: { usr: 'main.v' }, via: 'main.orders', depth: 1, roots: [0, 2] },
+      { symbol: { usr: 'main.orders' }, via: 'main.v', depth: 3, roots: [0] },
+    ];
+  });
+  const users = result.chains[0]!.database.find(({ vertex }) => vertex === 'main.users')!;
+  assert.deepEqual(users.dependents.map(({ usr, depth, path, witnessRoot, witnessPartial }) =>
+    [usr, depth, path, witnessRoot, witnessPartial]), [
+    ['main.audit_view', 1, ['main.users', 'main.audit_view'], undefined, undefined],
+    ['main.v', 1, ['main.orders', 'main.v'], 'main.orders', undefined],
+    ['main.orders', 3, ['main.v', 'main.orders'], undefined, true],
+  ]);
+  assert.deepEqual(result.gaps.map(({ code, analysis, symbol }) => [code, analysis, symbol]),
+    [['witness-partial', 'db', { platform: 'sql', usr: 'main.orders' }]]);
+});
+
+test('핸들러·relation-use 도달에서도 root 순환 목격은 witness-partial이다', () => {
+  const forward = report((value) => {
+    const graph = value.analyses['server-forward'];
+    graph.roots.push({ id: 'ts:repo/users.findById', symbol: { usr: 'ts:repo/users.findById' } });
+    graph.reached = [
+      { symbol: { usr: 'ts:repo/audit.write' }, via: 'ts:api/users.create', depth: 1, roots: [0] },
+      { symbol: { usr: 'ts:service/users.load' }, via: 'ts:repo/users.findById', depth: 1, roots: [0, 1, 2] },
+      { symbol: { usr: 'ts:repo/users.findById' }, via: 'ts:service/users.load', depth: 2, roots: [0, 1] },
+    ];
+  });
+  assert.ok(forward.chains[0]!.relationUses.every(({ reachedFrom }) => reachedFrom[0]?.witnessPartial === true));
+  assert.deepEqual(forward.gaps.map(({ code, symbol }) => [code, symbol?.usr]), [['witness-partial', 'ts:repo/users.findById']]);
+  const reverse = report((value) => {
+    const graph = value.analyses['server-reverse'];
+    graph.roots.push({ id: 'ts:api/users.get', symbol: { usr: 'ts:api/users.get' } });
+    graph.reached = [
+      { symbol: { usr: 'ts:api/users.create' }, via: 'ts:repo/audit.write', depth: 1, roots: [0, 1] },
+      { symbol: { usr: 'ts:service/users.load' }, via: 'ts:api/users.get', depth: 1, roots: [1, 2] },
+      { symbol: { usr: 'ts:api/users.get' }, via: 'ts:service/users.load', depth: 2, roots: [1] },
+    ];
+    value.context.selection = { relations: ['users'] };
+  });
+  const get = reverse.chains[0]!.handlers.find(({ usr }) => usr === 'ts:api/users.get')!;
+  assert.deepEqual(get.reachedFrom.map(({ path, witnessPartial }) => [path, witnessPartial]),
+    [[['ts:service/users.load', 'ts:api/users.get'], true]]);
+  assert.ok(reverse.gaps.some(({ code, symbol }) => code === 'witness-partial' && symbol?.usr === 'ts:api/users.get'));
+});
+
 test('같은 root의 분석이 여럿이면 root 자신의 경로, depth, 분석 id 순으로 한 근거만 싣는다', () => {
   const result = report((value) => {
     for (const id of ['server-forward', 'android-reverse']) {

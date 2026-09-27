@@ -224,6 +224,7 @@ export function traversalGraphFromImpact(impact: LanguageImpact, source: Travers
  *   `roots`에는 자기 인덱스를 넣지 않는다(자기 자신에서만 닿는 순환 root는 싣지 않는다).
  * - `via`는 root id거나 다른 도달 정점이다. via가 root id면 depth는 1이고 그 root 인덱스를
  *   포함한다(64개 상한으로 잘린 목록은 큰 인덱스가 빠질 수 있어 예외). 그 밖에는 부모 depth + 1이다.
+ *   단 root 항목은 depth가 기준이고 via는 그 root를 거쳐 돌아올 수 있는 목격이라 depth 관계를 보지 않는다.
  * - `roots`는 비어 있지 않은 오름차순 인덱스이고 64개 이하다.
  * - 잘리지 않은 순회(`truncated`·`rootsTruncated` 모두 거짓)에서는 부모에 닿는 root(부모가 root면
  *   그 root와, 그 root가 다른 root에서 닿았다면 그 root들)가 자기 자신을 빼고 모두 자식에 포함된다.
@@ -263,7 +264,9 @@ export function validateTraversalGraph(
       inherited = [viaRoot, ...(rows.get(row.via)?.roots ?? [])];
     } else {
       const parent = rows.get(row.via);
-      if (parent === undefined || parent.depth + 1 !== row.depth) {
+      // root 항목의 depth는 다른 root 기준이고 부모의 depth는 모든 root(이 root 포함) 기준이다. 부모에
+      // 닿는 가장 짧은 경로가 이 root를 거치면(순환) depth 관계가 성립하지 않으므로 root 항목은 보지 않는다.
+      if (parent === undefined || (own === undefined && parent.depth + 1 !== row.depth)) {
         fail('Traversal depth does not match its observed parent.');
       }
       inherited = parent.roots;
@@ -281,16 +284,29 @@ export function validateTraversalGraph(
  * root와 다를 수 있다 — 대표 경로는 가장 가까운 root 하나의 것이다.
  */
 export function traversalPath(graph: TraversalGraph, usr: string): string[] {
+  return traversalWitness(graph, usr).path;
+}
+
+/**
+ * 대표 경로와 그 경로가 온전한지다.
+ *
+ * via가 root id면 거기서 멈춘다(그 root가 다른 root에서도 닿았더라도 목격 경로는 그 root에서 시작한다).
+ * root 항목의 via 사슬은 그 root 자신으로 돌아올 수 있다(순환). 이때 돌아오기 직전까지의 경로만
+ * 돌려주고 `partial: true`로 표시한다 — 다른 root에서 시작하는 경로를 지어내지 않는다.
+ */
+export function traversalWitness(graph: TraversalGraph, usr: string): { path: string[]; partial: boolean } {
   const rows = rowIndex(graph);
   const rootIds = rootIdSet(graph);
   const path = [usr];
+  const seen = new Set(path);
   let current = rows.get(usr);
-  // via가 root id면 거기서 멈춘다. 그 root가 다른 root에서도 닿았더라도 목격 경로는 그 root에서 시작한다.
   while (current !== undefined) {
+    if (seen.has(current.via)) return { path: path.reverse(), partial: true };
     path.push(current.via);
+    seen.add(current.via);
     current = rootIds.has(current.via) ? undefined : rows.get(current.via);
   }
-  return path.reverse();
+  return { path: path.reverse(), partial: false };
 }
 
 /** 순회 숲의 root id 집합을 한 번만 만든다. */

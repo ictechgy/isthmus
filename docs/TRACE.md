@@ -105,6 +105,8 @@ isthmus trace trace-context.json [--strict] [--compact]
   시작하면 `witnessRoot`를 싣는다 — 그때 depth·path는 그 root 기준이고, 시작 root에서의 거리는 depth
   이상이라는 것만 안다(경로를 지어내지 않는다). 같은 정점에 근거가 여럿이면 시작 root 자신의 경로,
   depth, 분석 id 순으로 하나만 싣는다.
+- root 항목의 via 목격이 그 root 자신으로 돌아오면(순환) 돌아오기 직전까지의 경로만 싣고
+  `witnessPartial: true`를 단다(`witnessRoot`는 싣지 않는다). depth는 생산자 값을 그대로 쓴다.
 - 순회에서 다른 root에서 닿은 root 항목도 도달 정점으로 쓴다. 그래서 테이블 A의 DB 의존자에는 B가
   함께 root로 주어졌어도 B가 실린다. B 너머의 정점은 B에서 시작하는 목격 경로와 `witnessRoot: B`를 싣는다.
 - 호출은 귀속된 정적 호출만 싣는다(check 귀속 게이트와 같다). decl에 match된 호출은 `side: "decl"`,
@@ -126,6 +128,7 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `call-without-symbol` | 귀속된 route-call에 `symbol.usr`가 없다 |
 | `analysis-missing` | 필요한 역할·플랫폼·root id의 분석이 없다(`symbol`에 찾은 id) |
 | `analysis-truncated` | 분석이 잘렸거나(`truncationReasons` 포함), root 귀속 64개 상한 때문에 이 root의 도달이 빠졌을 수 있다 |
+| `witness-partial` | root 항목의 via 목격이 그 root로 돌아와(순환) 다른 root에서의 경로를 알 수 없다. depth는 유효하다 |
 | `roots-provenance-partial` | 옛 형식의 다중 root 분석이라 root 출처를 대표 root 하나로만 안다 |
 | `stale-analysis` | 분석 revision이 context나 다른 분석과 다르거나, 같은 플랫폼 분석의 graphRevision이 다르다 |
 | `analysis-revision-unknown` | context가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다 |

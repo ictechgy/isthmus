@@ -6,6 +6,7 @@ import {
   traversalGraphFromDocument,
   traversalGraphFromImpact,
   traversalPath,
+  traversalWitness,
   TraversalValidationError,
   validateTraversalGraph,
 } from './language-traversal.ts';
@@ -87,6 +88,38 @@ test('다른 root에서 닿은 root도 reached에 싣고 자기 인덱스는 roo
   const roots = Array.from({ length: 66 }, (_, index) => ({ id: `r${String(index).padStart(2, '0')}` }));
   assert.doesNotThrow(() => validateTraversalGraph(roots, [{ symbol: { usr: 'x' }, via: 'r65', depth: 1,
     roots: Array.from({ length: 64 }, (_, index) => index) }], { rootsTruncated: true, truncated: false }));
+});
+
+test('root 항목의 depth는 다른 root 기준이라 via 목격이 그 root를 거쳐 돌아올 수 있다', () => {
+  // A→W→V→R, R→V. V는 모든 root 기준으로 R에서 depth 1이고, R 항목은 A에서 depth 3이다.
+  const value = {
+    ...document(), direction: 'dependents',
+    roots: [{ id: 'A', symbol: { usr: 'A' } }, { id: 'R', symbol: { usr: 'R' } }],
+    reached: [
+      { symbol: { usr: 'V' }, via: 'R', depth: 1, roots: [0, 1] },
+      { symbol: { usr: 'W' }, via: 'A', depth: 1, roots: [0] },
+      { symbol: { usr: 'R' }, via: 'V', depth: 3, roots: [0] },
+    ],
+  };
+  const graph = traversalGraphFromDocument(parseLanguageTraversal(value));
+  assert.deepEqual(traversalWitness(graph, 'R'), { path: ['V', 'R'], partial: true });
+  assert.deepEqual(traversalWitness(graph, 'V'), { path: ['R', 'V'], partial: false });
+  // 문제에 적힌 A→R, R→V, V→R: R은 A에서 곧바로 닿는다.
+  const direct = { ...value, reached: [
+    { symbol: { usr: 'R' }, via: 'A', depth: 1, roots: [0] },
+    { symbol: { usr: 'V' }, via: 'R', depth: 1, roots: [0, 1] },
+  ] };
+  assert.deepEqual(traversalPath(traversalGraphFromDocument(parseLanguageTraversal(direct)), 'V'), ['R', 'V']);
+  for (const mutate of [
+    (input: any) => { input.reached[2].via = 'R'; },
+    (input: any) => { input.reached[2].via = 'missing'; },
+    (input: any) => { input.reached[2] = { symbol: { usr: 'R' }, via: 'A', depth: 3, roots: [0] }; },
+    (input: any) => { input.reached[2].roots = [1]; },
+  ]) {
+    const invalid = structuredClone(value);
+    mutate(invalid);
+    assert.throws(() => parseLanguageTraversal(invalid), TraversalValidationError);
+  }
 });
 
 test('잘린 순회는 부모 root 포함 규칙을 강제하지 않지만 그 밖의 불변식은 그대로 본다', () => {
