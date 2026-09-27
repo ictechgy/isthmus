@@ -258,6 +258,36 @@ function parseWorkspaceContext(input: Record<string, unknown>): TraceContext {
   };
 }
 
+/** `isthmus-workspace` 매니페스트의 최상위 키다. */
+const manifestKeys = new Set(['format', 'version', 'members', 'links']);
+
+/**
+ * 맨 `isthmus-workspace` v1 매니페스트(GRAPH-EXCHANGE)를 검증한다. `diff --http`의 workspace 모드가 쓴다.
+ *
+ * member·link 규칙은 trace workspace context와 **같은 코드**다(member `revision` 필수, 구현하지 않은 match 필드 거부,
+ * 계약 문서 소속 검사). 매니페스트에는 순회가 없으므로 member `analyses`는 받지 않는다 — 받으면 읽지 않는 필드를
+ * 조용히 버리게 된다. 반환 모양은 trace의 `TraceWorkspace`이고 문서 경로는 member 순서대로 이어 붙인다.
+ */
+export function parseWorkspaceManifest(input: unknown): TraceWorkspace & { readonly documents: readonly string[] } {
+  if (!isJsonObject(input) || input.format !== 'isthmus-workspace' || input.version !== 1) {
+    fail('Expected an isthmus-workspace version 1 manifest.');
+  }
+  if (Object.keys(input).some((key) => !manifestKeys.has(key))) fail('Workspace manifest has an unknown field.');
+  if (!Array.isArray(input.members) || input.members.length === 0 || input.members.length > MAX_TRACE_MEMBERS) {
+    fail(`Workspace members must be a list of 1 to ${MAX_TRACE_MEMBERS} entries.`);
+  }
+  if (input.members.some((member) => isJsonObject(member) && member.analyses !== undefined)) {
+    fail('Workspace manifest members do not take analyses; analyses belong to a trace context.');
+  }
+  const members = input.members.map((member) => parseMember(member, new Set()).member);
+  if (new Set(members.map(({ name }) => name)).size !== members.length) fail('Workspace member names must be unique.');
+  const documents = members.flatMap((member) => member.documents);
+  if (documents.length > MAX_TRACE_DOCUMENTS || new Set(documents).size !== documents.length) {
+    fail(`Workspace documents must be unique across members and at most ${MAX_TRACE_DOCUMENTS} in total.`);
+  }
+  return { members, links: parseLinks(input.links, members), documents };
+}
+
 /** member 하나와 그 분석 참조를 검증한다. */
 function parseMember(input: unknown, analysisIds: Set<string>): { member: TraceMember; analyses: TraceAnalysisReference[] } {
   const keys = ['name', 'project', 'revision', 'documents', 'analyses', 'catalog'];

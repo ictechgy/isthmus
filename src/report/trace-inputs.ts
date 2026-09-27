@@ -146,8 +146,11 @@ function unlinkedDocuments(states: readonly TraceMemberInput[],
   });
 }
 
-/** member 하나를 검증하고 http 문서를 뺀 문서로 member 안 조인을 한다. */
-function memberInput(member: TraceMember, documents: readonly BridgeFactsDocument[]): TraceMemberInput {
+/**
+ * workspace member 문서의 공통 검사다: 문서 project가 member project와 같고 bridge target 문서가 없어야 한다.
+ * trace와 `diff --http`의 workspace 모드가 같은 규칙을 쓴다.
+ */
+export function checkMemberDocuments(member: TraceMember, documents: readonly BridgeFactsDocument[]): void {
   for (const document of documents) {
     if (document.project !== member.project) {
       throw new TraceInputError('Every document of a workspace member must use that member project; '
@@ -155,6 +158,11 @@ function memberInput(member: TraceMember, documents: readonly BridgeFactsDocumen
     }
     rejectBridgeDocument(document);
   }
+}
+
+/** member 하나를 검증하고 http 문서를 뺀 문서로 member 안 조인을 한다. */
+function memberInput(member: TraceMember, documents: readonly BridgeFactsDocument[]): TraceMemberInput {
+  checkMemberDocuments(member, documents);
   return {
     key: member.name, member, documents,
     joined: joinTrace(documents.filter(({ target }) => target !== 'http')),
@@ -172,18 +180,44 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
   byPath: ReadonlyMap<string, BridgeFactsDocument>, issues: TraceLinkServiceIssue[],
   covered: { server: Set<BridgeFactsDocument>; client: Set<BridgeFactsDocument> }): BridgeJoinResult {
   const contracts = (link.contract?.documents ?? []).map((path) => byPath.get(path)!);
+  const servers = linkServerDocuments(link, members.get(link.server)!.documents);
+  const clients = members.get(link.client)!.documents.filter(({ target }) => target === 'http');
+  for (const document of [...servers, ...contracts]) covered.server.add(document);
+  for (const document of clients) covered.client.add(document);
+  const { joined, serviceIssue } = joinWorkspaceLink(link, servers, contracts, clients);
+  if (serviceIssue !== undefined) issues.push({ link: link.name, server: link.server, detail: serviceIssue });
+  return joined;
+}
+
+/**
+ * link의 선언 측에 드는 server member 문서다. http 문서만 쓰고, link에 `contract`가 있으면 server의 openapi 문서는
+ * 빼고 계약 문서를 쓴다 — 계약 끝점의 member가 하나로 정해지게 하기 위해서다.
+ */
+export function linkServerDocuments(link: TraceLink, documents: readonly BridgeFactsDocument[]): BridgeFactsDocument[] {
+  return documents.filter((document) =>
+    document.target === 'http' && (link.contract === undefined || document.platform !== 'openapi'));
+}
+
+/** link 하나를 조인한 결과와, 서비스 범위를 정하지 못했을 때의 설명이다. */
+export interface WorkspaceLinkJoin {
+  readonly joined: BridgeJoinResult;
+  readonly serviceIssue?: string;
+}
+
+/**
+ * workspace link 하나의 http 조인이다. 선언 측은 `servers`와 `contracts`, 호출 측은 `clients` 문서다(문서 신원으로 정한다).
+ *
+ * trace와 `diff --http`가 같은 귀속(`match`)·서비스 범위 규칙을 쓰도록 한 곳에 둔다. diff는 base·head 선언 측을 같은
+ * 호출 측과 따로 조인해 결합 결과를 비교한다.
+ */
+export function joinWorkspaceLink(link: TraceLink, servers: readonly BridgeFactsDocument[],
+  contracts: readonly BridgeFactsDocument[], clients: readonly BridgeFactsDocument[]): WorkspaceLinkJoin {
   if (contracts.some(({ platform }) => platform !== 'openapi')) {
     throw new TraceInputError('Workspace link contract documents must be openapi documents; list other documents in a member.');
   }
-  const servers = members.get(link.server)!.documents.filter((document) =>
-    document.target === 'http' && (link.contract === undefined || document.platform !== 'openapi'));
-  const clients = members.get(link.client)!.documents.filter(({ target }) => target === 'http');
   const serverSet = new Set([...servers, ...contracts]);
   const clientSet = new Set(clients);
-  for (const document of serverSet) covered.server.add(document);
-  for (const document of clientSet) covered.client.add(document);
   const scope = linkServiceScope(link, [...serverSet]);
-  if (scope.issue !== undefined) issues.push({ link: link.name, server: link.server, detail: scope.issue });
   const attributed = linkAttribution(link.match);
   const rule: RouteLinkRule = {
     scope: link.name,
@@ -192,7 +226,8 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
     attributes: (document, fact) => attributed(document, fact) && scope.admitsCall(fact.service ?? document.service),
     includesDeclaration: scope.includes,
   };
-  return joinTrace([...new Set([...servers, ...contracts, ...clients])], rule);
+  const joined = joinTrace([...new Set([...servers, ...contracts, ...clients])], rule);
+  return { joined, ...(scope.issue === undefined ? {} : { serviceIssue: scope.issue }) };
 }
 
 /**
