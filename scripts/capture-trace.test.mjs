@@ -299,6 +299,7 @@ test('설정 경로는 선언한 root 밖으로 나갈 수 없다', async (t) =>
     ['dot-dot', (config) => { config.members[0].project = { root: 'work', path: '../app' }; }, 'config', /without \.\./u],
     ['absolute', (config) => { config.output = { root: 'work', path: '/tmp/out' }; }, 'config', /relative to its root/u],
     ['secret', (config) => { config.members[0].documents[3].precomputed = { root: 'work', path: 'app/.env' }; }, 'config', /secret-like/u],
+    ['git config', (config) => { config.members[0].documents[3].precomputed = { root: 'work', path: 'app/.git/config' }; }, 'config', /secret-like/u],
     ['undeclared root', (config) => { config.output = { root: 'elsewhere', path: 'out' }; }, 'config', /undeclared root/u],
     ['relative root', (config) => { config.roots.extra = 'relative/dir'; }, 'config', /absolute POSIX/u],
     ['control', (config) => { config.members[0].documents[0].args.push('a\u0007b'); }, 'config', /control characters/u],
@@ -331,6 +332,20 @@ test('설정 경로는 선언한 root 밖으로 나갈 수 없다', async (t) =>
     assert.deepEqual(await readdir(outside), []);
   });
 
+  await t.test('dangling symlink in the output path', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    await symlink(join(work, 'nowhere'), join(work, 'dangling'));
+    config.output = { root: 'work', path: 'dangling/out' };
+    await rejectsAt(captureTrace(config), 'output', /dangling symbolic link/u);
+  });
+
+  await t.test('precomputed path that is not a regular file (FIFO) fails without blocking', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    assert.equal(runChild('mkfifo', [join(work, 'ci', 'pipe.json')]).status, 0);
+    config.members[0].documents[3].precomputed = { root: 'work', path: 'ci/pipe.json' };
+    await rejectsAt(captureTrace(config), 'fact:app/android.http.json', /not a regular file/u);
+  });
+
   await t.test('non-empty output', async (st) => {
     const { work, config } = await singleProjectConfig(st);
     await mkdir(join(work, 'out'));
@@ -353,6 +368,15 @@ test('설정 경로는 선언한 root 밖으로 나갈 수 없다', async (t) =>
     config.members[0].documents[0] = { name: 'server.http.json', precomputed: { root: 'work', path: 'ci/flag.http.json' } };
     await rejectsAt(captureTrace(config), 'analysis:server-forward', /could be read as a producer flag/u);
   });
+});
+
+test('인자 상한을 넘는 root id는 그 분석 단계의 오류다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const facts = JSON.parse(await readFile(join(repository, 'fixtures/trace/server.http.json'), 'utf8'));
+  facts.facts[0].symbol.usr = `ts:${'x'.repeat(130 * 1024)}`;
+  await writeFile(join(work, 'ci', 'long.http.json'), JSON.stringify({ ...facts, project }));
+  config.members[0].documents[0] = { name: 'server.http.json', precomputed: { root: 'work', path: 'ci/long.http.json' } };
+  await rejectsAt(captureTrace(config), 'analysis:server-forward', /per-run argument budget\. Use roots "roots-from"\./u);
 });
 
 test('root가 많으면 나눠 실행하고 같은 역할의 분석 여럿으로 싣는다', async (t) => {

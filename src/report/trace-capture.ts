@@ -132,9 +132,9 @@ const reservedMemberNames = new Set(['logs', 'pairs']);
 const rootNamePattern = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/u;
 /**
  * 비밀이 흔히 놓이는 경로 조각이다. capture는 이런 파일을 읽지도, 생산자 인자로 넘기지도 않는다.
- * 목록은 보수적 거부용이며 비밀 탐지를 보장하지 않는다.
+ * `.git`은 원격 URL에 토큰이 박힌 `.git/config`가 흔해서 막는다. 목록은 보수적 거부용이며 비밀 탐지를 보장하지 않는다.
  */
-const secretSegmentPattern = /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.pgpass|\.git-credentials|\.ssh|\.aws|\.gnupg|\.docker|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|.*\.(?:pem|key|p12|pfx|keystore|jks))$/iu;
+const secretSegmentPattern = /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.pgpass|\.git|\.git-credentials|\.ssh|\.aws|\.gnupg|\.docker|\.kube|\.azure|\.gcloud|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|.*\.(?:pem|key|p12|pfx|keystore|jks))$/iu;
 
 /**
  * 신뢰하지 않는 JSON을 검증된 capture 설정으로 바꾼다.

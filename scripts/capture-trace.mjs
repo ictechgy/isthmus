@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -147,11 +148,16 @@ async function prepareOutput(reference, roots) {
     try { await lstat(ancestor); break; }
     catch { ancestor = dirname(ancestor); }
   }
-  if (!isInside(root, await realpath(ancestor))) {
+  // 끊긴 심링크는 lstat은 되지만 realpath가 실패한다 — 원인 없는 내부 오류 대신 단계 오류로 알린다.
+  const realOrFail = async (path) => {
+    try { return await realpath(path); }
+    catch { throw new CaptureTraceError('output', `the output path under root ${reference.root} contains a dangling symbolic link.`); }
+  };
+  if (!isInside(root, await realOrFail(ancestor))) {
     throw new CaptureTraceError('output', `the output resolves outside root ${reference.root} through a symbolic link.`);
   }
   if (ancestor === lexical) {
-    const real = await realpath(lexical);
+    const real = await realOrFail(lexical);
     if (!isInside(root, real) || !(await stat(real)).isDirectory() || (await readdir(real)).length > 0) {
       throw new CaptureTraceError('output', 'the output directory must not exist or must be empty; choose a new directory.');
     }
@@ -167,6 +173,10 @@ async function prepareOutput(reference, roots) {
 async function writeOutput(output, relative, content, replace = false) {
   const path = join(output, relative);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  // 준비 뒤 디렉터리가 심링크로 바뀌었으면 출력 밖에 쓰지 않는다(쓰기마다 부모의 realpath를 다시 본다).
+  if (!isInside(output, await realpath(dirname(path)))) {
+    throw new CaptureTraceError('output', 'an output subdirectory was replaced by a symbolic link during capture.');
+  }
   await writeFile(path, content, { mode: 0o600, flag: replace ? 'w' : 'wx' });
   return path;
 }
@@ -274,10 +284,23 @@ function recordArtifact(session, path, content, source, extra = {}) {
 /** 사전 계산 파일을 root 안에서 읽는다. 크기 상한을 넘으면 읽지 않는다. */
 async function readPrecomputed(reference, session, step) {
   const path = await resolveExisting(reference, session.roots, step);
-  const info = await stat(path);
-  if (!info.isFile()) throw new CaptureTraceError(step, 'the precomputed path is not a regular file.');
-  if (info.size > MAX_PRECOMPUTED_BYTES) throw new CaptureTraceError(step, 'the precomputed file exceeds 64 MiB.');
-  return readFile(path);
+  // 한 번 연 핸들로 종류·크기를 확인하고 그 핸들에서만 읽는다. 확인과 읽기 사이에 파일이 FIFO나 커지는
+  // 파일로 바뀌어도 막히거나 상한을 넘겨 읽지 않는다(O_NONBLOCK은 FIFO 열기가 막히지 않게 한다).
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new CaptureTraceError(step, 'the precomputed path is not a regular file.');
+    if (info.size > MAX_PRECOMPUTED_BYTES) throw new CaptureTraceError(step, 'the precomputed file exceeds 64 MiB.');
+    const buffer = Buffer.alloc(info.size + 1);
+    let length = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+      if (length > info.size) throw new CaptureTraceError(step, 'the precomputed file changed while it was read.');
+    }
+    return buffer.subarray(0, length);
+  } finally { await handle.close(); }
 }
 
 /** 문서의 도구 신원(있으면)을 manifest용으로 뽑는다. */
@@ -408,8 +431,15 @@ async function captureAnalyses(session, member, provisional) {
       continue;
     }
     const delivery = analysis.step.roots;
-    const chunks = chunkCaptureRoots(roots, analysis.step.maxRootsPerRun,
-      delivery === 'roots-from' ? Number.MAX_SAFE_INTEGER : MAX_ROOT_ARGUMENT_BYTES);
+    let chunks;
+    // root id는 생산자 출력에서 온 신뢰하지 않는 값이다. 인자 상한을 넘는 id는 이 단계의 오류로 알린다.
+    try {
+      chunks = chunkCaptureRoots(roots, analysis.step.maxRootsPerRun,
+        delivery === 'roots-from' ? Number.MAX_SAFE_INTEGER : MAX_ROOT_ARGUMENT_BYTES);
+    } catch (error) {
+      if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError(step, `${error.message} Use roots "roots-from".`);
+      throw error;
+    }
     for (const [index, chunk] of chunks.entries()) {
       const id = chunks.length === 1 ? analysis.id : `${analysis.id}.${index + 1}`;
       if (id !== analysis.id) {

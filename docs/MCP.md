@@ -65,7 +65,7 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 - `--update-baseline`·`--output` 같은 파일 쓰기 경로는 도구 인자로 열지 않았다.
 - `trace`([TRACE](TRACE.md), 개발 중)는 **항상 출력 상한과 함께** 실행한다 — 도구는 `--max-chains`·`--max-rows`를
   기본값(10·25)이나 인자 값으로 넘긴다. 상한은 목록마다 적용되고, 자른 곳은 보고서의 `truncation.omitted`에
-  JSON 경로·원래 개수·남긴 개수로 모두 적힌다. `summary`와 `strict` 판정은 자르기 전 보고서 기준이다. 잘린 응답의
+  JSON 경로·원래 개수·남긴 개수로 적힌다(앞 1,000개까지, 전체 수는 `omittedLists`). `summary`와 `strict` 판정은 자르기 전 보고서 기준이다. 잘린 응답의
   짧은 목록을 "영향 없음"으로 읽지 않는다 — 더 보려면 selection을 좁힌 context로 다시 부르거나 상한을 올린다.
   입력 context는 보통 `scripts/capture-trace.mjs`가 만든다(도구는 생산자를 실행하지 않는다).
 - `check --pairs`는 도구로 열지 않았다. 쌍 목록은 생산자 root를 뽑는 기계용 중간 산출물이고(capture가 쓴다) 전체

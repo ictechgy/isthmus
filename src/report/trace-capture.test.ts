@@ -98,7 +98,7 @@ test('형식·root·경로 참조 위반을 거부한다', () => {
   rejects((config) => { config.output = { root: 'nope', path: 'out' }; }, /undeclared root/u);
   rejects((config) => { config.output = { root: 'work', path: '../out' }; }, /without \.\./u);
   rejects((config) => { config.output = { root: 'work', path: 'a\\b' }; }, /backslashes/u);
-  for (const secret of ['.env', '.env.local', 'keys/id_rsa', 'x/server.pem', '.aws/credentials', 'a/.npmrc']) {
+  for (const secret of ['.env', '.env.local', 'repo/.git/config', '.kube/config', 'keys/id_rsa', 'x/server.pem', '.aws/credentials', 'a/.npmrc']) {
     rejects((config) => { config.members[0].documents[1].precomputed = { root: 'work', path: secret }; }, /secret-like/u);
   }
   rejects((config) => { config.generatedAt = 'yesterday'; }, /generatedAt/u);

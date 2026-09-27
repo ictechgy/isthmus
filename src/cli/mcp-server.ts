@@ -214,7 +214,8 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
       + 'call sites and the client code that uses them) from an isthmus-trace-context, '
       + 'typically written by scripts/capture-trace.mjs. Lists are capped by maxChains '
       + `(default ${MCP_TRACE_DEFAULT_CHAINS}) and maxRows (default ${MCP_TRACE_DEFAULT_ROWS}); `
-      + 'every cut is listed in truncation.omitted and summary keeps the uncapped totals. '
+      + 'cuts are recorded in truncation (omitted lists the first 1000, omittedLists counts all) '
+      + 'and summary keeps the uncapped totals. '
       + 'Gaps, truncation, and short lists are not evidence that nothing is affected.',
     inputSchema: {
       type: 'object',

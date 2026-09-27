@@ -417,8 +417,10 @@ node scripts/capture-trace.mjs capture.json
 - **경로는 선언한 root 아래로만** 쓴다. 모든 경로는 `{root, path?}`이고 path는 root 상대 POSIX 경로다. 생산자 인자의
   경로 참조도 실행 전에 존재해야 한다(capture는 생산자 stdout만 받고, 생산자가 쓸 출력 경로는 열지 않는다). `..`·절대 경로·
   역슬래시·제어 문자는 설정 검증에서, 심링크로 root 밖을 가리키는 경로는 실행 전 realpath 검사에서 거부한다. `.env`·
-  키·인증 파일 같은 이름(`.env*`, `.npmrc`, `.netrc`, `.pgpass`, `.ssh`, `.aws`, `id_rsa*`, `*.pem`·`*.key` 등)은 읽지도
-  생산자에 넘기지도 않는다. 출력 디렉터리는 없거나 비어 있어야 한다 — capture는 아무것도 지우지 않는다.
+  키·인증 파일 같은 이름(`.env*`, `.npmrc`, `.netrc`, `.pgpass`, `.git`(원격 URL에 토큰이 박힌 `.git/config`), `.ssh`, `.aws`, `.kube`, `id_rsa*`, `*.pem`·`*.key` 등)은 읽지도
+  생산자에 넘기지도 않는다. 출력 디렉터리는 없거나 비어 있어야 한다 — capture는 아무것도 지우지 않는다. 사전 계산 파일은
+  한 번 연 핸들로 종류(일반 파일)·크기(64MiB)를 확인하고 그 핸들에서만 읽으며, 출력 파일을 쓸 때마다 부모 디렉터리의
+  realpath가 출력 디렉터리 안인지 다시 본다. root 자체(예: `/`)를 넓게 선언하면 그만큼 넓어진다 — 설정 작성자가 정한다.
 - **명령은 인자 배열**이고 셸을 거치지 않는다(자식은 spawn 인자 배열로 실행). 문자열 인자의 `{project}`(member project의
   realpath)·`{revision}`·`{generatedAt}`만 자리표시자다 — route 템플릿의 `{}` 같은 다른 중괄호는 그대로 넘긴다.
 - **root 전달**(`roots`): `arguments`(인자 끝, `-`로 시작하는 id는 플래그로 읽힐 수 있어 거부), `separator`(`--` 뒤),
