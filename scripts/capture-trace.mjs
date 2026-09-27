@@ -1,0 +1,502 @@
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  buildCaptureContext,
+  capturedAnalysisPath,
+  capturedDocumentPath,
+  chunkCaptureRoots,
+  collectCaptureRoots,
+  expandCaptureArgument,
+  MAX_ROOT_ARGUMENT_BYTES,
+  pairsDocumentIndexes,
+  parseTraceCaptureConfig,
+  rootArguments,
+  selectedSymbols,
+  TraceCaptureValidationError,
+} from '../dist/report/trace-capture.js';
+import { parseBridgeFactsDocument } from '../dist/exchange/parse.js';
+import { analysisProject, normalizeTraceAnalysis, parseTraceContext } from '../dist/exchange/trace-context.js';
+import { encodeSortedJson } from '../dist/report/sorted-json.js';
+import { runChild } from './run-child.mjs';
+
+/**
+ * `isthmus trace` 입력 수집기다(`scripts/capture-trace.mjs <capture.json>`).
+ *
+ * 제품(`isthmus`)은 JSON만 읽고 생산자를 실행하지 않는다. 그래서 생산자 실행은 capture-preflight와 같이
+ * 이 스크립트가 맡는다. 단계는 (a) 생산자 사실 명령 → (b) `isthmus check --pairs`로 조인 검증과 root 추출 →
+ * (c) 그 root로 생산자 순회 명령 → (d) trace context·artifact·manifest 기록 → (e) 선택적으로 `isthmus trace`다.
+ * 모든 자식은 인자 배열로 셸 없이 실행하고, 단계마다 시간 제한을 둔다.
+ */
+
+/** 실패한 단계 이름을 싣는 오류다. 자식 출력·입력 원문은 싣지 않는다(stderr는 logs/에 저장한다). */
+export class CaptureTraceError extends Error {
+  /** 실패한 단계와 원인 문구를 보존한다. */
+  constructor(step, message) {
+    super(`Capture step ${step} failed: ${message}`);
+    this.name = 'CaptureTraceError';
+    this.step = step;
+  }
+}
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const isthmusMain = join(scriptDirectory, '..', 'dist', 'cli', 'main.js');
+/** 자식 stdout 상한이다. trace 입력 상한(파일당 16Mi 문자)의 UTF-8 최악값보다 넉넉하다. */
+const MAX_CHILD_OUTPUT_BYTES = 64 * 1024 * 1024;
+/** 사전 계산 파일 읽기 상한이다. */
+const MAX_PRECOMPUTED_BYTES = 64 * 1024 * 1024;
+/** isthmus 자신(check·trace)의 시간 제한이다. */
+const ISTHMUS_TIMEOUT_SECONDS = 600;
+/** git 조회의 시간 제한이다. */
+const GIT_TIMEOUT_SECONDS = 60;
+
+/**
+ * capture 설정 하나를 실행한다.
+ *
+ * `execute`는 테스트 주입용이다(기본 `runChild` — spawnSync 인자 배열, 셸 없음).
+ * 반환값은 출력 디렉터리·context·manifest 경로와 trace 요약이다.
+ */
+export async function captureTrace(input, { execute = runChild, now = () => new Date() } = {}) {
+  let config;
+  try { config = parseTraceCaptureConfig(input); }
+  catch (error) {
+    if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError('config', error.message);
+    throw error;
+  }
+  const started = now();
+  const generatedAt = config.generatedAt ?? started.toISOString();
+  const roots = await resolveRoots(config.roots);
+  const output = await prepareOutput(config.output, roots);
+  const manifest = {
+    format: 'isthmus-trace-capture-manifest', version: 1, status: 'running', generatedAt,
+    isthmus: { version: await isthmusVersion() },
+    host: { node: process.version, platform: process.platform, arch: process.arch },
+    tools: {}, members: [], steps: [], artifacts: [],
+  };
+  const session = { config, roots, output, manifest, execute, generatedAt };
+  try {
+    await recordTools(session);
+    const members = [];
+    for (const member of config.members) members.push(await captureFacts(session, member));
+    // 모든 사실이 모인 뒤 선택을 해석한다 — 심볼 선택의 usr는 역방향 root에 더해야 하기 때문이다.
+    let provisional;
+    try { provisional = parseTraceContext(buildCaptureContext(config, members.map(({ captured }) => captured))); }
+    catch (error) { throw new CaptureTraceError('context', error.message); }
+    for (const member of members) await capturePairs(session, member);
+    for (const member of members) await captureAnalyses(session, member, provisional);
+    const context = buildCaptureContext(config, members.map(({ captured }) => captured));
+    try { parseTraceContext(context); }
+    catch (error) { throw new CaptureTraceError('context', error.message); }
+    await writeOutput(output, 'trace-context.json', encodeSortedJson(context));
+    if (config.trace) manifest.trace = await runTrace(session);
+    manifest.status = 'complete';
+    return { output, context: join(output, 'trace-context.json'), manifest: join(output, 'capture-manifest.json'),
+      ...(manifest.trace === undefined ? {} : { trace: manifest.trace }) };
+  } catch (error) {
+    manifest.status = 'failed';
+    manifest.failure = error instanceof CaptureTraceError
+      ? { step: error.step, message: error.message }
+      : { step: 'internal', message: 'Unexpected capture failure; rerun with a smaller config to isolate the step.' };
+    throw error;
+  } finally {
+    await writeOutput(output, 'capture-manifest.json', encodeSortedJson(manifest), true);
+  }
+}
+
+/** 선언한 root를 realpath로 고정하고 디렉터리인지 확인한다. */
+async function resolveRoots(declared) {
+  const roots = {};
+  for (const [name, path] of Object.entries(declared)) {
+    let real;
+    try { real = await realpath(path); }
+    catch { throw new CaptureTraceError('roots', `root ${name} does not exist or is unreadable.`); }
+    if (!(await stat(real)).isDirectory()) throw new CaptureTraceError('roots', `root ${name} is not a directory.`);
+    roots[name] = real;
+  }
+  return roots;
+}
+
+/** realpath가 root 안(또는 root 자신)인지 본다. 심링크로 root 밖을 가리키는 경로를 막는다. */
+function isInside(root, path) {
+  return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+}
+
+/** 존재하는 입력 경로 참조를 root 안의 realpath로 바꾼다. */
+async function resolveExisting(reference, roots, step) {
+  const root = roots[reference.root];
+  const lexical = reference.path === undefined ? root : resolve(root, reference.path);
+  if (!isInside(root, lexical)) throw new CaptureTraceError(step, `a path escapes root ${reference.root}.`);
+  let real;
+  try { real = await realpath(lexical); }
+  catch { throw new CaptureTraceError(step, `a path under root ${reference.root} does not exist or is unreadable.`); }
+  if (!isInside(root, real)) throw new CaptureTraceError(step, `a path under root ${reference.root} resolves outside it through a symbolic link.`);
+  return real;
+}
+
+/**
+ * 출력 디렉터리를 준비한다. 없거나 비어 있어야 한다 — 이전 수집의 artifact와 섞이지 않게 하고, capture가
+ * 무엇도 지우지 않게 하기 위해서다. 가장 가까운 기존 조상의 realpath가 root 안인지 먼저 확인한다.
+ */
+async function prepareOutput(reference, roots) {
+  const root = roots[reference.root];
+  const lexical = resolve(root, reference.path);
+  if (!isInside(root, lexical) || lexical === root) throw new CaptureTraceError('output', `the output escapes root ${reference.root}.`);
+  let ancestor = lexical;
+  for (;;) {
+    try { await lstat(ancestor); break; }
+    catch { ancestor = dirname(ancestor); }
+  }
+  if (!isInside(root, await realpath(ancestor))) {
+    throw new CaptureTraceError('output', `the output resolves outside root ${reference.root} through a symbolic link.`);
+  }
+  if (ancestor === lexical) {
+    const real = await realpath(lexical);
+    if (!isInside(root, real) || !(await stat(real)).isDirectory() || (await readdir(real)).length > 0) {
+      throw new CaptureTraceError('output', 'the output directory must not exist or must be empty; choose a new directory.');
+    }
+    return real;
+  }
+  await mkdir(lexical, { recursive: true, mode: 0o700 });
+  const real = await realpath(lexical);
+  if (!isInside(root, real)) throw new CaptureTraceError('output', `the output resolves outside root ${reference.root}.`);
+  return real;
+}
+
+/** 출력 디렉터리 안에 파일을 배타 생성한다(기존 파일·심링크를 따라가지 않는다). */
+async function writeOutput(output, relative, content, replace = false) {
+  const path = join(output, relative);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, content, { mode: 0o600, flag: replace ? 'w' : 'wx' });
+  return path;
+}
+
+/** isthmus 패키지 버전이다. manifest에 소비자 버전을 남긴다. */
+async function isthmusVersion() {
+  const text = await readFile(join(scriptDirectory, '..', 'package.json'), 'utf8');
+  return JSON.parse(text).version;
+}
+
+/**
+ * 자식 하나를 실행하고 결과를 manifest에 기록한다.
+ *
+ * 실패 문구는 단계와 명령(도구 이름·하위 명령)만 싣는다. stderr는 입력 경로나 비밀을 담을 수 있어 터미널에
+ * 옮기지 않고 출력 디렉터리의 logs/에 저장한다 — 원인은 거기서 본다.
+ */
+async function run(session, { step, label, command, args, timeoutSeconds, acceptExitCodes = [0], cwd }) {
+  const begin = performance.now();
+  const result = await session.execute(command[0], [...command.slice(1), ...args], {
+    cwd: cwd ?? session.output, timeout: timeoutSeconds * 1000, maxBuffer: MAX_CHILD_OUTPUT_BYTES,
+    env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0' },
+  });
+  const milliseconds = Math.round(performance.now() - begin);
+  const entry = { step, command: [...command, ...args], exitCode: result.status ?? null, milliseconds };
+  session.manifest.steps.push(entry);
+  let logHint = '';
+  if (typeof result.stderr === 'string' && result.stderr.length > 0) {
+    const log = `logs/${step.replace(/[^A-Za-z0-9._-]/gu, '_')}.stderr.txt`;
+    await writeOutput(session.output, log, result.stderr, true);
+    entry.stderr = log;
+    logHint = `; stderr saved to ${log}`;
+  }
+  if (result.error?.code === 'ETIMEDOUT') throw new CaptureTraceError(step, `${label} timed out after ${timeoutSeconds}s${logHint}.`);
+  if (result.error?.code === 'ENOBUFS') throw new CaptureTraceError(step, `${label} wrote more than 64 MiB to stdout${logHint}.`);
+  if (result.error) throw new CaptureTraceError(step, `${label} could not be started (${result.error.code ?? 'spawn error'}); check the tool command.`);
+  if (result.status === null) throw new CaptureTraceError(step, `${label} was terminated by signal ${result.signal ?? 'unknown'}${logHint}.`);
+  if (!acceptExitCodes.includes(result.status)) {
+    throw new CaptureTraceError(step, `${label} exited with status ${result.status}${logHint}.`);
+  }
+  return { stdout: result.stdout ?? '', entry };
+}
+
+/** stdout을 JSON으로 읽는다. */
+function parseJson(text, step, label) {
+  try { return JSON.parse(text); }
+  catch { throw new CaptureTraceError(step, `${label} did not print a JSON document.`); }
+}
+
+/** 도구 이름과 하위 명령(첫 인자)으로 된 짧은 명령 표시다. 경로는 싣지 않는다. */
+function commandLabel(tool, args) {
+  const subcommand = typeof args[0] === 'string' && /^[A-Za-z][A-Za-z0-9-]{0,31}$/u.test(args[0]) ? ` ${args[0]}` : '';
+  return `${tool}${subcommand}`;
+}
+
+/** 제어 문자를 지운 한 줄 버전 문자열이다. */
+function oneLine(text) {
+  return text.split(/\r?\n/u)[0].replace(/[\u0000-\u001f\u007f-\u009f]/gu, '').trim().slice(0, 200);
+}
+
+/** git 조회(revision·dirty)다. index를 고치지 않도록 optional lock을 끄고 fsmonitor를 쓰지 않는다. */
+async function gitState(session, directory, step) {
+  const head = await run(session, { step, label: 'git rev-parse', command: ['git'],
+    args: ['-C', directory, 'rev-parse', '--verify', 'HEAD'], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  const revision = head.stdout.trim();
+  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(revision)) throw new CaptureTraceError(step, 'git did not return a commit hash.');
+  const status = await run(session, { step: `${step}-status`, label: 'git status', command: ['git'],
+    args: ['-C', directory, '-c', 'core.fsmonitor=false', 'status', '--porcelain', '-z', '--untracked-files=normal'],
+    timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  return { revision, dirty: status.stdout.length > 0 };
+}
+
+/** 쓰는 도구마다 `--version`과(선언했으면) 소스 checkout revision을 기록한다. */
+async function recordTools(session) {
+  const used = new Set(session.config.members.flatMap((member) => [
+    ...member.documents.flatMap(({ step }) => (step ? [step.tool] : [])),
+    ...member.analyses.flatMap(({ step }) => (step ? [step.tool] : [])),
+  ]));
+  for (const name of [...used].sort()) {
+    const tool = session.config.tools[name];
+    const { stdout } = await run(session, { step: `version-${name}`, label: `${name} --version`, command: tool.command,
+      args: ['--version'], timeoutSeconds: 60 });
+    const record = { command: tool.command, version: oneLine(stdout) };
+    if (record.version === '') throw new CaptureTraceError(`version-${name}`, `${name} --version printed nothing.`);
+    if (tool.source !== undefined) {
+      const source = await resolveExisting(tool.source, session.roots, `version-${name}`);
+      record.source = await gitState(session, source, `source-${name}`);
+    }
+    session.manifest.tools[name] = record;
+  }
+}
+
+/** 파일 바이트의 SHA-256(소문자 hex)이다. */
+function sha256(content) {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+/** artifact를 manifest에 기록한다. */
+function recordArtifact(session, path, content, source, extra = {}) {
+  session.manifest.artifacts.push({ path, sha256: sha256(content), bytes: Buffer.byteLength(content), source, ...extra });
+}
+
+/** 사전 계산 파일을 root 안에서 읽는다. 크기 상한을 넘으면 읽지 않는다. */
+async function readPrecomputed(reference, session, step) {
+  const path = await resolveExisting(reference, session.roots, step);
+  const info = await stat(path);
+  if (!info.isFile()) throw new CaptureTraceError(step, 'the precomputed path is not a regular file.');
+  if (info.size > MAX_PRECOMPUTED_BYTES) throw new CaptureTraceError(step, 'the precomputed file exceeds 64 MiB.');
+  return readFile(path);
+}
+
+/** 문서의 도구 신원(있으면)을 manifest용으로 뽑는다. */
+function documentTool(value) {
+  const tool = value?.tool;
+  return tool && typeof tool.name === 'string' && typeof tool.version === 'string'
+    ? { tool: { name: tool.name.slice(0, 100), version: tool.version.slice(0, 100) } } : {};
+}
+
+/**
+ * (a) member의 project·revision·catalog를 정하고 사실 문서를 모은다.
+ * 생산자 문서는 bridge-facts 계약으로 즉시 검증해 잘못된 출력을 그 단계 이름으로 알린다.
+ */
+async function captureFacts(session, member) {
+  const project = await resolveExisting(member.project, session.roots, `project-${member.name}`);
+  let revision = typeof member.revision === 'string' ? member.revision : undefined;
+  const record = { name: member.name, project };
+  if (member.revision !== undefined && typeof member.revision !== 'string') {
+    const state = await gitState(session, project, `revision-${member.name}`);
+    revision = state.revision;
+    Object.assign(record, { revisionSource: 'git', dirty: state.dirty });
+  } else if (revision !== undefined) record.revisionSource = 'config';
+  if (revision !== undefined) record.revision = revision;
+  if (session.config.workspace && revision === undefined) {
+    throw new CaptureTraceError(`revision-${member.name}`, 'a workspace member needs a revision (a string or {"git": true}).');
+  }
+  let catalog;
+  if (member.catalog !== undefined) {
+    const bytes = await readPrecomputed(member.catalog.graph, session, `catalog-${member.name}`);
+    catalog = { graphSha: sha256(bytes), ...(member.catalog.source === undefined ? {} : { source: member.catalog.source }) };
+    record.catalog = catalog;
+  }
+  session.manifest.members.push(record);
+  const values = { project, revision, generatedAt: session.generatedAt };
+  const documents = [];
+  const parsed = [];
+  for (const document of member.documents) {
+    const step = `fact-${member.name}-${document.name}`;
+    const path = capturedDocumentPath(member.name, document.name);
+    let content;
+    let source;
+    if (document.precomputed !== undefined) {
+      content = await readPrecomputed(document.precomputed, session, step);
+      source = 'precomputed';
+    } else {
+      const args = await expandArguments(document.step.args, values, session, step);
+      const label = commandLabel(document.step.tool, args);
+      ({ stdout: content } = await run(session, { step, label, command: session.config.tools[document.step.tool].command, args,
+        timeoutSeconds: document.step.timeoutSeconds, acceptExitCodes: document.step.acceptExitCodes }));
+      source = 'captured';
+    }
+    const value = parseJson(content.toString('utf8'), step, document.name);
+    let facts;
+    try { facts = parseBridgeFactsDocument(value); }
+    catch (error) { throw new CaptureTraceError(step, `${document.name} violates the bridge-facts contract: ${error.message}`); }
+    if (facts.project !== project) {
+      throw new CaptureTraceError(step, `${document.name} was produced for a different project than member ${member.name}; pass the member project to the producer.`);
+    }
+    await writeOutput(session.output, path, content);
+    recordArtifact(session, path, content, source, documentTool(value));
+    documents.push({ name: document.name, path });
+    parsed.push(facts);
+  }
+  return { config: member, values, parsed, captured: { name: member.name, project,
+    ...(revision === undefined ? {} : { revision }), ...(catalog === undefined ? {} : { catalog }), documents, analyses: [] } };
+}
+
+/** 인자 목록의 자리표시자와 경로 참조를 푼다. 경로 참조는 존재해야 하고 root 안이어야 한다. */
+async function expandArguments(args, values, session, step) {
+  const resolved = new Map();
+  for (const argument of args) {
+    if (typeof argument !== 'string') resolved.set(argument, await resolveExisting(argument, session.roots, step));
+  }
+  try { return args.map((argument) => expandCaptureArgument(argument, values, (reference) => resolved.get(reference))); }
+  catch (error) {
+    if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError(step, error.message);
+    throw error;
+  }
+}
+
+/**
+ * (b) member 문서로 `isthmus check --pairs`를 실행한다.
+ *
+ * 조인이 계약대로 서는지 순회 전에 확인하고, 쌍을 `pairs/<member>.json`에 남겨 수동 왕복과 대조할 수 있게 한다.
+ * 양쪽 측이 모두 있는 도메인의 문서만 넘긴다({@link pairsDocumentIndexes}). root 자체는 같은 사실 문서에서
+ * 뽑는다({@link collectCaptureRoots}) — 쌍은 호출이 없는 핸들러, 사용이 없는 relation, member 사이 호출을
+ * 싣지 않으므로 root 원천으로는 부분 집합이기 때문이다.
+ */
+async function capturePairs(session, member) {
+  const step = `pairs-${member.config.name}`;
+  const indexes = pairsDocumentIndexes(member.parsed);
+  if (indexes.length === 0) {
+    session.manifest.steps.push({ step, skipped: 'no domain in this member has both sides (check --pairs would reject it)' });
+    return;
+  }
+  const args = ['check', '--pairs', ...indexes.map((index) => join(session.output, member.captured.documents[index].path))];
+  const { stdout, entry } = await run(session, { step, label: 'isthmus check --pairs', command: [process.execPath, isthmusMain], args,
+    timeoutSeconds: ISTHMUS_TIMEOUT_SECONDS });
+  const report = parseJson(stdout, step, 'isthmus check --pairs');
+  const path = `pairs/${member.config.name}.json`;
+  await writeOutput(session.output, path, stdout);
+  recordArtifact(session, path, stdout, 'isthmus');
+  const matches = Array.isArray(report.matches) ? report.matches : [];
+  entry.pairs = {
+    http: matches.filter(({ domain }) => domain === 'http').length,
+    persistence: matches.filter(({ domain }) => domain === 'persistence').length,
+  };
+}
+
+/**
+ * (c) member의 순회 분석을 모은다. 생산자 명령은 사실 문서에서 뽑은 root로 실행하고, root가 많으면 나눠
+ * 여러 분석으로 기록한다(trace가 같은 역할·플랫폼·member 분석을 합친다). 사전 계산 artifact는 복사하고
+ * sha256을 `precomputed`에 싣는다.
+ */
+async function captureAnalyses(session, member, provisional) {
+  const memberName = session.config.workspace ? member.config.name : undefined;
+  const ids = new Set(session.config.members.flatMap(({ analyses }) => analyses.map(({ id }) => id)));
+  for (const analysis of member.config.analyses) {
+    const step = `analysis-${analysis.id}`;
+    if (analysis.precomputed !== undefined) {
+      await capturePrecomputedAnalysis(session, member, analysis, provisional, step);
+      continue;
+    }
+    const roots = collectCaptureRoots(member.parsed, analysis.role, analysis.platform,
+      selectedSymbols(provisional, memberName, analysis.platform));
+    if (roots.length === 0) {
+      session.manifest.steps.push({ step, skipped: 'no roots: the member documents carry no symbol for this role and platform' });
+      continue;
+    }
+    const delivery = analysis.step.roots;
+    const chunks = chunkCaptureRoots(roots, analysis.step.maxRootsPerRun,
+      delivery === 'roots-from' ? Number.MAX_SAFE_INTEGER : MAX_ROOT_ARGUMENT_BYTES);
+    for (const [index, chunk] of chunks.entries()) {
+      const id = chunks.length === 1 ? analysis.id : `${analysis.id}.${index + 1}`;
+      if (id !== analysis.id) {
+        if (ids.has(id)) throw new CaptureTraceError(step, `split analysis id ${id} collides with another analysis id.`);
+        ids.add(id);
+      }
+      await runTraversal(session, member, analysis, id, chunk, provisional);
+    }
+  }
+}
+
+/** 한 묶음의 root로 생산자 순회 명령을 실행하고 결과를 검증해 기록한다. */
+async function runTraversal(session, member, analysis, id, roots, provisional) {
+  const step = `analysis-${id}`;
+  let rootsFile;
+  if (analysis.step.roots === 'roots-from') {
+    const relative = `${member.config.name}/roots/${id}.json`;
+    rootsFile = await writeOutput(session.output, relative, `${JSON.stringify(roots)}\n`);
+  }
+  const base = await expandArguments(analysis.step.args, member.values, session, step);
+  let args;
+  try { args = [...base, ...rootArguments(analysis.step.roots, roots, rootsFile)]; }
+  catch (error) {
+    if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError(step, error.message);
+    throw error;
+  }
+  const label = commandLabel(analysis.step.tool, base);
+  const { stdout, entry } = await run(session, { step, label, command: session.config.tools[analysis.step.tool].command, args,
+    timeoutSeconds: analysis.step.timeoutSeconds, acceptExitCodes: analysis.step.acceptExitCodes });
+  entry.roots = roots.length;
+  const path = capturedAnalysisPath(member.config.name, id);
+  const reference = { id, platform: analysis.platform, role: analysis.role, path,
+    ...(session.config.workspace ? { member: member.config.name } : {}) };
+  const value = parseJson(stdout, step, label);
+  validateAnalysis(value, reference, provisional, step, label);
+  await writeOutput(session.output, path, stdout);
+  recordArtifact(session, path, stdout, 'captured', documentTool(value));
+  member.captured.analyses.push({ id, platform: analysis.platform, role: analysis.role, path });
+}
+
+/** 사전 계산 순회를 복사하고 증언(sha256·revision)을 붙인다. */
+async function capturePrecomputedAnalysis(session, member, analysis, provisional, step) {
+  const content = await readPrecomputed(analysis.precomputed.path, session, step);
+  const value = parseJson(content.toString('utf8'), step, `precomputed ${analysis.id}`);
+  // 증언 revision: 설정이 밝힌 값, 없으면 문서가 싣는 revision. 둘 다 없으면 묶을 revision이 없어 받지 않는다.
+  const revision = analysis.precomputed.revision ?? (typeof value?.revision === 'string' ? value.revision : undefined);
+  if (revision === undefined) {
+    throw new CaptureTraceError(step, `precomputed analysis ${analysis.id} carries no revision; add precomputed.revision (the source revision it was built from).`);
+  }
+  const path = capturedAnalysisPath(member.config.name, analysis.id);
+  const precomputed = { sha256: sha256(content), revision,
+    ...(analysis.precomputed.generatedAt === undefined ? {} : { generatedAt: analysis.precomputed.generatedAt }) };
+  const reference = { id: analysis.id, platform: analysis.platform, role: analysis.role, path, precomputed,
+    ...(session.config.workspace ? { member: member.config.name } : {}) };
+  validateAnalysis(value, reference, provisional, step, `precomputed ${analysis.id}`);
+  await writeOutput(session.output, path, content);
+  recordArtifact(session, path, content, 'precomputed', documentTool(value));
+  member.captured.analyses.push({ id: analysis.id, platform: analysis.platform, role: analysis.role, path, precomputed });
+}
+
+/** trace와 같은 파서·어댑터로 순회를 검증한다(형식·방향·플랫폼·project·revision 증언). */
+function validateAnalysis(value, reference, provisional, step, label) {
+  try { normalizeTraceAnalysis(value, reference, analysisProject(provisional, reference)); }
+  catch (error) { throw new CaptureTraceError(step, `${label} output violates the traversal contract: ${error.message}`); }
+}
+
+/** (e) 수집한 context로 `isthmus trace`를 실행하고 요약을 돌려준다. */
+async function runTrace(session) {
+  const step = 'trace';
+  const { stdout } = await run(session, { step, label: 'isthmus trace', command: [process.execPath, isthmusMain],
+    args: ['trace', join(session.output, 'trace-context.json')], timeoutSeconds: ISTHMUS_TIMEOUT_SECONDS });
+  const report = parseJson(stdout, step, 'isthmus trace');
+  await writeOutput(session.output, 'trace.json', stdout);
+  recordArtifact(session, 'trace.json', stdout, 'isthmus');
+  const gapCodes = {};
+  for (const { code } of report.gaps ?? []) gapCodes[code] = (gapCodes[code] ?? 0) + 1;
+  return { path: 'trace.json', summary: report.summary, gapCodes };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    if (process.argv.length !== 3) throw new CaptureTraceError('usage', 'Usage: node scripts/capture-trace.mjs <capture.json>');
+    let text;
+    try { text = await readFile(process.argv[2], 'utf8'); }
+    catch { throw new CaptureTraceError('config', 'the capture config could not be read.'); }
+    const result = await captureTrace(parseJson(text, 'config', 'the capture config'));
+    process.stdout.write(encodeSortedJson(result));
+  } catch (error) {
+    process.stderr.write(`${error instanceof CaptureTraceError ? error.message
+      : 'Trace capture failed unexpectedly; check the configuration and producer compatibility.'}\n`);
+    process.exitCode = 2;
+  }
+}
