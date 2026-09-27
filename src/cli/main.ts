@@ -54,7 +54,7 @@ Commands:
   trace        Follow a route, relation, symbol, or file to DB and client impact candidates
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
-  diff         Compare bridge observations before and after a change
+  diff         Compare bridge observations (or --http route surfaces) before and after a change
   retentions   Produce external retention evidence
   extract-js   Extract React Native caller-side bridge facts from JS/TS
   doctor       Validate a capture config and its executable paths

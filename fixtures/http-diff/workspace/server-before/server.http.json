@@ -1,0 +1,70 @@
+{
+  "format": "bridge-facts",
+  "version": 1,
+  "tool": {
+    "name": "synthetic-http-diff",
+    "version": "0.0.0"
+  },
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "platform": "js",
+  "target": "http",
+  "project": "/work/example-server",
+  "roles": [
+    "server"
+  ],
+  "dispatch": "specificity",
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "facts": [
+    {
+      "kind": "route-decl",
+      "method": "GET",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 12,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "orders.get",
+        "usr": "ts:orders.get"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "POST",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 24,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "orders.create",
+        "usr": "ts:orders.create"
+      }
+    },
+    {
+      "kind": "route-decl",
+      "method": "DELETE",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "pathAnchor": "root",
+      "location": {
+        "path": "src/routes/api.ts",
+        "line": 36,
+        "column": 3
+      },
+      "symbol": {
+        "qualifiedName": "orders.cancel",
+        "usr": "ts:orders.cancel"
+      }
+    }
+  ],
+  "limitations": []
+}

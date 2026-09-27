@@ -1,0 +1,49 @@
+{
+  "format": "isthmus-workspace",
+  "version": 1,
+  "members": [
+    {
+      "name": "server",
+      "project": "/work/example-server",
+      "revision": "srv-head",
+      "documents": [
+        "server-after/server.http.json"
+      ]
+    },
+    {
+      "name": "server-spec",
+      "project": "/work/example-server",
+      "revision": "srv-head",
+      "documents": [
+        "server-after/api.openapi.json"
+      ]
+    },
+    {
+      "name": "client",
+      "project": "/work/example-client",
+      "revision": "cli-release-3.2",
+      "documents": [
+        "client/android.http.json"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "name": "mobile->api",
+      "client": "client",
+      "server": "server",
+      "match": {
+        "hosts": [
+          "api.example.com"
+        ]
+      },
+      "contract": {
+        "member": "server-spec",
+        "documents": [
+          "server-after/api.openapi.json"
+        ],
+        "authoritative": true
+      }
+    }
+  ]
+}
