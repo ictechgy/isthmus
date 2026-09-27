@@ -83,7 +83,9 @@ OpenAPI `route-contract` 사실을 (HTTP method, 정규 경로 템플릿)으로 
 service를 선언하지 않았을 때)만 선언 측에 귀속되고, 귀속되지 않은 호출은 개수만 세며 출력하지
 않는다. error는 모든 전제가 증명될 때만 내고, 스펙만 있는 선언 측은 `route-call-without-decl`을
 만들지 않는다. 아직 이 문서를 내는 생산자는 없고 요청·응답 필드, query 파라미터, 헤더는 비교하지
-않는다. `graph`·`diff`·`impact`·`retentions`·`preflight`는 지금은 http 문서를 거부한다.
+않는다. `diff --http`는 두 revision의 route 표면을 비교하고 결합하지 않게 되는 클라이언트 호출을 보고한다
+([`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)). `graph`·`impact`·`retentions`·`preflight`와 `--http` 없는 `diff`는 지금은
+http 문서를 거부한다.
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 HTTP 절과 [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md)를 본다.
 
 변경 예측은 고정된 공개 정밀도 코퍼스 — `battery_plus`·`shared_preferences_foundation`·
@@ -103,6 +105,7 @@ service를 선언하지 않았을 때)만 선언 측에 귀속되고, 귀속되�
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 공개 호환 버전, 고정 예제, CI 설정 |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | `check --pairs`로 코드 → 테이블 → DB 의존자를 잇는 수동 왕복 절차 |
+| [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http`(개발 중): 한 서버·스펙 또는 workspace의 base·head route 표면, base에서 결합하던 호출이 head에서 결합하지 않는 곳, `--fail-on` 종료 코드, base..head CI 예시 |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace`(개발 중): route → 핸들러 → 테이블 → DB 의존자, route → 호출부 → 영향받는 클라이언트 코드를 생산자 id 정확 일치와 명시적 gap으로 잇는다 |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | 생산자가 `trace`용으로 내는 정방향·역방향 순회 공유 형식 `language-traversal` v1 |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | 고정 공개 플러그인·앱 정밀도 코퍼스(TP/FN/FP 계수) |
@@ -534,7 +537,7 @@ isthmus 출력 문서는 버전 1 안에서 필드 추가나 새 이슈 code를 
 | 종료 코드 | 의미 |
 |---|---|
 | `0` | 실행 성공. 기본 모드에서는 이슈가 있어도 보고만 함 |
-| `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만, trace는 남은 gap이 있으면 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
+| `1` | `--strict`에서 error 이슈를 발견함(diff는 새로 관찰된 error만, `diff --http`는 `--fail-on`·`--strict`에 걸린 finding, trace는 남은 gap이 있으면 해당). `-unverified` 경고와 베이스라인이 억제한 error는 실패시키지 않음 |
 | `2` | 파일 읽기, JSON, 교환 계약, project 불일치, 플랫폼 구성 누락, 보류된 조인, 크기 상한(입력 텍스트·그래프 간선·베이스라인 항목·persistence·http 쌍 끝점·http suffix 비교), 베이스라인 파일 오류·쓰기 실패, 만들 수 없는 보존 근거, 아직 http를 소비하지 않는 명령에 넘긴 http 문서 등 도구 실패. stderr가 원인을 구분 |
 | `64` | 잘못된 명령·옵션·입력 개수(형식이 틀린 `route:` 주체 포함) 또는 `query`의 `notFound`·`ambiguous` |
 
@@ -600,6 +603,24 @@ JSON으로 출력한다. 연결에는 호출자와 핸들러 위치가 포함된
 기존 CLI와 동일하다. 혼합 target이나 비교 불가능한 입력은 종료 코드 2로 거부한다.
 `generatedAt`은 사실 추출 시각이며 revision 순서가 아니다. 비교 방향은 `--before`와
 `--after` 인자로 결정되므로 사용자가 올바른 revision의 파일을 지정해야 한다.
+
+### HTTP route 표면 (개발 중)
+
+```bash
+isthmus diff --http --before base.http.json --after head.http.json \
+  --clients clients.http.json --fail-on error,incomplete
+isthmus diff --http --before base.workspace.json --after head.workspace.json --strict
+```
+
+`diff --http`는 한 서버(또는 스펙)의 두 revision http 문서를 비교하고, **고정한 한 벌의 클라이언트 호출**을 양쪽에
+평가한다. 호출은 `--clients`(surface 모드) 또는 head `isthmus-workspace` 매니페스트의 client member(서버와
+클라이언트 저장소가 나뉜 workspace 모드)에서 온다. `isthmus-http-diff` v1 finding으로 route 추가·삭제(method + 정규
+템플릿), 경로 제약·끝 슬래시·catch-all·대소문자 변화, 그리고 삭제·변경된 route마다 base에서 결합하던 호출이 head에서
+결합하지 않는 곳(`removed-bound-route`·`changed-bound-route`와, 호출마다 증명하지 못한 전제를 싣는 `-unverified`
+변형)이나 다른 route에 결합하는 곳(`rebound-route-calls`)을 낸다. 귀속되지 않았거나 dynamic이거나 스캔하지 않은 호출과
+선언 측 공백은 항상 incompleteness finding으로 명시되므로 빈 결과가 "깨지는 클라이언트 없음"을 주장하지 않는다.
+`--fail-on`은 finding 코드·`error`·`warning`·`incomplete`를 받고 모르는 토큰은 사용 오류(64)다. `--http`는 `diff`
+바로 다음에 와야 한다. 설계, CI 절차와 워크플로 예시는 [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)에 있다.
 
 ## 코딩 에이전트 skill
 

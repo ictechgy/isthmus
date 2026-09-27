@@ -239,8 +239,14 @@ location-column 벡터(UTF-16 열 회귀 방지)를 통과한다.
   `match`의 hosts·services·baseRefs.ref, `contract.member`, `catalog.graphSha`, 사전 계산 분석의 sha256·revision
   검사), files 선택(`file-selection-coarse`·사실 위치 fallback), member 사이 테이블→API→클라이언트, 분리된 두
   저장소 합성 fixture(`fixtures/trace-workspace/`)의 E2E, gap 코드 전수 음성 fixture, `--strict` 종료 코드 고정이
-  들어갔다. 형제 전파는 이 문서가 무엇을 형제로 볼지 정의하지 않아 보류했다. http diff, `match.interfaces`·
+  들어갔다. 형제 전파는 이 문서가 무엇을 형제로 볼지 정의하지 않아 보류했다. `match.interfaces`·
   `declared-base`, check·query의 매니페스트, MCP 노출, 앱 A dogfooding(가치 게이트)은 남았다.
+- 진행(2026-09-28): http diff([HTTP-DIFF](HTTP-DIFF.md) — `isthmus diff --http`). surface 모드(한 서버·스펙의 base·head와
+  `--clients`로 고정한 호출), workspace 모드(base·head `isthmus-workspace` 매니페스트, head의 client member 호출),
+  base..head CI 운영 절차와 워크플로 예시가 들어갔다. 같은 호출 집합을 base·head 선언 측에 교차 평가해 route 추가·삭제·
+  속성 변화(경로 제약·끝 슬래시·catch-all·대소문자)와 "base에서 결합하던 호출이 head에서 결합하지 않음"을 finding 19종
+  (surface·impact·incompleteness)으로 내고, `--fail-on`(코드·`error`·`warning`·`incomplete`)으로 종료 코드를 정한다.
+  귀속·스캔이 불완전하면 incompleteness finding이 반드시 나온다.
 
 종료 조건: 분리된 두 git 저장소 fixture에서 API·테이블·DB 의존자·호출부·클라이언트 영향
 심볼을 모두 담은 보고서가 나온다. gap 코드마다 음성 fixture가 기대대로 보고된다. `--strict`
