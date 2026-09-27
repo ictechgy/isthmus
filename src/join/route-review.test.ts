@@ -75,6 +75,15 @@ test('리뷰 2: suffix 후보도 caseInsensitive decl은 대소문자를 접어 
   ), ['warning route-call-without-decl-unverified /v1/users']);
 });
 
+test('리뷰 3: roles에 server가 없는 문서는 route-decl을 실을 수 없어 (f)를 거짓으로 참이 되게 할 수 없다', () => {
+  assert.throws(() => document('js', ['client'], [decl('GET', '/a')], { dispatch: undefined }), /matching document role/);
+  // openapi(contract)만 있는 선언 측은 (f)가 거짓이라 decl 기반 진단을 내지 않는다.
+  assert.deepEqual(callCodes(
+    document('openapi', ['server'], [fact('route-contract', 'GET', '/a', { location: { path: 'o.yaml', line: 1, column: 1 } })]),
+    document('kotlin', ['client'], [call('GET', '/b')]),
+  ), ['warning route-call-without-contract-unverified /b']);
+});
+
 test('리뷰 5: 증명 불가 후보만으로 닿는 near-miss도 error로 올리지 않고 불일치 warning으로 남긴다', () => {
   const regex = { paramConstraints: [{ segment: 1, kind: 'regex', pattern: '[0-9]+' }] };
   assert.deepEqual(callCodes(
@@ -90,4 +99,20 @@ test('리뷰 5: 증명 불가 후보만으로 닿는 near-miss도 error로 올�
     document('js', ['server'], [decl('GET', '/files/{**}')]),
     document('kotlin', ['client'], [call('GET', '/files')]),
   ), ['warning route-trailing-slash-mismatch /files']);
+});
+
+test('리뷰 6: 문서 service와 다른 사실 service는 파서가 거부하므로 서버 측 문서 선택은 유효 service와 같다', () => {
+  assert.throws(() => document('js', ['server'], [decl('GET', '/a', { service: 'two' })], { service: 'one' }),
+    /differs from the document service/);
+  const routes = joinBridgeDocuments([
+    document('js', ['server'], [], { service: 'one', limitations: ['route-coverage: synthetic'] }),
+    document('js', ['server'], [decl('GET', '/a', { service: 'two' })]),
+    document('kotlin', ['client'], [call('GET', '/b', { service: 'two' })]),
+  ]).routes!;
+  assert.deepEqual(routes.scopes.map(({ scope, serverLimitations }) => `${scope}:${serverLimitations.length}`), ['one:1', 'two:0']);
+  assert.deepEqual(callCodes(...[
+    document('js', ['server'], [], { service: 'one', limitations: ['route-coverage: synthetic'] }),
+    document('js', ['server'], [decl('GET', '/a', { service: 'two' })]),
+    document('kotlin', ['client'], [call('GET', '/b', { service: 'two' })]),
+  ]), ['error route-call-without-decl /b']);
 });

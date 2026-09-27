@@ -229,9 +229,16 @@ function buildScope(
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
   const scopeService = services === undefined ? undefined : scope;
-  const serverDocuments = documents.filter((document) => isDeclarationDocument(document) &&
-    (scopeService === undefined || document.service === scopeService ||
-      document.facts.some((fact) => isDeclarationFact(fact) && effectiveService(document, fact) === scopeService)));
+  // 서버 측 문서: 유효 service가 이 scope인 선언 측 사실을 담았거나, 선언 측 사실이 없고 문서
+  // service가 이 scope인 문서다. 파서가 문서·사실 service 불일치를 거부하므로 둘은 겹치지 않는다.
+  const serverDocuments = documents.filter((document) => {
+    if (!isDeclarationDocument(document)) return false;
+    if (scopeService === undefined) return true;
+    const facts = document.facts.filter(isDeclarationFact);
+    return facts.length === 0
+      ? document.service === scopeService
+      : facts.some((fact) => effectiveService(document, fact) === scopeService);
+  });
   const clientDocuments = documents.filter((document) => isClientDocument(document) &&
     (mayReach(document.service, scopeService) || document.facts.some((fact) =>
       fact.kind === 'route-call' && effectiveService(document, fact) === scopeService)));
@@ -239,7 +246,10 @@ function buildScope(
     scopeService === undefined || effectiveService(document, fact) === scopeService;
   const decls = collectDeclarations(documents, 'route-decl', inScope, compareEndpoints);
   const contracts = collectDeclarations(documents, 'route-contract', inScope, compareEndpoints);
-  const declScanned = serverDocuments.some((document) => document.platform !== 'openapi');
+  // (f): platform이 openapi가 아니고 roles에 server가 있는 문서다. 파서가 server 역할 없는
+  // route-decl을 거부하지만, 계약 문장을 그대로 검사해 판정이 파서 규칙에 기대지 않게 한다.
+  const declScanned = serverDocuments.some((document) =>
+    document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = serverDocuments.filter(({ platform }) => platform === 'openapi').length;
   const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
