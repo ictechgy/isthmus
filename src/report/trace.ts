@@ -45,7 +45,8 @@ export type { TraceLimitation };
  * - route 선택: route-decl → 핸들러 usr → 정방향 순회 → relation-use → persistence 조인 →
  *   relation-decl VertexId → schemagraph 의존자, 그리고 route → 귀속된 route-call → 클라이언트
  *   역방향 순회.
- * - relation·심볼 선택: relation-use(또는 심볼) → 역방향 순회 → route-decl 핸들러 → route → 클라이언트.
+ * - relation·심볼·파일 선택: relation-use(또는 심볼, 파일에 놓인 심볼) → 역방향 순회 → route-decl 핸들러 →
+ *   route → 클라이언트.
  *
  * workspace에서는 체인 키가 `[member, platform, id]`다. persistence·언어 순회는 member 안에서만, http는
  * link에 선언된 쌍에서만 잇는다. 결과는 항상 `complete: false`다. 끊긴 곳은 gap으로만 보고하고
@@ -64,11 +65,12 @@ export interface TraceInput {
   readonly analyses: readonly TraceAnalysis[];
 }
 
-/** 체인의 시작 선택 하나다. workspace면 relation 선택에 `member`가 붙는다. */
+/** 체인의 시작 선택 하나다. workspace면 relation·파일 선택에 `member`가 붙는다. */
 export type TraceSelector =
   | { readonly route: TraceRouteSelection }
   | { readonly relation: string; readonly member?: string }
-  | { readonly symbol: TraceSymbolSelection };
+  | { readonly symbol: TraceSymbolSelection }
+  | { readonly file: string; readonly member?: string };
 
 /** route 키다. scope는 check 진단 신원과 같은 규칙(service 또는 `default`, workspace면 link 이름)이다. */
 export interface TraceRouteKey {
@@ -370,6 +372,10 @@ class TraceBuilder {
       return selection.relations.flatMap((item) => this.relationChain(typeof item === 'string'
         ? { relation: item } : { relation: item.name, member: item.member }));
     }
+    if ('files' in selection) {
+      return selection.files.flatMap((item) => this.fileChain(typeof item === 'string'
+        ? { file: item } : { file: item.path, member: item.member }));
+    }
     return selection.symbols.map((symbol) => this.symbolChain({ symbol }));
   }
 
@@ -486,6 +492,66 @@ class TraceBuilder {
     const { member, platform, usr } = selector.symbol;
     return this.count({ selector, ...this.reverseRoutes(selector, [{ member: member ?? '', platform, usr }]),
       relationUses: [], database: [] });
+  }
+
+  /**
+   * 파일 선택 하나의 체인이다 — 파일 단위 과대 근사다.
+   *
+   * 그 member의 분석이 이 파일에 위치시킨 심볼(root·도달 정점)과, 이 파일에 위치한 사실(route-decl·route-call·
+   * relation-use)의 `symbol.usr`(사실 위치 fallback)를 모두 바뀐 것으로 보고 역방향으로 route·클라이언트를 찾는다.
+   * 이 파일에 위치한 relation-use는 hop과 DB 의존자로 싣는다. 바뀐 줄을 모르므로 항상 `file-selection-coarse`를
+   * 남기고, 아무것도 찾지 못하면 없음이 아니라 `file-without-symbols`다.
+   */
+  private fileChain(selector: { file: string; member?: string }): TraceChain[] {
+    const member = selector.member ?? '';
+    const located = this.locatedAnalysisSymbols(member, selector.file);
+    const facts = this.locatedFactSymbols(member, selector.file).filter((start) =>
+      !located.some((other) => other.platform === start.platform && other.usr === start.usr));
+    const uses = this.uses.filter((use) => use.member === member && use.fact.location?.path === selector.file);
+    if (located.length === 0 && facts.length === 0 && uses.length === 0) {
+      this.gap({ code: 'file-without-symbols', selector, ...this.memberField(member),
+        detail: 'No analysis symbol or bridge fact is located in this file, so nothing was followed; this is not evidence '
+          + 'that the file affects no route (producers may not report locations, or the file is outside their scan).' });
+      return [];
+    }
+    this.gap({ code: 'file-selection-coarse', selector, ...this.memberField(member),
+      detail: `File selection is a file-level over-approximation: ${located.length} symbol(s) located by analyses and `
+        + `${facts.length} more located by bridge facts are all treated as changed, so routes reached only through `
+        + 'unchanged symbols of this file may be reported.' + (located.length > 0 ? ''
+        : ' No analysis locates a symbol in this file, so only fact locations were used (fact-location fallback); '
+          + 'symbols of this file without facts are missing.') });
+    // dynamic 사용의 원문 식은 관계 이름이 아니므로 hop으로 싣지 않고 gap 증거로만 남긴다.
+    for (const use of uses) if (use.outcome === 'dynamic') this.useOutcomeGap(selector, use);
+    const { hops } = this.useHops(selector, uses.filter(({ outcome }) => outcome !== 'dynamic'));
+    const reverse = this.reverseRoutes(selector, uniqueStarts([...located, ...facts]));
+    return [this.count({ selector, ...reverse, relationUses: finishUses(hops), database: this.database(selector, declGroups(hops)) })];
+  }
+
+  /** member의 언어 분석(sql 제외)이 이 파일에 위치시킨 root·도달 심볼이다. */
+  private locatedAnalysisSymbols(member: string, path: string): StartSymbol[] {
+    const found: StartSymbol[] = [];
+    for (const analysis of this.input.analyses) {
+      if ((analysis.member ?? '') !== member || analysis.platform === 'sql') continue;
+      const symbols = [...analysis.graph.roots.flatMap(({ symbol }) => symbol === undefined ? [] : [symbol]),
+        ...analysis.graph.reached.map(({ symbol }) => symbol)];
+      for (const symbol of symbols) {
+        if (symbol.location?.path === path) found.push({ member, platform: analysis.platform, usr: symbol.usr });
+      }
+    }
+    return uniqueStarts(found);
+  }
+
+  /** member 문서에서 이 파일에 위치한 사실의 `symbol.usr`다(sql·openapi 제외). */
+  private locatedFactSymbols(member: string, path: string): StartSymbol[] {
+    const found: StartSymbol[] = [];
+    for (const document of this.members.get(member)!.documents) {
+      if (document.platform === 'sql' || document.platform === 'openapi') continue;
+      for (const fact of document.facts) {
+        const usr = fact.symbol?.usr;
+        if (usr !== undefined && fact.location?.path === path) found.push({ member, platform: document.platform, usr });
+      }
+    }
+    return uniqueStarts(found);
   }
 
   /**

@@ -150,8 +150,13 @@ test('workspace context는 member·link를 검증하고 문서·분석을 member
   const relations = parseTraceContext({ ...workspaceContext, selection: { relations: [
     { member: 'server', name: 'orders' }, { member: 'client', name: 'cache' }] } });
   assert.deepEqual(relations.selection, { relations: [{ member: 'client', name: 'cache' }, { member: 'server', name: 'orders' }] });
+  const files = parseTraceContext({ ...workspaceContext, selection: { files: [{ member: 'server', path: 'src/b.ts' },
+    { member: 'server', path: 'src/a.ts' }] } });
+  assert.deepEqual(files.selection, { files: [{ member: 'server', path: 'src/a.ts' }, { member: 'server', path: 'src/b.ts' }] });
   const symbols = parseTraceContext({ ...workspaceContext, selection: { symbols: [{ member: 'client', platform: 'kotlin', usr: 'k' }] } });
   assert.deepEqual(symbols.selection, { symbols: [{ member: 'client', platform: 'kotlin', usr: 'k' }] });
+  const single = parseTraceContext({ ...context, selection: { files: ['src/b.ts', 'src/a.ts'] } });
+  assert.deepEqual(single.selection, { files: ['src/a.ts', 'src/b.ts'] });
   const empty = parseTraceContext({ ...workspaceContext, links: [] });
   assert.deepEqual(empty.workspace?.links, []);
   const noAnalyses = structuredClone(workspaceContext);
@@ -201,6 +206,8 @@ test('workspace context의 잘못된 member·link·선택을 원인과 함께 �
     [(value) => { value.selection = { relations: ['orders'] }; }, /\{member, name\} objects/],
     [(value) => { value.selection = { relations: [{ member: 'server' }] }; }, /Invalid relation selection/],
     [(value) => { value.selection = { relations: [{ member: 'nobody', name: 'orders' }] }; }, /must name a workspace member/],
+    [(value) => { value.selection = { files: ['src/a.ts'] }; }, /\{member, path\} objects/],
+    [(value) => { value.selection = { files: [{ member: 'server', path: '/abs' }] }; }, /project-relative/],
     [(value) => { value.selection = { symbols: [{ platform: 'js', usr: 'a' }] }; }, /need a member/],
   ];
   for (const [mutate, pattern] of cases) {

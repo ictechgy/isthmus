@@ -1,5 +1,5 @@
 import { compareStrings } from '../compare.ts';
-import { isBridgeTimestamp, isJsonObject, isRouteAuthority, isSafeNonEmptyString } from './parse.ts';
+import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isRouteAuthority, isSafeNonEmptyString } from './parse.ts';
 import { adaptKartographImpact } from './kartograph-impact.ts';
 import { adaptCartographImpact, adaptDartographImpact } from './producer-impact.ts';
 import type { ProducerImpactMetadata } from './producer-impact.ts';
@@ -76,11 +76,21 @@ export interface TraceMemberRelationSelection {
 /** relation 선택 하나다. 단일 project는 이름 문자열, workspace는 member와 이름이다. */
 export type TraceRelationSelection = string | TraceMemberRelationSelection;
 
+/** workspace의 파일 선택이다. */
+export interface TraceMemberFileSelection {
+  readonly member: string;
+  readonly path: string;
+}
+
+/** 파일 선택 하나다. 경로는 사실 위치와 같은 project 상대 경로다. 단일 project는 문자열이다. */
+export type TraceFileSelection = string | TraceMemberFileSelection;
+
 /** 정확히 한 종류의 선택이다. */
 export type TraceSelection =
   | { readonly routes: readonly TraceRouteSelection[] }
   | { readonly relations: readonly TraceRelationSelection[] }
-  | { readonly symbols: readonly TraceSymbolSelection[] };
+  | { readonly symbols: readonly TraceSymbolSelection[] }
+  | { readonly files: readonly TraceFileSelection[] };
 
 /** member의 DB 카탈로그 기록이다. `graphSha`가 있으면 그 member의 sql 분석 graphRevision과 대조한다. */
 export interface TraceCatalog {
@@ -461,13 +471,13 @@ function parsePrecomputed(input: unknown): TracePrecomputed {
 
 /**
  * 선택을 검증한다. 정확히 한 종류, 비어 있지 않고 중복 없는 목록이어야 한다.
- * `members`가 있으면(workspace) relation·symbol 선택은 member를 밝혀야 한다.
+ * `members`가 있으면(workspace) relation·symbol·file 선택은 member를 밝혀야 한다.
  */
 function parseSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceSelection {
   if (!isJsonObject(input)) fail('Trace selection must be a JSON object.');
   const keys = Object.keys(input);
-  if (keys.length !== 1 || !['routes', 'relations', 'symbols'].includes(keys[0]!)) {
-    fail('Trace selection must contain exactly one of routes, relations or symbols.');
+  if (keys.length !== 1 || !['routes', 'relations', 'symbols', 'files'].includes(keys[0]!)) {
+    fail('Trace selection must contain exactly one of routes, relations, symbols or files.');
   }
   const list = input[keys[0]!];
   if (!Array.isArray(list) || list.length === 0 || list.length > MAX_TRACE_SELECTIONS) fail('Invalid trace selection list.');
@@ -478,12 +488,16 @@ function parseSelection(input: unknown, members: ReadonlySet<string> | undefined
     return { symbols: sortedUnique(list.map((item) => parseSymbolSelection(item, members)),
       (value) => JSON.stringify([value.member ?? '', value.platform, value.usr])) };
   }
+  if (keys[0] === 'files') {
+    return { files: sortedUnique(list.map((item) => parseFileSelection(item, members)), selectionKey) };
+  }
   return { routes: sortedUnique(list.map(parseRouteSelection), (value) => JSON.stringify([value.scope ?? '', value.template, value.method])) };
 }
 
-/** relation 선택의 정렬 키다. 단일 project는 문자열 그대로라 기존 순서와 같다. */
-function selectionKey(value: TraceRelationSelection): string {
-  return typeof value === 'string' ? value : JSON.stringify([value.member, value.name]);
+/** relation·file 선택의 정렬 키다. 단일 project는 문자열 그대로라 기존 순서와 같다. */
+function selectionKey(value: string | TraceMemberRelationSelection | TraceMemberFileSelection): string {
+  if (typeof value === 'string') return value;
+  return JSON.stringify([value.member, 'name' in value ? value.name : value.path]);
 }
 
 /** workspace 선택의 member를 검증한다. 단일 project에서는 member를 받지 않는다. */
@@ -492,7 +506,7 @@ function selectionMember(input: Record<string, unknown>, members: ReadonlySet<st
     if (input.member !== undefined) fail('Only workspace trace contexts accept a selection member.');
     return {};
   }
-  const member = safe(input.member, 'Workspace selections of relations and symbols need a member.');
+  const member = safe(input.member, 'Workspace selections of relations, symbols and files need a member.');
   if (!members.has(member)) fail('Selection member must name a workspace member.');
   return { member };
 }
@@ -506,6 +520,18 @@ function parseRelationSelection(input: unknown, members: ReadonlySet<string> | u
   return { member: selectionMember(input, members).member!, name: safe(input.name, 'Invalid relation selection.') };
 }
 
+/** 파일 선택 하나다. 경로는 사실 위치와 같은 project 상대 경로여야 한다. */
+function parseFileSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceFileSelection {
+  const path = (value: unknown) => {
+    if (!isProjectRelativePath(value)) fail('File selections must be project-relative paths without "..".');
+    return value;
+  };
+  if (members === undefined) return path(input);
+  if (!isJsonObject(input) || Object.keys(input).some((key) => key !== 'member' && key !== 'path')) {
+    fail('Workspace file selections must be {member, path} objects.');
+  }
+  return { member: selectionMember(input, members).member!, path: path(input.path) };
+}
 
 /** route 선택 하나를 검증한다. 템플릿이 정규 문법이 아니면 거부한다(다시 정규화하지 않는다). */
 function parseRouteSelection(input: unknown): TraceRouteSelection {

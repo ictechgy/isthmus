@@ -51,7 +51,7 @@ Commands:
   query        Find both sides of a channel, method, relation:<name>, or route:<template>
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
-  trace        Follow a route, relation, or symbol to DB and client impact candidates
+  trace        Follow a route, relation, symbol, or file to DB and client impact candidates
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
   diff         Compare bridge observations before and after a change

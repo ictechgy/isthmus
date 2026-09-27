@@ -174,6 +174,8 @@ isthmus trace trace-context.json [--strict] [--compact]
 | `relation-selection-ambiguous` | 선택한 relation 이름이 여러 선언과 맞는다 |
 | `relation-without-decl` | 선택한 relation의 선언이 없다 |
 | `relation-without-use` | 선택한 relation의 리터럴 사용이 관찰되지 않았다(없다는 증거가 아님). dynamic 사용이 있으면 문구에 그 수를 싣는다 |
+| `file-selection-coarse` | 파일 선택은 파일 단위 과대 근사다 — 파일에 놓인 모든 심볼을 바뀐 것으로 본다. 분석이 이 파일에 심볼을 두지 않아 사실 위치로만 대신했으면(fact-location fallback) 문구에 밝힌다 |
+| `file-without-symbols` | 선택한 파일에 놓인 분석 심볼·사실이 없다(없다는 증거가 아님). 체인을 만들지 않는다 |
 | `http-member-unlinked` | workspace member의 http 문서가 해당 역할(client 또는 server·contract)의 link에 속하지 않아 잇지 않았다 |
 
 gap은 `selector`(체인)·`route`·`symbol`·`analysis`·`evidence` 중 해당하는 필드를 싣는다. 귀속되지 않은

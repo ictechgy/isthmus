@@ -232,3 +232,35 @@ test('workspace 입력이 member 계약을 어기면 부분 결과 없이 거부
   assert.throws(() => createTraceReport({ ...flat, analyses: flat.analyses.map((analysis) => ({ ...analysis, member: 'x' })) }),
     /single-project analyses must not/);
 });
+
+test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분석 위치가 없으면 사실 위치로 대신한다', () => {
+  const server = workspace(select({ files: [{ member: 'server', path: 'src/db/orders.ts' }] }));
+  assert.deepEqual(server.gaps.map(({ code, member: name }) => [code, name]), [['file-selection-coarse', 'server']]);
+  assert.match(server.gaps[0]!.detail, /2 symbol\(s\) located by analyses and 0 more/);
+  const [chain] = server.chains;
+  assert.deepEqual(chain?.selector, { file: 'src/db/orders.ts', member: 'server' });
+  assert.deepEqual(chain?.routes.map(({ method, template }) => [method, template]), [['POST', '/api/orders'], ['GET', '/api/orders/{}']]);
+  assert.equal(chain?.relationUses.length, 3);
+  assert.deepEqual(chain?.database.map(({ vertex }) => vertex), ['main.orders', 'main.orders.status']);
+  // Kotlin 호출 파일: 분석은 이 파일에 심볼을 두지 않으므로 route-call 사실의 usr로 대신하고, 서버 핸들러에는 닿지 않는다.
+  const client = workspace(select({ files: [{ member: 'client', path: 'android/app/src/main/java/example/OrdersApi.kt' }] }));
+  assert.deepEqual(codes(client), ['file-selection-coarse', 'non-http-entry']);
+  assert.match(client.gaps.find(({ code }) => code === 'file-selection-coarse')!.detail, /fact-location fallback/);
+  assert.deepEqual(client.gaps.filter(({ code }) => code === 'non-http-entry').map(({ symbol }) => symbol?.usr),
+    ['kt:OrdersApi.create', 'kt:OrdersApi.get']);
+  const nothing = workspace(select({ files: [{ member: 'server', path: 'README.md' }] }));
+  assert.deepEqual(nothing.chains, []);
+  assert.deepEqual(codes(nothing), ['file-without-symbols']);
+  // 단일 project도 같은 규칙이다. dynamic 사용은 hop이 아니라 gap이다.
+  const flat = single((value) => {
+    value.context.selection = { files: ['server/db/users.ts'] };
+    const base = value.files['server.persistence.json'].facts[0];
+    value.files['server.persistence.json'].facts.push({ ...base, channel: 'tableFor(kind)', dynamic: true,
+      location: { path: 'server/db/users.ts', line: 30, column: 1 } });
+  });
+  assert.deepEqual(codes(flat), ['dynamic-relation-use', 'file-selection-coarse']);
+  assert.deepEqual(flat.chains[0]?.selector, { file: 'server/db/users.ts' });
+  assert.deepEqual(flat.chains[0]?.routes.map(({ template }) => template), ['/api/users', '/api/users/{}']);
+  assert.deepEqual(flat.chains[0]?.relationUses.map(({ relation, column }) => [relation, column]),
+    [['users', undefined], ['users', 'email']]);
+});
