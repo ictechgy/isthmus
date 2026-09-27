@@ -616,3 +616,21 @@ test('근거 등급·완전성 gap이 있는 출력도 입력 순서와 무관�
   // z-forward는 direct가 아니라 unassessed이므로 relation-use hop은 server-forward의 candidate를 고른다.
   assert.deepEqual(codes(result), ['candidate-dispatch', 'reach-completeness-unknown', 'reach-possibly-incomplete']);
 });
+
+test('같은 핸들러를 root로 한 분석 중 신고하지 않는 쪽이 있으면 신고하는 쪽이 깨끗해도 completeness gap이다', () => {
+  // 합친 hop은 신고하지 않는 분석에서만 올 수 있다. 여기서는 z-forward만 GET 핸들러에서 audit.write에 닿으므로,
+  // server-forward의 "잇지 못한 호출 0"은 그 hop의 완전성을 보증하지 않는다.
+  const result = report((value) => {
+    const legacy = structuredClone(value.analyses['server-forward']);
+    delete legacy.dispatch;
+    row(legacy, 'ts:repo/audit.write').roots = [0, 1];
+    value.analyses['z-forward'] = legacy;
+    value.context.analyses.push({ id: 'z-forward', platform: 'js', role: 'forward', path: 'z.json' });
+  });
+  // audit_log 사용이 새로 닿아 그 VertexId의 DB 분석이 없다는 gap도 함께 남는다(fixture의 DB 분석은 users만 root).
+  assert.deepEqual(result.gaps.map(({ code, analysis, symbol }) => [code, analysis ?? symbol?.usr]),
+    [['reach-completeness-unknown', 'z-forward'], ['analysis-missing', 'main.audit_log']]);
+  const audit = result.chains[0]!.relationUses.find(({ relation }) => relation === 'audit_log')!;
+  assert.deepEqual(audit.reachedFrom.map(({ analysis, evidence }) => [analysis, evidence]), [['z-forward', 'unassessed']]);
+  assert.equal(hasTraceGaps(result), true);
+});

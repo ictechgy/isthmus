@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -94,4 +95,53 @@ test('실제 CLI 프로세스가 fixture 디렉터리 기준으로 trace를 실�
   assert.equal(report.format, 'isthmus-trace');
   assert.equal(report.summary.routes, 2);
   assert.equal(basename(contextPath), 'context-relation.json');
+});
+
+/** candidate 근거를 싣도록 바꾼 정방향 순회 원문이다. */
+function candidateForward(): string {
+  const forward = JSON.parse(files.get('server-forward.json')!);
+  forward.dispatch = 'candidates';
+  forward.reached.find(({ symbol }: any) => symbol.usr === 'ts:repo/users.findById').evidence = 'candidate';
+  return JSON.stringify(forward);
+}
+
+test('candidate-dispatch gap의 evidence 끝점과 hop 등급이 CLI JSON 출력에 그대로 실린다', async () => {
+  const assertEmitted = (text: string) => {
+    const report = JSON.parse(text);
+    const gaps = report.gaps.filter(({ code }: any) => code === 'candidate-dispatch');
+    assert.equal(gaps.length, 2);
+    assert.deepEqual(gaps.map(({ evidence }: any) => [evidence.platform, evidence.location.path, evidence.symbol.usr]), [
+      ['js', 'server/db/users.ts', 'ts:repo/users.findById'], ['js', 'server/db/users.ts', 'ts:repo/users.findById'],
+    ]);
+    assert.deepEqual(gaps.map(({ symbol }: any) => symbol.usr), ['ts:api/users.get', 'ts:api/users.get']);
+    assert.ok(report.chains[0].relationUses.every(({ reachedFrom }: any) => reachedFrom[0].evidence === 'candidate'));
+    assert.equal(report.summary.evidence.candidate, 2);
+  };
+  const result = await runTraceCommand(['trace', '/fx/context.json', '--strict'], reader({ 'server-forward.json': candidateForward() }));
+  assert.equal(result.exitCode, 1);
+  assertEmitted(result.standardOutput);
+  // 실제 프로세스도 같은 필드를 낸다(직렬화 경로 전체).
+  const directoryPath = await mkdtemp(join(tmpdir(), 'isthmus-trace-'));
+  try {
+    for (const [name, text] of files) await writeFile(join(directoryPath, name), text);
+    await writeFile(join(directoryPath, 'server-forward.json'), candidateForward());
+    const mainPath = fileURLToPath(new URL('./main.ts', import.meta.url));
+    const child = await promisify(execFile)(process.execPath, [mainPath, 'trace', join(directoryPath, 'context.json'), '--compact']);
+    assertEmitted(child.stdout);
+  } finally {
+    await rm(directoryPath, { recursive: true, force: true });
+  }
+});
+
+test('같은 핸들러의 정방향 분석 중 하나라도 잇지 못한 호출을 신고하지 않으면 strict는 1이다', async () => {
+  // server-forward는 dispatch로 신고하고 이 핸들러에서 닿는 정점에 잇지 못한 호출이 없다. z-forward는 신고하지 않는다.
+  const legacy = JSON.parse(files.get('server-forward.json')!);
+  delete legacy.dispatch;
+  const withLegacy = { ...context, analyses: [...context.analyses, { id: 'z-forward', platform: 'js', role: 'forward',
+    path: 'z-forward.json' }] };
+  const read = reader({ 'context.json': JSON.stringify(withLegacy), 'z-forward.json': JSON.stringify(legacy) });
+  const strict = await runTraceCommand(['trace', '/fx/context.json', '--strict'], read);
+  assert.equal(strict.exitCode, 1);
+  assert.deepEqual(JSON.parse(strict.standardOutput).gaps.map(({ code, analysis }: any) => [code, analysis]),
+    [['reach-completeness-unknown', 'z-forward']]);
 });
