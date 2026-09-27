@@ -351,3 +351,65 @@ test('suffix 비교 예산을 넘으면 부분 결과 대신 실패한다', () =
   assert.throws(() => index.match({ segments: probeSegments.segments, anchor: 'base', method: 'GET' as HttpMethod }),
     /RouteSuffixBudgetError/);
 });
+
+/** project가 다른 합성 http 문서다(workspace member 흉내). */
+function memberDocument(project: string, platform: string, roles: string[], facts: unknown[],
+  extra: Record<string, unknown> = {}): BridgeFactsDocument {
+  return document(platform, roles, facts, { project, ...extra });
+}
+
+test('link 조인은 project가 다른 member 문서를 link 이름 scope 하나로 잇고 match로만 귀속한다', () => {
+  const server = memberDocument('/work/server', 'js', ['server'], [decl('GET', '/users/{}', { service: 'other' })],
+    { service: 'other' });
+  const client = memberDocument('/work/client', 'kotlin', ['client'], [
+    call('GET', '/users/{}', { authority: 'api.example.com' }),
+    call('GET', '/users/{}', { baseRef: 'kt:ApiModule.base' }),
+    call('GET', '/users/{}', { service: 'example-api' }),
+    call('GET', '/users/{}', { authority: 'cdn.example.com' }),
+    call('GET', '/users/{}', { authority: 'api.example.com', dynamic: true, channel: null }),
+  ]);
+  const matches = { hosts: ['api.example.com'], refs: ['kt:ApiModule.base'], services: ['example-api'] };
+  const joined = joinBridgeDocuments([server, client], { composition: 'trace', link: {
+    scope: 'mobile->api',
+    isServerDocument: (candidate) => candidate === server,
+    isClientDocument: (candidate) => candidate === client,
+    attributes: (_document, item) => (item.authority !== undefined && matches.hosts.includes(item.authority)) ||
+      (item.baseRef !== undefined && matches.refs.includes(item.baseRef)) ||
+      (item.service !== undefined && matches.services.includes(item.service)),
+  } });
+  const routes = joined.routes!;
+  assert.equal(routes.scopes.length, 1);
+  const [scope] = routes.scopes;
+  // 선언 측 service('other')는 link scope를 가르지 않는다. 호출 service와 달라도 match 조건이 귀속을 정한다.
+  assert.equal(scope?.scope, 'mobile->api');
+  assert.equal(scope?.declScanned, true);
+  assert.equal(scope?.calls.length, 3);
+  assert.ok(scope?.calls.every(({ decl: outcome }) => describe(outcome) === 'matched:exact:GET /users/{}'));
+  assert.equal(scope?.unboundCalls, 1);
+  assert.equal(scope?.dynamicCalls, 1);
+  assert.deepEqual(routes.limitations.map(({ message }) => message).sort(), [
+    'unjoined-dynamic-route-calls: 1 route call facts with a non-literal template were not joined',
+    'unjoined-unbound-route-calls: 1 route call facts without an attributed declaration side (paths and hosts are not reported) were not joined',
+  ]);
+});
+
+test('link 조인은 문서 신원으로 측을 정해 server member 문서의 호출을 link 호출로 세지 않는다', () => {
+  const server = memberDocument('/work/server', 'js', ['server', 'client'], [decl('GET', '/a'), call('GET', '/a', { service: 's' })]);
+  const client = memberDocument('/work/client', 'kotlin', ['client'], [call('GET', '/a', { service: 's' })]);
+  const joined = joinBridgeDocuments([server, client], { composition: 'trace', link: {
+    scope: 'l', isServerDocument: (candidate) => candidate === server, isClientDocument: (candidate) => candidate === client,
+    attributes: (_document, item) => item.service === 's',
+  } });
+  const [scope] = joined.routes!.scopes;
+  assert.equal(scope?.calls.length, 1);
+  assert.equal(scope?.calls[0]?.endpoint.platform, 'kotlin');
+  assert.equal(scope?.clientDocuments, 1);
+});
+
+test('link 조인은 trace 구성에서만 받고, link 없는 조인은 여전히 project 하나를 요구한다', () => {
+  const server = memberDocument('/work/server', 'js', ['server'], [decl('GET', '/a')]);
+  const client = memberDocument('/work/client', 'kotlin', ['client'], [call('GET', '/a')]);
+  const link = { scope: 'l', isServerDocument: () => true, isClientDocument: () => true, attributes: () => true };
+  assert.throws(() => joinBridgeDocuments([server, client], { link }), /requires the trace composition/);
+  assert.throws(() => joinBridgeDocuments([server, client], { composition: 'trace' }), BridgeJoinValidationError);
+});

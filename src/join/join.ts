@@ -20,10 +20,12 @@ import type { RoutePathAnchor } from '../exchange/parse.ts';
 import {
   isClientDocument,
   isDeclarationDocument,
+  joinLinkRouteFacts,
   joinRouteFacts,
   RouteJoinInputError,
   RouteSuffixBudgetError,
   type RouteJoinResult,
+  type RouteLinkRule,
 } from './route-join.ts';
 import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
 
@@ -274,6 +276,11 @@ export type JoinComposition = 'strict' | 'trace';
 /** 조인 선택 사항이다. */
 export interface JoinOptions {
   readonly composition?: JoinComposition;
+  /**
+   * workspace link 하나를 조인한다(`trace` 구성 전용). 문서의 project가 member마다 달라도 되며 —
+   * 호출자가 member 단위로 project를 검사한다 — http 귀속은 link 규칙이 정한다.
+   */
+  readonly link?: RouteLinkRule;
 }
 
 /** 위치가 아니라 문자열 키로 검증된 교환 문서를 조인한다. */
@@ -286,7 +293,11 @@ export function joinBridgeDocuments(
       `Bridge join exceeds the ${MAX_DOCUMENTS_PER_JOIN} document limit.`,
     );
   }
-  validateProjects(documents);
+  if (options.link !== undefined && options.composition !== 'trace') {
+    throw new Error('A workspace link join requires the trace composition.');
+  }
+  // link 조인은 여러 member(project)의 문서를 함께 받는다. project 일치는 호출자가 member마다 검사했다.
+  if (options.link === undefined) validateProjects(documents);
   // trace 구성은 빠진 측을 gap으로 보고하므로 구성 요건을 여기서 강제하지 않는다.
   if (options.composition !== 'trace') validatePlatformComposition(documents);
   const observedFacts = documents.reduce(
@@ -299,7 +310,7 @@ export function joinBridgeDocuments(
   if (documents.some(hasMixedTargets)) {
     return emptyJoinResult(collectLimitations(documents, []), observedFacts);
   }
-  const routes = joinRoutes(documents);
+  const routes = joinRoutes(documents, options.link);
   const limitations = collectLimitations(documents, routes?.limitations ?? []);
   const groups = collectChannelGroups(documents);
   const matchedChannels = [...groups.values()]
@@ -376,10 +387,10 @@ export function joinBridgeDocuments(
  * mixed-targets 보류는 호출자가 결과를 버리므로 여기서 따로 막지 않는다. 귀속 규칙 위반과
  * suffix 비교 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
  */
-function joinRoutes(documents: readonly BridgeFactsDocument[]): RouteJoinResult | undefined {
+function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRule | undefined): RouteJoinResult | undefined {
   if (!documents.some(({ target }) => target === 'http')) return undefined;
   try {
-    return joinRouteFacts(documents, compareEndpoints);
+    return link === undefined ? joinRouteFacts(documents, compareEndpoints) : joinLinkRouteFacts(documents, link, compareEndpoints);
   } catch (error) {
     if (error instanceof RouteJoinInputError) throw new BridgeJoinValidationError(error.message);
     if (error instanceof RouteSuffixBudgetError) {
