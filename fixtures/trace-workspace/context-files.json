@@ -80,12 +80,12 @@
         },
         {
           "id": "ios-reverse",
-          "path": "client/ios-reverse.change-impact.json",
+          "path": "client/ios-reverse.json",
           "platform": "swift",
           "precomputed": {
             "generatedAt": "2026-09-26T21:00:00Z",
             "revision": "cli-41d9e0b",
-            "sha256": "f866470979ff97a630434fa39ca37aec0cb51bf983ae15894ebaf3af1bf87879"
+            "sha256": "72415aa0033527d900aeb51bdeabd1e45a970ea61399eb9bce1f76f7e6334fea"
           },
           "role": "reverse"
         }

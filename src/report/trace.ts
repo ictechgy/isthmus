@@ -243,12 +243,14 @@ export interface TraceReport {
   readonly selection: TraceSelection;
   readonly chains: readonly TraceChain[];
   readonly gaps: readonly TraceGap[];
+  /** 과소 보고를 뜻하지 않는 알림(과대 근사 등)이다. `--strict` 실패와 `summary.gaps`에 들지 않는다. */
+  readonly notices: readonly TraceGap[];
   readonly limitations: readonly TraceLimitation[];
   readonly analysisLimitations: ReadonlyArray<Readonly<{ analysis: string; message: string }>>;
   readonly analyses: readonly TraceAnalysisSummary[];
   readonly summary: Readonly<{
     chains: number; routes: number; handlers: number; relationUses: number; databaseVertices: number;
-    databaseDependents: number; calls: number; clientSymbols: number; gaps: number;
+    databaseDependents: number; calls: number; clientSymbols: number; gaps: number; notices: number;
     /** 보고서의 모든 도달 근거(relation-use·핸들러 reachedFrom, 클라이언트 affected, DB dependents)의 등급별 수다. */
     evidence: TraceEvidenceCounts;
   }>;
@@ -256,6 +258,12 @@ export interface TraceReport {
 
 /** 보고서가 실을 수 있는 hop·정점·gap 총상한이다. 넘으면 부분 결과 대신 실패한다. */
 export const MAX_TRACE_OUTPUT_ITEMS = 1_000_000;
+
+/**
+ * 알림(notice) 등급 코드다. 이 코드들은 영향을 숨길 수 없고 과대 보고만 할 수 있다 — 그래서 `gaps`가 아니라
+ * `notices`에 싣고 `--strict` 실패로 세지 않는다. 지금은 파일 단위 과대 근사 하나다.
+ */
+export const TRACE_NOTICE_CODES: ReadonlySet<string> = new Set(['file-selection-coarse']);
 
 /** 개수를 싣는 gap이 문구에 함께 드는 예시 id 수 상한이다. 문구가 무한정 길어지지 않게 한다. */
 export const MAX_GAP_EXAMPLES = 5;
@@ -267,6 +275,7 @@ export function createTraceReport(input: TraceInput): TraceReport {
   const builder = new TraceBuilder(input, prepared);
   const chains = builder.buildChains();
   const gaps = builder.finishGaps();
+  const notices = builder.finishNotices();
   const analyses = [...input.analyses].sort((left, right) => compareStrings(left.id, right.id));
   const { context } = input;
   return {
@@ -277,14 +286,17 @@ export function createTraceReport(input: TraceInput): TraceReport {
     complete: false,
     scope: { granularity: 'route', fieldCompatibility: 'not-assessed', queryAndHeaders: 'not-assessed' },
     selection: context.selection,
-    chains, gaps, limitations: prepared.limitations,
+    chains, gaps, notices, limitations: prepared.limitations,
     analysisLimitations: analyses.flatMap(({ id, graph }) => graph.limitations.map((message) => ({ analysis: id, message }))),
     analyses: analyses.map(summarizeAnalysis),
-    summary: summarize(chains, gaps.length),
+    summary: summarize(chains, gaps.length, notices.length),
   };
 }
 
-/** `--strict`가 실패로 볼 공백이 있는지다. trace는 완전성을 주장하지 않으므로 gap만 본다. */
+/**
+ * `--strict`가 실패로 볼 공백이 있는지다. trace는 완전성을 주장하지 않으므로 gap만 본다.
+ * 알림(`notices`)은 과소 보고를 뜻하지 않으므로 세지 않는다.
+ */
 export function hasTraceGaps(report: TraceReport): boolean {
   return report.gaps.length > 0;
 }
@@ -337,6 +349,7 @@ interface DeclGroup {
 /** 체인과 gap을 모으는 작업 상태다. 입력 색인을 한 번만 만든다. */
 class TraceBuilder {
   private readonly gaps = new Map<string, TraceGap>();
+  private readonly notices = new Map<string, TraceGap>();
   private readonly uses: UseRecord[] = [];
   private readonly usesBySymbol = new Map<string, UseRecord[]>();
   private readonly relationDecls = new Map<string, TraceEndpoint[]>();
@@ -381,7 +394,12 @@ class TraceBuilder {
 
   /** gap을 결정적 순서로 돌려준다. */
   finishGaps(): TraceGap[] {
-    return [...this.gaps.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, gap]) => gap);
+    return sortedGaps(this.gaps);
+  }
+
+  /** 알림을 결정적 순서로 돌려준다. */
+  finishNotices(): TraceGap[] {
+    return sortedGaps(this.notices);
   }
 
   /** route 선택 하나의 체인이다. 선언 측 키가 없으면 체인 없이 gap만 남긴다. */
@@ -517,9 +535,13 @@ class TraceBuilder {
     this.gap({ code: 'file-selection-coarse', selector, ...this.memberField(member),
       detail: `File selection is a file-level over-approximation: ${located.length} symbol(s) located by analyses and `
         + `${facts.length} more located by bridge facts are all treated as changed, so routes reached only through `
-        + 'unchanged symbols of this file may be reported.' + (located.length > 0 ? ''
-        : ' No analysis locates a symbol in this file, so only fact locations were used (fact-location fallback); '
-          + 'symbols of this file without facts are missing.') });
+        + 'unchanged symbols of this file may be reported.' });
+    if (located.length === 0) {
+      // 과대 근사와 달리 이쪽은 영향을 숨길 수 있다(사실이 없는 심볼이 빠진다) — 알림이 아니라 gap이다.
+      this.gap({ code: 'file-selection-fact-fallback', selector, ...this.memberField(member),
+        detail: 'No analysis locates a symbol in this file, so only bridge fact locations were used (fact-location '
+          + 'fallback); symbols of this file without route or relation facts are missing.' });
+    }
     // dynamic 사용의 원문 식은 관계 이름이 아니므로 hop으로 싣지 않고 gap 증거로만 남긴다.
     for (const use of uses) if (use.outcome === 'dynamic') this.useOutcomeGap(selector, use);
     const { hops } = this.useHops(selector, uses.filter(({ outcome }) => outcome !== 'dynamic'));
@@ -816,8 +838,14 @@ class TraceBuilder {
     const bySource = analyses.filter((analysis) => graphSha === undefined || analysis.platform !== 'sql');
     const revisions = new Set(bySource.flatMap(({ revision }) => revision === undefined ? [] : [revision]));
     const subject = this.workspace ? 'The workspace member' : 'The trace context';
-    for (const { id, revision } of bySource) {
-      if (expected !== undefined && revision === undefined) {
+    for (const { id, revision, revisionAttested } of bySource) {
+      if (revisionAttested === true && (expected === undefined || revision === expected)) {
+        // 옛 형식 artifact는 revision을 싣지 않는다. context의 증언(CLI가 sha256을 대조한 파일)은 생산자 신고가 아니므로
+        // 보수적으로 unknown으로 남긴다. 증언이 기준과 다르면 아래에서 stale이다.
+        this.gap({ code: 'analysis-revision-unknown', analysis: id, ...this.memberField(member),
+          detail: 'This analysis carries no revision of its own; its revision is only attested by the trace context '
+            + '(precomputed artifact whose sha256 the CLI verified), so its freshness is not producer-reported.' });
+      } else if (expected !== undefined && revision === undefined) {
         this.gap({ code: 'analysis-revision-unknown', analysis: id, ...this.memberField(member),
           detail: `${subject} declares a revision but this analysis carries none, so its freshness is unverified.` });
       } else if (expected === undefined && revision === undefined && revisions.size > 0) {
@@ -825,8 +853,9 @@ class TraceBuilder {
           detail: 'Other analyses carry a revision but this one has none, so they cannot be checked against each other.' });
       } else if (revision !== undefined && (expected === undefined ? revisions.size > 1 : revision !== expected)) {
         this.gap({ code: 'stale-analysis', analysis: id, ...this.memberField(member),
-          detail: this.workspace ? 'This analysis revision differs from its workspace member revision.'
-            : 'This analysis revision differs from the trace context revision or from other analyses.' });
+          detail: (this.workspace ? 'This analysis revision differs from its workspace member revision.'
+            : 'This analysis revision differs from the trace context revision or from other analyses.')
+            + (revisionAttested === true ? ' The revision is attested by the trace context (precomputed artifact).' : '') });
       }
     }
     if (graphSha !== undefined) this.catalogGaps(member, graphSha, analyses.filter(({ platform }) => platform === 'sql'));
@@ -1022,12 +1051,13 @@ class TraceBuilder {
     return this.workspace ? { member } : {};
   }
 
-  /** gap을 신원(직렬화)으로 중복 없이 담는다. */
+  /** gap을 신원(직렬화)으로 중복 없이 담는다. 알림 등급 코드는 `notices`에 담는다. */
   private gap(gap: TraceGap): void {
     const cleaned = Object.fromEntries(Object.entries(gap).filter(([, value]) => value !== undefined)) as unknown as TraceGap;
     const key = encodeSortedJson(cleaned, true);
-    if (!this.gaps.has(key)) this.bump(1);
-    this.gaps.set(key, cleaned);
+    const target = TRACE_NOTICE_CODES.has(gap.code) ? this.notices : this.gaps;
+    if (!target.has(key)) this.bump(1);
+    target.set(key, cleaned);
   }
 
   /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. */
@@ -1311,7 +1341,12 @@ function summarizeAnalysis(analysis: TraceAnalysis): TraceAnalysisSummary {
   };
 }
 
-function summarize(chains: readonly TraceChain[], gaps: number): TraceReport['summary'] {
+/** 신원 키 순으로 gap을 정렬한다. */
+function sortedGaps(gaps: ReadonlyMap<string, TraceGap>): TraceGap[] {
+  return [...gaps.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, gap]) => gap);
+}
+
+function summarize(chains: readonly TraceChain[], gaps: number, notices: number): TraceReport['summary'] {
   const sum = (pick: (chain: TraceChain) => number) => chains.reduce((total, chain) => total + pick(chain), 0);
   return {
     chains: chains.length,
@@ -1324,6 +1359,7 @@ function summarize(chains: readonly TraceChain[], gaps: number): TraceReport['su
     clientSymbols: sum(({ routes }) => routes.reduce((total, route) =>
       total + route.calls.reduce((count, call) => count + call.affected.length, 0), 0)),
     gaps,
+    notices,
     evidence: countEvidence(chains),
   };
 }

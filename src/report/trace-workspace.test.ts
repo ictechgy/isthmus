@@ -4,14 +4,22 @@ import test from 'node:test';
 
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { analysisProject, normalizeTraceAnalysis, parseTraceContext } from '../exchange/trace-context.ts';
-import { createTraceReport, hasTraceGaps, TraceInputError, type TraceInput, type TraceReport } from './trace.ts';
+import {
+  createTraceReport,
+  hasTraceGaps,
+  TRACE_NOTICE_CODES,
+  TraceInputError,
+  type TraceInput,
+  type TraceReport,
+} from './trace.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /**
  * workspace trace — 분리된 두 저장소(서버·클라이언트) 합성 fixture와 gap 코드 전수 음성 fixture다.
  *
  * `fixtures/trace-workspace/server`는 TS 서버(route-decl·relation-use)와 schemagraph 흉내 sql 카탈로그를,
- * `client`는 Kotlin·Swift 호출부와 역방향 분석(iOS는 macOS CI가 미리 계산한 change-impact artifact)을 담는다.
+ * `client`는 Kotlin·Swift 호출부와 역방향 분석(iOS는 macOS CI가 미리 계산한 artifact — language-traversal과 옛
+ * change-impact 두 형식)을 담는다.
  * 두 저장소는 project 루트와 revision이 서로 다르고 link 하나로만 이어진다.
  */
 
@@ -34,6 +42,15 @@ async function load(root: URL, contextName: string): Promise<Value> {
 }
 
 const workspaceFixture = await load(workspaceRoot, 'context.json');
+const legacyIosPath = 'client/ios-reverse.change-impact.json';
+workspaceFixture.files[legacyIosPath] = await readJson(workspaceRoot, legacyIosPath);
+
+/** iOS 역방향 분석을 revision 없는 옛 change-impact artifact로 바꾼다(증언 revision을 지정할 수 있다). */
+const legacyIos = (revision?: string) => (value: Value) => {
+  const ios = member(value, 'client').analyses[1];
+  ios.path = legacyIosPath;
+  if (revision !== undefined) ios.precomputed.revision = revision;
+};
 const singleFixture = await load(singleRoot, 'context.json');
 
 /** fixture를 복제·변형해 검증된 trace 입력으로 만든다. sha256 대조는 CLI 층의 일이라 여기서는 하지 않는다. */
@@ -92,10 +109,12 @@ test('분리된 두 저장소에서 route 선택이 API·테이블·DB 의존자
   ]);
   assert.deepEqual(route?.calls[1]?.affected[0]?.location, { path: 'ios/App/Stores/OrderStore.swift', line: 31, column: 10 });
   assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
-    databaseDependents: 3, calls: 2, clientSymbols: 4, gaps: 0, evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 4 } });
+    databaseDependents: 3, calls: 2, clientSymbols: 4, gaps: 0, notices: 0,
+    evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 4 } });
   const ios = result.analyses.find(({ id }) => id === 'ios-reverse')!;
   assert.deepEqual([ios.member, ios.source, ios.revision, ios.revisionSource, ios.precomputed?.generatedAt],
-    ['client', 'change-impact', 'cli-41d9e0b', 'attested', '2026-09-26T21:00:00Z']);
+    ['client', 'language-traversal', 'cli-41d9e0b', undefined, '2026-09-26T21:00:00Z']);
+  assert.deepEqual(result.notices, []);
   assert.equal(result.analyses.find(({ id }) => id === 'android-reverse')?.revisionSource, undefined);
   assert.ok(result.limitations.every(({ member: name, link }) => (name === undefined) !== (link === undefined)));
 });
@@ -155,8 +174,7 @@ test('revision은 member마다 검사하고 사전 계산 artifact는 증언 rev
     [['stale-analysis', 'server', 'server-forward']]);
   assert.deepEqual(gaps((value) => { delete value.files['client/android-reverse.json'].revision; }),
     [['analysis-revision-unknown', 'client', 'android-reverse']]);
-  assert.deepEqual(gaps((value) => { member(value, 'client').analyses[1].precomputed.revision = 'cli-old'; }),
-    [['stale-analysis', 'client', 'ios-reverse']]);
+  assert.deepEqual(gaps(legacyIos('cli-old')), [['stale-analysis', 'client', 'ios-reverse']]);
   // 카탈로그 graphSha를 선언한 member의 sql 분석은 graphRevision으로 검사한다.
   assert.deepEqual(gaps((value) => { value.files['server/db-dependents.json'].graphRevision = 'f'.repeat(64); }),
     [['stale-analysis', 'server', 'server-db']]);
@@ -172,6 +190,26 @@ test('revision은 member마다 검사하고 사전 계산 artifact는 증언 rev
     value.files['server/server-forward.json'].graphRevision = 'g1';
     value.files['server/server-reverse.json'].graphRevision = 'g2';
   }), [['stale-analysis', 'server', 'server-forward'], ['stale-analysis', 'server', 'server-reverse']]);
+});
+
+test('revision 없는 옛 형식 사전 계산 artifact는 증언 revision이 같아도 보수적으로 analysis-revision-unknown이다', () => {
+  const result = workspace(legacyIos());
+  assert.deepEqual(result.gaps.map(({ code, member: name, analysis }) => [code, name, analysis]),
+    [['analysis-revision-unknown', 'client', 'ios-reverse']]);
+  assert.match(result.gaps[0]!.detail, /attested by the trace context .*sha256/);
+  const ios = result.analyses.find(({ id }) => id === 'ios-reverse')!;
+  assert.deepEqual([ios.source, ios.revision, ios.revisionSource], ['change-impact', 'cli-41d9e0b', 'attested']);
+  // 체인 자체는 그대로 잇는다(gap은 신선도를 증명하지 못했다는 표시일 뿐이다).
+  assert.deepEqual(result.chains[0]?.routes[0]?.calls[1]?.affected.map(({ usr }) => usr), ['s:OrderStore.refresh', 's:OrderDetailView.body']);
+  const stale = workspace(legacyIos('cli-old'));
+  assert.match(stale.gaps[0]!.detail, /attested by the trace context/);
+  // 단일 project에서 context revision이 없어도 증언 revision은 unknown이다.
+  const flat = single((value) => {
+    delete value.context.revision;
+    delete value.files['android-reverse.json'].revision;
+    value.context.analyses.find(({ id }: any) => id === 'android-reverse').precomputed = { sha256: 'a'.repeat(64), revision: 'rev-1' };
+  });
+  assert.deepEqual(flat.gaps.map(({ code, analysis }) => [code, analysis]), [['analysis-revision-unknown', 'android-reverse']]);
 });
 
 test('link match에 걸리지 않은 호출은 개수만 싣고 경로·host를 어떤 필드에도 싣지 않는다', () => {
@@ -235,8 +273,13 @@ test('workspace 입력이 member 계약을 어기면 부분 결과 없이 거부
 
 test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분석 위치가 없으면 사실 위치로 대신한다', () => {
   const server = workspace(select({ files: [{ member: 'server', path: 'src/db/orders.ts' }] }));
-  assert.deepEqual(server.gaps.map(({ code, member: name }) => [code, name]), [['file-selection-coarse', 'server']]);
-  assert.match(server.gaps[0]!.detail, /2 symbol\(s\) located by analyses and 0 more/);
+  // 과대 근사는 영향을 숨기지 않으므로 gap이 아니라 알림이고 --strict를 실패시키지 않는다.
+  assert.deepEqual(server.gaps, []);
+  assert.equal(hasTraceGaps(server), false);
+  assert.deepEqual(server.notices.map(({ code, member: name }) => [code, name]), [['file-selection-coarse', 'server']]);
+  assert.equal(server.summary.notices, 1);
+  assert.equal(server.summary.gaps, 0);
+  assert.match(server.notices[0]!.detail, /2 symbol\(s\) located by analyses and 0 more/);
   const [chain] = server.chains;
   assert.deepEqual(chain?.selector, { file: 'src/db/orders.ts', member: 'server' });
   assert.deepEqual(chain?.routes.map(({ method, template }) => [method, template]), [['POST', '/api/orders'], ['GET', '/api/orders/{}']]);
@@ -244,8 +287,9 @@ test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분�
   assert.deepEqual(chain?.database.map(({ vertex }) => vertex), ['main.orders', 'main.orders.status']);
   // Kotlin 호출 파일: 분석은 이 파일에 심볼을 두지 않으므로 route-call 사실의 usr로 대신하고, 서버 핸들러에는 닿지 않는다.
   const client = workspace(select({ files: [{ member: 'client', path: 'android/app/src/main/java/example/OrdersApi.kt' }] }));
-  assert.deepEqual(codes(client), ['file-selection-coarse', 'non-http-entry']);
-  assert.match(client.gaps.find(({ code }) => code === 'file-selection-coarse')!.detail, /fact-location fallback/);
+  // 사실 위치 fallback은 사실 없는 심볼을 빠뜨릴 수 있으므로 알림이 아니라 gap이다.
+  assert.deepEqual(codes(client), ['file-selection-fact-fallback', 'non-http-entry']);
+  assert.match(client.notices[0]!.detail, /0 symbol\(s\) located by analyses and 2 more/);
   assert.deepEqual(client.gaps.filter(({ code }) => code === 'non-http-entry').map(({ symbol }) => symbol?.usr),
     ['kt:OrdersApi.create', 'kt:OrdersApi.get']);
   const nothing = workspace(select({ files: [{ member: 'server', path: 'README.md' }] }));
@@ -258,7 +302,9 @@ test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분�
     value.files['server.persistence.json'].facts.push({ ...base, channel: 'tableFor(kind)', dynamic: true,
       location: { path: 'server/db/users.ts', line: 30, column: 1 } });
   });
-  assert.deepEqual(codes(flat), ['dynamic-relation-use', 'file-selection-coarse']);
+  // 단일 fixture의 분석은 위치를 싣지 않으므로 사실 위치 fallback gap도 남는다.
+  assert.deepEqual(codes(flat), ['dynamic-relation-use', 'file-selection-fact-fallback']);
+  assert.deepEqual(flat.notices.map(({ code }) => code), ['file-selection-coarse']);
   assert.deepEqual(flat.chains[0]?.selector, { file: 'server/db/users.ts' });
   assert.deepEqual(flat.chains[0]?.routes.map(({ template }) => template), ['/api/users', '/api/users/{}']);
   assert.deepEqual(flat.chains[0]?.relationUses.map(({ relation, column }) => [relation, column]),
@@ -296,7 +342,8 @@ const gapFixtures: Record<string, () => TraceReport> = {
     ];
   }),
   'roots-provenance-partial': () => workspace((value) => {
-    value.files['client/ios-reverse.change-impact.json'].changeScope.push({ usr: 's:OrdersClient.create', qualifiedName: 'create' });
+    legacyIos()(value);
+    value.files[legacyIosPath].changeScope.push({ usr: 's:OrdersClient.create', qualifiedName: 'create' });
   }),
   'candidate-dispatch': () => single((value) => {
     const forward = value.files['server-forward.json'];
@@ -366,6 +413,8 @@ const gapFixtures: Record<string, () => TraceReport> = {
   'relation-without-use': () => workspace(select({ relations: [{ member: 'server', name: 'order_items' }] })),
   'file-selection-coarse': () => workspace(select({ files: [{ member: 'server', path: 'src/routes/orders.ts' }] })),
   'file-without-symbols': () => single(select({ files: ['docs/README.md'] })),
+  'file-selection-fact-fallback': () => workspace(select({ files: [{ member: 'client',
+    path: 'android/app/src/main/java/example/OrdersApi.kt' }] })),
   'http-member-unlinked': () => workspace((value) => { value.context.links = []; }),
 };
 
@@ -374,7 +423,10 @@ test('TRACE.md의 모든 gap 코드에 그 코드를 내는 음성 fixture가 �
   assert.ok(documentedCodes.length >= 33);
   for (const [code, produce] of Object.entries(gapFixtures)) {
     const result = produce();
-    assert.ok(result.gaps.some((gap) => gap.code === code), `${code}: ${codes(result).join(', ')}`);
-    assert.equal(hasTraceGaps(result), true, code);
+    const notice = TRACE_NOTICE_CODES.has(code);
+    // 알림 등급 코드는 notices에만, 나머지는 gaps에만 실린다.
+    assert.ok((notice ? result.notices : result.gaps).some((gap) => gap.code === code), `${code}: ${codes(result).join(', ')}`);
+    assert.ok(!(notice ? result.gaps : result.notices).some((gap) => gap.code === code), code);
+    if (!notice) assert.equal(hasTraceGaps(result), true, code);
   }
 });

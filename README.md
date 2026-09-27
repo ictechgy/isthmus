@@ -347,7 +347,7 @@ through the forward traversal to the relation uses it reaches, the persistence j
 schemagraph vertex ids, and their database dependents; it also follows attributed calls of the route
 to affected client symbols. Relations and symbols go the other way: reverse traversal to route
 handlers, then routes and clients. Files select every symbol located in them (a file-level
-over-approximation, reported as the `file-selection-coarse` gap). In a workspace, persistence and
+over-approximation, reported as the `file-selection-coarse` notice, which does not fail `--strict`). In a workspace, persistence and
 language traversals stay inside a member and http joins only along declared links, so a table change
 reaches client code in another repository. Every id in the output comes from a producer, unattributed calls
 are only counted, reruns are byte-identical, and the report is always `complete: false` — missing
@@ -355,7 +355,7 @@ symbols, analyses, truncation, stale revisions, and non-http entry points are re
 never as "not reached". Each reach carries the producer's evidence tier (`direct`, `bound`, `candidate`,
 or `unassessed`); hops that rest only on possible-implementation dispatch edges and handlers whose
 forward reach passes unlinked call sites (or whose producer does not report them) are gaps too.
-`--strict` exits 1 when any gap remains (always for file selections). MCP does not expose `trace` yet.
+`--strict` exits 1 when any gap remains; notices alone do not fail it. MCP does not expose `trace` yet.
 See [`docs/TRACE.md`](docs/TRACE.md).
 
 ### Baselines

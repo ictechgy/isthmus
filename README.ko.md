@@ -316,13 +316,13 @@ symbols·files)다. route를 고르면
 route-decl 핸들러에서 정방향 순회로 닿은 relation-use, persistence 조인이 해석한 schemagraph 정점 id,
 그 DB 의존자까지 잇고, 그 route에 귀속된 호출에서 영향받는 클라이언트 심볼까지 잇는다. relation·심볼은
 반대로 역방향 순회로 route 핸들러를 찾고 route와 클라이언트로 이어 간다. 파일은 그 파일에 놓인 모든 심볼을
-고른다(파일 단위 과대 근사, `file-selection-coarse` gap). workspace에서는 persistence·언어 순회가 member 안에서만,
+고른다(파일 단위 과대 근사, `--strict`를 실패시키지 않는 알림 `file-selection-coarse`). workspace에서는 persistence·언어 순회가 member 안에서만,
 http가 선언한 link에서만 이어지므로 테이블 변경이 다른 저장소의 클라이언트 코드까지 닿는다. 출력의 모든 id는 생산자가 준
 값이고, 귀속되지 않은 호출은 개수만 싣고, 재실행 출력은 바이트 단위로 같으며, 보고서는 항상
 `complete: false`다. 빠진 심볼·분석, 잘린 순회, 다른 revision, http가 아닌 진입점은 "닿지 않음"이 아니라
 `gaps`로 보고한다. 도달 근거마다 생산자의 근거 등급(`direct`·`bound`·`candidate`, 분류하지 않았으면
 `unassessed`)을 싣고, 가능성 구현 간선으로만 닿는 hop과 잇지 못한 호출을 지나는(또는 그 신고가 없는) 핸들러의
-정방향 도달도 gap이다. `--strict`는 gap이 남으면 1이다(파일 선택은 항상 1). MCP에는 아직 노출하지 않는다.
+정방향 도달도 gap이다. `--strict`는 gap이 남으면 1이고 알림만으로는 실패하지 않는다. MCP에는 아직 노출하지 않는다.
 [`docs/TRACE.md`](docs/TRACE.md)를 본다.
 
 ### 베이스라인

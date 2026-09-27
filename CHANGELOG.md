@@ -17,11 +17,15 @@
   `member`를 싣는다. 새 gap `http-member-unlinked`. 조인에 `link` 선택 사항(trace 구성 전용)을 추가했다.
 - **trace 사전 계산 분석**: 분석 참조의 `precomputed: {sha256, revision, generatedAt?}`로 다른 곳(예: 클라이언트
   macOS CI)에서 만든 artifact를 받는다. CLI가 파일 SHA-256을 대조하고(다르면 2), revision 없는 옛 형식은 증언
-  revision으로 검사한다(`revisionSource: "attested"`). 문서 revision과 증언이 다르면 입력 오류다.
+  revision으로 비교하되(`revisionSource: "attested"`) 보수적으로 `analysis-revision-unknown`을 남긴다. 문서 revision과
+  증언이 다르면 입력 오류다.
 - **trace files 선택**: `files: [path]`(workspace는 `[{member, path}]`)가 파일에 놓인 분석 심볼과 사실 위치
   fallback의 심볼로 역방향 체인을 만들고, 파일의 relation-use를 hop·DB 의존자로 싣는다. 파일 단위 과대 근사라
-  항상 `file-selection-coarse`를 남기므로 파일 선택의 `--strict`는 항상 1이다. 찾은 것이 없으면
-  `file-without-symbols`. 형제 전파 opt-in은 계획이 정의하지 않아 보류했다.
+  항상 알림 `file-selection-coarse`를 남긴다. 분석 위치 없이 사실 위치로만 대신하면 gap
+  `file-selection-fact-fallback`, 찾은 것이 없으면 `file-without-symbols`.
+- **trace 알림(notice) 등급**: 과대 보고만 할 수 있고 영향을 숨기지 않는 코드(`TRACE_NOTICE_CODES`, 지금은
+  `file-selection-coarse`)는 최상위 `notices`와 `summary.notices`에 싣고 `gaps`·`--strict` 실패에서 뺀다. 모든 trace
+  출력에 `notices`·`summary.notices`가 추가된다. 형제 전파 opt-in은 계획이 정의하지 않아 보류했다.
 - 분리된 두 저장소 합성 fixture(`fixtures/trace-workspace/`), TRACE.md gap 코드 전수(33종) 음성 fixture와 문서 대조
   테스트, 실제 CLI 프로세스로 고정한 `--strict` 종료 코드 의미, CLI 계약 스크립트의 workspace trace 검사.
 

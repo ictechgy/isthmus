@@ -102,7 +102,7 @@ function verifyTrace() {
 
 /**
  * 분리된 두 저장소 workspace trace가 빌드된 CLI에서 API·테이블·DB 의존자·호출부·클라이언트 영향을 한 명령으로
- * 잇고, 파일 선택의 과대 근사 gap 때문에 --strict가 1인지 확인한다.
+ * 잇고, 파일 선택의 과대 근사는 알림이라 --strict가 0인지 확인한다.
  */
 function verifyWorkspaceTrace() {
   const fixture = (name) => fileURLToPath(new URL(`../fixtures/trace-workspace/${name}`, import.meta.url));
@@ -120,11 +120,13 @@ function verifyWorkspaceTrace() {
   verify(route.calls.map(({ call }) => `${call.member}:${call.symbol.usr}`).join(',') ===
     'client:kt:OrdersApi.get,client:s:OrdersClient.fetch', 'workspace trace call sites');
   verify(route.calls[1].affected.some(({ usr }) => usr === 's:OrderDetailView.body') &&
-    report.analyses.find(({ id }) => id === 'ios-reverse')?.revisionSource === 'attested', 'workspace trace client impact');
+    report.analyses.find(({ id }) => id === 'ios-reverse')?.precomputed?.revision === 'cli-41d9e0b', 'workspace trace client impact');
   const relation = run(['trace', fixture('context-relation.json'), '--strict', '--compact']);
   verify(relation.status === 0 && JSON.parse(relation.stdout).summary.routes === 2, 'workspace trace table to client');
   const files = run(['trace', fixture('context-files.json'), '--strict', '--compact']);
-  verify(files.status === 1 && JSON.parse(files.stdout).gaps[0]?.code === 'file-selection-coarse', 'workspace trace files strict');
+  const filesReport = JSON.parse(files.stdout);
+  verify(files.status === 0 && filesReport.gaps.length === 0 && filesReport.notices[0]?.code === 'file-selection-coarse',
+    'workspace trace files notice');
 }
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */

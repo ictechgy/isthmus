@@ -156,8 +156,11 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   없이 종료 코드 2다(다른 빌드의 artifact이거나 내려받다 깨졌다). sha256 없는 증언은 파일과 묶이지 않으므로
   받지 않는다.
 - `revision`은 artifact를 만든 쪽이 증언한 소스 revision이다. 분석 문서가 revision을 싣지 않는 옛 형식
-  (`change-impact` v1 등)이면 이 증언으로 revision을 검사하고 출력 분석 요약에 `revisionSource: "attested"`를
-  단다. 문서가 revision을 싣는데 증언과 다르면 입력 오류(종료 코드 2)다.
+  (`change-impact` v1 등)이면 이 증언으로 revision을 비교하고 출력 분석 요약에 `revisionSource: "attested"`를
+  단다. 증언은 생산자 신고가 아니므로 **보수적으로** 기준과 같아도 `analysis-revision-unknown`(문구: context가
+  증언했고 CLI가 sha256을 대조함)을 남기고, 기준과 다르면 `stale-analysis`다. 그래서 옛 형식 artifact를 쓴
+  trace는 `--strict`에서 1이다 — 생산자가 revision을 싣는 `language-traversal` v1 artifact를 쓰면 gap이 없다.
+  문서가 revision을 싣는데 증언과 다르면 입력 오류(종료 코드 2)다.
 - `generatedAt`은 정보용으로 분석 요약에 되싣는다.
 - 옛 cartograph `change-impact`는 절대 경로 위치를 project 기준으로 되돌린다. CI checkout 경로가 member
   `project`와 다르면 위치가 빠지고 `cartograph-location-outside-project:` 분석 한계가 남는다.
@@ -170,16 +173,18 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   위치한 bridge 사실(route-decl·route-call·relation-use, sql·openapi 제외)의 `symbol.usr`(**사실 위치
   fallback**)다. 이 심볼들로 심볼 선택과 같은 역방향 체인을 만든다. 핸들러가 파일에 있으면 그 route도 잇는다.
 - 파일에 놓인 relation-use는 hop(도달 근거 없음)과 VertexId 의존자로 싣는다. dynamic 사용은 hop이 아니라 gap이다.
-- 무엇이든 찾으면 항상 `file-selection-coarse`를 남긴다. 분석이 이 파일에 심볼을 두지 않아 사실 위치로만 대신했으면
-  문구에 그렇게 밝힌다(사실 없는 심볼은 빠진다). 아무것도 찾지 못하면 체인 없이 `file-without-symbols`다.
+- 무엇이든 찾으면 항상 **알림** `file-selection-coarse`를 남긴다(아래 [gap과 알림](#gap과-알림)). 과대 근사는 영향을
+  숨기지 않으므로 `--strict`를 실패시키지 않는다.
+- 분석이 이 파일에 심볼을 하나도 두지 않아 사실 위치로만 대신했으면 gap `file-selection-fact-fallback`을 남긴다.
+  이쪽은 사실 없는 심볼이 빠져 **영향을 숨길 수 있으므로** 알림이 아니라 gap이다. 아무것도 찾지 못하면 체인 없이
+  gap `file-without-symbols`다.
 - 클라이언트 파일을 고르면 그 심볼에서 서버 핸들러에 닿지 않으므로 `non-http-entry`가 남는다. 파일 선택은 서버
   변경 영향용이며, 클라이언트 내부 영향은 호출부의 `affected`로 본다.
-- 과대 근사 gap이 항상 있으므로 **파일 선택의 `--strict`는 항상 1**이다. CI에서 gap 없는 통과를 요구하려면 심볼
-  선택을 쓴다.
 
 ## 출력: `isthmus-trace` v1
 
-workspace 출력은 아래 모양에 다음을 더한다(단일 project 출력은 그대로다): 최상위 `project`·`revision` 대신
+모든 출력은 알림 목록 `notices`와 `summary.notices`를 싣는다([gap과 알림](#gap과-알림)). workspace 출력은 아래
+모양에 다음을 더한다(단일 project 출력의 나머지 필드는 그대로다): 최상위 `project`·`revision` 대신
 `workspace: {members: [{name, project, revision, catalog?}], links: [{name, client, server, match, contract?:
 {member, authoritative?}}]}`(문서 경로는 싣지 않는다), 모든 끝점(`declarations`·`contracts`·`calls[].call`·`use`·
 `decls`)과 `handlers[]`·`database[]`·`affected[]`·gap의 `member`, 분석 요약의 `member`, 조인 한계의 출처
@@ -209,6 +214,7 @@ workspace 출력은 아래 모양에 다음을 더한다(단일 project 출력�
       "kind": "view", "analysis": "db", "depth": 1, "path": ["main.users", "main.active_users"], "evidence": "direct" }] }]
   }],
   "gaps": [],
+  "notices": [],
   "limitations": [ /* 조인 한계(check와 같은 모양) */ ],
   "analysisLimitations": [{ "analysis": "…", "message": "…" }],
   "analyses": [{ "id": "db", "platform": "sql", "role": "db-dependents", "source": "language-traversal",
@@ -216,7 +222,7 @@ workspace 출력은 아래 모양에 다음을 더한다(단일 project 출력�
                  "truncated": false, "rootsTruncated": false, "rootProvenance": "complete",
                  "evidenceReported": false, "unresolvedCallsReported": false, "roots": 2, "reached": 2 }],
   "summary": { "chains": 1, "routes": 1, "handlers": 1, "relationUses": 2, "databaseVertices": 2,
-               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "gaps": 0,
+               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "gaps": 0, "notices": 0,
                "evidence": { "direct": 3, "bound": 2, "candidate": 0, "unassessed": 2 } }
 }
 ```
@@ -295,9 +301,17 @@ workspace 출력은 아래 모양에 다음을 더한다(단일 project 출력�
 | `relation-selection-ambiguous` | 선택한 relation 이름이 여러 선언과 맞는다 |
 | `relation-without-decl` | 선택한 relation의 선언이 없다 |
 | `relation-without-use` | 선택한 relation의 리터럴 사용이 관찰되지 않았다(없다는 증거가 아님). dynamic 사용이 있으면 문구에 그 수를 싣는다 |
-| `file-selection-coarse` | 파일 선택은 파일 단위 과대 근사다 — 파일에 놓인 모든 심볼을 바뀐 것으로 본다. 분석이 이 파일에 심볼을 두지 않아 사실 위치로만 대신했으면(fact-location fallback) 문구에 밝힌다 |
+| `file-selection-coarse` | **알림(notice)**. 파일 선택은 파일 단위 과대 근사다 — 파일에 놓인 모든 심볼을 바뀐 것으로 본다. `notices`에 실리고 `--strict`를 실패시키지 않는다 |
+| `file-selection-fact-fallback` | 분석이 선택한 파일에 심볼을 두지 않아 사실 위치로만 대신했다. 사실 없는 심볼은 빠졌을 수 있다 |
 | `file-without-symbols` | 선택한 파일에 놓인 분석 심볼·사실이 없다(없다는 증거가 아님). 체인을 만들지 않는다 |
 | `http-member-unlinked` | workspace member의 http 문서가 해당 역할(client 또는 server·contract)의 link에 속하지 않아 잇지 않았다 |
+
+### gap과 알림
+
+gap은 과소 보고일 수 있는 공백(따라가지 못한 hop, 빠진 입력, 증명하지 못한 신선도)이고, **알림(notice)**은 영향을
+숨길 수 없고 과대 보고만 할 수 있는 표시다. 알림 등급 코드는 지금 `file-selection-coarse` 하나다
+(`TRACE_NOTICE_CODES`). 알림은 같은 모양으로 최상위 `notices`에 싣고 `summary.notices`로 세며, `gaps`·
+`summary.gaps`·`--strict` 실패에는 들지 않는다. 새 코드를 알림으로 두려면 "과대 보고만 가능"을 문서로 보여야 한다.
 
 gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`evidence` 중 해당하는 필드를 싣는다.
 모든 코드의 음성 fixture는 `src/report/trace-workspace.test.ts`가 이 표와 대조한다. 귀속되지 않은
@@ -309,7 +323,7 @@ gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`
 오류(원인과 입력 순번만, 원문·경로 없음, stdout은 비움), `64` 사용 오류.
 
 - `--strict` 없이는 gap이 있어도 0이다. gap은 보고서의 `gaps`로만 읽는다.
-- 파일 선택은 `file-selection-coarse` 때문에 `--strict`에서 항상 1이다.
+- 알림(`notices`)만 있으면 `--strict`에서도 0이다. 예: 분석이 파일의 심볼을 모두 위치시키는 파일 선택.
 - 사전 계산 artifact의 sha256 불일치, 증언과 다른 문서 revision, member project와 다른 문서·분석, 구현하지 않은
   link match 필드는 gap이 아니라 2다(입력이 선언과 다르다).
 - 이 의미는 `src/cli/trace-command.test.ts`가 실제 CLI 프로세스로 고정한다.

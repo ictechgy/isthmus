@@ -75,7 +75,7 @@ test('route 선택은 핸들러→정방향→relation-use→VertexId→DB 의�
   // relation-use 도달 2건(dispatch 선언 문서)과 DB 의존자 3건(sql)은 direct, 등급을 분류하지 않는 kotlin 역방향
   // 문서의 클라이언트 영향 2건은 unassessed다.
   assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
-    databaseDependents: 3, calls: 1, clientSymbols: 2, gaps: 0,
+    databaseDependents: 3, calls: 1, clientSymbols: 2, gaps: 0, notices: 0,
     evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 2 } });
   assert.deepEqual(chain?.relationUses.map(({ reachedFrom }) => reachedFrom[0]?.evidence), ['direct', 'direct']);
   assert.deepEqual(route?.calls[0]?.affected.map(({ evidence }) => evidence), ['unassessed', 'unassessed']);

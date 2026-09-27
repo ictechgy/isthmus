@@ -166,7 +166,7 @@ async function copyWorkspace(mutate: (files: Map<string, string>) => void): Prom
   const names = ['context.json', 'context-relation.json', 'context-files.json',
     ...['server.http.json', 'api.openapi.json', 'server.persistence.json', 'db.sql.json', 'server-forward.json',
       'server-reverse.json', 'db-dependents.json'].map((name) => `server/${name}`),
-    ...['android.http.json', 'ios.http.json', 'android-reverse.json', 'ios-reverse.change-impact.json'].map((name) => `client/${name}`)];
+    ...['android.http.json', 'ios.http.json', 'android-reverse.json', 'ios-reverse.json', 'ios-reverse.change-impact.json'].map((name) => `client/${name}`)];
   const texts = new Map<string, string>();
   for (const name of names) texts.set(name, await readFile(join(workspaceDirectory, name), 'utf8'));
   mutate(texts);
@@ -195,7 +195,7 @@ test('분리된 두 저장소 workspace를 실제 CLI가 한 명령으로 잇는
 
 test('사전 계산 artifact의 sha256이 선언과 다르면 부분 결과 없이 2다', async () => {
   const directoryPath = await copyWorkspace((texts) => {
-    const name = 'client/ios-reverse.change-impact.json';
+    const name = 'client/ios-reverse.json';
     texts.set(name, texts.get(name)!.replace('OrderDetailView.body', 'OrderListView.body'));
   });
   try {
@@ -208,7 +208,7 @@ test('사전 계산 artifact의 sha256이 선언과 다르면 부분 결과 없�
   }
 });
 
-test('--strict 종료 코드: gap 없음 0, gap 있음 1(보고서 그대로), strict 없으면 0, 파일 선택은 항상 1, 입력 오류 2, 사용 오류 64', async () => {
+test('--strict 종료 코드: gap 없음 0, gap 있음 1(보고서 그대로), strict 없으면 0, 알림만 있으면 0, 입력 오류 2, 사용 오류 64', async () => {
   const directoryPath = await copyWorkspace((texts) => {
     const context = JSON.parse(texts.get('context.json')!);
     context.links[0].match.services = ['other-api'];
@@ -226,10 +226,12 @@ test('--strict 종료 코드: gap 없음 0, gap 있음 1(보고서 그대로), s
     assert.deepEqual(gapReport.gaps.map(({ code }: any) => code), ['unattributed-calls-omitted']);
     const lenient = await runProcess(['trace', at('context-gap.json')]);
     assert.deepEqual([lenient.code, lenient.stderr, lenient.stdout], [0, '', gap.stdout]);
+    // 파일 선택의 과대 근사는 알림이라 --strict를 실패시키지 않는다.
     const files = await runProcess(['trace', at('context-files.json'), '--strict', '--compact']);
-    assert.equal(files.code, 1);
-    assert.deepEqual(JSON.parse(files.stdout).gaps.map(({ code }: any) => code), ['file-selection-coarse']);
-    assert.equal((await runProcess(['trace', at('context-files.json')])).code, 0);
+    assert.deepEqual([files.code, files.stderr], [0, '']);
+    const filesReport = JSON.parse(files.stdout);
+    assert.deepEqual([filesReport.gaps, filesReport.notices.map(({ code }: any) => code), filesReport.summary.notices],
+      [[], ['file-selection-coarse'], 1]);
     const broken = await runProcess(['trace', at('context-broken.json'), '--strict']);
     assert.deepEqual([broken.code, broken.stdout], [2, '']);
     assert.match(broken.stderr, /link client and server must name members/);
