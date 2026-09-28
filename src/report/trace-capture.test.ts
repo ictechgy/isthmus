@@ -15,12 +15,15 @@ import {
   pairsDocumentIndexes,
   parseSymbolListing,
   parseTraceCaptureConfig,
+  planCaptureRoots,
   rootArguments,
   selectedCaptureFiles,
   selectedSymbols,
   TraceCaptureValidationError,
+  unresolvedTraversalRoots,
   type CapturedMember,
 } from './trace-capture.ts';
+import type { TraversalGraph } from '../exchange/language-traversal.ts';
 
 /** 최소 단일 project 설정이다. 각 테스트가 복사해 한 곳만 바꾼다. */
 function baseConfig(): Record<string, any> {
@@ -172,7 +175,7 @@ test('selection·links는 trace context 규칙으로 미리 검증한다', () =>
   }, /violate the trace context contract/u);
 });
 
-/** 합성 사실 문서다. */
+/** 합성 사실 문서다. `extra.tool`로 생산자 이름을 바꿀 수 있다. */
 function facts(platform: string, target: string | null, entries: Record<string, unknown>[], extra: Record<string, unknown> = {}) {
   return parseBridgeFactsDocument({
     format: 'bridge-facts', version: 1, tool: { name: 'synthetic', version: '0.0.0' }, generatedAt: '2026-09-27T00:00:00Z',
@@ -208,6 +211,7 @@ test('root는 역할별 사실 usr의 정렬된 상위 집합이고 테스트 �
   assert.deepEqual(collectCaptureRoots(documents, 'forward', 'kotlin'), []);
 
   assert.deepEqual(pairsDocumentIndexes(documents), [0, 1, 2, 3]);
+  assert.deepEqual(planCaptureRoots(documents, 'reverse', 'js'), { roots: ['r'], declarationNamespace: [], notInListing: [] });
   assert.deepEqual(pairsDocumentIndexes([server, persistence, sql]), [1, 2]);
   assert.deepEqual(pairsDocumentIndexes([server, client]), [0, 1]);
   assert.deepEqual(pairsDocumentIndexes([server, persistence]), []);
@@ -311,13 +315,15 @@ test('생산자 심볼 목록 세 형식을 project 상대 파일로 읽고 확�
     { id: 'src/a.ts#f', location: { path: 'src/a.ts', line: 1, column: 1 } },
     { id: 'src/a.ts#<module>' },
   ] }, 'js', '/work/app');
-  assert.deepEqual(tsograph, { format: 'tsograph-graph', symbols: [{ usr: 'src/a.ts#f', path: 'src/a.ts' }], skipped: 1 });
+  assert.deepEqual(tsograph, { format: 'tsograph-graph', symbols: [{ usr: 'src/a.ts#f', path: 'src/a.ts' }], skipped: 1,
+    ids: ['src/a.ts#<module>', 'src/a.ts#f'] });
   const plain = parseSymbolListing({ format: 'kartograph-query-snapshot', version: 1, graph: { nodes: [
     { usr: 'method:A#f()V', location: { path: 'app/src/A.kt', line: 3 } },
     { usr: 'method:B#g()V', location: { path: 'B.kt', line: 1 } },
   ] } }, 'kotlin', '/work/app');
   assert.deepEqual(plain.symbols, [{ usr: 'method:A#f()V', path: 'app/src/A.kt' }]);
   assert.equal(plain.skipped, 1);
+  assert.deepEqual(plain.ids, ['method:A#f()V', 'method:B#g()V']);
   const compact = parseSymbolListing({ format: 'kartograph-query-snapshot', version: 2, graph: {
     stringTable: ['method:A#f()V', 'f', 'app/src/A.kt', 'B.kt', 'method:B#g()V'],
     nodes: [[0, 1, null, null, null, [2, 3, 1], null, null, [], [], [], [], null, false],
@@ -325,14 +331,18 @@ test('생산자 심볼 목록 세 형식을 project 상대 파일로 읽고 확�
       [4, 1, null, null, null, null, null, null, [], [], [], [], null, false]] } }, 'kotlin', '/work/app');
   assert.deepEqual(compact.symbols, [{ usr: 'method:A#f()V', path: 'app/src/A.kt' }]);
   assert.equal(compact.skipped, 2);
+  assert.deepEqual(compact.ids, ['method:A#f()V', 'method:B#g()V']);
   const cartograph = parseSymbolListing({ tool: 'cartograph', version: '0.22.0', level: 'symbol', nodes: [
     { id: 's:1A', usr: 's:1A', location: { path: '/work/app/Sources/A.swift', line: 1, column: 1 }, isExternal: false },
     { id: 's:1B', location: { path: '/work/app/Sources/B.swift', line: 1, column: 1 }, isExternal: false },
     { id: 's:ext', usr: 's:ext', location: { path: '/sdk/UIKit.swift', line: 1, column: 1 }, isExternal: true },
     { id: 's:out', usr: 's:out', location: { path: '/work/application/C.swift', line: 1, column: 1 }, isExternal: false },
+    { id: 'bad\u0007id', isExternal: true },
   ] }, 'swift', '/work/app');
   assert.deepEqual(cartograph.symbols, [{ usr: 's:1A', path: 'Sources/A.swift' }, { usr: 's:1B', path: 'Sources/B.swift' }]);
-  assert.equal(cartograph.skipped, 2);
+  assert.equal(cartograph.skipped, 3);
+  // 외부 심볼·project 밖 심볼도 그래프 노드라 ids에는 남는다(파일에 놓지 못할 뿐이다).
+  assert.deepEqual(cartograph.ids, ['s:1A', 's:1B', 's:ext', 's:out']);
 });
 
 test('모르는 목록 형식·다른 project·어긋난 platform·잘못된 id는 거부한다', () => {
@@ -365,7 +375,7 @@ test('파일 선택의 member별 파일과, 목록·분석이 그 파일에 둔 
   assert.deepEqual(selectedCaptureFiles(workspace, 'b'), ['y.ts']);
   assert.deepEqual(selectedCaptureFiles({ ...single, selection: { routes: [{ method: 'GET', template: '/' }] } }, undefined), []);
 
-  const listing = { format: 'tsograph-graph' as const, skipped: 0, symbols: [
+  const listing = { format: 'tsograph-graph' as const, skipped: 0, ids: [], symbols: [
     { usr: 'b', path: 'src/a.ts' }, { usr: 'a', path: 'src/a.ts' }, { usr: 'a', path: 'src/a.ts' }, { usr: 'c', path: 'src/other.ts' }] };
   assert.deepEqual([...listedSymbolsInFiles(listing, ['src/a.ts', 'src/b.ts'])], [['src/a.ts', ['a', 'b']]]);
   const graph = (roots: unknown[], reached: unknown[]) => ({ graph: { roots, reached } }) as unknown as TraceAnalysis;
@@ -386,4 +396,68 @@ test('목록이 찾은 파일 심볼은 context fileSymbols로 싣고, 없으면
   const context = buildCaptureContext(config, [member], [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
   assert.deepEqual(context.fileSymbols, [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
   assert.deepEqual(parseTraceContext(context).fileSymbols, [{ path: 'src/a.ts', platform: 'js', usrs: ['a'] }]);
+});
+
+/** tsograph schema가 내는 모양의 persistence 문서다: 선언 쪽 relation-use(#model:·#typedsql:)와 코드의 사용. */
+function schemaFacts(tool: string) {
+  const use = (usr: string, path: string, extra: Record<string, unknown> = {}) => ({ kind: 'relation-use', channel: 'jobs',
+    dynamic: false, location: { path, line: 1, column: 1 }, symbol: { qualifiedName: usr, usr }, ...extra });
+  return facts('js', 'persistence', [
+    use('prisma/schema.prisma#model:Job', 'prisma/schema.prisma'),
+    use('prisma/schema.prisma#model:Job.title', 'prisma/schema.prisma', { method: 'title' }),
+    use('prisma/sql/byTitle.sql#typedsql:byTitle', 'prisma/sql/byTitle.sql'),
+    use('src/lib/jobs.ts#listJobs', 'src/lib/jobs.ts'),
+    use('src/lib/jobs.ts#saveJob', 'src/lib/jobs.ts'),
+  ], { tool: { name: tool, version: '0.1.0' } });
+}
+
+test('root 위생: 생산자가 밝힌 선언 이름공간 relation-use는 언어 순회 root에서 뺀다', () => {
+  const documents = [schemaFacts('tsograph')];
+  assert.deepEqual(planCaptureRoots(documents, 'reverse', 'js'), {
+    roots: ['src/lib/jobs.ts#listJobs', 'src/lib/jobs.ts#saveJob'],
+    declarationNamespace: ['prisma/schema.prisma#model:Job', 'prisma/schema.prisma#model:Job.title',
+      'prisma/sql/byTitle.sql#typedsql:byTitle'],
+    notInListing: [],
+  });
+  assert.deepEqual(collectCaptureRoots(documents, 'reverse', 'js'), ['src/lib/jobs.ts#listJobs', 'src/lib/jobs.ts#saveJob']);
+  // 표식은 마지막 `#` 뒤에서만 본다 — 파일 경로에 표식 문자열이 든 소스 심볼은 빼지 않는다.
+  const pathLike = facts('js', 'persistence', [{ kind: 'relation-use', channel: 'jobs', dynamic: false,
+    location: { path: 'src/db#model:legacy.ts', line: 1, column: 1 },
+    symbol: { qualifiedName: 'src/db#model:legacy.ts#query', usr: 'src/db#model:legacy.ts#query' } }],
+  { tool: { name: 'tsograph', version: '0.1.0' } });
+  assert.deepEqual(planCaptureRoots([pathLike], 'reverse', 'js'),
+    { roots: ['src/db#model:legacy.ts#query'], declarationNamespace: [], notInListing: [] });
+  // 표식은 그 생산자가 밝힌 것만 쓴다 — 다른 생산자의 같은 문자열은 추측해 빼지 않는다.
+  assert.equal(planCaptureRoots([schemaFacts('synthetic')], 'reverse', 'js').roots.length, 5);
+  // 사용자가 직접 고른 심볼은 거르지 않는다(노드가 아니면 생산자의 root-not-found로 드러나야 한다).
+  const selected = planCaptureRoots(documents, 'reverse', 'js', ['prisma/schema.prisma#model:Job']);
+  assert.ok(selected.roots.includes('prisma/schema.prisma#model:Job'));
+  assert.equal(selected.declarationNamespace.includes('prisma/schema.prisma#model:Job'), false);
+});
+
+test('root 위생: 생산자 목록을 받았으면 목록에 없는 사실 usr를 빼고, 선택·sql은 거르지 않는다', () => {
+  const documents = [schemaFacts('tsograph')];
+  const nodes = new Set(['src/lib/jobs.ts#listJobs', 'src/lib/helper.ts#load']);
+  assert.deepEqual(planCaptureRoots(documents, 'reverse', 'js', ['src/lib/helper.ts#load', 'src/lib/ghost.ts#x'], nodes), {
+    roots: ['src/lib/ghost.ts#x', 'src/lib/helper.ts#load', 'src/lib/jobs.ts#listJobs'],
+    declarationNamespace: ['prisma/schema.prisma#model:Job', 'prisma/schema.prisma#model:Job.title',
+      'prisma/sql/byTitle.sql#typedsql:byTitle'],
+    notInListing: ['src/lib/jobs.ts#saveJob'],
+  });
+  const sql = facts('sql', 'persistence', [
+    { kind: 'relation-decl', channel: 'main.jobs', dynamic: false, symbol: { qualifiedName: 'main.jobs', usr: 'main.jobs' } },
+  ]);
+  assert.deepEqual(planCaptureRoots([sql], 'db-dependents', 'sql', [], new Set()).roots, ['main.jobs']);
+});
+
+test('root-not-found: symbol 없는 root와 truncationReasons가 모두 있고 넘긴 id일 때만 인정한다', () => {
+  const graph = (roots: unknown[], reasons: string[], source = 'language-traversal') =>
+    ({ source, roots, truncationReasons: reasons }) as unknown as TraversalGraph;
+  const roots = [{ id: 'a', symbol: { usr: 'a' } }, { id: 'z' }, { id: 'b' }];
+  const none = { roots: [], unrequested: [] };
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b', 'z']), { roots: ['b', 'z'], unrequested: [] });
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['depth']), ['a', 'b', 'z']), none);
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found'], 'kartograph-impact'), ['a', 'b', 'z']), none);
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b']), { roots: ['b'], unrequested: ['z'] });
+  assert.deepEqual(unresolvedTraversalRoots(graph([{ id: 'a', symbol: { usr: 'a' } }], ['root-not-found']), ['a']), none);
 });
