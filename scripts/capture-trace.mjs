@@ -675,10 +675,16 @@ async function runTraversal(session, member, analysis, id, roots, provisional, o
     catch (error) { throw refuse(`its output violates the traversal contract: ${error.message}`); }
   }
   const unresolved = unresolvedTraversalRoots(normalized.graph, roots);
-  if (partial !== undefined && !(unresolved?.length > 0)) {
+  if (partial !== undefined && unresolved.unrequested.length > 0) {
+    throw refuse(`its document reports ${unresolved.unrequested.length} root-not-found id(s) that were never passed as roots `
+      + '(a traversal contract violation)');
+  }
+  if (partial !== undefined && unresolved.roots.length === 0) {
     throw refuse('its document records no root-not-found root among the roots it was given');
   }
-  if (unresolved?.length > 0) recordRootsNotFound(session, entry, step, unresolved, partial !== undefined);
+  if (unresolved.roots.length > 0 || unresolved.unrequested.length > 0) {
+    recordRootsNotFound(session, entry, step, unresolved, partial !== undefined);
+  }
   member.normalized.push(normalized);
   await writeOutput(session.output, path, stdout);
   recordArtifact(session, path, stdout, 'captured', documentTool(value));
@@ -692,12 +698,16 @@ async function runTraversal(session, member, analysis, id, roots, provisional, o
  * `analysisLimitations`로, 잘림을 `analysis-truncated` gap으로, 그 root를 따라가야 하는 hop을 `analysis-missing`으로
  * 드러낸다. `accepted`는 설정의 acceptExitCodes 밖의 64를 이 규칙으로 받았다는 표시다.
  */
-function recordRootsNotFound(session, entry, step, unresolved, accepted) {
-  entry.rootsNotFound = unresolved;
+function recordRootsNotFound(session, entry, step, { roots, unrequested }, accepted) {
+  if (roots.length > 0) entry.rootsNotFound = roots;
+  // 종료 코드 64에서는 거부한다. 그 밖에서는 문서를 받되, 넘기지 않은 id를 못 찾았다는 계약 위반을 경고로 드러낸다.
+  if (unrequested.length > 0) entry.rootsNotFoundUnrequested = unrequested;
   if (accepted) entry.acceptedPartial = 'root-not-found';
-  warn(session, { step, code: 'root-not-found', roots: unresolved.length,
-    detail: `The producer could not resolve ${unresolved.length} root(s) (listed in the step's rootsNotFound); the traversal `
-      + 'of the other roots was kept, and trace reports the gap where a chain needs the missing roots.' });
+  const extra = unrequested.length === 0 ? ''
+    : ` It also reports ${unrequested.length} id(s) that were never passed as roots (rootsNotFoundUnrequested; a traversal contract violation).`;
+  warn(session, { step, code: 'root-not-found', roots: roots.length,
+    detail: `The producer could not resolve ${roots.length} root(s) (listed in the step's rootsNotFound); the traversal `
+      + `of the other roots was kept, and trace reports the gap where a chain needs the missing roots.${extra}` });
 }
 
 /** 사전 계산 순회를 복사하고 증언(sha256·revision)을 붙인다. */

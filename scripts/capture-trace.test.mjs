@@ -692,6 +692,22 @@ test('종료 코드 64: 문서가 없거나 root-not-found를 기록하지 않�
     config.members[0].analyses[1].args = ['emit', fixture('trace/server-forward.json'), '--project', '{project}', '--exit', '64'];
     await rejectsAt(captureTrace(config), 'analysis:server-reverse', /exited with status 64; its output violates the traversal contract/u);
   });
+  await t.test('넘기지 않은 id를 못 찾았다는 문서(계약 위반)', async (st) => {
+    const { config } = await singleProjectConfig(st);
+    unknownRootConfig(config, ['--unknown', 'ts:ghost/symbol', '--phantom', 'ts:never/passed', '--exit', '64']);
+    await rejectsAt(captureTrace(config), 'analysis:server-reverse',
+      /exited with status 64; its document reports 1 root-not-found id\(s\) that were never passed as roots/u);
+  });
+  await t.test('종료 코드 0의 계약 위반은 받되 경고한다', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    config.members[0].analyses[1].args.push('--phantom', 'ts:never/passed');
+    await captureTrace({ ...config, trace: false });
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    const step = manifest.steps.find(({ step: name }) => name === 'analysis:server-reverse');
+    assert.equal(step.rootsNotFound, undefined);
+    assert.deepEqual(step.rootsNotFoundUnrequested, ['ts:never/passed']);
+    assert.match(manifest.warnings[0].detail, /never passed as roots/u);
+  });
   await t.test('acceptExitCodes에 64를 둔 설정', async (st) => {
     const { work, config } = await singleProjectConfig(st);
     unknownRootConfig(config, ['--unknown', 'ts:ghost/symbol', '--exit', '64']);

@@ -337,9 +337,10 @@ test('생산자 심볼 목록 세 형식을 project 상대 파일로 읽고 확�
     { id: 's:1B', location: { path: '/work/app/Sources/B.swift', line: 1, column: 1 }, isExternal: false },
     { id: 's:ext', usr: 's:ext', location: { path: '/sdk/UIKit.swift', line: 1, column: 1 }, isExternal: true },
     { id: 's:out', usr: 's:out', location: { path: '/work/application/C.swift', line: 1, column: 1 }, isExternal: false },
+    { id: 'bad\u0007id', isExternal: true },
   ] }, 'swift', '/work/app');
   assert.deepEqual(cartograph.symbols, [{ usr: 's:1A', path: 'Sources/A.swift' }, { usr: 's:1B', path: 'Sources/B.swift' }]);
-  assert.equal(cartograph.skipped, 2);
+  assert.equal(cartograph.skipped, 3);
   // 외부 심볼·project 밖 심볼도 그래프 노드라 ids에는 남는다(파일에 놓지 못할 뿐이다).
   assert.deepEqual(cartograph.ids, ['s:1A', 's:1B', 's:ext', 's:out']);
 });
@@ -419,6 +420,13 @@ test('root 위생: 생산자가 밝힌 선언 이름공간 relation-use는 언�
     notInListing: [],
   });
   assert.deepEqual(collectCaptureRoots(documents, 'reverse', 'js'), ['src/lib/jobs.ts#listJobs', 'src/lib/jobs.ts#saveJob']);
+  // 표식은 마지막 `#` 뒤에서만 본다 — 파일 경로에 표식 문자열이 든 소스 심볼은 빼지 않는다.
+  const pathLike = facts('js', 'persistence', [{ kind: 'relation-use', channel: 'jobs', dynamic: false,
+    location: { path: 'src/db#model:legacy.ts', line: 1, column: 1 },
+    symbol: { qualifiedName: 'src/db#model:legacy.ts#query', usr: 'src/db#model:legacy.ts#query' } }],
+  { tool: { name: 'tsograph', version: '0.1.0' } });
+  assert.deepEqual(planCaptureRoots([pathLike], 'reverse', 'js'),
+    { roots: ['src/db#model:legacy.ts#query'], declarationNamespace: [], notInListing: [] });
   // 표식은 그 생산자가 밝힌 것만 쓴다 — 다른 생산자의 같은 문자열은 추측해 빼지 않는다.
   assert.equal(planCaptureRoots([schemaFacts('synthetic')], 'reverse', 'js').roots.length, 5);
   // 사용자가 직접 고른 심볼은 거르지 않는다(노드가 아니면 생산자의 root-not-found로 드러나야 한다).
@@ -446,9 +454,10 @@ test('root-not-found: symbol 없는 root와 truncationReasons가 모두 있고 �
   const graph = (roots: unknown[], reasons: string[], source = 'language-traversal') =>
     ({ source, roots, truncationReasons: reasons }) as unknown as TraversalGraph;
   const roots = [{ id: 'a', symbol: { usr: 'a' } }, { id: 'z' }, { id: 'b' }];
-  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b', 'z']), ['b', 'z']);
-  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['depth']), ['a', 'b', 'z']), []);
-  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found'], 'kartograph-impact'), ['a', 'b', 'z']), []);
-  assert.equal(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b']), undefined);
-  assert.deepEqual(unresolvedTraversalRoots(graph([{ id: 'a', symbol: { usr: 'a' } }], ['root-not-found']), ['a']), []);
+  const none = { roots: [], unrequested: [] };
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b', 'z']), { roots: ['b', 'z'], unrequested: [] });
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['depth']), ['a', 'b', 'z']), none);
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found'], 'kartograph-impact'), ['a', 'b', 'z']), none);
+  assert.deepEqual(unresolvedTraversalRoots(graph(roots, ['root-not-found']), ['a', 'b']), { roots: ['b'], unrequested: ['z'] });
+  assert.deepEqual(unresolvedTraversalRoots(graph([{ id: 'a', symbol: { usr: 'a' } }], ['root-not-found']), ['a']), none);
 });

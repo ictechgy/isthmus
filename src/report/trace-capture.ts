@@ -516,8 +516,10 @@ function rewriteLinkContract(link: Record<string, unknown>, members: ReadonlyMap
  * TypedSQL 파일)를 사실로 내는 생산자는 그것을 사용 측 kind로 싣고, usr를 순회 노드가 아닌 별도 이름공간에 둔다. kind와
  * 역할만으로는 코드의 사용(감싼 선언이 노드)과 구별할 수 없으므로 생산자가 문서로 밝힌 표식으로만 가린다 — 추측하지 않는다.
  * - tsograph `schema`(origin/main README "Facts"·"Symbol ids"): `<schema path>#model:<Model>[.<field>]`,
- *   `<sql path>#typedsql:<name>`. 소스 사실의 usr는 `<path>#<선언 경로>`이고 선언 이름에는 `:`가 올 수 없어 겹치지 않는다.
- *   tsograph 자신도 같은 표식(`includes`)으로 이 id를 "선언 이름공간"으로 분류한다.
+ *   `<sql path>#typedsql:<name>`. 소스 사실의 usr는 `<path>#<선언 경로>`이고 선언 이름에는 `#`·`:`가 올 수 없다.
+ *   표식은 **마지막 `#`**에서만 본다 — 파일 경로에 `#model:`가 든 소스 심볼(`src/a#model:b.ts#f`)을 선언으로 잘못 빼지 않기
+ *   위해서다. 이름에 `#`가 든 TypedSQL 파일처럼 이 규칙이 놓치는 id는 root로 넘어가 생산자의 root-not-found로 드러난다
+ *   (조용히 빠지는 쪽이 아니라 보이는 쪽으로 틀린다).
  */
 const declarationNamespaceMarkers: Readonly<Record<string, readonly string[]>> = {
   tsograph: ['#model:', '#typedsql:'],
@@ -530,7 +532,9 @@ const declarationNamespaceMarkers: Readonly<Record<string, readonly string[]>> =
 export function isDeclarationNamespaceFact(document: BridgeFactsDocument, fact: BridgeFactsDocument['facts'][number]): boolean {
   const markers = declarationNamespaceMarkers[document.tool.name];
   const usr = fact.symbol?.usr;
-  return markers !== undefined && fact.kind === 'relation-use' && usr !== undefined && markers.some((marker) => usr.includes(marker));
+  if (markers === undefined || fact.kind !== 'relation-use' || usr === undefined) return false;
+  const declaration = usr.slice(usr.lastIndexOf('#'));
+  return markers.some((marker) => declaration.startsWith(marker));
 }
 
 /** 한 분석의 root 계획이다. 뺀 id는 이유별로 따로 싣는다(정렬). */
@@ -596,19 +600,26 @@ export function collectCaptureRoots(documents: readonly BridgeFactsDocument[], r
  */
 export const ROOT_NOT_FOUND_EXIT_CODE = 64;
 
+/** 순회 문서가 기록한 root-not-found다. 둘 다 정렬·중복 제거한 id 목록이다. */
+export interface UnresolvedTraversalRoots {
+  /** `symbol` 없는 root 중 이번 실행에 넘긴 id — 생산자가 해석하지 못한 요청 */
+  readonly roots: readonly string[];
+  /** `symbol` 없는 root 중 넘기지 않은 id — 계약 위반(부분 성공 근거가 되지 못한다) */
+  readonly unrequested: readonly string[];
+}
+
 /**
- * 순회 문서가 계약대로 기록한 root-not-found root id를 돌려준다(정렬). 기록이 없으면 빈 목록이다.
+ * 순회 문서가 계약대로 기록한 root-not-found root id를 돌려준다. 기록이 없으면 두 목록 모두 비어 있다.
  *
  * `language-traversal` v1은 해석하지 못한 요청을 `symbol` 없는 root로 두고 `truncationReasons`에 `root-not-found`를
- * 싣는다. 두 표시가 모두 있고, 그 root가 모두 이번 실행에 넘긴 id일 때만 인정한다 — 넘기지 않은 id를 "못 찾았다"고
- * 하는 문서는 계약 위반이라 부분 성공 근거가 되지 못한다(그때는 `undefined`).
+ * 싣는다. 두 표시가 모두 있을 때만 읽는다. 넘기지 않은 id를 "못 찾았다"고 하는 항목은 `unrequested`로 따로 돌려준다 —
+ * 호출자가 부분 성공을 거부하거나(종료 코드 64) 경고로 드러낼(그 밖) 수 있게 하기 위해서다.
  */
-export function unresolvedTraversalRoots(graph: TraversalGraph, requested: readonly string[]): string[] | undefined {
-  if (graph.source !== 'language-traversal' || !graph.truncationReasons.includes('root-not-found')) return [];
+export function unresolvedTraversalRoots(graph: TraversalGraph, requested: readonly string[]): UnresolvedTraversalRoots {
+  if (graph.source !== 'language-traversal' || !graph.truncationReasons.includes('root-not-found')) return { roots: [], unrequested: [] };
   const passed = new Set(requested);
-  const unresolved = graph.roots.filter(({ symbol }) => symbol === undefined).map(({ id }) => id);
-  if (unresolved.some((id) => !passed.has(id))) return undefined;
-  return [...new Set(unresolved)].sort(compareStrings);
+  const ids = [...new Set(graph.roots.filter(({ symbol }) => symbol === undefined).map(({ id }) => id))].sort(compareStrings);
+  return { roots: ids.filter((id) => passed.has(id)), unrequested: ids.filter((id) => !passed.has(id)) };
 }
 
 /**
@@ -747,8 +758,9 @@ function cartographListing(value: Record<string, unknown>, project: string): Sym
     if (!isJsonObject(node)) return {};
     // symbol 수준에서는 id와 usr가 같은 인덱스 USR이다. usr가 비면 id를 쓴다.
     const usr = node.usr ?? node.id;
-    // 외부 심볼은 파일에 놓지 않지만 그래프 노드이므로 id는 남긴다(위치 없음 → skipped로 센다).
-    if (node.isExternal === true) return typeof usr === 'string' ? { usr } : {};
+    // 외부 심볼은 파일에 놓지 않지만 그래프 노드이므로 id는 남긴다(위치 없음 → skipped로 센다). 이전처럼 외부 심볼의
+    // id 모양 때문에 목록 전체를 거부하지 않도록, 유효하지 않은 id는 그냥 센다.
+    if (node.isExternal === true) return isSafeNonEmptyString(usr) ? { usr } : {};
     const path = isJsonObject(node.location) ? node.location.path : undefined;
     return { usr, path: typeof path === 'string' && path.startsWith(prefix) ? path.slice(prefix.length) : undefined };
   });

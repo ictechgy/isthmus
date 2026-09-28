@@ -471,6 +471,8 @@ nodes"라고 밝힌다). kind와 역할만으로는 이것과 코드의 사용�
 
 1. **선언 이름공간**: 생산자가 README로 밝힌 표식의 relation-use usr는 root로 넘기지 않는다. 표식은 생산자(`tool.name`)마다
    고정한 표로만 쓴다 — 지금은 tsograph의 `#model:`·`#typedsql:`뿐이고, 다른 생산자의 같은 문자열은 추측해 빼지 않는다.
+   표식은 usr의 마지막 `#`에서만 본다(파일 경로에 표식 문자열이 든 소스 심볼을 빼지 않도록). 이 규칙이 놓치는 선언 id(이름에
+   `#`가 든 TypedSQL 파일 등)는 root로 넘어가 아래의 root-not-found로 드러난다.
    노드가 아님을 이미 아는 id라 manifest `rootFilters`에 수(`declarationNamespace`)만 싣고 경고하지 않는다. trace는 어느
    순회에도 없는 id를 "닿지 않음"으로 읽으므로 체인은 달라지지 않는다.
 2. **생산자 목록과 대조**: 그 platform의 심볼 목록(`listings` — 그래프 노드 전체)을 이미 받았으면(파일 선택의 2단계에서
@@ -484,10 +486,12 @@ nodes"라고 밝힌다). kind와 역할만으로는 이것과 코드의 사용�
 README대로 모르는 root가 섞여도 나머지 root로 순회한 문서를 출력한 뒤 64로 끝난다(문서가 없는 순수 사용법 오류도 64). 순회
 분석의 종료 코드가 64이고 `acceptExitCodes`에 64가 없으면 capture는 다음을 모두 만족할 때만 받는다: stdout이 trace와 같은
 파서를 통과하는 `language-traversal` 문서이고, `truncationReasons`에 `root-not-found`가 있으며, `symbol` 없는 root가 하나
-이상이고 그 id가 모두 이번 실행에 넘긴 root다. 하나라도 어긋나면(빈 stdout, 계약 위반, 기록 없음) 이전과 같이
+이상이고 그 id가 모두 이번 실행에 넘긴 root다. 하나라도 어긋나면(빈 stdout, 계약 위반, 기록 없음, 넘기지 않은 id를 못
+찾았다는 항목) 이전과 같이
 `exited with status 64`로 실패하고 이유를 덧붙인다. 받았으면 그 단계 항목에 `rootsNotFound`(id 전체)와
 `acceptedPartial: "root-not-found"`를 싣고 `warnings`에 `root-not-found`를 더한다. 종료 코드가 0이거나 설정이 64를 받은
-경우에도 문서가 기록한 root-not-found는 같은 방식으로 싣고 경고한다. 경고는 capture 결과 JSON의 `warnings`와 stderr
+경우에도 문서가 기록한 root-not-found는 같은 방식으로 싣고 경고한다. 그때 넘기지 않은 id를 못 찾았다는 항목이 있으면
+문서는 받되 `rootsNotFoundUnrequested`에 싣고 경고 문구에 계약 위반으로 적는다. 경고는 capture 결과 JSON의 `warnings`와 stderr
 (`Capture warning (<단계>, <코드>): …`)에도 나오며 종료 코드는 0이다. trace는 문서의 `root-not-found:` limitation을
 `analysisLimitations`로, 잘림을 그 분석을 쓰는 hop의 `analysis-truncated` gap으로, 못 찾은 root를 따라가야 하는 hop을
 `analysis-missing` gap으로 드러낸다.
