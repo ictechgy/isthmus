@@ -231,7 +231,14 @@ function springSegment(segment, isLast) {
 
 /** limitation 스코프 적용: isthmus 조인 층의 스코프 색인으로 호출·선언 하나에 한계가 적용되는지 본다. */
 function runScopeApplies({ scope, probe }) {
-  const document = parseBridgeFactsDocument(scopeDocument(scope));
+  let document;
+  try {
+    document = parseBridgeFactsDocument(scopeDocument(scope));
+  } catch (error) {
+    // 잘못된 스코프를 적은 적용 케이스는 검증기를 멈추지 않고 기대값 불일치로 보고한다.
+    if (error instanceof BridgeFactsValidationError) return { applies: 'invalid-scope' };
+    throw error;
+  }
   const parsed = parseRouteTemplate(probe.template);
   const index = new RouteLimitationScopeIndex([document], { remaining: 1_000_000 });
   const applicable = index.applicable({

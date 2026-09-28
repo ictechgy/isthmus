@@ -87,10 +87,10 @@ interface CompiledScope {
   /** 스코프를 붙인 한계 문구다. 같은 문구가 여럿이면 항목마다 따로 둔다. */
   readonly message: string;
   readonly methods?: ReadonlySet<HttpMethod>;
-  /** 첫 토큰이 리터럴인 원소(정확 템플릿·접두사)를 그 값으로 묶은 것이다. `*` 키는 그 밖의 원소다. */
+  /** 모든 원소(정확 템플릿·접두사·접미사)를 첫 토큰으로 묶은 것이다. 리터럴이 아니면 `*` 키다. */
   readonly byHead: ReadonlyMap<string, readonly (readonly Token[])[]>;
-  /** 접미사 원소를 마지막 토큰으로 묶은 것이다. `*` 키는 그 밖의 원소다. */
-  readonly bySuffixTail: ReadonlyMap<string, readonly (readonly Token[])[]>;
+  /** 모든 원소를 마지막 토큰(빈 리터럴 제외)으로 묶은 것이다. 리터럴이 아니면 `*` 키다. */
+  readonly byTail: ReadonlyMap<string, readonly (readonly Token[])[]>;
 }
 
 /** 스코프 비교에 넣는 요청 측 경로(호출) 또는 선언 측 경로(decl·contract)다. */
@@ -156,12 +156,15 @@ export class RouteLimitationScopeIndex {
     return matched.length === 0 ? this.#unscoped : [...this.#unscoped, ...matched.map(({ message }) => message)];
   }
 
-  /** 스코프 원소 중 하나라도 이 경로와 겹치는지 본다. 첫·끝 리터럴 색인으로 비교 대상을 줄인다. */
+  /**
+   * 스코프 원소 중 하나라도 이 경로와 겹치는지 본다. 경로의 첫 토큰이 리터럴이면 첫 토큰 색인으로, 아니면(base
+   * 앵커 등) 끝 토큰 색인으로 비교 대상을 줄인다. 두 리터럴이 다르면 그 자리를 맞출 수 없어 겹칠 수 없다 — 원소
+   * 쪽이 그 끝에 `star`나 비리터럴을 두면 `*` 묶음에 있어 항상 비교한다.
+   */
   #covers(scope: CompiledScope, tokens: readonly Token[]): boolean {
-    const candidates = [
-      ...bucket(scope.byHead, tokens[0]),
-      ...bucket(scope.bySuffixTail, lastMeaningful(tokens)),
-    ];
+    const head = tokens[0];
+    const tail = lastMeaningful(tokens);
+    const candidates = head?.kind === 'literal' ? bucket(scope.byHead, head) : bucket(scope.byTail, tail);
     return candidates.some((element) => overlaps(element, tokens, this.#budget));
   }
 }
@@ -179,27 +182,22 @@ function routeRanges(document: BridgeFactsDocument): Map<number, RouteLimitation
 /** 스코프 하나를 비교 형태로 바꾼다. */
 function compileScope(message: string, range: RouteLimitationRange): CompiledScope {
   const byHead = new Map<string, Token[][]>();
-  const bySuffixTail = new Map<string, Token[][]>();
-  const add = (map: Map<string, Token[][]>, key: string, tokens: Token[]): void => {
-    map.set(key, [...(map.get(key) ?? []), tokens]);
+  const byTail = new Map<string, Token[][]>();
+  const add = (tokens: Token[]): void => {
+    for (const [map, key] of [[byHead, keyOf(tokens[0])], [byTail, keyOf(lastMeaningful(tokens))]] as const) {
+      const group = map.get(key);
+      if (group === undefined) map.set(key, [tokens]);
+      else group.push(tokens);
+    }
   };
-  for (const template of range.templates ?? []) {
-    const tokens = templateTokens(template);
-    add(byHead, keyOf(tokens[0]), tokens);
-  }
-  for (const prefix of range.templatePrefixes ?? []) {
-    const tokens = [...templateTokens(prefix), star];
-    add(byHead, keyOf(tokens[0]), tokens);
-  }
-  for (const suffix of range.templateSuffixes ?? []) {
-    const tokens = [star, ...templateTokens(suffix)];
-    add(bySuffixTail, keyOf(lastMeaningful(tokens)), tokens);
-  }
+  for (const template of range.templates ?? []) add(templateTokens(template));
+  for (const prefix of range.templatePrefixes ?? []) add([...templateTokens(prefix), star]);
+  for (const suffix of range.templateSuffixes ?? []) add([star, ...templateTokens(suffix)]);
   return {
     message,
     ...(range.methods === undefined ? {} : { methods: new Set(range.methods) }),
     byHead,
-    bySuffixTail,
+    byTail,
   };
 }
 
@@ -263,7 +261,7 @@ function keyOf(token: Token | undefined): string {
   return token?.kind === 'literal' ? `=${token.value}` : '*';
 }
 
-/** 접미사 색인에 쓰는 마지막 토큰이다. 빈 리터럴 변형은 건너뛴다. */
+/** 끝 색인에 쓰는 마지막 토큰이다. 빈 리터럴(끝 슬래시 변형)은 건너뛴다. */
 function lastMeaningful(tokens: readonly Token[]): Token | undefined {
   const last = tokens.at(-1);
   return last?.kind === 'literal' && last.value === '' ? tokens.at(-2) : last;
@@ -279,18 +277,20 @@ function bucket(map: ReadonlyMap<string, readonly (readonly Token[])[]>, token: 
  * 두 토큰열이 같은 구체 경로를 하나라도 가질 수 있는지다(교집합이 비어 있지 않은지).
  *
  * `star`는 양쪽 어디에나 올 수 있는 0개 이상 세그먼트다. 칸마다 한 번만 계산하고(메모), 방문한 칸 수를 예산에서
- * 뺀다. 재귀 깊이는 두 토큰열 길이의 합(템플릿 상한 2,048자 → 약 2,050) 이하다.
+ * 뺀다. 메모는 방문한 칸만 담는다 — 긴 템플릿끼리 첫 칸에서 어긋나는 흔한 경우에 두 길이의 곱만큼 할당하지 않기
+ * 위해서다. 재귀 깊이는 두 토큰열 길이의 합(템플릿 상한 2,048자 → 약 2,050) 이하다.
  */
 function overlaps(left: readonly Token[], right: readonly Token[], budget: { remaining: number }): boolean {
   const width = right.length + 1;
-  const memo = new Uint8Array((left.length + 1) * width);
+  const memo = new Map<number, boolean>();
   const visit = (i: number, j: number): boolean => {
     const cell = i * width + j;
-    if (memo[cell] !== 0) return memo[cell] === 1;
+    const known = memo.get(cell);
+    if (known !== undefined) return known;
     budget.remaining -= 1;
     if (budget.remaining < 0) throw new RouteScopeBudgetError();
     const result = step(i, j);
-    memo[cell] = result ? 1 : 2;
+    memo.set(cell, result);
     return result;
   };
   const step = (i: number, j: number): boolean => {

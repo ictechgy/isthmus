@@ -124,6 +124,20 @@ test('비교 예산을 넘으면 부분 결과 대신 실패한다', () => {
   assert.throws(() => index.applicable({ segments: parsed.segments, anchor: 'root', method: 'GET', side: 'call' }), RouteScopeBudgetError);
 });
 
+test('첫·끝 리터럴 색인이 겹칠 수 없는 원소를 비교에서 뺀다(base 앵커 호출 포함)', () => {
+  const templates = Array.from({ length: 100 }, (_, index) => `/static/f${index}.js`);
+  const index = new RouteLimitationScopeIndex([scopedDocument({ templates })], { remaining: 20 });
+  const probe = (template: string, anchor: 'root' | 'base') => {
+    const parsed = parseRouteTemplate(template);
+    assert.ok(parsed.ok);
+    return index.applicable({ segments: parsed.segments, anchor, method: 'GET', side: 'call' });
+  };
+  // 원소 100개를 모두 비교하면 예산 20을 넘는다. 색인이 끝 리터럴(items ≠ fN.js)로 모두 걸러야 통과한다.
+  assert.deepEqual(probe('/api/items', 'base'), []);
+  assert.deepEqual(probe('/api/items', 'root'), []);
+  assert.equal(probe('/f7.js', 'base').length, 1);
+});
+
 test('출력에 원소를 싣는 한계는 서버·계약 측 공백 접두사뿐이다', () => {
   assert.equal(isDeclarationSideGap('framework-provided-routes: x'), true);
   assert.equal(isDeclarationSideGap('contract-coverage: x'), true);
