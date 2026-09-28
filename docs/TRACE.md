@@ -228,7 +228,7 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   }],
   "gaps": [],
   "notices": [],
-  "limitations": [ /* 조인 한계(check와 같은 모양) */ ],
+  "limitations": [ /* 조인 한계(check와 같은 모양 — http 스코프는 routeScope) */ ],
   "analysisLimitations": [{ "analysis": "…", "message": "…" }],
   "analyses": [{ "id": "db", "platform": "sql", "role": "db-dependents", "source": "language-traversal",
                  "direction": "dependents", "tool": { "…": "…" }, "revision": "rev-1", "graphRevision": "catalog-1",
@@ -277,6 +277,9 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   decl 쪽이 없거나 맞지 않고 선택 키의 contract에 match된 호출은 `side: "contract"`다. 품질 표기는
   `check --pairs`와 같다.
 - 테스트 소스 사실(`testSource`)은 기본으로 체인에서 뺀다(`test-source-omitted`).
+- http 문서의 limitation 스코프([http limitation 스코프](GRAPH-EXCHANGE.md#http-limitation-스코프))는 trace의 gap·체인을
+  바꾸지 않는다. trace는 한계를 심각도 판정에 쓰지 않고 `limitations`에 `routeScope`와 함께 그대로 싣는다(호출 측
+  한계의 스코프는 원소 수만).
 - 정렬·키 순서가 고정돼 같은 입력이면 바이트 단위로 같은 출력이다. hop·정점·gap 합계가 1,000,000을
   넘으면 부분 결과 없이 종료 코드 2다.
 - **출력 상한(`--max-chains`·`--max-rows`)**: 주면 `chains`를 앞에서 N개, 그 밖의 행 목록(최상위 `gaps`·`notices`·

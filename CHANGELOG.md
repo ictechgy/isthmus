@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+### Added — http limitation 스코프 (Phase 4)
+
+- **http 문서의 `limitationScopes`**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)): 초안이던 경로 스코프를
+  계약으로 확정하고 구현한다. 항목은 `{limitationIndex, templates?, templatePrefixes?, templateSuffixes?, methods?}`이고
+  경로 필드 하나 이상이 필요하다. 정규 템플릿·제어 문자·상한(스코프 1,000개, 원소 10,000개)·모르는 키·http 문서의
+  `channels`·다른 target 문서의 경로 필드를 엄격히 검증해 입력 오류(2)로 거부한다. 이전 개발 빌드는 http 문서의
+  `limitationScopes`를 거부했다.
+- **판정 효과**: 서버·계약 측 공백 한계는 스코프와 겹칠 수 있는 **호출**에만, 호출 측 공백 한계는 스코프와 겹칠 수
+  있는 **선언**에만 적용된다. `check`의 error 전제 (c)와 `route-call-without-contract`, `route-decl-without-call`·
+  `route-contract-without-call`의 `-unverified`, `diff --http`의 `after-declaration-gap`이 호출·선언 단위로 판정된다.
+  스코프 없는 한계는 이전처럼 문서 전체를 막는다(하위 호환). 비교는 보수적 교집합이다(ASCII 대소문자·끝 슬래시 하나·
+  빈 파라미터·`{**}` 0세그먼트를 넓게 읽음, base 앵커는 알 수 없는 앞부분, HEAD→GET·OPTIONS·동적 동사). 한 조인의
+  비교는 5,000,000칸까지이며 넘으면 입력 오류다.
+- **출력**: 조인 한계(check·query·trace·`diff --http`)에 `routeScope`를 싣는다. 호출 측·모르는 접두사 한계는 귀속되지
+  않은 호출 경로를 담을 수 있어 원소 수(`withheldElements`)만 싣는다. `diff --http`의 `declaration-coverage-gap`·
+  `client-coverage-gap` 상세는 스코프 있는 한계로만 신고된 접두사에 ` (scoped)`를 붙인다.
+- **`framework-provided-routes:` 스코프의 뜻**: "프레임워크가 선언 없는 추가 경로를 받을 수 있다" — 그 경로에 닿을 수 있는
+  호출의 미결합 판정만 막는다. Spring Boot(`/error` 전체 method, 정적 리소스 GET·HEAD, webjars·actuator·Security)와
+  Next.js 예시를 문서화했다.
+- **적합성 벡터**: `conformance/http-template.json`에 Spring MVC PathPattern 변환 15케이스(`framework.spring.path-pattern`,
+  Spring Framework v6.2.10 공식 소스로 확인 — 끝 `**`·`{*x}` 0세그먼트, 중간 `**` 거부, 6.x 끝 슬래시 strict 기본,
+  빈 매핑 `""`와 `/`, 끝 `*`·부분 세그먼트의 빈 값 변형, 변형 16개 상한)를, 새 suite `conformance/http-limitation-scope.json`
+  (스코프 적용·검증 27케이스)을 더했다. `SHA256SUMS`가 바뀌었으므로 벡터를 벤더링하는 생산자(kartograph·cartograph·
+  tsograph)는 다시 벤더링하고 `conformance.lock`을 갱신해야 한다.
+- 계약: Spring의 빈 값 매칭(끝 `*`, 부분 세그먼트 변수)은 소비자 매칭을 바꾸지 않고 생산자가 빈 값 변형 decl을 함께
+  내는 규칙으로 정했다.
+
 ### Fixed — capture 순회 root 위생과 root-not-found 부분 성공
 
 - **root 위생**: capture가 언어 순회(forward·reverse) root에 그 생산자 그래프의 노드가 될 수 없는 id를 넘기던 문제를

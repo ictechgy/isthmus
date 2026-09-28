@@ -71,6 +71,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 - 잘못된 인덱스, 중복 인덱스, 빈 채널 집합, 잘못된 타입은 입력 오류로 거부한다. 잘못된
   스코프를 빈 공백으로 읽고 error를 만들지 않는다. 문서당 최대 1,000 스코프, 정규화 전
   채널 원소 합계 최대 10,000개다. 파일 위치는 채널 집합의 대체물이 아니다.
+- target `http` 문서는 `channels` 대신 경로 형태를 쓴다([http limitation 스코프](#http-limitation-스코프)).
 - 문자열 끝의 `[channels: …]`는 문장일 뿐 파싱하지 않는다. JSON 문자열 인코딩이 쉼표·
   대괄호·따옴표 이스케이프를 맡는다. 같은 채널 안의 플랫폼 조건은 이 범위로 구분하지 않는다.
 - 옛 v1 소비자는 모르는 필드를 버리고 기존 문자열을 target 전체로 적용한다. 새 소비자는
@@ -568,7 +569,7 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | 매니페스트 없는 귀속 게이트(service 일치·단일 서비스 규칙), 소비자 계수 세 가지 | 구현 | — |
 | check 진단(아래 표에서 `route-decl-shadowed` 제외), 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
 | `dispatch: "registration-order"`, `order`, `route-decl-shadowed` | 초안 | 문서를 입력 오류로 거부 |
-| http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`) | 초안 | http 문서의 `limitationScopes`를 입력 오류로 거부. 한계는 문서 전체에 적용 |
+| http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`·`methods`, [http limitation 스코프](#http-limitation-스코프)) — check·query·trace·`diff --http` | 구현(Phase 4) | — |
 | `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | `diff --http`: 맨 매니페스트를 trace와 같은 member·link 파서로 받고 `contract.authoritative`를 contract 측 깨짐의 error 전제로 쓴다. trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
 | `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
@@ -722,9 +723,14 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   `{*path}`, Next `[[...slug]]` 등). `{**}`만 내면 `/files` 호출이 거짓
   `route-call-without-decl`이 되므로, 생산자는 `/files/{**}`와 함께 catch-all을 뗀 접두사
   decl(`/files`)을 하나 더 펼쳐 낸다. 루트 catch-all(`/{*path}`)의 접두사 decl은 `/`다. 어느
-  프레임워크·버전·패턴(Spring 끝 `**`, Express 4 `*` 포함)이 0세그먼트나 빈 끝 세그먼트를
-  받는지는 착수할 때 공식 소스로 확인해 http-template 벡터에 provenance와 함께 고정한다.
-  현재 목록은 추정이다.
+  프레임워크·버전·패턴이 0세그먼트나 빈 끝 세그먼트를 받는지는 착수할 때 공식 소스로 확인해
+  http-template 벡터에 provenance와 함께 고정한다. Spring Framework 6.x PathPattern의 끝 `**`·`{*x}`는
+  확인했다(`spring/*` 벡터). 그 밖(Express 4 `*` 등)은 추정이다.
+- **빈 값 변형**: 프레임워크가 빈 값을 받는 자리(Spring 끝 `*`, Spring 부분 세그먼트의 변수·`*`)는 소비자 규칙과
+  다르다 — decl `{}`는 빈 세그먼트와, 부분 세그먼트 `p{}s`는 가운데가 빈 값과 맞지 않는다. 생산자는 그 자리를 빈
+  값으로 채운 변형 decl(`/files/*` → `/files/{}`와 `/files/`, `/files/{name}.json` → `/files/{}.json`과
+  `/files/.json`)을 같은 method·symbol·location으로 함께 낸다. 변형 수는 optional 세그먼트와 같은 16개 상한을
+  따른다. 세그먼트 전체 변수(`{id}`)와 중간 `*`처럼 빈 값을 받지 않는 자리는 펼치지 않는다.
 - 펼친 접두사 decl에는 `catchAllPrefix: true`를 단다. 목록 엔드포인트 `/files`와
   `/files/{*path}`가 함께 있는 흔한 구성에서 명시적 decl과 구분하기 위해서다.
   - `method`·`symbol`·`location`은 원본 catch-all decl과 같다. 같은 문서에 원본 decl(같은
@@ -737,8 +743,9 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
     잡힌다.
 - optional 세그먼트는 decl 여러 개로 펼친다. 16개를 넘으면 dynamic과
   `route-template-expansion-capped:`로 낸다. 프레임워크가 자동으로 붙이는 HEAD·OPTIONS는 decl로
-  내지 않는다(아래 method 예외가 처리). 중간 `**` 패턴은 버전별 허용 여부를 확인하기 전까지
-  dynamic과 스코프가 있는 `route-coverage:`로 낸다.
+  내지 않는다(아래 method 예외가 처리). 중간 `**` 패턴은 dynamic과 `route-coverage:`로 낸다
+  (Spring 6.x PathPattern은 파싱을 거부한다 — `spring/middle-double-wildcard-rejected` 벡터. AntPathMatcher 구성은
+  모델링하지 않는다).
 - isthmus가 검증하는 것은 `/` 시작, pchar·`/`·`{}`·`{**}` 토큰만 있는지, `{**}`가 끝 세그먼트
   전체인지, 제어 문자가 없는지, `%XX`가 대문자 hex인지, unreserved 문자(`A-Z`·`a-z`·`0-9`·`-`·
   `.`·`_`·`~`)를 인코딩하지 않았는지, 길이가 2,048자 이하인지다. 거부 사유 코드(`not-rooted`·
@@ -893,8 +900,8 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 
 - (a) 호출이 link에 귀속됐다.
 - (b) `pathAnchor`가 `root`이거나 `declared-base`로 승격됐다.
-- (c) 서버 측에 이 호출 템플릿을 덮는 서버 측 limitation이 없다. 스코프가 있으면 스코프 기준,
-  없으면 서버 측 전체 기준이다(http 스코프가 초안인 이 버전은 항상 서버 측 전체 기준).
+- (c) 서버 측에 이 호출에 적용되는 서버 측 limitation이 없다. 스코프가 있는 한계는 스코프가 이 호출과 겹칠 수 있을
+  때만, 스코프가 없는 한계는 항상 적용된다([http limitation 스코프](#http-limitation-스코프)).
 - (d) 이 템플릿을 덮는 `unjoined-dynamic-routes`가 0이다.
 - (e) 테스트 소스 사실(`testSource`)이 아니다. 마스킹된 호출(`maskedSegments`)과 동사가 동적인
   호출(`methodDynamic`)도 error 근거가 아니다. method 불일치는 모든 경로 후보가 증명 가능하고
@@ -936,27 +943,115 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   `/login`·`/logout`, actuator, springdoc, `/error`, Spring Data REST, 정적 리소스, Next
   `public/`·rewrites·middleware, Flask static 등)를 생산자가 starter·의존성으로 감지했을 때
   낸다. 합성 decl은 내지 않는다. 설정 조합을 정확히 흉내 내지 못하면 거짓 match가 생기기
-  때문이다.
+  때문이다. 제공 경로를 증명할 수 있으면 스코프로 좁힌다([뜻과 예시](#framework-provided-routes의-스코프)).
+  스코프가 없으면 그 문서의 모든 호출이 error를 증명할 수 없다.
 - `http-wrapper-unresolved:`는 `http-wrappers` 선언의 owner·name이 실제 심볼과 맞지 않거나
   선언된 래퍼의 호출이 0건일 때 낸다. 낡은 선언이 조용히 0건을 내어 "호출 없음"으로 읽히지
   않게 하기 위해서다.
 
 ### http limitation 스코프
 
-> **초안.** 이 버전은 http 문서의 `limitationScopes`를 입력 오류로 거부한다. 한계는 문서의 서버 측·
-> 호출 측 전체에 적용된다.
+> **구현(Phase 4).** http 문서는 `limitationScopes`로 한계 하나가 가릴 수 있는 요청(method, 경로)의 보수적 상한을
+> 선언할 수 있다. 스코프가 없는 한계는 이전처럼 문서의 해당 측 전체에 적용된다(하위 호환).
 
-- 기존 `limitationScopes`를 http 문서용으로 확장한다. 항목 형태는 `{limitationIndex, templates?,
-  templatePrefixes?, templateSuffixes?}`이고, http 문서의 스코프 항목은 `channels` 대신 이 세 필드
-  중 하나 이상을 비어 있지 않게 쓴다.
-- `templates`는 정확한 정규 템플릿 집합이다. `templatePrefixes`는 세그먼트 경계의 root 접두사로,
-  `/actuator`는 `/actuator`와 그 아래 템플릿을 덮는다. `templateSuffixes`는 base 앵커 decl의 알려진
-  접미사다.
-- 원소는 정규 템플릿 문법을 따르고 세그먼트 단위로만 비교한다. 글롭·정규식·대소문자 접기는
-  하지 않는다. 인덱스 규칙, 상한(문서당 스코프 1,000개, 원소 합계 10,000개), 보수적 상한 원칙은
-  위 [선택적 limitation 스코프](#선택적-limitation-스코프-v1-확장) 절과 같다.
-- 스코프를 증명하지 못하면 그 항목은 기존처럼 문서의 member 전체에 적용한다. dynamic decl에
-  증명된 리터럴 접두사가 있으면 `unjoined-dynamic-routes`도 그 접두사로 좁힌다.
+```json
+"limitations": [
+  "framework-provided-routes: error controller serves /error for every method",
+  "framework-provided-routes: static resource handler may serve GET/HEAD under /**"
+],
+"limitationScopes": [
+  {"limitationIndex": 0, "templates": ["/error"]},
+  {"limitationIndex": 1, "templatePrefixes": ["/"], "methods": ["GET", "HEAD"]}
+]
+```
+
+**형태.** 기존 `limitationScopes`를 쓴다. 항목은 `{limitationIndex, templates?, templatePrefixes?,
+templateSuffixes?, methods?}`이고 경로 필드 셋 중 하나 이상이 있어야 한다.
+
+- `templates`: 정확한 정규 템플릿 집합. `{**}`도 쓸 수 있다.
+- `templatePrefixes`: 세그먼트 경계의 root 접두사. `/actuator`는 `/actuator`와 그 아래 모든 경로를 덮고 `/actuators`는
+  덮지 않는다. `/`는 모든 경로다. `{**}`를 쓸 수 없고, 루트가 아닌 접두사는 `/`로 끝날 수 없다.
+- `templateSuffixes`: 알 수 없는 앞부분(0개 이상 세그먼트) 뒤의 세그먼트 경계 접미사. base 앵커 decl처럼 접두사를
+  모르는 경로의 알려진 꼬리다. `{**}`를 쓸 수 없고 `/` 하나는 쓸 수 없다(모든 경로는 접두사 `/`로 쓴다).
+- `methods`: 선택. 중복 없는 HTTP 동사(`ANY` 제외)의 비어 있지 않은 배열. 생략하면 모든 method다.
+
+**검증(입력 오류, 종료 코드 2).** 잘못된 스코프를 빈 공백으로 읽고 error를 만들지 않도록 다음을 모두 거부한다:
+http 문서의 `channels`, 다른 target 문서의 경로 필드·`methods`, 경로 필드 없음(`methods`만 있는 항목 포함), 모르는 키,
+빈 배열, 문자열이 아닌 원소, 정규 문법을 어긴 원소(거부 사유 코드를 오류 문구에 싣는다 — 제어 문자·소문자 hex·
+2,048자 초과 포함), 위 접두사·접미사 제한 위반, 잘못된 `methods`. 인덱스 규칙(0부터, 항목별 하나)과 상한(문서당
+스코프 1,000개, 채널·경로 원소 합계 10,000개)은 [선택적 limitation 스코프](#선택적-limitation-스코프-v1-확장) 절과
+같다. isthmus는 원소를 중복 제거하고 문자열 순으로 정규화한다.
+
+**적용 규칙.** 한계의 측은 여전히 접두사로 정한다([limitation 접두사와 측](#limitation-접두사와-측)).
+
+- 서버·계약 측 한계는 **호출**에 적용된다. 스코프가 있으면 그 호출이 스코프 안의 요청일 수 있을 때만 적용되고,
+  없으면 그 scope의 모든 호출에 적용된다. error 전제 (c)는 "이 호출에 적용되는 서버 측 공백 한계가 없다"이고,
+  계약 측 한계는 `route-call-without-contract`와 `diff --http` contract 측 깨짐에 같은 방식으로 적용된다.
+- 호출 측 한계는 **선언**(decl·contract)에 적용된다. 스코프가 있으면 스코프 안의 숨은 호출이 그 선언에 닿을 수
+  있을 때만 `route-decl-without-call`·`route-contract-without-call`을 `-unverified`로 내린다.
+- 한 호출·선언에 스코프 없는 공백 한계가 하나라도 적용되면 그것이 우선한다(문서 전체 효과). 스코프는 신고한 문서의
+  그 한계에만 붙고, 같은 접두사의 다른 항목이나 다른 문서의 한계를 좁히지 않는다.
+- dynamic decl·contract(`unjoined-dynamic-routes`)는 템플릿을 몰라 스코프로 좁히지 않는다. dynamic 호출·미귀속
+  호출·client 문서 없음도 선언과 무관한 호출 측 공백이다. 체인 전용·모르는 접두사의 스코프는 판정에 쓰이지 않는다.
+
+**비교(보수적 근사).** "스코프 안일 수 있다"는 두 경로 집합의 교집합이 비어 있지 않을 수 있다는 뜻이다. 겹친다고
+잘못 보면 error 하나가 `-unverified`로 내려갈 뿐이지만, 반대면 거짓 error가 되므로 항상 넓게 근사한다.
+
+- 세그먼트 단위로 비교한다. 리터럴은 ASCII 대소문자를 접어 비교하고, 끝 슬래시 하나(빈 끝 세그먼트)는 있어도
+  없어도 같다고 본다. 그래서 생산자는 대소문자·끝 슬래시 변형을 나열하지 않아도 된다.
+- 양쪽의 `{}`와 부분 세그먼트의 파라미터는 빈 값을 포함한 어떤 값도 될 수 있다고 본다. 부분 세그먼트끼리는 항상
+  겹친다고 본다. 스코프 원소의 `{**}`는 0개 이상의 세그먼트다.
+- base 앵커 호출·선언은 알 수 없는 앞부분(0개 이상 세그먼트) 뒤의 템플릿으로 본다.
+- `methods`: 호출은 동사가 같으면 적용되고, 동적 동사 호출은 항상, HEAD 호출은 `GET`이 있어도, OPTIONS 호출은 경로만
+  맞으면 적용된다(조인의 `head-as-get`·`options-any`와 같은 방향). 선언은 `ANY`면 항상, 같은 method면, GET 선언은
+  `HEAD`가 있어도, 모든 선언은 `OPTIONS`가 있으면 적용된다.
+- 한 조인의 스코프 비교는 5,000,000칸까지이며 넘으면 부분 결과 대신 입력 오류다. 첫·끝 리터럴 색인으로 비교
+  대상을 줄인다. 규칙 벡터는 [`http-limitation-scope`](#공유-적합성-벡터)다.
+
+**생산자 의무.** 스코프는 그 한계가 가릴 수 있는 **모든** 요청을 포함하는 상한이어야 한다. 일부 경로를 발견한
+것만으로 스코프를 만들지 않는다. 동적 설정·해석하지 못한 플레이스홀더·읽지 못한 파일 때문에 상한을 증명할 수
+없으면 그 항목의 스코프를 생략한다(문서 전체 효과). 서버 템플릿과 같은 접두사 규칙(context-path 등)을 적용한
+요청 경로로 적는다. 호출 측 문서의 스코프 원소에도 route-call 원문과 같은 제거·마스킹을 적용한다(아래 보안).
+
+**출력.** 조인 한계(`check`·`query`·`trace`·`diff --http`의 `limitations`)는 스코프를 `routeScope`로 싣는다. 서버·계약
+측 공백 접두사의 한계는 원소를 그대로 싣고, 그 밖의 한계(호출 측·모르는 접두사)는 귀속되지 않은 호출의 경로를
+담을 수 있어 `{"withheldElements": N, "methods"?: [...]}`로 원소 수만 싣는다. `diff --http`의
+`declaration-coverage-gap`·`client-coverage-gap` 상세는 스코프 있는 한계로만 신고된 접두사에 ` (scoped)`를 붙인다.
+이 절을 구현하기 전의 isthmus(미발행 개발 빌드)는 http 문서의 `limitationScopes`를 입력 오류로 거부하므로 조용히
+오독하지 않는다.
+
+#### `framework-provided-routes:`의 스코프
+
+이 한계의 뜻은 "프레임워크가 프로젝트 코드에 선언이 없는 **추가 경로**를 서비스할 수 있다"이다. 추가 경로는
+"선언이 없는 호출"과 "선언과 method가 다른 호출"의 판정에만 영향을 준다 — 그 경로에 닿을 수 있는 호출만 error를
+증명할 수 없다. 그래서 스코프는 프레임워크가 **받을 수 있는** 요청의 상한이다. 선언이 있는 경로를 가리거나
+`route-decl-without-call`을 바꾸지 않는다(서버 측 한계는 선언에 적용되지 않는다).
+
+- 합성 decl은 여전히 내지 않는다. 스코프는 거짓 match를 만들지 않고, 스코프 안의 미결합 호출을 `-unverified`로
+  둘 뿐이다.
+- 경로가 설정값에 기대면 기본값을 쓰되 저장소 안 어느 프로필에서도 재정의하지 않았을 때만이다(base 접두사 규칙과
+  같다). 해석하지 못하면 그 항목의 스코프를 생략한다.
+- "아래 전부"를 받는 핸들러(정적 리소스 `/**` 등)는 접두사 `/`가 되어 그 method의 모든 호출을 덮는다. 그래서
+  **`methods`로 좁히는 것이 핵심이다.** 받을 수 있는 경로를 열거할 수 있으면(파일 목록 등) 정확 템플릿으로 좁힌다.
+
+Spring Boot(Spring MVC) 예시. 값의 근거는 공식 소스(Spring Boot 3.5.5, Spring Framework 6.2.10)로 확인했다.
+
+| 제공 경로 | 조건 | 스코프 |
+|---|---|---|
+| 오류 컨트롤러 | `BasicErrorController`의 `@RequestMapping("${server.error.path:${error.path:/error}}")`, method 제한 없음 | `templates: ["/error"]`(재정의된 리터럴이면 그 값, 해석 불가면 스코프 생략) |
+| 정적 리소스 | `spring.mvc.static-path-pattern` 기본 `/**`, 위치 `classpath:/META-INF/resources/`·`/resources/`·`/static/`·`/public/`, `ResourceHttpRequestHandler`는 GET·HEAD만 받는다 | 위치의 모든 파일(의존성 jar의 `META-INF/resources` 포함)을 열거할 수 있으면 파일 경로 `templates`(+`index.html`이 있으면 `/`)와 `methods: ["GET","HEAD"]`, 아니면(빌드 생성물·리소스 체인 버전 경로 등) `templatePrefixes: ["/"]`, `methods: ["GET","HEAD"]`. `spring.web.resources.add-mappings=false`면 한계 없음 |
+| webjars | `spring.mvc.webjars-path-pattern` 기본 `/webjars/**` | `templatePrefixes: ["/webjars"]`, `methods: ["GET","HEAD"]` |
+| actuator | `management.endpoints.web.base-path` 기본 `/actuator` | `templatePrefixes: ["/actuator"]`(method는 엔드포인트마다 달라 생략) |
+| Spring Security 기본 로그인 | 폼 로그인·로그아웃 기본 경로 | `templates: ["/login", "/logout"]` (경로·method를 설정에서 증명하지 못하면 스코프 생략) |
+
+이 구성이면 GET·HEAD가 아닌 호출은 `/error`를 부르지 않는 한 error 판정이 가능하고, GET 호출은 정적 리소스를
+열거한 경우에만 판정할 수 있다. 오류 컨트롤러·정적 리소스 외 행(webjars·actuator·Security)의 기본값은 이번에
+소스로 다시 확인한 것이 아니라 설계 추정이며, 생산자가 착수할 때 공식 소스로 확인한다.
+
+Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한다): `public/` 파일은 파일 경로 `templates`와
+`methods: ["GET","HEAD"]`, 빌드 자산은 `templatePrefixes: ["/_next"]`, `next.config`의 `rewrites`·`redirects`는
+`source`가 리터럴 경로면 그 템플릿(파라미터는 `{}`, `:path*`는 접두사), middleware는 `config.matcher`가 리터럴
+경로 목록이면 그 접두사·템플릿이다. 그 밖(동적 matcher, 조건부 rewrite 등)은 스코프를 생략한다.
 
 ### 테스트 소스 정책
 
@@ -981,7 +1076,8 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   근거가 되지 않는다.
 - 위 제거·마스킹은 `channel`뿐 아니라 리터럴 경로 문자열을 싣는 모든 필드에 똑같이 적용한다:
   `channelPrefix`, 클라이언트 측 문서의 `limitationScopes`(`templates`·`templatePrefixes`·
-  `templateSuffixes`), limitation 문구. 한 필드에서 가린 세그먼트가 다른 필드로 새면 안 된다.
+  `templateSuffixes`), limitation 문구. 한 필드에서 가린 세그먼트가 다른 필드로 새면 안 된다. isthmus는 호출 측·
+  모르는 접두사 한계의 스코프 원소를 출력에 싣지 않고 원소 수만 싣는다.
 - 선택 옵션 `--route-call-hosts <목록>`을 주면, 목록 밖 authority의 호출은 사실 대신
   `unbound-route-calls-omitted:` 개수로만 낸다.
 - 귀속은 소비자가 매니페스트로 판정하므로 생산자는 어떤 호출이 귀속될지 모른다. 그래서
@@ -1094,11 +1190,19 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
   결과(`expect`)를 주장할 수 없고 `expectDynamic`·`expectLimitation`만 쓴다.
 - `http-template`: 정규 문법(`template.grammar`), 생산자 정규화(`template.normalize`), 프레임워크
   변환(`framework.*`), 소비자 매칭(`match.*`). `url-compose`: 호출 조립·base 결합·제거·마스킹·래퍼
-  인자 바인딩([HTTP-WRAPPERS](HTTP-WRAPPERS.md)).
+  인자 바인딩([HTTP-WRAPPERS](HTTP-WRAPPERS.md)). `http-limitation-scope`: 스코프 적용(`scope.applies`, 호출·선언
+  하나에 한계가 적용되는지)과 스코프 항목 검증(`scope.validate`)을 제품 조인 층·파서로 실행한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
   케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
-  OpenAPI 경로 템플릿만 있다.
+  OpenAPI 경로 템플릿과 Spring MVC PathPattern(`framework.spring.path-pattern`, Spring Framework v6.2.10 소스 확인,
+  `producer:kartograph`)이 있다. Spring 케이스: 끝 `**`·`{*x}`의 0세그먼트 매칭(접두사 decl), 루트 `/**`, 중간 `**`
+  거부, 6.x 끝 슬래시 strict 기본(명시적 `setMatchOptionalTrailingSeparator(true)`만 optional), 빈 메서드 매핑 `""`
+  (클래스 경로 그대로)과 `/`(끝 슬래시 추가), 둘 다 빈 매핑(루트), 끝 `*`·부분 세그먼트 변수·세그먼트 안 `*`의 빈 값
+  변형, 세그먼트 전체 변수와 중간 `*`의 비어 있지 않은 값, 변형 16개 상한. 케이스의 `source`·`note`가 공식 소스
+  파일·줄을 가리킨다.
+- 벡터 파일이 바뀌면 생산자는 다시 벤더링하고 `conformance.lock`의 isthmus 커밋과 파일별 sha256을 갱신한다. 새
+  suite 파일은 lock에 새 항목으로 더한다. isthmus는 생산자 저장소를 직접 고치지 않는다.
 
 ### Phase 1 결정 (초안 개정 기록)
 
@@ -1120,11 +1224,26 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 - 끝 슬래시·대소문자 불일치는 경로 후보가 없을 때만이며 미매치 진단을 대신한다.
 - 호출 쪽 부분 보간은 dynamic이다(서버 템플릿의 부분 세그먼트와 다르다, HTTP-WRAPPERS).
 - 마스킹·동적 동사 호출은 error 근거가 아니다.
-- registration-order·http limitationScopes·workspace 매니페스트는 구현 전까지 입력 오류로 거부한다.
+- registration-order·workspace 매니페스트(check·query)는 구현 전까지 입력 오류로 거부한다(http limitationScopes는
+  Phase 4에서 구현했다).
+
+### Phase 4 결정 (http limitation 스코프)
+
+- 초안의 세 경로 필드에 선택 `methods`를 더해 확정했다. 정적 리소스처럼 "아래 전부"를 받는 제공 경로는 경로만으로
+  좁힐 수 없어, method가 없으면 Spring 웹 앱의 모든 호출이 error를 증명할 수 없었다.
+- 한계는 서버·계약 측이면 호출에, 호출 측이면 선언에 적용한다. 스코프 비교는 겹칠 수 있음(교집합)으로 정하고
+  대소문자·끝 슬래시·빈 파라미터·`{**}` 0세그먼트를 넓게 읽는다(초안은 "대소문자 접기는 하지 않는다" — 좁히는
+  쪽이 아니라 넓히는 쪽이라 안전하므로 뒤집었다).
+- 스코프 없는 한계는 문서 전체 효과를 유지한다. 채널 형태 스코프를 http 문서에 쓰면 입력 오류다.
+- 호출 측·모르는 접두사 한계의 스코프 원소는 출력에 싣지 않는다(귀속되지 않은 호출 경로 비노출 규칙).
+- `unjoined-dynamic-routes`를 dynamic decl의 증명된 접두사로 좁히는 초안 문장은 보류한다. decl에는 `channelPrefix`
+  필드가 없다.
+- Spring의 빈 값 매칭(끝 `*`, 부분 세그먼트)은 소비자 매칭 규칙을 바꾸지 않고 생산자의 빈 값 변형 decl로 처리한다.
 
 ### 미결 항목
 
 - `authority`의 기본 포트 정규화.
-- registration-order 디스패치와 `route-decl-shadowed`, http limitationScopes, workspace 매니페스트의
-  구현 시점 세부 규칙.
+- registration-order 디스패치와 `route-decl-shadowed`, workspace 매니페스트(check·query)의 구현 시점 세부 규칙.
+- dynamic decl 공백(`unjoined-dynamic-routes`)의 스코프 표현.
+- 빈 값 변형 decl을 미호출·드리프트 진단에서 원본과 묶는 표식(catch-all 접두사 decl의 `catchAllPrefix`와 같은 역할).
 - `docs/limitation-prefixes.json` 추출.

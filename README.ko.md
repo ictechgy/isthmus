@@ -301,8 +301,11 @@ scope, key: {method, template}, quality, uses, decls, contracts}`이고, `key`�
 측 route, `quality`는 `exact`·`suffix`·`any-method`·`head-as-get`·`options-any`·`catch-all`·
 `param-to-literal`·`param-to-literal-constrained` 중 하나다. `query route:[<METHOD> ]<template>[ <scope>]`는
 scope가 붙은 route 키 하나의 귀속 호출·선언·계약과 dynamic 호출의 증명된 접두사 후보를 낸다.
-아직 구현하지 않은 초안 필드(`registration-order`, http `limitationScopes`, workspace 매니페스트)를
-쓴 문서는 종료 코드 2로 실패한다.
+http 문서는 한계가 가릴 수 있는 요청을 `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`,
+선택 `methods`)로 좁힐 수 있다. 서버·계약 측 공백은 스코프 안일 수 있는 호출의 error 판정만, 호출 측 공백은 그런
+숨은 호출이 닿을 수 있는 선언의 판정만 막고, 스코프 없는 한계는 문서 전체에 적용된다
+([계약](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)). 아직 구현하지 않은 초안 필드(`registration-order`,
+workspace 매니페스트)를 쓴 문서는 종료 코드 2로 실패한다.
 
 ### route 영향 추적 (개발 중)
 
