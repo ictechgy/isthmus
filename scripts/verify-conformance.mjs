@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 // 제품 매처와 문법 검증기를 그대로 쓴다. 벡터가 제품 동작과 어긋나면 여기서 실패한다.
 import { parseRouteTemplate } from '../src/exchange/route-template.ts';
+import { BridgeFactsValidationError, parseBridgeFactsDocument } from '../src/exchange/parse.ts';
 import { RouteIndex } from '../src/join/route-index.ts';
+import { RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
 
 /**
  * conformance/ 공유 벡터 검증기다.
@@ -92,6 +94,9 @@ function runCase(suite, testCase) {
     'template.grammar': runGrammar,
     'template.normalize': runNormalize,
     'framework.openapi.path-templating': runOpenApi,
+    'framework.spring.path-pattern': runSpringPathPattern,
+    'scope.applies': runScopeApplies,
+    'scope.validate': runScopeValidate,
     'compose.interpolation': runCompose,
     'compose.query-tail': runCompose,
     'compose.suffix': runCompose,
@@ -110,7 +115,7 @@ function runCase(suite, testCase) {
   const actual = runner(testCase.input);
   compareOutcome(label, testCase, actual);
   // 생산자가 내는 템플릿·접두사는 모두 정규 문법을 통과해야 한다.
-  for (const template of [actual.template, actual.channelPrefix]) {
+  for (const template of [actual.template, actual.channelPrefix, ...(actual.templates ?? [])]) {
     if (template !== undefined) check(parseRouteTemplate(template).ok, `${label}: produced template is not canonical`);
   }
 }
@@ -156,6 +161,108 @@ function runOpenApi({ path }) {
     converted.push(`${normalizeLiteral(prefix)}{}${normalizeLiteral(suffix)}`);
   }
   return { template: `/${converted.join('/')}` };
+}
+
+/**
+ * Spring MVC PathPattern 매핑을 route-decl 템플릿 목록으로 바꾸는 참조 구현이다(Spring Framework 6.x, 벡터의
+ * source가 확인한 동작만 옮겼다).
+ *
+ * 1) 클래스·메서드 매핑 결합: 둘 다 비면 루트, 한쪽이 비면 다른 쪽, 아니면 경계 슬래시 하나로 잇는다.
+ * 2) 끝 `**`·`{*x}`는 `{**}`와 catch-all 접두사 decl, 중간 `**`는 dynamic + `route-coverage:`.
+ * 3) 세그먼트 전체 변수·중간 `*`는 `{}`. 끝 `*`와 부분 세그먼트의 변수·`*`는 빈 값도 받으므로 빈 값 변형을 함께
+ *    펼치고, 16개를 넘으면 dynamic + `route-template-expansion-capped:`다. 한 세그먼트의 변수 둘 이상은 dynamic이다.
+ * 4) 끝 슬래시는 `matchOptionalTrailingSeparator`를 켠 경우만 optional, 기본은 strict다.
+ */
+function runSpringPathPattern({ classMapping, mapping, matchOptionalTrailingSeparator }) {
+  const rooted = (value) => (value !== '' && !value.startsWith('/') ? `/${value}` : value);
+  const left = classMapping === undefined ? '' : rooted(classMapping);
+  const right = rooted(mapping);
+  let pattern;
+  if (left === '' && right === '') pattern = '/';
+  else if (right === '') pattern = left;
+  else if (left === '') pattern = right;
+  else pattern = left.endsWith('/') && right.startsWith('/') ? left + right.slice(1) : left + right;
+  const trailingSlash = matchOptionalTrailingSeparator === true ? 'optional' : 'strict';
+  const segments = pattern.slice(1).split('/');
+  const last = segments.at(-1);
+  const catchAll = last === '**' || /^\{\*[A-Za-z_$][\w$]*\}$/u.test(last);
+  if (segments.slice(0, -1).some((segment) => segment.includes('**'))) return { dynamic: true, limitation: 'route-coverage:' };
+  const body = catchAll ? segments.slice(0, -1) : segments;
+  let variants = [[]];
+  for (const [index, segment] of body.entries()) {
+    const options = springSegment(segment, !catchAll && index === body.length - 1);
+    if (options === undefined) return { dynamic: true, limitation: 'route-coverage:' };
+    variants = variants.flatMap((prefix) => options.map((option) => [...prefix, option]));
+    if (variants.length > 16) return { dynamic: true, limitation: 'route-template-expansion-capped:' };
+  }
+  const templates = [];
+  const catchAllPrefixTemplates = [];
+  for (const variant of variants) {
+    const base = `/${variant.join('/')}`;
+    if (!catchAll) {
+      templates.push(base);
+      continue;
+    }
+    const prefix = variant.length === 0 ? '/' : base;
+    templates.push(variant.length === 0 ? '/{**}' : `${base}/{**}`, prefix);
+    catchAllPrefixTemplates.push(prefix);
+  }
+  return { templates, ...(catchAll ? { catchAllPrefixTemplates } : {}), trailingSlash };
+}
+
+/**
+ * Spring 세그먼트 하나의 정규 표기 후보다. 빈 값을 받는 자리면 빈 값 변형을 함께 돌려준다.
+ * 변수가 둘 이상이면 undefined(dynamic)다.
+ */
+function springSegment(segment, isLast) {
+  const tokens = segment.match(/\{[^{}]*\}|\*/gu) ?? [];
+  if (tokens.length === 0) return [normalizeLiteral(segment)];
+  if (tokens.length > 1) return undefined;
+  const [token] = tokens;
+  if (segment === token) {
+    // 세그먼트 전체 `{x}`는 빈 값을 받지 않는다. `*`는 끝에서만 빈 값을 받는다.
+    return token === '*' && isLast ? ['{}', ''] : ['{}'];
+  }
+  const at = segment.indexOf(token);
+  const prefix = normalizeLiteral(segment.slice(0, at));
+  const suffix = normalizeLiteral(segment.slice(at + token.length));
+  return [`${prefix}{}${suffix}`, `${prefix}${suffix}`];
+}
+
+/** limitation 스코프 적용: isthmus 조인 층의 스코프 색인으로 호출·선언 하나에 한계가 적용되는지 본다. */
+function runScopeApplies({ scope, probe }) {
+  const document = parseBridgeFactsDocument(scopeDocument(scope));
+  const parsed = parseRouteTemplate(probe.template);
+  const index = new RouteLimitationScopeIndex([document], { remaining: 1_000_000 });
+  const applicable = index.applicable({
+    segments: parsed.ok ? parsed.segments : [],
+    anchor: probe.pathAnchor ?? 'root',
+    ...(probe.method === undefined ? {} : { method: probe.method }),
+    side: probe.side ?? 'call',
+  });
+  return { applies: applicable.length > 0 };
+}
+
+/** limitation 스코프 검증: isthmus 파서가 스코프 항목을 받는지 본다. */
+function runScopeValidate({ scope }) {
+  try {
+    parseBridgeFactsDocument(scopeDocument(scope));
+    return { valid: true };
+  } catch (error) {
+    // 계약 위반만 "거부"로 읽는다. 그 밖의 예외는 검증기 결함이라 그대로 던진다.
+    if (error instanceof BridgeFactsValidationError) return { valid: false };
+    throw error;
+  }
+}
+
+/** 스코프 하나를 한계 하나에 붙인 합성 http 서버 문서다. */
+function scopeDocument(scope) {
+  return {
+    format: 'bridge-facts', version: 1, tool: { name: 'conformance', version: '0' },
+    generatedAt: '2026-09-29T00:00:00Z', platform: 'kotlin', target: 'http', project: '/conformance',
+    roles: ['server'], dispatch: 'specificity', facts: [], limitations: ['framework-provided-routes: conformance'],
+    limitationScopes: [{ limitationIndex: 0, ...scope }],
+  };
 }
 
 /** 소비자 매칭: isthmus 세그먼트 매처로 호출 하나를 선언 목록과 맞춘다. */

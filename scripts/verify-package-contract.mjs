@@ -60,6 +60,7 @@ for (const requiredPath of [
   'docs/GRAPH-EXCHANGE.md',
   'docs/HTTP-WRAPPERS.md',
   'conformance/SHA256SUMS',
+  'conformance/http-limitation-scope.json',
   'conformance/http-template.json',
   'conformance/url-compose.json',
   'compatibility.json',
