@@ -1,5 +1,5 @@
 import { compareStrings } from '../compare.ts';
-import type { TraversalPlatform } from '../exchange/language-traversal.ts';
+import type { TraversalGraph, TraversalPlatform } from '../exchange/language-traversal.ts';
 import type { BridgeFactsDocument } from '../exchange/parse.ts';
 import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isSafeNonEmptyString } from '../exchange/parse.ts';
 import {
@@ -510,6 +510,40 @@ function rewriteLinkContract(link: Record<string, unknown>, members: ReadonlyMap
 }
 
 /**
+ * 생산자가 README에서 **그래프 노드가 아니라고** 밝힌 선언 이름공간의 usr 표식이다(생산자 `tool.name` → 표식).
+ *
+ * persistence 도메인의 비sql 문서는 계약상 `relation-use`만 실을 수 있다. 그래서 스키마 선언 자체(Prisma model·field,
+ * TypedSQL 파일)를 사실로 내는 생산자는 그것을 사용 측 kind로 싣고, usr를 순회 노드가 아닌 별도 이름공간에 둔다. kind와
+ * 역할만으로는 코드의 사용(감싼 선언이 노드)과 구별할 수 없으므로 생산자가 문서로 밝힌 표식으로만 가린다 — 추측하지 않는다.
+ * - tsograph `schema`(origin/main README "Facts"·"Symbol ids"): `<schema path>#model:<Model>[.<field>]`,
+ *   `<sql path>#typedsql:<name>`. 소스 사실의 usr는 `<path>#<선언 경로>`이고 선언 이름에는 `:`가 올 수 없어 겹치지 않는다.
+ *   tsograph 자신도 같은 표식(`includes`)으로 이 id를 "선언 이름공간"으로 분류한다.
+ */
+const declarationNamespaceMarkers: Readonly<Record<string, readonly string[]>> = {
+  tsograph: ['#model:', '#typedsql:'],
+};
+
+/**
+ * 사실 하나가 생산자가 밝힌 선언 이름공간의 `relation-use`인지 본다. 이런 usr는 순회 root가 될 수 없다(생산자 그래프에
+ * 없다). trace는 어느 순회에도 없는 id를 "닿지 않음"으로 읽으므로 root에서 빼도 체인은 달라지지 않는다.
+ */
+export function isDeclarationNamespaceFact(document: BridgeFactsDocument, fact: BridgeFactsDocument['facts'][number]): boolean {
+  const markers = declarationNamespaceMarkers[document.tool.name];
+  const usr = fact.symbol?.usr;
+  return markers !== undefined && fact.kind === 'relation-use' && usr !== undefined && markers.some((marker) => usr.includes(marker));
+}
+
+/** 한 분석의 root 계획이다. 뺀 id는 이유별로 따로 싣는다(정렬). */
+export interface CaptureRootPlan {
+  /** 생산자에 넘길 root(정렬·중복 제거) */
+  readonly roots: readonly string[];
+  /** 생산자가 밝힌 선언 이름공간이라 뺀 사실 usr — 그래프 노드가 아님을 이미 안다 */
+  readonly declarationNamespace: readonly string[];
+  /** 생산자 심볼 목록(그래프 노드 전체)에 없어서 뺀 사실 usr — 순회하면 root-not-found가 될 id다 */
+  readonly notInListing: readonly string[];
+}
+
+/**
  * member 사실 문서에서 한 분석의 root id를 뽑는다(정렬·중복 제거).
  *
  * root는 **선택과 무관한 상위 집합**이다. `language-traversal` 생산자 지침대로 핸들러 전체(정방향),
@@ -518,22 +552,63 @@ function rewriteLinkContract(link: Record<string, unknown>, members: ReadonlyMap
  * 다시 구현해야 한다. 상위 집합은 한 번의 다중 root 순회라 비용이 작고, 같은 artifact로 다른 선택도 trace할 수 있다.
  * trace는 필요한 root만 쓴다. 테스트 소스 사실은 trace가 체인에서 빼므로 root에도 넣지 않는다.
  *
- * - forward: 이 platform의 route-decl `symbol.usr`.
- * - reverse: 이 platform의 route-call·relation-use `symbol.usr`와, 선택한 심볼(`selectedSymbols`).
+ * - forward: 이 platform의 route-decl `symbol.usr`(핸들러).
+ * - reverse: 이 platform의 route-call·relation-use `symbol.usr`(호출·사용을 감싼 심볼)와, 선택한 심볼(`selected`).
  * - db-dependents: platform sql의 relation-decl `symbol.usr`(VertexId — 테이블과 컬럼).
+ *
+ * **root 위생**: 언어 순회의 root는 그 생산자 그래프의 노드가 될 수 있는 사용 측 심볼뿐이다. 선언 측 심볼은 sql
+ * relation-decl(schemagraph db-dependents의 root)만 root가 된다. 그래서 사실에서 뽑은 id 중 두 가지를 뺀다.
+ * 1. 생산자가 밝힌 선언 이름공간의 relation-use({@link isDeclarationNamespaceFact}) — 언제나.
+ * 2. `graphNodes`(그 platform의 생산자 심볼 목록이 실은 노드 id 전체)가 주어지면 거기 없는 id — 파일 선택의 2단계처럼
+ *    목록을 이미 받은 때만. 목록이 곧 순회 그래프의 노드이므로 여기 없는 id는 생산자가 root-not-found로 돌려준다.
+ * `selected`(사용자가 고른 심볼과 파일 심볼)는 거르지 않는다 — 사용자가 밝힌 id가 노드가 아니면 생산자의 root-not-found로
+ * 드러나야 하기 때문이다(조용히 빼지 않는다).
  */
-export function collectCaptureRoots(documents: readonly BridgeFactsDocument[], role: TraceAnalysisRole,
-  platform: TraversalPlatform, selectedSymbols: readonly string[] = []): string[] {
+export function planCaptureRoots(documents: readonly BridgeFactsDocument[], role: TraceAnalysisRole,
+  platform: TraversalPlatform, selected: readonly string[] = [], graphNodes?: ReadonlySet<string>): CaptureRootPlan {
   const kinds = role === 'forward' ? ['route-decl'] : role === 'reverse' ? ['route-call', 'relation-use'] : ['relation-decl'];
-  const roots = new Set<string>(role === 'reverse' ? selectedSymbols : []);
+  const fromFacts = new Set<string>();
+  const declarationNamespace = new Set<string>();
   for (const document of documents) {
     if (document.platform !== platform) continue;
     for (const fact of document.facts) {
       if (fact.testSource === true || !kinds.includes(fact.kind) || fact.symbol?.usr === undefined) continue;
-      roots.add(fact.symbol.usr);
+      (isDeclarationNamespaceFact(document, fact) ? declarationNamespace : fromFacts).add(fact.symbol.usr);
     }
   }
-  return [...roots].sort(compareStrings);
+  const notInListing = graphNodes === undefined || platform === 'sql' ? [] : [...fromFacts].filter((usr) => !graphNodes.has(usr));
+  for (const usr of notInListing) fromFacts.delete(usr);
+  const roots = new Set([...fromFacts, ...(role === 'reverse' ? selected : [])]);
+  // 선택한 심볼이 선언 이름공간 id와 같으면 root에 남는다. 뺀 목록에서는 지워 두 쪽에 같은 id가 보이지 않게 한다.
+  const sorted = (values: Iterable<string>) => [...values].filter((usr) => !roots.has(usr)).sort(compareStrings);
+  return { roots: [...roots].sort(compareStrings), declarationNamespace: sorted(declarationNamespace), notInListing: sorted(notInListing) };
+}
+
+/** {@link planCaptureRoots}의 root만 돌려준다(목록 없이 — 선언 이름공간만 뺀다). */
+export function collectCaptureRoots(documents: readonly BridgeFactsDocument[], role: TraceAnalysisRole,
+  platform: TraversalPlatform, selectedSymbols: readonly string[] = []): string[] {
+  return [...planCaptureRoots(documents, role, platform, selectedSymbols).roots];
+}
+
+/**
+ * 생산자가 root-not-found로 끝낼 때의 종료 코드다. tsograph(origin/main `107bba2`)와 cartograph README가 "문서를 출력한 뒤
+ * 64"로 밝힌다. 64는 문서 없는 사용법 오류에도 쓰이므로 이 코드만으로는 받지 않는다({@link unresolvedTraversalRoots}).
+ */
+export const ROOT_NOT_FOUND_EXIT_CODE = 64;
+
+/**
+ * 순회 문서가 계약대로 기록한 root-not-found root id를 돌려준다(정렬). 기록이 없으면 빈 목록이다.
+ *
+ * `language-traversal` v1은 해석하지 못한 요청을 `symbol` 없는 root로 두고 `truncationReasons`에 `root-not-found`를
+ * 싣는다. 두 표시가 모두 있고, 그 root가 모두 이번 실행에 넘긴 id일 때만 인정한다 — 넘기지 않은 id를 "못 찾았다"고
+ * 하는 문서는 계약 위반이라 부분 성공 근거가 되지 못한다(그때는 `undefined`).
+ */
+export function unresolvedTraversalRoots(graph: TraversalGraph, requested: readonly string[]): string[] | undefined {
+  if (graph.source !== 'language-traversal' || !graph.truncationReasons.includes('root-not-found')) return [];
+  const passed = new Set(requested);
+  const unresolved = graph.roots.filter(({ symbol }) => symbol === undefined).map(({ id }) => id);
+  if (unresolved.some((id) => !passed.has(id))) return undefined;
+  return [...new Set(unresolved)].sort(compareStrings);
 }
 
 /**
@@ -596,11 +671,15 @@ export interface ListedSymbol {
   readonly path: string;
 }
 
-/** 읽은 심볼 목록이다. `skipped`는 project 상대 파일로 확정하지 못해 뺀 심볼 수다. */
+/**
+ * 읽은 심볼 목록이다. `skipped`는 project 상대 파일로 확정하지 못해 뺀 심볼 수다.
+ * `ids`는 위치와 무관하게 목록이 실은 노드 id 전체(정렬·중복 제거)다 — 순회 root 위생({@link planCaptureRoots})에 쓴다.
+ */
 export interface SymbolListing {
   readonly format: 'tsograph-graph' | 'kartograph-query-snapshot' | 'cartograph-graph';
   readonly symbols: readonly ListedSymbol[];
   readonly skipped: number;
+  readonly ids: readonly string[];
 }
 
 /** 목록 형식마다 그 형식이 나올 수 있는 platform이다. 설정의 platform과 어긋나면 잘못 붙인 목록이다. */
@@ -665,27 +744,34 @@ function cartographListing(value: Record<string, unknown>, project: string): Sym
   if (!Array.isArray(value.nodes)) fail('Expected a cartograph symbol graph with a nodes list.');
   const prefix = project.endsWith('/') ? project : `${project}/`;
   return collectListed('cartograph-graph', value.nodes, (node) => {
-    if (!isJsonObject(node) || node.isExternal === true) return {};
-    const path = isJsonObject(node.location) ? node.location.path : undefined;
+    if (!isJsonObject(node)) return {};
     // symbol 수준에서는 id와 usr가 같은 인덱스 USR이다. usr가 비면 id를 쓴다.
-    return { usr: node.usr ?? node.id,
-      path: typeof path === 'string' && path.startsWith(prefix) ? path.slice(prefix.length) : undefined };
+    const usr = node.usr ?? node.id;
+    // 외부 심볼은 파일에 놓지 않지만 그래프 노드이므로 id는 남긴다(위치 없음 → skipped로 센다).
+    if (node.isExternal === true) return typeof usr === 'string' ? { usr } : {};
+    const path = isJsonObject(node.location) ? node.location.path : undefined;
+    return { usr, path: typeof path === 'string' && path.startsWith(prefix) ? path.slice(prefix.length) : undefined };
   });
 }
 
-/** 목록 행에서 (usr, 상대 경로)를 모은다. 위치를 확정하지 못한 행은 센다. usr가 문자열이 아니면 형식 위반이다. */
+/**
+ * 목록 행에서 (usr, 상대 경로)를 모은다. 위치를 확정하지 못한 행은 센다. usr가 문자열이 아니면 형식 위반이다.
+ * 위치를 확정하지 못한 행의 usr도 노드 id(`ids`)에는 넣는다 — 파일에 놓지 못할 뿐 순회 그래프의 노드다.
+ */
 function collectListed(format: SymbolListing['format'], nodes: readonly unknown[],
   read: (node: unknown) => { usr?: unknown; path?: unknown }): SymbolListing {
   const symbols: ListedSymbol[] = [];
+  const ids = new Set<string>();
   let skipped = 0;
   for (const node of nodes) {
     const { usr, path } = read(node);
     if (usr === undefined && path === undefined) { skipped += 1; continue; }
     if (!isSafeNonEmptyString(usr)) fail(`A ${format} listing entry has no valid symbol id.`);
+    ids.add(usr);
     if (isProjectRelativePath(path) && !path.includes('\\')) symbols.push({ usr, path });
     else skipped += 1;
   }
-  return { format, symbols, skipped };
+  return { format, symbols, skipped, ids: [...ids].sort(compareStrings) };
 }
 
 /** 파일 선택에서 이 member(단일 project면 undefined)가 고른 파일이다. 파일 선택이 아니면 빈 목록이다. */

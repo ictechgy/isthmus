@@ -374,6 +374,7 @@ node scripts/capture-trace.mjs capture.json
    구현해야 한다. 상위 집합은 한 번의 다중 root 순회라 비용이 작고 같은 artifact로 다른 선택도 trace할 수 있다.
    root가 많으면 `maxRootsPerRun`(기본 2,000, 상한 10,000)과 인자 바이트 상한(128KiB)으로 나눠 `<id>.1`, `<id>.2`…
    분석으로 싣는다(trace가 같은 역할·플랫폼·member 분석을 합친다). 순회 출력은 trace와 같은 파서로 검증한다.
+   root에는 그 생산자 그래프의 노드가 될 수 있는 id만 넣는다([root 위생](#root-위생과-root-not-found)).
 4. **(d) 기록**: `trace-context.json`(member 하나에 links가 없으면 단일 project, 아니면 workspace), 모든 artifact,
    `capture-manifest.json`을 쓴다. 사전 계산 분석은 복사한 바이트의 sha256과 revision 증언을 `precomputed`에 싣는다.
 5. **(e) trace**: `trace`가 false가 아니면 `isthmus trace`를 실행해 `trace.json`을 쓰고 요약·gap 코드별 수를 manifest에
@@ -438,6 +439,7 @@ node scripts/capture-trace.mjs capture.json
   `--roots-from`이 보이는 판, cartograph PR #150)가 이 파일을 받는다. capture는 생산자 버전이나 `--help`를 보고 전달 방식을
   바꾸지 않는다 — 아직 발행되지 않은 동작에 기대지 않도록 분석 항목마다 설정으로 고른다. 옛 cartograph는 `arguments`·`separator`다.
 - **단계별 시간 제한**: 시간이 지나면 자식을 SIGKILL로 끝낸다. `timeoutSeconds`(기본 600, 1~7,200)와 `acceptExitCodes`(기본 `[0]`)를 문서·분석마다 준다.
+  순회 분석의 64는 예외다 — root-not-found를 기록한 순회 문서면 `acceptExitCodes` 없이도 부분 성공으로 받는다([아래](#root-위생과-root-not-found)).
   `git` 조회는 60초, `check`·`trace`는 600초다. 실패는 `Capture step <단계> failed: <도구> <하위 명령> exited with
   status N; stderr saved to logs/<단계>.stderr.txt.`처럼 단계와 명령을 밝히고, 자식 stderr는 터미널에 옮기지 않고
   출력 디렉터리의 `logs/`에만 저장한다(경로·비밀이 섞일 수 있다). 실패해도 `capture-manifest.json`에 `status: "failed"`와
@@ -453,8 +455,47 @@ node scripts/capture-trace.mjs capture.json
 - **manifest**(`isthmus-trace-capture-manifest` v1): isthmus 버전, 호스트(node·platform·arch), 도구마다 `--version`
   출력과(`source`를 주면) 소스 checkout의 revision·dirty, member의 project·revision·출처, 단계마다 전체 argv·종료 코드·
   시간·root 수·check 쌍 수, 모든 artifact의 경로·sha256·바이트·출처(`captured`·`precomputed`·`isthmus`)와 문서가 밝힌
-  생산자 신원, 파일 선택이면 `fileSelection`([아래](#파일-선택의-2단계-수집)), trace 요약을 싣는다. 시간 값이 있어 manifest는 재실행마다 다르다. context와 artifact는 생산자가 결정적이고
+  생산자 신원, 파일 선택이면 `fileSelection`([아래](#파일-선택의-2단계-수집)), trace 요약을 싣는다. root 위생이 뺀 id가
+  있으면 `rootFilters`, 생산자가 못 찾은 root가 있으면 그 단계의 `rootsNotFound`, 알릴 것이 있으면 `warnings`
+  ([아래](#root-위생과-root-not-found))를 싣는다. 시간 값이 있어 manifest는 재실행마다 다르다. context와 artifact는 생산자가 결정적이고
   `generatedAt`을 고정하면 같다.
+
+### root 위생과 root-not-found
+
+언어 순회(forward·reverse)의 root는 **그 생산자 그래프의 노드가 될 수 있는 사용 측 심볼**뿐이다 — route-decl 핸들러,
+route-call·relation-use를 감싼 심볼, 선택한 심볼. 선언 측 심볼은 sql relation-decl VertexId만 root가 되고 그것은
+schemagraph db-dependents의 root다. 그런데 persistence 도메인의 비sql 문서는 계약상 `relation-use`만 실을 수 있어서, 스키마
+선언 자체를 사실로 내는 생산자는 그것을 사용 측 kind로 싣고 usr를 그래프 노드가 아닌 이름공간에 둔다(tsograph `schema`의
+Prisma model·field `<schema path>#model:<Model>[.<field>]`와 TypedSQL `<sql path>#typedsql:<name>` — tsograph README가 "not graph
+nodes"라고 밝힌다). kind와 역할만으로는 이것과 코드의 사용을 가를 수 없어 capture는 사실에서 뽑은 id에 두 규칙을 더한다.
+
+1. **선언 이름공간**: 생산자가 README로 밝힌 표식의 relation-use usr는 root로 넘기지 않는다. 표식은 생산자(`tool.name`)마다
+   고정한 표로만 쓴다 — 지금은 tsograph의 `#model:`·`#typedsql:`뿐이고, 다른 생산자의 같은 문자열은 추측해 빼지 않는다.
+   노드가 아님을 이미 아는 id라 manifest `rootFilters`에 수(`declarationNamespace`)만 싣고 경고하지 않는다. trace는 어느
+   순회에도 없는 id를 "닿지 않음"으로 읽으므로 체인은 달라지지 않는다.
+2. **생산자 목록과 대조**: 그 platform의 심볼 목록(`listings` — 그래프 노드 전체)을 이미 받았으면(파일 선택의 2단계에서
+   실행하는 역방향 순회) 목록에 없는 사실 usr도 넘기지 않는다. 생산자 사실과 그래프가 어긋난 것이라 id 전체를
+   `rootFilters[].notInListing`에 싣고 `roots-not-in-listing` 경고를 낸다. 목록의 id에는 위치를 확정하지 못한 노드(외부
+   심볼 등)도 들어간다. 목록이 없는 실행(파일 선택이 아님, 목록 없는 platform, 1단계 분석)에는 이 규칙이 없다.
+
+선택한 심볼과 파일 심볼은 거르지 않는다 — 사용자가 밝힌 id가 노드가 아니면 생산자의 root-not-found로 드러나야 한다.
+
+**root-not-found를 기록한 종료 코드 64는 기본으로 부분 성공이다.** tsograph(origin/main `107bba2`부터)와 cartograph는
+README대로 모르는 root가 섞여도 나머지 root로 순회한 문서를 출력한 뒤 64로 끝난다(문서가 없는 순수 사용법 오류도 64). 순회
+분석의 종료 코드가 64이고 `acceptExitCodes`에 64가 없으면 capture는 다음을 모두 만족할 때만 받는다: stdout이 trace와 같은
+파서를 통과하는 `language-traversal` 문서이고, `truncationReasons`에 `root-not-found`가 있으며, `symbol` 없는 root가 하나
+이상이고 그 id가 모두 이번 실행에 넘긴 root다. 하나라도 어긋나면(빈 stdout, 계약 위반, 기록 없음) 이전과 같이
+`exited with status 64`로 실패하고 이유를 덧붙인다. 받았으면 그 단계 항목에 `rootsNotFound`(id 전체)와
+`acceptedPartial: "root-not-found"`를 싣고 `warnings`에 `root-not-found`를 더한다. 종료 코드가 0이거나 설정이 64를 받은
+경우에도 문서가 기록한 root-not-found는 같은 방식으로 싣고 경고한다. 경고는 capture 결과 JSON의 `warnings`와 stderr
+(`Capture warning (<단계>, <코드>): …`)에도 나오며 종료 코드는 0이다. trace는 문서의 `root-not-found:` limitation을
+`analysisLimitations`로, 잘림을 그 분석을 쓰는 hop의 `analysis-truncated` gap으로, 못 찾은 root를 따라가야 하는 hop을
+`analysis-missing` gap으로 드러낸다.
+
+기본을 엄격(실패)으로 두지 않은 이유: 다른 root의 도달은 온전한데 문서를 버리면 순회 전체를 잃는다. 그 손실을 피하려고
+설정에 `acceptExitCodes: [0, 64]`를 두게 하면 64의 두 뜻(문서 있는 root-not-found와 문서 없는 사용법 오류)을 가리지 않고
+받게 되고, 못 찾은 root는 manifest에 남지 않는다. 기본 규칙은 문서가 스스로 root-not-found를 기록했을 때만 받고, 못 찾은
+id를 manifest·경고·trace gap 세 곳에 남긴다. 64를 받지 않으려면 파이프라인이 capture 결과의 `warnings`나 manifest를 확인한다.
 
 ### 파일 선택의 2단계 수집
 

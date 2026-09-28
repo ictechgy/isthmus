@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Fixed — capture 순회 root 위생과 root-not-found 부분 성공
+
+- **root 위생**: capture가 언어 순회(forward·reverse) root에 그 생산자 그래프의 노드가 될 수 없는 id를 넘기던 문제를
+  고친다. persistence의 비sql 문서는 `relation-use`만 실을 수 있어, tsograph `schema`는 Prisma model·field와 TypedSQL 선언을
+  사용 측 kind로 싣고 usr를 노드가 아닌 이름공간(`#model:`·`#typedsql:`)에 둔다. capture는 생산자가 README로 밝힌 이
+  표식의 relation-use를 root에서 빼고(생산자 `tool.name`별 고정 표 — 추측하지 않는다), 파일 선택 2단계처럼 그 platform의
+  심볼 목록(그래프 노드 전체)을 이미 받았으면 목록에 없는 사실 usr도 뺀다. 선택한 심볼·파일 심볼은 거르지 않는다. 뺀 id는
+  manifest `rootFilters`에 싣고, 목록과 어긋난 id는 `roots-not-in-listing` 경고로도 알린다.
+- **종료 코드 64의 부분 성공**: 순회 분석이 64로 끝났어도 stdout이 유효한 `language-traversal` 문서이고 root-not-found를
+  계약대로 기록했으면(`truncationReasons`와 `symbol` 없는 root, 그 id가 넘긴 root) `acceptExitCodes` 없이 받는다. 못 찾은
+  id는 그 단계의 `rootsNotFound`, manifest·결과 JSON의 `warnings`, stderr 경고에 남고, trace는 `analysisLimitations`와
+  `analysis-missing`·`analysis-truncated` gap으로 드러낸다. 문서가 없거나 기록이 없으면 이전처럼 실패한다. 생산자 심볼
+  목록 파서는 노드 id 전체(`ids`)를 함께 돌려준다([TRACE](docs/TRACE.md#root-위생과-root-not-found)).
+
 ### Added — http diff (개발 중, Phase 3 소비자)
 
 - **`isthmus diff --http`**([HTTP-DIFF](docs/HTTP-DIFF.md)): 한 서버·스펙의 http route 표면을 두 시점에서 비교하고, base에서

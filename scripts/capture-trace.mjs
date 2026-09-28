@@ -9,17 +9,19 @@ import {
   capturedAnalysisPath,
   capturedDocumentPath,
   chunkCaptureRoots,
-  collectCaptureRoots,
   expandCaptureArgument,
   listedSymbolsInFiles,
   MAX_ROOT_ARGUMENT_BYTES,
   pairsDocumentIndexes,
   parseSymbolListing,
   parseTraceCaptureConfig,
+  planCaptureRoots,
+  ROOT_NOT_FOUND_EXIT_CODE,
   rootArguments,
   selectedCaptureFiles,
   selectedSymbols,
   TraceCaptureValidationError,
+  unresolvedTraversalRoots,
 } from '../dist/report/trace-capture.js';
 import { parseBridgeFactsDocument } from '../dist/exchange/parse.js';
 import {
@@ -113,7 +115,8 @@ export async function captureTrace(input, { execute = runChild, now = () => new 
     if (config.trace) manifest.trace = await runTrace(session);
     manifest.status = 'complete';
     return { output, context: join(output, 'trace-context.json'), manifest: join(output, 'capture-manifest.json'),
-      ...(manifest.trace === undefined ? {} : { trace: manifest.trace }) };
+      ...(manifest.trace === undefined ? {} : { trace: manifest.trace }),
+      ...(manifest.warnings === undefined ? {} : { warnings: manifest.warnings }) };
   } catch (error) {
     manifest.status = 'failed';
     manifest.failure = error instanceof CaptureTraceError
@@ -213,7 +216,7 @@ async function isthmusVersion() {
  * 실패 문구는 단계와 명령(도구 이름·하위 명령)만 싣는다. stderr는 입력 경로나 비밀을 담을 수 있어 터미널에
  * 옮기지 않고 출력 디렉터리의 logs/에 저장한다 — 원인은 거기서 본다.
  */
-async function run(session, { step, label, command, args, timeoutSeconds, acceptExitCodes = [0], cwd }) {
+async function run(session, { step, label, command, args, timeoutSeconds, acceptExitCodes = [0], partialExitCodes = [], cwd }) {
   const begin = performance.now();
   const result = await session.execute(command[0], [...command.slice(1), ...args], {
     // SIGTERM을 무시하는 자식이 있어도 시간 제한이 지켜지도록 SIGKILL로 끝낸다.
@@ -236,10 +239,17 @@ async function run(session, { step, label, command, args, timeoutSeconds, accept
   if (result.error?.code === 'ENOBUFS') throw new CaptureTraceError(step, `${label} wrote more than 64 MiB to stdout${logHint}.`);
   if (result.error) throw new CaptureTraceError(step, `${label} could not be started (${result.error.code ?? 'spawn error'}); check the tool command.`);
   if (result.status === null) throw new CaptureTraceError(step, `${label} was terminated by signal ${result.signal ?? 'unknown'}${logHint}.`);
-  if (!acceptExitCodes.includes(result.status)) {
+  const partial = !acceptExitCodes.includes(result.status);
+  if (partial && !partialExitCodes.includes(result.status)) {
     throw new CaptureTraceError(step, `${label} exited with status ${result.status}${logHint}.`);
   }
-  return { stdout: result.stdout ?? '', entry };
+  // partialExitCodes의 종료 코드는 호출자가 출력을 보고 받을지 정한다(받지 않으면 같은 문구로 실패시킨다).
+  return { stdout: result.stdout ?? '', entry, ...(partial ? { partial: { status: result.status, logHint } } : {}) };
+}
+
+/** manifest `warnings`에 경고 하나를 더한다(없으면 필드를 만든다 — 경고 없는 manifest는 이전과 같다). */
+function warn(session, warning) {
+  (session.manifest.warnings ??= []).push(warning);
 }
 
 /** stdout을 JSON으로 읽는다. */
@@ -396,7 +406,8 @@ async function captureFacts(session, member) {
     documents.push({ name: document.name, path });
     parsed.push(facts);
   }
-  return { config: member, values, parsed, normalized: [], fileRoots: new Map(), captured: { name: member.name, project,
+  return { config: member, values, parsed, normalized: [], fileRoots: new Map(), graphNodes: new Map(),
+    captured: { name: member.name, project,
     ...(revision === undefined ? {} : { revision }), ...(catalog === undefined ? {} : { catalog }), documents, analyses: [] } };
 }
 
@@ -418,7 +429,7 @@ async function expandArguments(args, values, session, step) {
  *
  * 조인이 계약대로 서는지 순회 전에 확인하고, 쌍을 `pairs/<member>.json`에 남겨 수동 왕복과 대조할 수 있게 한다.
  * 양쪽 측이 모두 있는 도메인의 문서만 넘긴다({@link pairsDocumentIndexes}). root 자체는 같은 사실 문서에서
- * 뽑는다({@link collectCaptureRoots}) — 쌍은 호출이 없는 핸들러, 사용이 없는 relation, member 사이 호출을
+ * 뽑는다({@link planCaptureRoots}) — 쌍은 호출이 없는 핸들러, 사용이 없는 relation, member 사이 호출을
  * 싣지 않으므로 root 원천으로는 부분 집합이기 때문이다.
  */
 async function capturePairs(session, member) {
@@ -466,10 +477,12 @@ async function captureAnalyses(session, member, provisional, phase) {
       continue;
     }
     const extra = phase === 'stage2' ? member.fileRoots.get(analysis.platform) ?? [] : [];
-    const roots = collectCaptureRoots(member.parsed, analysis.role, analysis.platform,
-      [...selectedSymbols(provisional, memberName, analysis.platform), ...extra]);
+    const plan = planCaptureRoots(member.parsed, analysis.role, analysis.platform,
+      [...selectedSymbols(provisional, memberName, analysis.platform), ...extra], member.graphNodes.get(analysis.platform));
+    recordRootFilter(session, memberName, analysis, plan);
+    const { roots } = plan;
     if (roots.length === 0) {
-      session.manifest.steps.push({ step, skipped: 'no roots: the member documents carry no symbol for this role and platform' });
+      session.manifest.steps.push({ step, skipped: 'no roots: the member documents carry no traversable symbol for this role and platform' });
       continue;
     }
     const delivery = analysis.step.roots;
@@ -490,6 +503,26 @@ async function captureAnalyses(session, member, provisional, phase) {
       }
       await runTraversal(session, member, analysis, id, chunk, provisional, order);
     }
+  }
+}
+
+/**
+ * root 위생({@link planCaptureRoots})이 뺀 id를 manifest `rootFilters`에 남긴다. 뺀 것이 없으면 쓰지 않는다.
+ *
+ * 선언 이름공간 id는 생산자가 노드가 아니라고 밝힌 것이라 수만 싣는다. 목록에 없는 id는 생산자 사실과 그래프가 어긋난
+ * 것이라 id 전체를 싣고 경고로도 알린다 — 조용히 빼지 않는다. trace가 그 id를 따라가야 하면 `analysis-missing`이 남는다.
+ */
+function recordRootFilter(session, memberName, analysis, plan) {
+  const { declarationNamespace, notInListing } = plan;
+  if (declarationNamespace.length === 0 && notInListing.length === 0) return;
+  const record = { analysis: analysis.id, ...(memberName === undefined ? {} : { member: memberName }),
+    platform: analysis.platform, role: analysis.role, declarationNamespace: declarationNamespace.length,
+    ...(notInListing.length === 0 ? {} : { notInListing }) };
+  (session.manifest.rootFilters ??= []).push(record);
+  if (notInListing.length > 0) {
+    warn(session, { step: `analysis:${analysis.id}`, code: 'roots-not-in-listing', roots: notInListing.length,
+      detail: `${notInListing.length} fact symbol(s) are not nodes of the ${analysis.platform} symbol listing and were not `
+        + 'passed as roots (see rootFilters); trace reports analysis-missing where a chain needs them.' });
   }
 }
 
@@ -535,13 +568,15 @@ async function collectFileSymbols(session, member, provisional) {
         + 'files are rooted, so file symbols they did not reach can still leave trace with a fact-location fallback.');
     } else {
       const parsed = await captureListing(session, member, listing);
+      member.graphNodes.set(platform, new Set(parsed.ids));
       byFile = listedSymbolsInFiles(parsed, files);
       requireFileSymbolBudget(byFile, entries, `listing:${member.config.name}/${platform}`);
       Object.assign(record, { source: 'listing', listing: parsed.format, complete: true, skipped: parsed.skipped });
       for (const [path, usrs] of byFile) entries.push({ ...(memberName === undefined ? {} : { member: memberName }), path, platform, usrs });
     }
     const symbols = [...new Set([...byFile.values()].flat())].sort();
-    const existing = new Set(collectCaptureRoots(member.parsed, 'reverse', platform, selectedSymbols(provisional, memberName, platform)));
+    const existing = new Set(planCaptureRoots(member.parsed, 'reverse', platform, selectedSymbols(provisional, memberName, platform),
+      member.graphNodes.get(platform)).roots);
     const added = symbols.filter((usr) => !existing.has(usr));
     const rerooted = member.config.analyses.some((analysis) => analysis.platform === platform && isDeferred(analysis));
     if (rerooted) member.fileRoots.set(platform, added);
@@ -617,17 +652,52 @@ async function runTraversal(session, member, analysis, id, roots, provisional, o
     throw error;
   }
   const label = commandLabel(analysis.step.tool, base);
-  const { stdout, entry } = await run(session, { step, label, command: session.config.tools[analysis.step.tool].command, args,
-    timeoutSeconds: analysis.step.timeoutSeconds, acceptExitCodes: analysis.step.acceptExitCodes });
+  const { acceptExitCodes } = analysis.step;
+  const { stdout, entry, partial } = await run(session, { step, label, command: session.config.tools[analysis.step.tool].command,
+    args, timeoutSeconds: analysis.step.timeoutSeconds, acceptExitCodes,
+    partialExitCodes: acceptExitCodes.includes(ROOT_NOT_FOUND_EXIT_CODE) ? [] : [ROOT_NOT_FOUND_EXIT_CODE] });
   entry.roots = roots.length;
   const path = capturedAnalysisPath(member.config.name, id);
   const reference = { id, platform: analysis.platform, role: analysis.role, path,
     ...(session.config.workspace ? { member: member.config.name } : {}) };
-  const value = parseJson(stdout, step, label);
-  member.normalized.push(validateAnalysis(value, reference, provisional, step, label));
+  // 받지 않은 종료 코드(64)는 root-not-found를 기록한 유효한 순회 문서일 때만 부분 성공으로 받는다. 아니면 이전과 같은
+  // 문구로 실패한다 — 문서 없는 사용법 오류(빈 stdout)를 부분 성공으로 읽지 않기 위해서다.
+  const refuse = (why) => new CaptureTraceError(step, `${label} exited with status ${partial.status}${partial.logHint}; ${why}.`);
+  let value;
+  let normalized;
+  if (partial === undefined) {
+    value = parseJson(stdout, step, label);
+    normalized = validateAnalysis(value, reference, provisional, step, label);
+  } else {
+    try { value = JSON.parse(stdout); }
+    catch { throw refuse('it printed no traversal document'); }
+    try { normalized = normalizeTraceAnalysis(value, reference, analysisProject(provisional, reference)); }
+    catch (error) { throw refuse(`its output violates the traversal contract: ${error.message}`); }
+  }
+  const unresolved = unresolvedTraversalRoots(normalized.graph, roots);
+  if (partial !== undefined && !(unresolved?.length > 0)) {
+    throw refuse('its document records no root-not-found root among the roots it was given');
+  }
+  if (unresolved?.length > 0) recordRootsNotFound(session, entry, step, unresolved, partial !== undefined);
+  member.normalized.push(normalized);
   await writeOutput(session.output, path, stdout);
   recordArtifact(session, path, stdout, 'captured', documentTool(value));
   member.captured.analyses.push({ id, platform: analysis.platform, role: analysis.role, path, order });
+}
+
+/**
+ * 생산자가 root-not-found로 돌려준 root를 manifest 단계 항목(`rootsNotFound`)과 `warnings`에 남긴다.
+ *
+ * 순회 문서는 그대로 싣는다 — 다른 root의 도달은 온전하고, trace가 문서의 `root-not-found:` limitation을
+ * `analysisLimitations`로, 잘림을 `analysis-truncated` gap으로, 그 root를 따라가야 하는 hop을 `analysis-missing`으로
+ * 드러낸다. `accepted`는 설정의 acceptExitCodes 밖의 64를 이 규칙으로 받았다는 표시다.
+ */
+function recordRootsNotFound(session, entry, step, unresolved, accepted) {
+  entry.rootsNotFound = unresolved;
+  if (accepted) entry.acceptedPartial = 'root-not-found';
+  warn(session, { step, code: 'root-not-found', roots: unresolved.length,
+    detail: `The producer could not resolve ${unresolved.length} root(s) (listed in the step's rootsNotFound); the traversal `
+      + 'of the other roots was kept, and trace reports the gap where a chain needs the missing roots.' });
 }
 
 /** 사전 계산 순회를 복사하고 증언(sha256·revision)을 붙인다. */
@@ -676,6 +746,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     try { text = await readFile(process.argv[2], 'utf8'); }
     catch { throw new CaptureTraceError('config', 'the capture config could not be read.'); }
     const result = await captureTrace(parseJson(text, 'config', 'the capture config'));
+    // 경고는 결과 JSON(stdout)과 manifest에 싣고, 사람이 놓치지 않게 stderr에도 한 줄씩 알린다.
+    for (const { step, code, detail } of result.warnings ?? []) process.stderr.write(`Capture warning (${step}, ${code}): ${detail}\n`);
     process.stdout.write(encodeSortedJson(result));
   } catch (error) {
     process.stderr.write(`${error instanceof CaptureTraceError ? error.message

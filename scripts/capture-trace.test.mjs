@@ -263,7 +263,7 @@ test('단계마다 실패하면 단계 이름과 명령을 밝히고 stderr는 l
     ['fact project', (config) => { config.members[0].documents[2].args = ['emit', fixture('trace/db.sql.json'), '--project', '/elsewhere']; },
       'fact:app/db.sql.json', /different project/u],
     ['traversal status', (config) => { config.members[0].analyses[0].args = ['fail', '64']; }, 'analysis:server-forward',
-      /tsograph fail exited with status 64/u],
+      /tsograph fail exited with status 64; stderr saved to logs\/\d{3}-analysis_server-forward\.stderr\.txt; it printed no traversal document\./u],
     ['traversal roots', (config) => { config.members[0].analyses[0].args = ['traverse', fixture('trace/server-reverse.json'), '--project', '{project}']; },
       'analysis:server-forward', /exited with status 3/u],
     ['traversal contract', (config) => { config.members[0].analyses[1].args = ['emit', fixture('trace/server-forward.json'), '--project', '{project}']; },
@@ -592,4 +592,122 @@ test('workspace 파일 선택: 선택한 파일이 없는 member의 목록은 �
   assert.equal((await calls()).some((entry) => entry[0] === 'lister'), false);
   assert.match(manifest.steps.find(({ step }) => step === 'listing:client/kotlin').skipped, /selects no file of this member/u);
   assert.deepEqual(manifest.fileSelection.map(({ member, platform }) => [member, platform]), [['server', 'js']]);
+});
+
+/**
+ * tsograph `schema`처럼 선언 쪽 relation-use(`#model:`·`#typedsql:`)를 섞은 persistence 문서를 사전 계산 파일로 둔다.
+ * `extraUses`는 코드 쪽 사용 usr다. 채널은 db.sql.json이 선언한 users·users.email이라 check --pairs가 그대로 선다.
+ */
+async function schemaFactsCopy(work, project, { tool = 'tsograph', extraUses = [] } = {}) {
+  const document = JSON.parse(await readFile(join(repository, 'fixtures/trace/server.persistence.json'), 'utf8'));
+  const use = (usr, path, extra = {}) => ({ kind: 'relation-use', channel: 'users', dynamic: false,
+    location: { path, line: 1, column: 1 }, symbol: { qualifiedName: usr, usr }, ...extra });
+  document.facts.push(
+    use('prisma/schema.prisma#model:User', 'prisma/schema.prisma'),
+    use('prisma/schema.prisma#model:User.email', 'prisma/schema.prisma', { method: 'email' }),
+    use('prisma/sql/byEmail.sql#typedsql:byEmail', 'prisma/sql/byEmail.sql'),
+    ...extraUses.map((usr) => use(usr, 'server/db/extra.ts')),
+  );
+  await writeFile(join(work, 'ci', 'schema.persistence.json'), JSON.stringify({ ...document, project, tool: { name: tool, version: '0.1.0' } }));
+  return { name: 'server.persistence.json', precomputed: { root: 'work', path: 'ci/schema.persistence.json' } };
+}
+
+test('root 위생: 생산자가 밝힌 선언 이름공간 relation-use는 역방향 root로 넘기지 않고 manifest에 센다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  config.members[0].documents[1] = await schemaFactsCopy(work, project);
+  const calls = recordArguments(t, work);
+  const result = await captureTrace(config);
+  const reverse = (await calls()).find((entry) => entry[1] === 'traverse' && entry[2].endsWith('server-reverse.json'));
+  assert.deepEqual(reverse.slice(5), ['--', 'ts:repo/audit.write', 'ts:repo/users.findById']);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.rootFilters, [{ analysis: 'server-reverse', platform: 'js', role: 'reverse', declarationNamespace: 3 }]);
+  // 노드가 아님을 이미 아는 id라 경고하지 않는다. trace는 어느 순회에도 없는 id를 닿지 않음으로 읽는다.
+  assert.equal(manifest.warnings, undefined);
+  assert.equal(result.warnings, undefined);
+  const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
+  assert.deepEqual(trace.chains, referenceTrace('fixtures/trace/context.json').chains);
+});
+
+test('root 위생: 파일 선택에서 받은 생산자 목록에 없는 사실 usr는 root로 넘기지 않고 경고한다', async (t) => {
+  const { work, project, config } = await fileSelectionConfig(t);
+  config.members[0].documents[1] = await schemaFactsCopy(work, project, { tool: 'synthetic-trace', extraUses: ['ts:repo/orphan'] });
+  config.members[0].listings = [{ platform: 'js', tool: 'tsograph',
+    args: ['emit', stageFixture('listing.tsograph-graph.json'), '--project', '{project}'] }];
+  const calls = recordArguments(t, work);
+  const result = await captureTrace(config);
+  const reverse = (await calls()).find((entry) => entry[1] === 'traverse' && entry[2].endsWith('server-reverse-files.json'));
+  // 다른 생산자 문서라 선언 이름공간 표식은 쓰지 않지만, 목록(그래프 노드 전체)에 없어 모두 빠진다.
+  assert.deepEqual(reverse.slice(5), ['--', 'ts:repo/audit.write', 'ts:repo/users.findById', 'ts:service/users.load']);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.rootFilters, [{ analysis: 'server-reverse', platform: 'js', role: 'reverse', declarationNamespace: 0,
+    notInListing: ['prisma/schema.prisma#model:User', 'prisma/schema.prisma#model:User.email',
+      'prisma/sql/byEmail.sql#typedsql:byEmail', 'ts:repo/orphan'] }]);
+  assert.deepEqual(manifest.warnings.map(({ step, code, roots }) => [step, code, roots]),
+    [['analysis:server-reverse', 'roots-not-in-listing', 4]]);
+  assert.deepEqual(result.warnings, manifest.warnings);
+});
+
+/** 역방향 순회가 모르는 root 하나를 root-not-found로 돌려주게 한다(심볼 선택으로 그 id를 root에 넣는다). */
+function unknownRootConfig(config, extra) {
+  config.selection = { symbols: [{ platform: 'js', usr: 'ts:ghost/symbol' }] };
+  config.members[0].analyses[1].args.push(...extra);
+}
+
+test('종료 코드 64: root-not-found를 기록한 순회 문서는 부분 성공으로 받고 manifest·trace에 드러낸다', async (t) => {
+  const { work, config } = await singleProjectConfig(t);
+  unknownRootConfig(config, ['--unknown', 'ts:ghost/symbol', '--exit', '64']);
+  const result = await captureTrace(config);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.status, 'complete');
+  const step = manifest.steps.find(({ step: name }) => name === 'analysis:server-reverse');
+  assert.equal(step.exitCode, 64);
+  assert.deepEqual(step.rootsNotFound, ['ts:ghost/symbol']);
+  assert.equal(step.acceptedPartial, 'root-not-found');
+  assert.deepEqual(manifest.warnings.map(({ step: name, code, roots }) => [name, code, roots]),
+    [['analysis:server-reverse', 'root-not-found', 1]]);
+  assert.deepEqual(result.warnings, manifest.warnings);
+  const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
+  assert.ok(trace.analysisLimitations.some(({ analysis, message }) => analysis === 'server-reverse' && /^root-not-found:/u.test(message)));
+  // 못 찾은 root는 trace에서 그 심볼의 analysis-missing gap으로 보인다(trace는 symbol 있는 root만 잇는다).
+  assert.ok(trace.gaps.some(({ code, symbol }) => code === 'analysis-missing' && symbol?.usr === 'ts:ghost/symbol'));
+  assert.equal(result.trace.gapCodes['analysis-missing'], 1);
+
+  // CLI는 같은 경고를 stderr에 한 줄로 알리고 성공(0)으로 끝난다.
+  config.output = { root: 'work', path: 'out-cli' };
+  await writeFile(join(work, 'partial.json'), JSON.stringify(config));
+  const cli = runChild(process.execPath, [join(repository, 'scripts/capture-trace.mjs'), join(work, 'partial.json')]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stderr, /Capture warning \(analysis:server-reverse, root-not-found\)/u);
+});
+
+test('종료 코드 64: 문서가 없거나 root-not-found를 기록하지 않으면 이전처럼 실패하고, 설정이 받은 64도 기록한다', async (t) => {
+  await t.test('root-not-found 기록 없음', async (st) => {
+    const { config } = await singleProjectConfig(st);
+    config.members[0].analyses[1].args.push('--exit', '64');
+    await rejectsAt(captureTrace(config), 'analysis:server-reverse',
+      /tsograph traverse exited with status 64; its document records no root-not-found root among the roots it was given\./u);
+  });
+  await t.test('계약 위반 문서', async (st) => {
+    const { config } = await singleProjectConfig(st);
+    config.members[0].analyses[1].args = ['emit', fixture('trace/server-forward.json'), '--project', '{project}', '--exit', '64'];
+    await rejectsAt(captureTrace(config), 'analysis:server-reverse', /exited with status 64; its output violates the traversal contract/u);
+  });
+  await t.test('acceptExitCodes에 64를 둔 설정', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    unknownRootConfig(config, ['--unknown', 'ts:ghost/symbol', '--exit', '64']);
+    config.members[0].analyses[1].acceptExitCodes = [0, 64];
+    await captureTrace({ ...config, trace: false });
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    const step = manifest.steps.find(({ step: name }) => name === 'analysis:server-reverse');
+    assert.deepEqual(step.rootsNotFound, ['ts:ghost/symbol']);
+    assert.equal(step.acceptedPartial, undefined);
+    assert.equal(manifest.warnings[0].code, 'root-not-found');
+  });
+  await t.test('종료 코드 0이어도 root-not-found는 경고한다', async (st) => {
+    const { work, config } = await singleProjectConfig(st);
+    unknownRootConfig(config, ['--unknown', 'ts:ghost/symbol']);
+    await captureTrace({ ...config, trace: false });
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.steps.find(({ step: name }) => name === 'analysis:server-reverse').rootsNotFound, ['ts:ghost/symbol']);
+  });
 });
