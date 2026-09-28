@@ -394,6 +394,24 @@ function verifyHttpDomain() {
   const graph = run(['graph', ...inputs]);
   verify(graph.status === 2 && graph.stderr.includes('does not support http documents yet'), 'http graph rejected');
   verify(run(['help', 'query']).stdout.includes('route:'), 'http route query help');
+  verifyHttpLimitationScopes();
+}
+
+/**
+ * 빌드된 CLI가 http limitation 스코프를 받아, 스코프 밖 호출은 error로 판정하고 스코프 안 호출만 `-unverified`로
+ * 내리며, 조인 한계에 서버 측 스코프를 싣는지 검증한다(합성 Spring 모양 fixture).
+ */
+function verifyHttpLimitationScopes() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/http-scopes/${name}`, import.meta.url));
+  const inputs = [fixture('server.json'), fixture('client.json')];
+  const check = run(['check', ...inputs]);
+  const report = JSON.parse(check.stdout);
+  const issues = report.issues.map(({ severity, code, method, channel }) => `${severity} ${code} ${method} ${channel}`);
+  verify(check.status === 0 && issues.join('|') ===
+    'warning route-call-without-decl-unverified GET /api/orders|error route-call-without-decl POST /api/orders',
+  'http scoped limitation gating');
+  verify(report.limitations.filter(({ routeScope }) => routeScope !== undefined).length === 2, 'http scoped limitation output');
+  verify(run(['check', ...inputs, '--strict']).status === 1, 'http scoped limitation strict');
 }
 
 /**

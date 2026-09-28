@@ -16,6 +16,12 @@ import {
   type RouteDeclaration,
   type RouteSideOutcome,
 } from './route-index.ts';
+import {
+  RouteLimitationScopeIndex,
+  RouteScopeBudgetError,
+  MAX_ROUTE_SCOPE_COMPARISONS,
+  type RouteScopeLimitation,
+} from './route-limitation-scope.ts';
 
 /**
  * http 도메인의 귀속 게이트와 scope별 route 조인이다.
@@ -37,6 +43,12 @@ export interface RouteDeclarationFact {
   readonly constraintsKey: string;
   /** 이 scope에 귀속된 호출 중 method가 맞게 이 사실에 닿은(match·모호 후보) 호출이 있다. */
   readonly called: boolean;
+  /**
+   * 이 선언에 적용되는 호출 측 한계 문구다(스코프 없는 한계 전부 + 스코프가 이 선언과 겹치는 한계).
+   * 미호출 진단 대상(호출되지 않은 root 앵커의 명시적·비테스트 선언)만 스코프로 좁히고, 나머지는 호출 측 문서의
+   * 모든 한계 문구다.
+   */
+  readonly clientLimitations: readonly string[];
 }
 
 /** 귀속된 정적 호출 하나의 양쪽 결과다. */
@@ -51,6 +63,12 @@ export interface RouteCallResult {
   readonly decl?: RouteSideOutcome;
   /** scope에 contract 문서가 있을 때만 있다. */
   readonly contract?: RouteSideOutcome;
+  /**
+   * 이 호출에 적용되는 서버 측(선언 측) 한계 문구다(스코프 없는 한계 전부 + 스코프가 이 호출과 겹치는 한계).
+   * 어느 측 결과가 match가 아닌 호출만 스코프로 좁힌다 — match된 호출은 한계가 심각도를 바꾸지 않으므로 서버 측
+   * 문서의 모든 한계 문구를 싣는다.
+   */
+  readonly serverLimitations: readonly string[];
 }
 
 /** 귀속된 dynamic 호출 중 증명된 리터럴 접두사가 있는 것이다. query 후보로만 쓴다. */
@@ -63,7 +81,9 @@ export interface RoutePrefixCall {
 /**
  * 귀속 게이트가 고른 한 scope(매니페스트가 없으면 service, 단일 서비스 입력이면 `default`)다.
  *
- * 한계 문구는 측별 원문 목록으로만 전달하고 접두사 해석은 보고 층이 한다.
+ * 한계 문구는 측별 원문 목록으로만 전달하고 접두사 해석은 보고 층이 한다. 스코프가 있는 한계는 호출
+ * (`RouteCallResult.serverLimitations`)·선언(`RouteDeclarationFact.clientLimitations`)마다 적용 여부를 이 층이
+ * 계산해 둔다 — 경로 비교 예산 초과를 조인의 입력 오류로 바꾸기 위해서다.
  */
 export interface RouteScope {
   readonly scope: string;
@@ -72,10 +92,10 @@ export interface RouteScope {
   readonly contractDocuments: number;
   /** 이 scope에 귀속될 수 있는 client roles 문서 수다. */
   readonly clientDocuments: number;
-  /** 서버 측(선언 측) 문서가 신고한 한계 문구다. */
-  readonly serverLimitations: readonly string[];
-  /** 이 scope에 귀속될 수 있는 호출 측 문서가 신고한 한계 문구다. */
-  readonly clientLimitations: readonly string[];
+  /** 서버 측(선언 측) 문서가 신고한 한계다. `scoped`면 스코프 안의 호출에만 적용된다. */
+  readonly serverLimitations: readonly RouteScopeLimitation[];
+  /** 이 scope에 귀속될 수 있는 호출 측 문서가 신고한 한계다. `scoped`면 스코프와 겹치는 선언에만 적용된다. */
+  readonly clientLimitations: readonly RouteScopeLimitation[];
   readonly dynamicDecls: number;
   readonly dynamicContracts: number;
   readonly dynamicCalls: number;
@@ -126,9 +146,10 @@ export function joinRouteFacts(
   const services = declarationServices(http);
   const scopeNames = services === undefined ? [DEFAULT_ROUTE_SCOPE] : [...services].sort(compareStrings);
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
+  const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const unattributed = collectUnattributedCalls(http, services);
   const scopes = scopeNames.map((scope) =>
-    buildScope(http, services, scope, unattributed, budget, compareEndpoints));
+    buildScope(http, services, scope, unattributed, budget, scopeBudget, compareEndpoints));
   return {
     driftOnly: !http.some(isClientDocument),
     scopes,
@@ -210,6 +231,9 @@ function buildLinkScope(
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
   const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
+  const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
+  const serverScopes = new RouteLimitationScopeIndex(servers, scopeBudget);
+  const clientScopes = new RouteLimitationScopeIndex(clients, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
@@ -230,7 +254,7 @@ function buildLinkScope(
         continue;
       }
       calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
-        contractDocuments > 0 ? contractIndex : undefined));
+        contractDocuments > 0 ? contractIndex : undefined, serverScopes));
     }
   }
   return {
@@ -238,14 +262,14 @@ function buildLinkScope(
     declScanned,
     contractDocuments,
     clientDocuments: clients.length,
-    serverLimitations: servers.flatMap(({ limitations }) => limitations),
-    clientLimitations: clients.flatMap(({ limitations }) => limitations),
+    serverLimitations: serverScopes.limitations,
+    clientLimitations: clientScopes.limitations,
     dynamicDecls: countDynamic(servers, 'route-decl', included),
     dynamicContracts: countDynamic(servers, 'route-contract', included),
     dynamicCalls,
     unboundCalls,
-    decls: markCalled(decls, calls, 'decl'),
-    contracts: markCalled(contracts, calls, 'contract'),
+    decls: markCalled(decls, calls, 'decl', clientScopes),
+    contracts: markCalled(contracts, calls, 'contract', clientScopes),
     calls: uniqueCalls(calls, compareEndpoints),
     prefixCalls: prefixCalls.sort((left, right) => compareEndpoints(left.endpoint, right.endpoint)),
   };
@@ -341,6 +365,7 @@ function buildScope(
   scope: string,
   unattributed: ReadonlyArray<string | undefined>,
   budget: { remaining: number },
+  scopeBudget: { remaining: number },
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
   const scopeService = services === undefined ? undefined : scope;
@@ -368,6 +393,8 @@ function buildScope(
   const contractDocuments = serverDocuments.filter(({ platform }) => platform === 'openapi').length;
   const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
+  const serverScopes = new RouteLimitationScopeIndex(serverDocuments, scopeBudget);
+  const clientScopes = new RouteLimitationScopeIndex(clientDocuments, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
@@ -383,7 +410,7 @@ function buildScope(
         continue;
       }
       calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
-        contractDocuments > 0 ? contractIndex : undefined));
+        contractDocuments > 0 ? contractIndex : undefined, serverScopes));
     }
   }
   return {
@@ -391,25 +418,29 @@ function buildScope(
     declScanned,
     contractDocuments,
     clientDocuments: clientDocuments.length,
-    serverLimitations: serverDocuments.flatMap(({ limitations }) => limitations),
-    clientLimitations: clientDocuments.flatMap(({ limitations }) => limitations),
+    serverLimitations: serverScopes.limitations,
+    clientLimitations: clientScopes.limitations,
     dynamicDecls: countDynamic(documents, 'route-decl', inScope),
     dynamicContracts: countDynamic(documents, 'route-contract', inScope),
     dynamicCalls,
     unboundCalls: unattributed.filter((service) => mayReach(service, scopeService)).length,
-    decls: markCalled(decls, calls, 'decl'),
-    contracts: markCalled(contracts, calls, 'contract'),
+    decls: markCalled(decls, calls, 'decl', clientScopes),
+    contracts: markCalled(contracts, calls, 'contract', clientScopes),
     calls: uniqueCalls(calls, compareEndpoints),
     prefixCalls: prefixCalls.sort((left, right) => compareEndpoints(left.endpoint, right.endpoint)),
   };
 }
 
-/** 호출 하나를 양쪽 색인과 맞춘다. 색인이 없는 쪽은 평가하지 않는다. */
+/**
+ * 호출 하나를 양쪽 색인과 맞춘다. 색인이 없는 쪽은 평가하지 않는다. 어느 측이 match가 아니면 그 호출에
+ * 적용되는 서버 측 한계를 스코프로 좁혀 둔다.
+ */
 function matchCall(
   fact: BridgeFact,
   endpoint: BridgeEndpoint,
   declIndex: RouteIndex | undefined,
   contractIndex: RouteIndex | undefined,
+  serverScopes: RouteLimitationScopeIndex,
 ): RouteCallResult {
   const parsed = parseRouteTemplate(fact.channel as string);
   // 파서가 이미 검증한 템플릿이라 실패하면 내부 불변 위반이다.
@@ -419,6 +450,11 @@ function matchCall(
     anchor: fact.pathAnchor!,
     ...(fact.method === undefined ? {} : { method: fact.method as HttpMethod }),
   };
+  const decl = declIndex?.match(probe);
+  const contract = contractIndex?.match(probe);
+  // match되지 않은 측이 있으면 좁힌다. error 판정(missing·method-mismatch)뿐 아니라 diff가 증명하지 못한 전제를
+  // reason으로 나열할 때(모호·끝 슬래시·대소문자)도 호출 단위의 공백을 쓰기 위해서다.
+  const unbound = [decl, contract].some((outcome) => outcome !== undefined && outcome.status !== 'matched');
   return {
     endpoint,
     ...methodField(fact),
@@ -426,8 +462,9 @@ function matchCall(
     anchor: fact.pathAnchor!,
     testSource: fact.testSource === true,
     masked: (fact.maskedSegments ?? 0) > 0,
-    ...(declIndex === undefined ? {} : { decl: declIndex.match(probe) }),
-    ...(contractIndex === undefined ? {} : { contract: contractIndex.match(probe) }),
+    ...(decl === undefined ? {} : { decl }),
+    ...(contract === undefined ? {} : { contract }),
+    serverLimitations: unbound ? serverScopes.applicable({ ...probe, side: 'call' }) : serverScopes.messages,
   };
 }
 
@@ -442,8 +479,8 @@ function collectDeclarations(
   kind: 'route-decl' | 'route-contract',
   inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
   compareEndpoints: CompareEndpoints,
-): Array<Omit<RouteDeclarationFact, 'called'>> {
-  const collected = new Map<string, Omit<RouteDeclarationFact, 'called' | 'declaration'> & {
+): Array<Omit<RouteDeclarationFact, 'called' | 'clientLimitations'>> {
+  const collected = new Map<string, Omit<RouteDeclarationFact, 'called' | 'clientLimitations' | 'declaration'> & {
     readonly declaration: Omit<RouteDeclaration, 'id'>;
   }>();
   for (const document of documents) {
@@ -484,11 +521,15 @@ function collectDeclarations(
     .map((entry, id) => ({ ...entry, declaration: { ...entry.declaration, id } }));
 }
 
-/** 호출 결과에서 method가 맞게 닿은 선언을 표시한다. 모호 후보도 닿았을 수 있는 선언이다. */
+/**
+ * 호출 결과에서 method가 맞게 닿은 선언을 표시한다. 모호 후보도 닿았을 수 있는 선언이다. 미호출 진단 대상인
+ * 선언(호출되지 않은 root 앵커의 명시적·비테스트 선언)에는 적용되는 호출 측 한계를 스코프로 좁혀 둔다.
+ */
 function markCalled(
-  facts: ReadonlyArray<Omit<RouteDeclarationFact, 'called'>>,
+  facts: ReadonlyArray<Omit<RouteDeclarationFact, 'called' | 'clientLimitations'>>,
   calls: readonly RouteCallResult[],
   side: 'decl' | 'contract',
+  clientScopes: RouteLimitationScopeIndex,
 ): RouteDeclarationFact[] {
   const called = new Set<number>();
   for (const call of calls) {
@@ -511,7 +552,20 @@ function markCalled(
     const key = JSON.stringify([declaration.method, endpoint.symbol?.usr ?? null, template]);
     for (const id of originals.get(key) ?? []) called.add(id);
   }
-  return facts.map((fact) => ({ ...fact, called: called.has(fact.declaration.id) }));
+  return facts.map((fact) => {
+    const isCalled = called.has(fact.declaration.id);
+    const { declaration } = fact;
+    const reported = !isCalled && !declaration.catchAllPrefix && !fact.testSource && declaration.anchor === 'root';
+    return {
+      ...fact,
+      called: isCalled,
+      clientLimitations: reported
+        ? clientScopes.applicable({
+          segments: declaration.segments, anchor: declaration.anchor, method: declaration.method, side: 'declaration',
+        })
+        : clientScopes.messages,
+    };
+  });
 }
 
 /** 같은 호출 증거(위치·심볼·route 정보)를 하나로 합치고 결정적으로 정렬한다. */
@@ -619,4 +673,4 @@ function routeConsumerLimitations(
   }));
 }
 
-export { RouteSuffixBudgetError };
+export { RouteSuffixBudgetError, RouteScopeBudgetError };

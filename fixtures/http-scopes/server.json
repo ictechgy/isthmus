@@ -1,0 +1,77 @@
+{
+  "dispatch": "specificity",
+  "facts": [
+    {
+      "channel": "/api/items",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 12,
+        "path": "src/main/kotlin/example/ItemController.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemController.list",
+        "usr": "jvm:example.ItemController#list()"
+      },
+      "trailingSlash": "strict"
+    },
+    {
+      "channel": "/api/items",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 18,
+        "path": "src/main/kotlin/example/ItemController.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "ItemController.create",
+        "usr": "jvm:example.ItemController#create()"
+      },
+      "trailingSlash": "strict"
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-29T00:00:00Z",
+  "limitationScopes": [
+    {
+      "limitationIndex": 0,
+      "templates": [
+        "/error"
+      ]
+    },
+    {
+      "limitationIndex": 1,
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "templatePrefixes": [
+        "/"
+      ]
+    }
+  ],
+  "limitations": [
+    "framework-provided-routes: error controller serves /error for every method",
+    "framework-provided-routes: static resource handler may serve GET/HEAD under /** from classpath locations"
+  ],
+  "platform": "kotlin",
+  "project": "/work/example-api",
+  "roles": [
+    "server"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-spring",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

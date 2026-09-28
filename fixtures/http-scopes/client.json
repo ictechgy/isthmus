@@ -1,0 +1,85 @@
+{
+  "facts": [
+    {
+      "channel": "/api/items",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 10,
+        "path": "app/src/main/java/example/Api.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "Api.items",
+        "usr": "kt:Api.items"
+      }
+    },
+    {
+      "channel": "/api/items",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 14,
+        "path": "app/src/main/java/example/Api.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "Api.create",
+        "usr": "kt:Api.create"
+      }
+    },
+    {
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 18,
+        "path": "app/src/main/java/example/Api.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "Api.orders",
+        "usr": "kt:Api.orders"
+      }
+    },
+    {
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 22,
+        "path": "app/src/main/java/example/Api.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "Api.placeOrder",
+        "usr": "kt:Api.placeOrder"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-29T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-api",
+  "roles": [
+    "client"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-client",
+    "version": "0.0.0"
+  },
+  "version": 1
+}
