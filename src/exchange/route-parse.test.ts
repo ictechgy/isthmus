@@ -179,11 +179,9 @@ test('route 필드가 다른 target 문서에 실리면 버리지 않고 거부�
   assert.equal('channelPrefix' in kept.facts[0]!, false);
 });
 
-test('나중 단계의 dispatch·order·workspace 매니페스트와 채널 형태의 http 스코프는 원인을 밝혀 거부한다', () => {
-  assert.throws(() => parseBridgeFactsDocument(serverDocument([], { dispatch: 'registration-order' })),
-    /registration-order" is not supported yet/);
+test('나중 단계의 workspace 매니페스트와 채널 형태의 http 스코프, 잘못된 dispatch는 원인을 밝혀 거부한다', () => {
   assert.throws(() => parseBridgeFactsDocument(serverDocument([route('route-decl', 'GET', '/x', { order: { group: 'g', index: 0 } })])),
-    /"order" requires registration-order dispatch/);
+    /"order" requires a document with dispatch "registration-order"/);
   assert.throws(() => parseBridgeFactsDocument(httpDocument({
     limitations: ['route-call-coverage: 1 file'],
     limitationScopes: [{ limitationIndex: 0, channels: ['/x'] }],
@@ -301,4 +299,112 @@ test('정규화는 route 선택 필드와 문서 필드를 계약 필드만 복�
   });
   assert.equal(parsed.dispatch, 'specificity');
   assert.equal('extra' in parsed, false);
+});
+
+/** registration-order 서버 문서다. 기본 platform은 python(pythograph)이다. */
+const orderedDocument = (facts: unknown[], extra: Record<string, unknown> = {}): Record<string, unknown> =>
+  httpDocument({ platform: 'python', roles: ['server'], dispatch: 'registration-order', facts, ...extra });
+
+/** 등록 순서가 있는 route-decl이다. 위치는 index마다 다르게 둔다(한 index는 한 등록). */
+function orderedDecl(method: string, channel: string, index: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return route('route-decl', method, channel, {
+    location: { path: 'shop/urls.py', line: index + 1, column: 10 },
+    order: { group: 'django:shop.urls', index },
+    ...extra,
+  });
+}
+
+test('platform python은 null·persistence·http target이고 http에서는 route-decl만 낸다', () => {
+  const decl = route('route-decl', 'ANY', '/items/', { location: { path: 'shop/urls.py', line: 3, column: 10 } });
+  const parsed = parseBridgeFactsDocument(serverDocument([decl], { platform: 'python' }));
+  assert.equal(parsed.platform, 'python');
+  assert.equal(parsed.facts[0]!.method, 'ANY');
+  // Python 클라이언트(requests·httpx)의 route-call은 생산자와 벡터가 생길 때까지 받지 않는다.
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', facts: [route('route-call', 'GET', '/items/')] })),
+    /not valid for platform/);
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', roles: undefined, target: 'flutter', facts: [
+    { kind: 'channel-create', channel: 'c', dynamic: false, location: { path: 'a.py', line: 1, column: 1 } },
+  ] })), /Python documents may only carry a null, persistence, or http target/);
+  // bridge 도메인 문서가 아니다(사실 0건 target null 문서도).
+  const empty = parseBridgeFactsDocument(httpDocument({ platform: 'python', target: null, roles: undefined }));
+  assert.equal(isBridgeDomainDocument(empty), false);
+  // persistence에서는 호출 측(relation-use)이다.
+  const persistence = parseBridgeFactsDocument(httpDocument({
+    platform: 'python', target: 'persistence', roles: undefined,
+    facts: [{ kind: 'relation-use', channel: 'shop_item', dynamic: false, location: { path: 'shop/models.py', line: 4, column: 5 } }],
+  }));
+  assert.equal(persistence.facts[0]!.kind, 'relation-use');
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({
+    platform: 'python', target: 'persistence', roles: undefined,
+    facts: [{ kind: 'relation-decl', channel: 'public.shop_item', dynamic: false, symbol: { qualifiedName: 'public.shop_item' } }],
+  })), /not valid for platform/);
+});
+
+test('registration-order 문서는 order를 싣고 정규화하며, order가 없는 decl도 받는다', () => {
+  const parsed = parseBridgeFactsDocument(orderedDocument([
+    { ...orderedDecl('GET', '/items/{}/', 1), order: { index: 1, group: 'django:shop.urls' } },
+    orderedDecl('POST', '/items/{}/', 1, { symbol: { qualifiedName: 'ItemView.post', usr: 'shop/views.py#ItemView.post' } }),
+    orderedDecl('ANY', '/items/featured/', 2),
+    route('route-decl', 'GET', '/legacy/', { location: { path: 'shop/urls.py', line: 40, column: 10 } }),
+  ]));
+  assert.equal(parsed.dispatch, 'registration-order');
+  assert.deepEqual(Object.keys(parsed.facts[0]!.order!), ['group', 'index']);
+  assert.deepEqual(parsed.facts.map(({ order }) => order?.index ?? null), [1, 1, 2, null]);
+  // dynamic decl도 order를 실을 수 있다.
+  assert.equal(parseBridgeFactsDocument(orderedDocument([
+    { ...orderedDecl('ANY', '/^(?P<code>[a-z]+)/$', 3), channel: '/^(?P<code>[a-z]+)/$', dynamic: true },
+  ])).facts[0]!.order!.index, 3);
+  assert.throws(() => parseBridgeFactsDocument(orderedDocument([], { platform: 'openapi' })), /accepts only|Dispatch requires|roles/);
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', dispatch: 'registration-order' })), /Dispatch requires/);
+});
+
+test('order는 registration-order 문서의 route-decl에만 오고 모양·group·index를 엄격히 검증한다', () => {
+  assert.throws(() => parseBridgeFactsDocument(serverDocument([orderedDecl('GET', '/x', 0)], { platform: 'python' })),
+    /"order" requires a document with dispatch "registration-order"/);
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({
+    platform: 'kotlin', roles: ['server', 'client'], dispatch: 'registration-order',
+    facts: [route('route-call', 'GET', '/x', { order: { group: 'g', index: 0 } })],
+  })), /Route field "order" is not valid on route-call facts/);
+  assert.throws(() => parseBridgeFactsDocument({
+    ...httpDocument({ platform: 'kotlin', target: 'persistence', roles: undefined }),
+    facts: [{ kind: 'relation-use', channel: 't', dynamic: false, location: { path: 'a', line: 1, column: 1 }, order: { group: 'g', index: 0 } }],
+  }), /Route field "order" is only valid on route facts/);
+  const invalidOrders: unknown[] = [
+    null, 'g#1', [], { group: 'g' }, { index: 0 }, { group: 'g', index: 0, extra: true },
+    { group: '', index: 0 }, { group: '   ', index: 0 }, { group: ' g', index: 0 }, { group: 'g ', index: 0 },
+    { group: 'g\u0000', index: 0 }, { group: 'x'.repeat(257), index: 0 }, { group: 7, index: 0 },
+    { group: 'g', index: -1 }, { group: 'g', index: 1.5 }, { group: 'g', index: '1' },
+    { group: 'g', index: Number.MAX_SAFE_INTEGER + 1 }, { group: 'g', index: Number.NaN },
+  ];
+  for (const order of invalidOrders) {
+    assert.throws(() => parseBridgeFactsDocument(orderedDocument([orderedDecl('GET', '/x', 0, { order })])),
+      /Route order/, JSON.stringify(order));
+  }
+  assert.equal(parseBridgeFactsDocument(orderedDocument([orderedDecl('GET', '/x', 0, { order: { group: 'x'.repeat(256), index: 0 } })]))
+    .facts[0]!.order!.group.length, 256);
+});
+
+test('한 index는 한 등록이고 한 group은 한 서비스이며, catch-all 접두사는 원본 order를 물려받는다', () => {
+  // 같은 index를 다른 위치의 등록이 공유하면 거부한다.
+  assert.throws(() => parseBridgeFactsDocument(orderedDocument([
+    orderedDecl('GET', '/a/', 4),
+    orderedDecl('GET', '/b/', 4, { location: { path: 'shop/urls.py', line: 99, column: 10 } }),
+  ])), /Route order index is shared by registrations at different locations/);
+  // 다른 group이면 같은 index를 써도 된다.
+  assert.equal(parseBridgeFactsDocument(orderedDocument([
+    orderedDecl('GET', '/a/', 4),
+    orderedDecl('GET', '/b/', 4, { location: { path: 'shop/urls.py', line: 99, column: 10 }, order: { group: 'other', index: 4 } }),
+  ])).facts.length, 2);
+  // 같은 group의 사실은 유효 service가 같아야 한다.
+  assert.throws(() => parseBridgeFactsDocument(orderedDocument([
+    orderedDecl('GET', '/a/', 1, { service: 'shop' }),
+    orderedDecl('GET', '/b/', 2, { service: 'blog' }),
+  ])), /Route order group is shared by facts of different services/);
+  const original = orderedDecl('GET', '/files/{**}', 5, { symbol: { qualifiedName: 'files', usr: 'shop/views.py#files' } });
+  const prefix = { ...original, channel: '/files', catchAllPrefix: true };
+  assert.equal(parseBridgeFactsDocument(orderedDocument([original, prefix])).facts.length, 2);
+  assert.throws(() => parseBridgeFactsDocument(orderedDocument([original, { ...prefix, order: { group: 'django:shop.urls', index: 6 } }])),
+    /catch-all prefix declaration has no matching/);
+  assert.throws(() => parseBridgeFactsDocument(orderedDocument([original, { ...prefix, order: undefined }])),
+    /catch-all prefix declaration has no matching/);
 });

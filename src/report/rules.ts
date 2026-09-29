@@ -115,4 +115,8 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'An attributed HTTP call matches a declared route only when letter case is ignored.',
   'route-decl-conflict':
     'More than one server route declaration uses the same method and path template without narrowing conditions or different path constraints.',
+  'route-decl-shadowed':
+    'An earlier registration in the same registration-order group matches every path and method of this route declaration, so it never receives calls (first match wins).',
+  'route-decl-path-shadowed':
+    'An earlier registration in the same registration-order group matches every path of this route declaration but not all of its methods; a path-first framework (Django) answers 405 there instead of reaching this declaration, while a method-aware router still reaches it for the other methods.',
 };

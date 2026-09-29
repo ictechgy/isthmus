@@ -54,7 +54,9 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 - `analyses[].role`: `forward`(dependencies 순회), `reverse`(dependents 순회),
   `db-dependents`(platform `sql` 전용 dependents 순회). 형식은 문서의 표식으로 고른다 —
   `language-traversal` v1, 그리고 역할별 옛 형식([어댑터 표](LANGUAGE-TRAVERSAL.md#옛-형식-어댑터-trace)).
-  같은 역할·플랫폼·root id의 분석이 여럿이면 합치고, 같은 정점은 한 근거만 싣는다.
+  같은 역할·플랫폼·root id의 분석이 여럿이면 합치고, 같은 정점은 한 근거만 싣는다. `analyses[].platform`은
+  `language-traversal`의 platform(dart·swift·kotlin·js·go·rust·python·sql)이다. python(pythograph)의 forward·reverse는
+  `language-traversal` v1로만 받는다(옛 형식 어댑터가 없다).
 - `revision`(선택): 분석의 `revision`과 비교한다. 다르면 `stale-analysis`, 분석에 없으면
   `analysis-revision-unknown`이다. context에 없으면 분석끼리 다를 때 `stale-analysis`, 일부 분석에만
   revision이 있으면 없는 쪽이 `analysis-revision-unknown`이다. 같은

@@ -74,6 +74,7 @@ export function createRouteIssues(routes: RouteJoinResult): CheckIssue[] {
       addWithoutCall(issues, scope, scope.contracts, gaps, 'route-contract-without-call');
     }
     addConflicts(issues, scope);
+    addShadows(issues, scope);
     if (scope.declScanned && scope.contractDocuments > 0) addDrift(issues, scope);
   }
   return [...issues.values()]
@@ -227,7 +228,8 @@ function addIssue(
  * 호출이 닿지 않은 선언 측 사실을 warning으로 옮긴다. 문구는 "스캔한 클라이언트 기준
  * 미관찰"이다. 호출 측 공백이 있거나 base 앵커 선언이면 `-unverified`다 — 잇지 않은 base
  * 호출이 그 경로를 불렀을 수 있다. catch-all 접두사 decl(원본이 대표)과 테스트 소스 decl은
- * 싣지 않는다.
+ * 싣지 않는다. 경로와 method가 모두 가려진 registration-order decl은 호출을 받을 수 없으므로
+ * `route-decl-shadowed`가 대신한다.
  */
 function addWithoutCall(
   issues: Map<string, MutableIssue>,
@@ -237,7 +239,7 @@ function addWithoutCall(
   code: 'route-decl-without-call' | 'route-contract-without-call',
 ): void {
   for (const fact of facts) {
-    if (fact.called || fact.declaration.catchAllPrefix || fact.testSource) continue;
+    if (fact.called || fact.declaration.catchAllPrefix || fact.testSource || fact.shadow?.kind === 'full') continue;
     const unverified = declarationClientGap(gaps, fact) || fact.declaration.anchor === 'base';
     mergeIssue(issues, declarationIssue(scope, fact, unverified ? `${code}-unverified` : code), [fact.endpoint]);
   }
@@ -245,12 +247,13 @@ function addWithoutCall(
 
 /**
  * 같은 키 decl의 중복을 warning으로 옮긴다. narrowed decl, 경로 제약만 다른 decl, catch-all
- * 접두사 decl, 테스트 소스 decl은 충돌로 보지 않는다.
+ * 접두사 decl, 테스트 소스 decl은 충돌로 보지 않는다. 같은 registration-order group에서 앞 등록에 완전히 가려진
+ * decl도 뺀다 — 어느 쪽이 받는지 정해져 있으므로 `route-decl-shadowed`가 더 정확한 진단이다.
  */
 function addConflicts(issues: Map<string, MutableIssue>, scope: RouteScope): void {
   const groups = new Map<string, RouteDeclarationFact[]>();
   for (const fact of scope.decls) {
-    if (fact.narrowed || fact.declaration.catchAllPrefix || fact.testSource) continue;
+    if (fact.narrowed || fact.declaration.catchAllPrefix || fact.testSource || fact.shadow?.kind === 'full') continue;
     const key = JSON.stringify([fact.declaration.anchor, fact.declaration.method, fact.declaration.template,
       fact.constraintsKey]);
     groups.set(key, [...(groups.get(key) ?? []), fact]);
@@ -258,6 +261,21 @@ function addConflicts(issues: Map<string, MutableIssue>, scope: RouteScope): voi
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     mergeIssue(issues, declarationIssue(scope, group[0]!, 'route-decl-conflict'), group.map(({ endpoint }) => endpoint));
+  }
+}
+
+/**
+ * 가려진 registration-order decl을 warning으로 옮긴다. 증거는 가려진 decl과 가장 먼저 등록한 가린 decl이다.
+ *
+ * `route-decl-shadowed`는 경로와 method가 모두 가려져 어떤 디스패치에서도 호출을 받지 않는 decl, `route-decl-path-shadowed`는
+ * 경로만 가려진 decl이다(경로를 먼저 고르는 프레임워크에서는 405로 끝나고 method를 보는 라우터에서는 다른 method로 닿는다).
+ * 가림은 조인 층이 건전하게만 판정하므로 이 진단은 거짓 error를 만들지 않는 warning이다.
+ */
+function addShadows(issues: Map<string, MutableIssue>, scope: RouteScope): void {
+  for (const fact of scope.decls) {
+    if (fact.shadow === undefined) continue;
+    const code = fact.shadow.kind === 'full' ? 'route-decl-shadowed' : 'route-decl-path-shadowed';
+    mergeIssue(issues, declarationIssue(scope, fact, code), [fact.endpoint, scope.decls[fact.shadow.by]!.endpoint]);
   }
 }
 

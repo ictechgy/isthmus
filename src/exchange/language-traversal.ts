@@ -12,7 +12,7 @@ import type { LanguageImpact } from './preflight-context.ts';
  */
 
 /** 순회 문서를 낼 수 있는 플랫폼이다. openapi는 언어 그래프가 없어 제외한다. */
-export type TraversalPlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'sql';
+export type TraversalPlatform = 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'python' | 'sql';
 
 /** 순회 방향이다. `dependencies`는 root가 기대는 쪽, `dependents`는 root에 기대는 쪽이다. */
 export type TraversalDirection = 'dependencies' | 'dependents';
@@ -163,7 +163,7 @@ export const MAX_TRAVERSAL_RELATIONSHIPS = 32;
 /** 정점 하나가 신고하는 잇지 못한 호출 수 상한이다. 한 함수의 호출 지점이 이보다 많을 수 없다고 본다. */
 export const MAX_UNRESOLVED_CALLS = 1_000_000;
 
-const platforms = new Set<string>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql']);
+const platforms = new Set<string>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'python', 'sql']);
 const topKeys = new Set(['format', 'version', 'tool', 'generatedAt', 'platform', 'project', 'revision',
   'graphRevision', 'dispatch', 'direction', 'roots', 'reached', 'rootsTruncated', 'truncated', 'truncationReasons',
   'limitations']);

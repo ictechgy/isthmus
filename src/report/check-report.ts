@@ -73,6 +73,8 @@ export const httpIssueCodes = [
   'route-trailing-slash-mismatch',
   'route-case-mismatch',
   'route-decl-conflict',
+  'route-decl-shadowed',
+  'route-decl-path-shadowed',
 ] as const;
 
 /**

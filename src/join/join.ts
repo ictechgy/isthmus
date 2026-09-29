@@ -27,11 +27,13 @@ import {
   joinLinkRouteFacts,
   joinRouteFacts,
   RouteJoinInputError,
+  RouteShadowBudgetError,
   RouteSuffixBudgetError,
   type RouteJoinResult,
   type RouteLinkRule,
 } from './route-join.ts';
 import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
+import { MAX_ROUTE_SHADOW_COMPARISONS } from './route-shadow.ts';
 import { isDeclarationSideGap, MAX_ROUTE_SCOPE_COMPARISONS, RouteScopeBudgetError } from './route-limitation-scope.ts';
 
 /**
@@ -418,6 +420,12 @@ function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRu
       throw new BridgeJoinValidationError(
         `Http suffix matching exceeds ${MAX_ROUTE_SUFFIX_COMPARISONS} comparisons; narrow the inputs `
         + '(fewer base-anchored calls or declarations per join) and retry. No partial result is emitted.',
+      );
+    }
+    if (error instanceof RouteShadowBudgetError) {
+      throw new BridgeJoinValidationError(
+        `Http registration-order shadow analysis exceeds ${MAX_ROUTE_SHADOW_COMPARISONS} comparisons; split the `
+        + 'registration-order documents (fewer declarations per order group or per join) and retry. No partial result is emitted.',
       );
     }
     if (error instanceof RouteScopeBudgetError) {

@@ -22,6 +22,12 @@ import {
   MAX_ROUTE_SCOPE_COMPARISONS,
   type RouteScopeLimitation,
 } from './route-limitation-scope.ts';
+import {
+  findRouteShadows,
+  MAX_ROUTE_SHADOW_COMPARISONS,
+  RouteShadowBudgetError,
+  type RouteShadow,
+} from './route-shadow.ts';
 
 /**
  * http 도메인의 귀속 게이트와 scope별 route 조인이다.
@@ -49,6 +55,11 @@ export interface RouteDeclarationFact {
    * 모든 한계 문구다.
    */
   readonly clientLimitations: readonly string[];
+  /**
+   * registration-order decl이 같은 문서·group에서 먼저 등록한 decl에 가려졌으면 있다(`full`: 경로와 method 모두,
+   * `path`: 경로만). `by`는 가린 decl의 번호(`declaration.id`)다. 구체성 decl과 contract에는 없다.
+   */
+  readonly shadow?: RouteShadow;
 }
 
 /** 귀속된 정적 호출 하나의 양쪽 결과다. */
@@ -147,9 +158,10 @@ export function joinRouteFacts(
   const scopeNames = services === undefined ? [DEFAULT_ROUTE_SCOPE] : [...services].sort(compareStrings);
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
+  const shadowBudget = { remaining: MAX_ROUTE_SHADOW_COMPARISONS };
   const unattributed = collectUnattributedCalls(http, services);
   const scopes = scopeNames.map((scope) =>
-    buildScope(http, services, scope, unattributed, budget, scopeBudget, compareEndpoints));
+    buildScope(http, services, scope, unattributed, budget, scopeBudget, shadowBudget, compareEndpoints));
   return {
     driftOnly: !http.some(isClientDocument),
     scopes,
@@ -229,7 +241,8 @@ function buildLinkScope(
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = servers.filter(({ platform }) => platform === 'openapi').length;
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
-  const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
+  const shadows = findRouteShadows(decls, { remaining: MAX_ROUTE_SHADOW_COMPARISONS });
+  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget);
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const serverScopes = new RouteLimitationScopeIndex(servers, scopeBudget);
@@ -268,11 +281,31 @@ function buildLinkScope(
     dynamicContracts: countDynamic(servers, 'route-contract', included),
     dynamicCalls,
     unboundCalls,
-    decls: markCalled(decls, calls, 'decl', clientScopes),
+    decls: withShadows(markCalled(decls, calls, 'decl', clientScopes), shadows),
     contracts: markCalled(contracts, calls, 'contract', clientScopes),
     calls: uniqueCalls(calls, compareEndpoints),
     prefixCalls: prefixCalls.sort((left, right) => compareEndpoints(left.endpoint, right.endpoint)),
   };
+}
+
+/**
+ * 색인에 넣을 decl 선언이다. 경로와 method가 모두 가려진 decl은 `unreachable`을 달아 suffix 후보에서 빠지게 한다.
+ * 색인·조인 결과의 선언 객체가 같아야 호출 결과의 대상 번호가 증거와 맞으므로 가려지지 않은 선언은 그대로 둔다.
+ */
+function indexedDeclarations(
+  decls: ReadonlyArray<{ readonly declaration: RouteDeclaration }>,
+  shadows: ReadonlyMap<number, RouteShadow>,
+): RouteDeclaration[] {
+  return decls.map(({ declaration }) =>
+    (shadows.get(declaration.id)?.kind === 'full' ? { ...declaration, unreachable: true as const } : declaration));
+}
+
+/** 가림 결과를 decl 증거에 붙인다. */
+function withShadows(facts: readonly RouteDeclarationFact[], shadows: ReadonlyMap<number, RouteShadow>): RouteDeclarationFact[] {
+  return facts.map((fact) => {
+    const shadow = shadows.get(fact.declaration.id);
+    return shadow === undefined ? fact : { ...fact, shadow };
+  });
 }
 
 /** roles에 client가 있는 문서인지 확인한다. */
@@ -366,6 +399,7 @@ function buildScope(
   unattributed: ReadonlyArray<string | undefined>,
   budget: { remaining: number },
   scopeBudget: { remaining: number },
+  shadowBudget: { remaining: number },
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
   const scopeService = services === undefined ? undefined : scope;
@@ -391,7 +425,8 @@ function buildScope(
   const declScanned = serverDocuments.some((document) =>
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = serverDocuments.filter(({ platform }) => platform === 'openapi').length;
-  const declIndex = new RouteIndex(decls.map(({ declaration }) => declaration), budget);
+  const shadows = findRouteShadows(decls, shadowBudget);
+  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget);
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
   const serverScopes = new RouteLimitationScopeIndex(serverDocuments, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clientDocuments, scopeBudget);
@@ -424,7 +459,7 @@ function buildScope(
     dynamicContracts: countDynamic(documents, 'route-contract', inScope),
     dynamicCalls,
     unboundCalls: unattributed.filter((service) => mayReach(service, scopeService)).length,
-    decls: markCalled(decls, calls, 'decl', clientScopes),
+    decls: withShadows(markCalled(decls, calls, 'decl', clientScopes), shadows),
     contracts: markCalled(contracts, calls, 'contract', clientScopes),
     calls: uniqueCalls(calls, compareEndpoints),
     prefixCalls: prefixCalls.sort((left, right) => compareEndpoints(left.endpoint, right.endpoint)),
@@ -473,7 +508,14 @@ function methodField(fact: BridgeFact): { method?: HttpMethod } {
   return fact.method === undefined ? {} : { method: fact.method as HttpMethod };
 }
 
-/** scope의 정적 선언 측 사실을 모아 매칭용 선언과 증거로 만든다. 중복 증거는 하나로 합친다. */
+/**
+ * scope의 정적 선언 측 사실을 모아 매칭용 선언과 증거로 만든다. 중복 증거는 하나로 합친다.
+ *
+ * registration-order 문서의 decl은 `registration`을 단다. group 키는 입력 순번의 문서까지 구분한다 — 순서는 한
+ * 생산자 실행(한 라우터 체인) 안에서만 뜻이 있어, 다른 문서의 같은 group 문자열(모노레포의 두 Django 앱 등)과 섞으면
+ * 다른 앱의 decl이 먼저 등록한 것처럼 보인다. 중복 증거는 `order`까지 같아야 합친다(같은 위치를 두 번 등록한
+ * 목록의 앞 순번이 사라지지 않게).
+ */
 function collectDeclarations(
   documents: readonly BridgeFactsDocument[],
   kind: 'route-decl' | 'route-contract',
@@ -483,7 +525,7 @@ function collectDeclarations(
   const collected = new Map<string, Omit<RouteDeclarationFact, 'called' | 'clientLimitations' | 'declaration'> & {
     readonly declaration: Omit<RouteDeclaration, 'id'>;
   }>();
-  for (const document of documents) {
+  for (const [documentIndex, document] of documents.entries()) {
     for (const fact of document.facts) {
       if (fact.kind !== kind || fact.dynamic || fact.channel === null || !inScope(document, fact)) continue;
       const parsed = parseRouteTemplate(fact.channel);
@@ -502,6 +544,8 @@ function collectDeclarations(
           caseInsensitive: fact.caseInsensitive === true,
           catchAllPrefix: fact.catchAllPrefix === true,
           constraints,
+          ...registrationField(document, documentIndex, fact),
+          ...(fact.narrowed === true ? { narrowed: true as const } : {}),
         },
         endpoint,
         narrowed: fact.narrowed === true,
@@ -510,7 +554,8 @@ function collectDeclarations(
       };
       // 같은 위치·심볼·route 정보의 사실은 증거 하나다. 매칭 속성까지 같아야 합친다.
       collected.set(JSON.stringify([endpointKey(endpoint), entry.declaration.trailingSlash ?? null,
-        entry.declaration.caseInsensitive, entry.narrowed, entry.constraintsKey]), entry);
+        entry.declaration.caseInsensitive, entry.narrowed, entry.constraintsKey,
+        fact.order === undefined ? null : [fact.order.group, fact.order.index]]), entry);
     }
   }
   return [...collected.values()]
@@ -519,6 +564,20 @@ function collectDeclarations(
         left.declaration.caseInsensitive]), JSON.stringify([right.narrowed, right.constraintsKey,
         right.declaration.trailingSlash ?? null, right.declaration.caseInsensitive])))
     .map((entry, id) => ({ ...entry, declaration: { ...entry.declaration, id } }));
+}
+
+/**
+ * registration-order 문서의 decl이면 등록 순서 필드를 만든다. `order`가 없는 decl은 순서를 비교하지 않는 decl이다.
+ * group 키에 입력 순번을 넣어 다른 문서의 같은 group 문자열과 구분한다.
+ */
+function registrationField(
+  document: BridgeFactsDocument,
+  documentIndex: number,
+  fact: BridgeFact,
+): Pick<RouteDeclaration, 'registration'> {
+  if (document.dispatch !== 'registration-order' || fact.kind !== 'route-decl') return {};
+  if (fact.order === undefined) return { registration: {} };
+  return { registration: { group: JSON.stringify([documentIndex, fact.order.group]), index: fact.order.index } };
 }
 
 /**
@@ -673,4 +732,4 @@ function routeConsumerLimitations(
   }));
 }
 
-export { RouteSuffixBudgetError, RouteScopeBudgetError };
+export { RouteSuffixBudgetError, RouteScopeBudgetError, RouteShadowBudgetError };

@@ -2,7 +2,7 @@
 
 _기록: 2026-09-27 · 상태: isthmus 소비자 구현(`trace`), 생산자 합의 진행 중_
 
-언어 생산자(TS 생산자 `tsograph`, cartograph, kartograph, dartograph 등)와 schemagraph가
+언어 생산자(TS 생산자 `tsograph`, Python 생산자 `pythograph`, cartograph, kartograph, dartograph 등)와 schemagraph가
 **내보내고** isthmus [`trace`](TRACE.md)가 **읽는** 순회 결과 형식이다. 한 번의 정방향
 (`dependencies`) 또는 역방향(`dependents`) 순회를 담고, 도달한 정점마다 어느 root에서 닿았는지를
 보존한다. isthmus는 이 숲을 생산자 id의 **정확한 문자열 일치**로만 bridge-facts 사실에 잇는다.
@@ -16,7 +16,7 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
   "version": 1,
   "tool": { "name": "tsograph", "version": "0.1.0" },
   "generatedAt": "2026-09-27T00:00:00Z",        // bridge-facts와 같은 시각 문법
-  "platform": "js",                              // dart | swift | kotlin | js | go | rust | sql
+  "platform": "js",                              // dart | swift | kotlin | js | go | rust | python | sql
   "project": "/abs/path",                        // bridge-facts와 같은 POSIX realpath 규칙
   "revision": "<git sha>",                       // 선택: 분석한 소스 revision
   "graphRevision": "<opaque>",                   // 선택: 순회에 쓴 그래프 산출물의 신원

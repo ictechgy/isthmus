@@ -39,7 +39,7 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
   "version": 1,
   "tool": { "name": "dartograph", "version": "0.1.0" },
   "generatedAt": "2026-09-04T12:00:00Z",   // 문서 추출 시각
-  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "rust" | "sql" | "openapi",
+  "platform": "dart" | "swift" | "kotlin" | "js" | "go" | "rust" | "python" | "sql" | "openapi",
   "target": "flutter" | "react-native" | "capacitor" | "persistence" | "http" | null,  // 경계 메커니즘
   "project": "/abs/path",                        // POSIX realpath로 정규화한 절대 경로
   "facts": [ Fact, ... ],
@@ -254,12 +254,29 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 - 예외는 `target: "persistence"`뿐이다 — 그 도메인에서 rust는 호출 측
   생산자다(아래 persistence 절).
 
+### `platform: "python"` (v1 확장)
+
+Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 bridge 경계(Flutter·React Native·Capacitor)가
+없으므로 target은 `null`·`persistence`·`http` 중 하나다. 그 밖의 target은 입력 오류다.
+
+- bridge 도메인: 호출 측도 수신 측도 아니다. bridge kind 사실을 실을 수 없고, 사실 0건 `target: null` 문서도
+  bridge 입력의 호출·수신 요건을 채우지 않는다.
+- `persistence`: sql 외 플랫폼이라 호출 측이다(`relation-use`만). 규칙은 아래 persistence 절과 같다.
+- `http`: `route-decl`만 낸다(Django·DRF·Flask 서버, [HTTP 경계](#개발-중-http-경계-v1-확장)). Python 클라이언트
+  (requests·httpx 등)의 `route-call`은 생산자 구현과 url-compose 벡터가 생길 때 더한다 — 그 전에 받아 두면 base 결합·
+  마스킹 규칙을 검증하지 않은 호출 사실이 check error의 근거가 된다. 더하는 것은 받는 조합을 넓히는 변경이라 옛
+  문서를 깨지 않는다.
+- `language-traversal`: platform `python`의 순회 문서를 trace의 forward·reverse 분석으로 받는다
+  ([LANGUAGE-TRAVERSAL](LANGUAGE-TRAVERSAL.md)).
+- 호환 버전 세트(`compatibility.json`)에는 발행본이 생길 때 행을 더한다. 그 표는 registry 설치본을 cold-cache CI로
+  대조하는 목록이라 발행하지 않은 생산자는 싣지 않는다.
+
 ### `target: "persistence"` (v1 확장)
 
 언어 코드가 SQL 스키마 객체를 이름으로 참조하는 경계다. 호출 측은 코드를 읽는
 생산자(`platform: "go"`의 gartograph, `platform: "rust"`의 rustograph,
 `platform: "kotlin"`의 kartograph, `platform: "swift"`의 cartograph,
-`platform: "dart"`의 dartograph 등),
+`platform: "dart"`의 dartograph, `platform: "python"`의 pythograph 등),
 수신 측은 스키마 카탈로그를 읽는 `platform: "sql"` 문서(schemagraph)다. 이 target 안에서는 sql이 유일한 수신
 측이고 나머지 플랫폼은 모두 호출 측이다 — 호출 측 언어가 늘어나도 계약은
 그대로다.
@@ -567,11 +584,12 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | route 사실 필드: `method`(ANY·`methodDynamic`), `pathAnchor`, `authority`, `baseRef`, `service`, `trailingSlash`, `caseInsensitive`, `narrowed`, `paramConstraints`, `configDefault`, `catchAllPrefix`, `queryTailStripped`, `channelPrefix`, `maskedSegments`, `operationId`, `testSource` | 구현 | — |
 | 정규 경로 템플릿 문법, 세그먼트 매칭·구체성·경로 제약·HEAD/OPTIONS·앵커 네 조합·suffix 후보 | 구현 | — |
 | 매니페스트 없는 귀속 게이트(service 일치·단일 서비스 규칙), 소비자 계수 세 가지 | 구현 | — |
-| check 진단(아래 표에서 `route-decl-shadowed` 제외), 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
-| `dispatch: "registration-order"`, `order`, `route-decl-shadowed` | 초안 | 문서를 입력 오류로 거부 |
+| check 진단, 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
+| `dispatch: "registration-order"`, `order`, `route-decl-shadowed`·`route-decl-path-shadowed`([디스패치 모델](#디스패치-모델)) — check·query·trace·`diff --http` | 구현(Phase 6 소비자) | — |
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`·`methods`, [http limitation 스코프](#http-limitation-스코프)) — check·query·trace·`diff --http` | 구현(Phase 4) | — |
 | `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | `diff --http`: 맨 매니페스트를 trace와 같은 member·link 파서로 받고 `contract.authoritative`를 contract 측 깨짐의 error 전제로 쓴다. trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
-| platform `python`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
+| platform `python`(target `null`·`persistence`·`http`, http는 `route-decl`만) | 구현(Phase 6 소비자) | — |
+| python `route-call`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
 | `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
 | `diff --http`(surface·workspace·base..head CI, [HTTP-DIFF](HTTP-DIFF.md)) — 같은 조인·귀속 규칙으로 같은 호출 집합을 base·head 선언 측에 교차 평가 | 구현(Phase 3 소비자) | — |
 | graph route 간선, impact의 http blocker, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부(bridge `diff`도 `--http` 없이는 거부) |
@@ -588,14 +606,14 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 - 역할은 platform이 아니라 **kind**로 정한다. kotlin·js 문서는 서버와 클라이언트를 겸할 수
   있다. 그래서 "Dart/JS는 호출 측 종류만, Swift/Kotlin은 수신 측 종류만" 검증은 이 target에
   적용하지 않고, 위 표의 (kind, platform) 조합만 허용한다.
-- swift의 `route-decl`(Vapor 등)과 go·rust·sql의 http 사실은 생산자가 생길 때 합의한다. 그
-  전까지는 입력 오류다.
+- swift의 `route-decl`(Vapor 등), python의 `route-call`, go·rust·sql의 http 사실은 생산자가 생길 때 합의한다.
+  그 전까지는 입력 오류다.
 - bridge kind(`method-invoke`/`method-handle` 등)를 route에 재사용하지 않는다. 재사용하면 bridge
   조인·retentions·preflight 경계로 사실이 새어 들어간다.
 - 새 platform `openapi`는 target이 `null` 또는 `http`이고 `route-contract`만 낸다. `symbol`에는
   `usr` 없이 `qualifiedName` = operationId를 정보용으로 싣는다. `location`은 스펙 파일 기준의
-  줄과 UTF-8 바이트 열이다. `python`은 Python 생산자와 함께 추가하며 target은 `null`·
-  `persistence`·`http`다.
+  줄과 UTF-8 바이트 열이다. `python`은 target이 `null`·`persistence`·`http`이고 http에서는 `route-decl`만
+  낸다([`platform: "python"`](#platform-python-v1-확장)).
 - 옛 소비자는 모르는 target·platform 문서를 거부하므로, 배포 순서와 무관하게 조용한 오독이 없다.
 
 ### 문서 필드와 사실 0건 문서
@@ -611,8 +629,7 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
   kotlin·swift 라우트 문서가 `null`이 되어 bridge 수신 요건을 채우는 누수를 막으며, (3) 사실
   0건 bridge 문서를 분석 근거로 인정하는 기존 규칙을 그대로 둔다.
 - `dispatch: "specificity" | "registration-order"`는 `route-decl`을 담은 문서에 필수다(아래
-  디스패치 모델). roles에 server가 있는 비 openapi 문서만 가질 수 있다. `registration-order`는
-  초안이라 이 버전은 입력 오류로 거부한다.
+  [디스패치 모델](#디스패치-모델)). roles에 server가 있는 비 openapi 문서만 가질 수 있다.
 - 선택 필드: `service`(서비스 신원 문자열), `sourceSets: {"tests": "excluded" | "included"}`
   (테스트 소스를 스캔했는지 선언). `sourceSets`에는 `tests` 키만 올 수 있다.
 - `service`는 문서와 route 사실 양쪽에 둘 수 있다. 사실의 **유효 service**는 사실 값이 있으면 그
@@ -668,8 +685,8 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 - `route-decl` 전용: `trailingSlash: "strict" | "optional"`(생략은 unknown),
   `caseInsensitive: true`(증명한 경우만), `narrowed: true`(params·headers·consumes·produces·version
   조건으로 같은 키를 나눈 핸들러), `paramConstraints: [{segment, kind, pattern?}]`(kind는
-  `int`·`uuid`·`slug`·`path`·`regex`), `order: {group, index}`(registration-order 문서에서만, 초안이라
-  이 버전은 입력 오류), `configDefault: true`(아래 base 접두사), `catchAllPrefix: true`(아래
+  `int`·`uuid`·`slug`·`path`·`regex`), `order: {group, index}`(registration-order 문서에서만, 아래
+  [디스패치 모델](#디스패치-모델)), `configDefault: true`(아래 base 접두사), `catchAllPrefix: true`(아래
   0세그먼트 catch-all 펼침).
 - `paramConstraints`의 `segment`는 템플릿 세그먼트의 0부터 시작하는 인덱스이고 파라미터가 있는
   세그먼트(`{}`·부분 세그먼트·`{**}`)만 가리킨다. 세그먼트마다 하나이며 `pattern`은 `regex` 전용
@@ -738,7 +755,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
     없으면 입력 오류다. 접두사 decl은 접두사 경로 자체만 받고, 더 긴 호출은 함께 있는 원본이 받는다.
   - specificity 문서에서는 원본 `{**}` decl과 같은 순위로 본다. 그래서 같은 키의 명시적
     decl이 있으면 항상 명시적 decl이 match다. 매칭 품질은 `catch-all`이다.
-  - registration-order 문서에서는 원본 decl의 `order`를 그대로 물려받는다.
+  - registration-order 문서에서는 원본 decl의 `order`를 그대로 물려받는다. 원본을 찾는 키에 `order`가 들어가므로
+    다르거나 한쪽에만 있으면 입력 오류다.
   - `route-decl-conflict` 대상에서 뺀다. 원본끼리의 중복은 원본 `{**}` decl에서 한 번만
     잡힌다.
 - optional 세그먼트는 decl 여러 개로 펼친다. 16개를 넘으면 dynamic과
@@ -828,9 +846,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   - base call ↔ base decl: 잇지 않는다. 두 앵커가 모두 미상이라 꼬리가 같아도 같은 경로라는
     근거가 없다. 이 call은 error 전제 (b)가 거짓이라 `-unverified`로만 남는다.
 - 두 suffix 후보 모두 호출당 64개까지다. 후보는 한 scope의 한 선언 측(decl들 또는 contract들)
-  안에서만 모이며, 그 선언 측은 같은 디스패치 모델을 따른다(decl은 `dispatch: "specificity"`,
-  openapi contract도 같은 구체성 규칙). 그래서 suffix 후보에도 root↔root와 같은 구체성 선택을
-  적용한다: method가 맞는 후보 중 증명 가능한 후보, 그중 호출 파라미터를 decl 리터럴에 기대지 않은
+  안에서만 모인다. suffix 후보에는 등록 순서를 쓰지 않는다 — 알 수 없는 base 때문에 후보들이 서로 다른 요청일 수
+  있어 "먼저 등록한 것이 받는다"가 성립하지 않는다. 대신 registration-order decl 중 앞선 등록에 경로와 method가
+  모두 가려진 decl(`route-decl-shadowed`)은 어떤 base에서도 요청을 받지 않으므로 후보에서 뺀다. 그 밖의 후보에는
+  dispatch와 무관하게 root↔root와 같은 구체성 선택을 적용한다: method가 맞는 후보 중 증명 가능한 후보, 그중 호출 파라미터를 decl 리터럴에 기대지 않은
   후보를 먼저 보고, 구체성 순위는 **호출 세그먼트에 맞춰** 왼쪽부터 비교한다. root 호출↔base 선언
   에서는 알 수 없는 base가 차지한 호출 앞자리를 어떤 세그먼트 순위보다 낮게 둔다. 최상위가 한
   템플릿일 때만 `suffix` match이고, 서로 다른 템플릿이 동률이면 ambiguous다(`/a/items/{}`와
@@ -852,20 +871,91 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 
 ### 디스패치 모델
 
+> **구현(Phase 6).** `registration-order`·`order`·가림 진단을 check·query·trace·`diff --http`에서 소비한다. 규칙은
+> 거짓 error를 만들지 않는 쪽으로 정했다: 등록 순서는 **match 대상을 고르는 데만** 쓰고, error 판정(`missing`·
+> 증명 가능한 method 불일치)은 순서와 무관하게 이전과 같다. 규칙 벡터는 [`http-dispatch`](#공유-적합성-벡터)다.
+
 - `route-decl` 문서는 `dispatch`를 선언한다. `specificity`에서는 여러 decl이 맞을 때 구체성
   (리터럴 > 부분 세그먼트 > 제약 있는 `{}` > `{}` > `{**}`, 왼쪽 세그먼트부터 비교) 최상위가
-  유일할 때만 match이고, 동률이면 `ambiguous-route-call`이다. `registration-order`에서는 같은
-  `order.group` 안에서 `index`가 가장 작은 decl이 match이고, group이 다르거나 order가 없으면
-  ambiguous다.
-- `registration-order`와 `order`·`route-decl-shadowed`는 초안이다. 이 버전은 해당 문서를 입력
-  오류로 거부한다(구체성으로 잘못 판정하지 않기 위해서다).
-- registration-order 생산자는 같은 라우터 체인 안에서 증명한 등록 순서만 `order`로 싣는다.
-  증명하지 못하면 `route-dispatch-order-unknown:`을 낸다. 앞선 파라미터 decl이 뒤의 더 구체적인
-  decl을 가리면 `route-decl-shadowed` warning이다.
+  유일할 때만 match이고, 동률이면 `ambiguous-route-call`이다. `registration-order`는 먼저 등록한 decl이
+  요청을 받는 프레임워크(Django `urlpatterns` 등)를 위한 선언이다.
 - narrowed decl과 경로 제약만 다른 decl은 모두 match 대상이며 충돌로 보지 않는다.
-- 프레임워크별 값은 착수할 때 공식 소스로 확인해 벡터로 고정한다. 현재는 추정이다: Spring
-  PathPattern·Fastify·Next·werkzeug는 specificity, Express·Koa·Hono·NestJS(Express 어댑터)·
-  Django는 registration-order. Express의 `next()` 위임은 모델링하지 않고 limitation 문구에 적는다.
+
+**`order` 필드(생산자 의무·검증).** registration-order 문서의 `route-decl`은 `order: {group, index}`를 싣는다.
+
+- `group`: 한 라우터 체인의 이름(pythograph는 `django:<ROOT_URLCONF>`). 제어 문자·앞뒤 공백 없는 비어 있지 않은
+  문자열, 256자 이하. `index`: 그 체인 안의 등록 순번, 0 이상의 안전 정수. 두 키 외의 키는 입력 오류다.
+- **한 index는 한 등록이다.** 한 등록(소스 위치 하나)에서 나온 사실(method별 사실, optional·대안을 펼친 템플릿,
+  catch-all 접두사 decl)은 같은 index를 공유한다. 같은 (group, index)의 사실이 서로 다른 `location`(path·줄·열)이면
+  입력 오류다 — 다른 등록이 index를 공유하면 소비자가 둘 다 같은 등록으로 읽어 순서를 잃는다. index는 연속일 필요가
+  없다(조건부 등록처럼 사실을 내지 않은 등록이 번호를 차지해도 된다).
+- **한 group은 한 서비스다.** 같은 group의 사실은 유효 service가 같아야 한다(다르면 입력 오류).
+- `order`는 registration-order 문서의 `route-decl`에만 올 수 있다. specificity 문서의 decl, `route-call`·
+  `route-contract`, 다른 target 문서의 사실에 실리면 입력 오류다. dynamic decl에도 실을 수 있다(판정에는 쓰지 않는다).
+- 순서를 증명하지 못한 decl은 `order`를 생략하고, 생산자는 `route-dispatch-order-unknown:`(서버 측 공백 접두사)을
+  낸다. `order` 없는 decl은 어느 decl과도 순서를 비교하지 않는다.
+- `order`는 "먼저 맞는 등록이 그 요청을 끝까지 받는다"는 선언이다. 핸들러가 요청을 다음 등록으로 넘길 수 있는
+  등록(Express `next()` 위임 등)에는 `order`를 싣지 않는다 — 실으면 소비자가 뒤 등록을 가려졌다고 판정한다.
+
+**match(소비자).** 경로 후보 찾기·경로 제약·끝 슬래시·대소문자·앵커 규칙은 위 조인 규칙 그대로다.
+
+1. method가 맞는 후보를 **먼저** 거른다(이전과 같다). 없으면 method 불일치이고 error 조건도 이전과 같다(모든 경로
+   후보가 증명 가능하고 suffix가 아닐 때). 경로를 먼저 고르는 프레임워크(Django는 첫 경로 매치의 뷰가 method를 받지
+   않으면 405)에서는 거짓 match가 될 수 있지만, method가 맞는 후보가 하나도 없으면 어느 쪽이 먼저든 405라서 거짓
+   error는 없다.
+2. 아래 가림 판정에서 경로와 method가 모두 가려진 decl(`route-decl-shadowed`)은 어떤 요청도 받지 못하므로 후보에서
+   뺀다(가린 앞 decl이 이 호출에 증명 불가 후보라 순서 걷기가 뒤까지 닿는 경우에도 대상이 되지 않게). 남은 후보를
+   **디스패치 단위**로 나눈다: 구체성 decl 전체가 한 단위, registration-order decl은 (문서, `group`)마다 한
+   단위, `order` 없는 registration-order decl은 decl마다 한 단위. 순서는 **같은 문서의 같은 group 안에서만** 비교한다 —
+   다른 문서의 같은 group 문자열(모노레포의 두 Django 앱이 모두 `config.urls`를 쓰는 경우 등)은 다른 체인이다.
+3. 후보의 근거 강도를 본다: **반드시 닿음**(증명 가능하고, 호출 쪽 미정 값 `{}`·부분 세그먼트가 decl 리터럴·부분
+   세그먼트에 기대지 않음) > **조건부**(증명 가능하지만 호출 파라미터 값이 특정 리터럴일 때만 닿음) > **증명 불가**
+   (정규식 제약, 호출 부분 세그먼트↔decl 리터럴, 빈 끝 세그먼트↔`{**}`). 가장 강한 후보를 가진 단위만 남긴다 — 한
+   단위 안에서 "호출 파라미터는 decl 파라미터가 있으면 리터럴에 붙지 않는다"와 같은 방향이다.
+4. 남은 단위가 하나면 그 단위의 규칙으로 정한다. 구체성 단위는 위 구체성 규칙이다. registration-order 단위는 index
+   오름차순으로 걸으며 **반드시 닿는 narrowed 아닌** 후보가 처음 나오는 index에서 멈춘다. 그 index의 후보(같은 등록)가
+   match다. 그 앞 index의 증명 불가 후보(평가하지 않은 정규식 등)와 narrowed 후보(조건이 맞지 않는 요청은 다음
+   등록으로 넘어감)는 요청을 먼저 받았을 수 있어 함께 match 대상에 넣는다. 앞의 증명 불가 후보가 있으면 품질은
+   `param-to-literal-constrained`(정규식) 또는 `param-to-literal`로 낮춘다(증명된 결합이 아님). 앞 index의 조건부 후보는
+   건너뛴다. 멈출 후보가 없으면 지나온 후보(narrowed·증명 불가) 전부, 그것도 없으면 모든 후보가 match 대상이며, 이때
+   조건부 후보의 템플릿이 둘 이상이면 호출 값에 따라 받는 decl이 달라지므로 `ambiguous-route-call`이다.
+5. 남은 단위가 둘 이상이면 순서를 비교할 근거가 없으므로 `ambiguous-route-call`이다(대상은 각 단위가 고른 decl의
+   합집합). 모두 증명 불가 후보뿐이면 구체성 규칙처럼 모호함으로 보지 않고 전부 match 대상이다.
+6. suffix 후보(앵커 한쪽이 base)에는 등록 순서를 쓰지 않는다([조인 규칙](#조인-규칙-http)): 가려진 decl을 뺀 뒤 구체성
+   선택을 적용하고, suffix는 여전히 error 근거가 아니다.
+
+이 규칙은 match 대상만 바꾸므로 `route-call-without-decl`·`route-method-mismatch`의 error 판정은 dispatch와 무관하다.
+dispatch가 바꾸는 것은 `--pairs`·query·trace의 결합 대상, `route-decl-without-call`의 호출 여부, 모호함 warning, 그리고
+아래 가림 진단이다.
+
+**가림(consumer 진단).** 같은 문서·같은 group에서 index가 더 작은 decl E가 뒤 decl D가 받을 수 있는 **모든 경로**를
+받으면 D는 가려졌다. 판정은 건전하게만 한다 — 증명할 수 있을 때만 가렸다고 말하고, 모르면 가리지 않았다고 본다.
+
+- 대상: D는 `order`가 있는 root 앵커의 비테스트 decl(catch-all 접두사 decl 제외 — 원본 `{**}` decl이 대표한다), E는
+  `order`가 있는 root 앵커의 비테스트·비 narrowed decl이다. 같은 index는 같은 등록이라 서로 가리지 않는다. 대소문자
+  무시 decl은 판정하지 않는다.
+- 세그먼트 덮음: E 리터럴은 같은 D 리터럴만, 제약 없는(또는 `path`) E `{}`는 비어 있지 않은 D 리터럴·D `{}`·D 부분
+  세그먼트를, 닫힌 제약(`int`·`uuid`·`slug`)의 E `{}`는 같은 제약의 D `{}`만 덮는다(프레임워크마다 정의가 달라 리터럴
+  값의 통과를 확정할 수 없다). 정규식 제약의 E는 아무것도 덮지 않는다(같은 패턴이라도 변환기가 다를 수 있다). 제약
+  없는 E 부분 세그먼트 `p{}s`는 골격에 맞는 D 리터럴(가운데가 비지 않음)과 골격을 넓힌 D 부분 세그먼트를 덮는다. E의 끝
+  `{**}`는 D의 남은 세그먼트(1개 이상, 빈 세그먼트 없음)를 덮는다.
+- 끝 슬래시: D가 strict이거나 `{**}`로 끝나면 비교하지 않는다. D가 optional·미상이면 E가 optional이어야 한다(E가 `{**}`로
+  끝나면 D는 strict여야 한다).
+- E가 D의 method까지 받으면(`ANY`이거나 같은 method) **`route-decl-shadowed`**(warning)다. D는 method를 먼저 거르는
+  isthmus 매처에서도, 경로를 먼저 고르는 프레임워크(Django)와 method를 보고 다음 등록으로 넘어가는 라우터(Express)
+  어디서도 요청을 받지 않는다. 이 decl은 `route-decl-without-call`·`route-decl-conflict` 대신 이 진단으로만 보고하고,
+  root·suffix 어느 호출의 match 대상도 되지 않는다.
+- 경로만 덮고 method가 다르면 **`route-decl-path-shadowed`**(warning)다. 경로 우선 프레임워크에서는 D에 닿는 요청이
+  E에서 405로 끝나고, method를 보는 라우터에서는 D가 다른 method로 여전히 닿는다. 계약이 이 차이를 싣지 않으므로
+  구분해 보고하고, 미호출 진단은 그대로 둔다.
+- 증거는 D와, D를 가린 decl 중 가장 먼저 등록한 것이다. 여러 E의 합집합으로만 덮이는 경우는 판정하지 않는다.
+- 한 조인의 가림 판정은 trie 노드 방문·비교 5,000,000번까지이며 넘으면 부분 결과 대신 입력 오류다.
+
+**프레임워크.** Django(+DRF)는 registration-order다(pythograph가 Django 5.2 `URLResolver.resolve` 소스로 확인). Flask/
+Werkzeug는 specificity로 낸다(규칙 가중치가 isthmus 구체성과 완전히 같지는 않지만 method를 먼저 거르므로 차이는 거짓
+match 쪽이다). 나머지는 착수할 때 공식 소스로 확인해 벡터로 고정한다. 현재 추정: Spring PathPattern·Fastify·Next는
+specificity, Express·Koa·Hono·NestJS(Express 어댑터)는 registration-order. Express의 `next()` 위임은 모델링하지 않고
+limitation 문구에 적는다.
 
 ### 귀속 게이트
 
@@ -895,9 +985,9 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
 | `route-call-without-decl` | error | 아래 (a)~(f)가 모두 증명될 때만. (f)가 거짓이면 평가하지 않는다. 그 밖에 하나라도 빠지면 `route-call-without-decl-unverified` warning |
 | `route-method-mismatch` | error | (a)~(f)에 더해 method가 확정됨. (f)가 거짓이면 평가하지 않고, 그 밖에는 `-unverified` warning |
 | `route-call-without-contract` | error | `link.contract.authoritative`, (a), (b), contract 측 `unresolved-contract-servers:`·`contract-coverage:` 없음, (e)가 모두 성립할 때만. 아니면 `-unverified` warning. 매니페스트가 없는 이 버전은 항상 `-unverified`다. 경로만 맞고 method가 다른 operation도 이 코드이며 증거에 그 operation을 싣는다 |
-| `route-decl-without-call`, `route-contract-without-call` | warning | 문구는 "스캔한 클라이언트 기준 미관찰". 호출 측 공백(호출 측 접두사 한계, dynamic 호출, 이 scope를 불렀을 수 있는 미귀속 호출)이 있거나 이 scope에 닿을 수 있는 client roles 문서가 없거나 base 앵커면 `-unverified`. catch-all 접두사 decl과 테스트 소스 decl은 싣지 않으며, 접두사 decl로 닿은 호출은 원본 `{**}` decl도 부른 것으로 본다 |
+| `route-decl-without-call`, `route-contract-without-call` | warning | 문구는 "스캔한 클라이언트 기준 미관찰". 호출 측 공백(호출 측 접두사 한계, dynamic 호출, 이 scope를 불렀을 수 있는 미귀속 호출)이 있거나 이 scope에 닿을 수 있는 client roles 문서가 없거나 base 앵커면 `-unverified`. catch-all 접두사 decl과 테스트 소스 decl, `route-decl-shadowed` decl은 싣지 않으며, 접두사 decl로 닿은 호출은 원본 `{**}` decl도 부른 것으로 본다 |
 | `route-contract-without-decl`, `route-decl-without-contract` | warning | 같은 link에 decl과 contract가 모두 있을 때의 드리프트. root 앵커 정적 사실만 같은 템플릿 문자열과 method(decl `ANY`는 모든 method)로 비교한다. catch-all 접두사·테스트 소스 decl은 뺀다 |
-| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키(앵커·method·템플릿) decl의 중복(`catchAllPrefix`·테스트 소스 decl은 제외). `route-decl-shadowed`는 초안(registration-order 전용)이다. decl과 contract가 같은 신원의 진단을 내면 하나로 합친다 |
+| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed`, `route-decl-path-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키(앵커·method·템플릿) decl의 중복(`catchAllPrefix`·테스트 소스 decl과 `route-decl-shadowed` decl은 제외 — 같은 group의 중복은 먼저 등록한 쪽이 받아 가림 진단이 대신한다). `route-decl-shadowed`·`route-decl-path-shadowed`는 registration-order 전용 가림 진단이다([디스패치 모델](#디스패치-모델)). decl과 contract가 같은 신원의 진단을 내면 하나로 합친다 |
 
 error 전제는 다음과 같다. "서버 측"은 link의 server member이고, 매니페스트가 없으면 귀속 게이트가
 고른 선언 측 문서들이다.
@@ -920,7 +1010,7 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 
 진단 신원: http 진단은 기존 code·target·channel·method에 5번째 원소 `scope`(link 이름,
 매니페스트가 없으면 service 문자열, service도 없는 단일 서비스 입력이면 고정값 `"default"`)를
-더한다. 선언 측 진단(`route-decl-conflict`·`route-decl-shadowed`)도 같은 규칙을 쓴다. 두 link가 같은 (method, template)에 진단을 내도
+더한다. 선언 측 진단(`route-decl-conflict`·`route-decl-shadowed`·`route-decl-path-shadowed`)도 같은 규칙을 쓴다. 두 link가 같은 (method, template)에 진단을 내도
 baseline 억제와 codequality 지문이 섞이지 않게 하기 위해서다. scope가 없는 기존 키는 바이트
 단위로 유지한다. 베이스라인 항목의 `scope`는 target `http` 항목에 필수이고 다른 target 항목에
 있으면 입력 오류다. SARIF는 `properties.scope`와 메시지에, Code Quality는 설명에 scope를 싣는다.
@@ -1195,7 +1285,9 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 - `http-template`: 정규 문법(`template.grammar`), 생산자 정규화(`template.normalize`), 프레임워크
   변환(`framework.*`), 소비자 매칭(`match.*`). `url-compose`: 호출 조립·base 결합·제거·마스킹·래퍼
   인자 바인딩([HTTP-WRAPPERS](HTTP-WRAPPERS.md)). `http-limitation-scope`: 스코프 적용(`scope.applies`, 호출·선언
-  하나에 한계가 적용되는지)과 스코프 항목 검증(`scope.validate`)을 제품 조인 층·파서로 실행한다.
+  하나에 한계가 적용되는지)과 스코프 항목 검증(`scope.validate`)을 제품 조인 층·파서로 실행한다. `http-dispatch`:
+  `order` 검증(`dispatch.validate`, 생산자도 적용), 등록 순서·dispatch 단위를 넘는 match(`dispatch.match`), 건전한
+  가림 판정(`dispatch.shadow`)을 제품 파서·매처·가림 판정기로 실행한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
   케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
@@ -1229,7 +1321,7 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 - 호출 쪽 부분 보간은 dynamic이다(서버 템플릿의 부분 세그먼트와 다르다, HTTP-WRAPPERS).
 - 마스킹·동적 동사 호출은 error 근거가 아니다.
 - registration-order·workspace 매니페스트(check·query)는 구현 전까지 입력 오류로 거부한다(http limitationScopes는
-  Phase 4에서 구현했다).
+  Phase 4에서, registration-order는 Phase 6에서 구현했다).
 
 ### Phase 4 결정 (http limitation 스코프)
 
@@ -1244,10 +1336,41 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   필드가 없다.
 - Spring의 빈 값 매칭(끝 `*`, 부분 세그먼트)은 소비자 매칭 규칙을 바꾸지 않고 생산자의 빈 값 변형 decl로 처리한다.
 
+### Phase 6 결정 (platform python과 registration-order)
+
+pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안을 확정했다. 모호한 곳은 거짓 error를 만들지
+않는 쪽으로 정했다.
+
+- **platform `python`**: target은 `null`·`persistence`·`http`. http에서는 `route-decl`만 받는다. Python 클라이언트의
+  `route-call`은 생산자 구현과 url-compose 벡터가 생길 때 더한다(검증되지 않은 호출 사실을 error 근거로 받지 않는다).
+  persistence `relation-use`는 기존 규칙(sql 외 플랫폼은 호출 측)으로 받는다. `language-traversal` platform에도 더해
+  trace가 python forward·reverse 분석을 받는다.
+- **순서는 match 대상만 고른다.** method를 먼저 거르는 규칙과 error 전제는 바꾸지 않았다. Django처럼 경로를 먼저
+  고르는 프레임워크에서 405가 날 호출을 뒤 decl에 잇는 거짓 match가 남지만, method가 맞는 후보가 없을 때만 error라서
+  거짓 error는 없다. 초안의 "group이 다르거나 order가 없으면 ambiguous"는 유지하되, 근거가 더 약한(조건부·증명 불가)
+  단위는 먼저 떨어뜨려 구체성 규칙의 param-to-literal 처리와 같은 방향으로 맞췄다.
+- **group은 문서 안에서만 비교한다.** 초안은 group 범위를 정하지 않았다. 문서를 넘어 합치면 모노레포의 두 앱이 같은
+  `ROOT_URLCONF` 이름을 쓸 때 다른 앱의 decl이 먼저 등록한 것처럼 보여 거짓 가림 warning이 나므로 막았다. 같은 문서를
+  두 번 주면 사실 중복 제거가 한쪽으로 합친다.
+- **한 index = 한 등록 = 한 위치.** pythograph는 한 패턴의 method·펼친 템플릿에 같은 index를 준다. 그래서 index의
+  전역 유일성 대신 "같은 (group, index)는 같은 `location`"을 검증한다.
+- **가림은 두 코드로 나눴다.** 초안은 `route-decl-shadowed` 하나였다. 경로 우선(Django)과 method 우선(Express)
+  라우터의 차이를 계약이 싣지 않으므로, 두 모델 모두에서 참인 경로+method 가림만 `route-decl-shadowed`로 하고 경로만
+  가린 경우를 `route-decl-path-shadowed`로 분리했다. 둘 다 warning이다(판정이 건전하므로 거짓 가림은 없지만, 가림은
+  호출 깨짐이 아니라 죽은 선언의 신호다).
+- **suffix 후보에는 순서를 쓰지 않는다.** base가 미상이면 후보들이 같은 요청을 다툰다는 보장이 없다. 어떤 요청도
+  받지 못하는 가려진 decl만 뺀다.
+- **`diff --http`**: `order` 값은 비교하지 않는다(앞에 등록 하나를 더하면 뒤 index가 모두 바뀐다). 순서 변화는 같은
+  호출의 결합 변화(`rebound-route-calls`·`changed-bound-route*`)와 새 surface finding `route-shadowing-changed`로 본다.
+  두 시점의 dispatch가 다르면 인벤토리 불일치로 입력 오류다([HTTP-DIFF](HTTP-DIFF.md#등록-순서-registration-order)).
+
 ### 미결 항목
 
 - `authority`의 기본 포트 정규화.
-- registration-order 디스패치와 `route-decl-shadowed`, workspace 매니페스트(check·query)의 구현 시점 세부 규칙.
+- workspace 매니페스트(check·query)의 구현 시점 세부 규칙.
+- 경로 우선·method 우선 등록 순서를 문서가 선언하는 필드(있으면 `route-decl-path-shadowed`를 확정 가림으로 올리고
+  Django의 405 호출을 method 불일치로 판정할 수 있다).
+- Python 클라이언트(requests·httpx)의 `route-call`과 그 url-compose 벡터.
 - dynamic decl 공백(`unjoined-dynamic-routes`)의 스코프 표현.
 - 빈 값 변형 decl을 미호출·드리프트 진단에서 원본과 묶는 표식(catch-all 접두사 decl의 `catchAllPrefix`와 같은 역할).
 - `docs/limitation-prefixes.json` 추출.

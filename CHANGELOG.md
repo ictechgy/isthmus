@@ -4,6 +4,39 @@
 
 ## [Unreleased]
 
+### Added — platform `python`과 `registration-order` 디스패치 (Phase 6 소비자)
+
+- **platform `python`**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#platform-python-v1-확장)): pythograph 문서를 받는다. 이전
+  버전은 `Unsupported bridge platform.`(2)으로 거부했다. target은 `null`·`persistence`·`http`이고 그 밖은 입력 오류다.
+  http에서는 `route-decl`만 받는다 — Python 클라이언트(requests·httpx)의 `route-call`은 생산자 구현과 url-compose 벡터가
+  생길 때 더한다. persistence에서는 기존 규칙대로 호출 측(`relation-use`)이다. `language-traversal` platform에도 더해
+  trace context가 `platform: "python"` forward·reverse 분석을 받는다(capture 설정 포함). `compatibility.json`에는 발행본이
+  없어 행을 더하지 않았다.
+- **`dispatch: "registration-order"`와 `order: {group, index}`**([디스패치 모델](docs/GRAPH-EXCHANGE.md#디스패치-모델)):
+  초안이라 거부하던 값을 확정·구현한다. 같은 문서·같은 group 안에서 먼저 등록한 decl이 호출을 받는다. method를 먼저
+  거르는 규칙과 error 전제는 그대로라 순서는 match 대상만 고르고 새 error를 만들지 않는다. group·문서·dispatch가 다른
+  후보는 근거가 더 강한(반드시 닿는) 단위만 남긴 뒤 둘 이상이면 `ambiguous-route-call`이다. 앞 index의 정규식 등 증명
+  불가 후보와 narrowed 후보는 함께 match 대상에 넣고, suffix 후보에는 순서를 쓰지 않는다.
+- **엄격한 검증(입력 오류 2)**: `order`는 registration-order 문서의 `route-decl`에만, `{group, index}` 두 키만 받는다.
+  group은 제어 문자·앞뒤 공백 없는 256자 이하 문자열, index는 0 이상의 안전 정수다. 같은 (group, index)는 같은 소스
+  위치(한 등록)여야 하고, 같은 group은 같은 유효 service여야 하며, catch-all 접두사 decl은 원본의 `order`를 물려받아야 한다.
+- **가림 진단**: `route-decl-shadowed`(warning — 앞선 등록이 뒤 decl의 모든 경로와 method를 받아 어떤 라우터에서도 호출을
+  받지 못함, 이 decl은 `route-decl-without-call`·`route-decl-conflict` 대신 이것으로만 보고하고 어느 호출의 match 대상도 되지 않음)와 `route-decl-path-shadowed`(warning — 경로만
+  덮음: Django 같은 경로 우선 프레임워크에서는 405, method 우선 라우터에서는 다른 method로 닿음). 판정은 건전하게만
+  한다(정규식·닫힌 제약의 리터럴·narrowed·대소문자 무시·base 앵커·미상 끝 슬래시는 덮는다고 보지 않음). 한 조인의 판정은
+  5,000,000번까지이며 넘으면 입력 오류다. SARIF 규칙 목록에 두 코드가 더해졌다(http 입력이 있을 때만).
+- **`diff --http`**([HTTP-DIFF](docs/HTTP-DIFF.md#등록-순서-registration-order)): `order` 값은 비교하지 않고, 순서 변화는
+  교차 평가의 결합 변화(`rebound-route-calls` 등)와 새 surface finding `route-shadowing-changed`(warning)로 본다. 두 시점의
+  문서별 `dispatch`가 다르면 인벤토리 불일치로 입력 오류다.
+- **적합성 벡터**: 새 suite `conformance/http-dispatch.json` 45케이스(`dispatch.validate` — 생산자도 적용,
+  `dispatch.match`·`dispatch.shadow` — 소비자). 기존 세 파일과 그 sha256은 그대로라 생산자가 **다시 벤더링할 필요는 없다**.
+  registration-order를 내는 pythograph는 새 suite를 `conformance.lock`에 더해 `dispatch.validate`를 실행하길 권한다.
+- **e2e 확인**: pythograph `origin/main`(`bc87783`)의 `fixtures/django/drf-shop`(기본 registration-order)과
+  `fixtures/flask/blog-app`(specificity) 문서를 합성 Kotlin 클라이언트 문서와 check에 넣어 입력 오류가 없고, Django 쪽은
+  fixture의 dynamic 패턴·스코프 없는 `route-coverage:` 때문에 error 없이 `-unverified`만, Flask 쪽은 기대한 error 4건
+  (미선언 경로·int 제약 위반·method 불일치·static 스코프 밖 POST)만 나오며, 의도한 가림 패턴(`items/<str:key>/` 뒤의
+  `items/featured/`)이 `route-decl-path-shadowed`로 보고됨을 확인했다.
+
 ### Fixed — retrofit.dart base 결합 계약
 
 - [HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#base-결합) base 결합표와 [GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#base-접두사와-클라이언트-결합)가

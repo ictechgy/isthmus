@@ -44,6 +44,7 @@ export const HTTP_DIFF_CODES = {
   'route-trailing-slash-changed': { severity: 'warning', category: 'surface' },
   'route-catch-all-changed': { severity: 'warning', category: 'surface' },
   'route-case-sensitivity-changed': { severity: 'warning', category: 'surface' },
+  'route-shadowing-changed': { severity: 'warning', category: 'surface' },
   'removed-bound-route': { severity: 'error', category: 'impact' },
   'removed-bound-route-unverified': { severity: 'warning', category: 'impact' },
   'changed-bound-route': { severity: 'error', category: 'impact' },
@@ -196,7 +197,16 @@ const attributeReaders: ReadonlyArray<{ code: HttpDiffCode; read: (fact: RouteDe
   { code: 'route-trailing-slash-changed', read: (fact) => fact.declaration.trailingSlash ?? 'unknown' },
   { code: 'route-catch-all-changed', read: (fact) => (fact.declaration.catchAllPrefix ? 'catch-all-prefix' : 'explicit') },
   { code: 'route-case-sensitivity-changed', read: (fact) => (fact.declaration.caseInsensitive ? 'case-insensitive' : 'case-sensitive') },
+  // registration-order 가림 여부다. index 값 자체는 비교하지 않는다 — 앞에 등록 하나를 더하면 뒤 index가 모두 밀려
+  // 순서 의미가 같아도 값이 바뀐다. 순서 변화의 영향은 가림 변화와, 같은 호출의 결합 변화(`rebound-route-calls` 등)로 본다.
+  { code: 'route-shadowing-changed', read: (fact) => shadowValue(fact) },
 ];
+
+/** 가림 상태의 정규 문자열이다. 구체성 decl과 contract는 항상 `not-shadowed`다. */
+function shadowValue(fact: RouteDeclarationFact): string {
+  if (fact.shadow === undefined) return 'not-shadowed';
+  return fact.shadow.kind === 'full' ? 'shadowed' : 'path-shadowed';
+}
 
 /**
  * 경로 제약 목록의 정규 문자열이다(`세그먼트:종류[=패턴]`을 세그먼트 순으로 쉼표로 잇고, 없으면 `none`).

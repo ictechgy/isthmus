@@ -334,8 +334,13 @@ candidates of dynamic calls. Http documents may scope a limitation to the reques
 `methods`): a server- or contract-side gap then blocks error judgement only for calls that may fall
 inside the scope, and a client-side gap only for declarations such hidden calls may reach; unscoped
 limitations keep their document-wide effect ([contract](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)).
-Documents that use not-yet-implemented draft fields (`registration-order`, workspace manifests)
-fail with exit code 2.
+Server documents declare how routes dispatch: `specificity` (most specific template wins) or
+`registration-order` (Django, via pythograph's `platform: "python"` documents: within one document's
+`order.group` the earliest registration that matches receives the call). Order only selects match
+targets, so it never creates a new error; an earlier registration that covers every path and method
+of a later one reports `route-decl-shadowed`, and one that covers only its paths reports
+`route-decl-path-shadowed` (both warnings, [contract](docs/GRAPH-EXCHANGE.md#디스패치-모델)).
+Documents that use not-yet-implemented draft fields (workspace manifests) fail with exit code 2.
 
 ### Route impact trace (in development)
 
