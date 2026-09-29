@@ -304,8 +304,12 @@ scope가 붙은 route 키 하나의 귀속 호출·선언·계약과 dynamic 호
 http 문서는 한계가 가릴 수 있는 요청을 `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`,
 선택 `methods`)로 좁힐 수 있다. 서버·계약 측 공백은 스코프 안일 수 있는 호출의 error 판정만, 호출 측 공백은 그런
 숨은 호출이 닿을 수 있는 선언의 판정만 막고, 스코프 없는 한계는 문서 전체에 적용된다
-([계약](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)). 아직 구현하지 않은 초안 필드(`registration-order`,
-workspace 매니페스트)를 쓴 문서는 종료 코드 2로 실패한다.
+([계약](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)). 서버 문서는 디스패치 모델을 선언한다: `specificity`(가장
+구체적인 템플릿이 받음) 또는 `registration-order`(pythograph의 `platform: "python"` Django 문서처럼, 한 문서의 같은
+`order.group` 안에서 먼저 등록한 decl이 받음). 순서는 match 대상만 고르므로 새 error를 만들지 않는다. 앞선 등록이 뒤
+decl의 모든 경로와 method를 받으면 `route-decl-shadowed`, 경로만 받으면 `route-decl-path-shadowed`다(둘 다 warning,
+[계약](docs/GRAPH-EXCHANGE.md#디스패치-모델)). 아직 구현하지 않은 초안 필드(workspace 매니페스트)를 쓴 문서는 종료
+코드 2로 실패한다.
 
 ### route 영향 추적 (개발 중)
 

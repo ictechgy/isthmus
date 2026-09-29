@@ -56,7 +56,7 @@ diff 도구를 함께 쓴다. 조인·귀속·매칭 규칙은 [GRAPH-EXCHANGE�
   수 있다. workspace link의 `contract.authoritative: true`("이 클라이언트는 이 스펙에 있는 것만 부른다")일 때만
   error이고, 매니페스트가 없는 surface 모드의 contract 측 깨짐은 항상 `-unverified`다.
 - **입력 구성 차이는 관찰 차이가 아니다.** 두 시점의 선언 측 문서 인벤토리(platform·도구 이름·`sourceSets.tests`
-  설정별 문서 수)가 다르면 2로 거부한다. 부분 추출과 전체 추출을 비교하면 모든 route가 삭제·추가로 보이기 때문이다(bridge diff와
+  설정·`dispatch`별 문서 수)가 다르면 2로 거부한다. 부분 추출과 전체 추출을 비교하면 모든 route가 삭제·추가로 보이기 때문이다(bridge diff와
   같은 규칙). project도 두 시점(surface는 `--clients`까지)이 같아야 한다 — 같은 checkout 경로에서 revision만
   바꿔 생산한다.
 
@@ -219,6 +219,7 @@ jobs:
 | `route-trailing-slash-changed` | warning | surface | 같은 키의 `trailingSlash`(strict·optional·미상) 집합이 바뀌었다 |
 | `route-catch-all-changed` | warning | surface | 같은 키가 명시적 선언과 catch-all 접두사 펼침(`catchAllPrefix`) 사이를 오갔다 |
 | `route-case-sensitivity-changed` | warning | surface | 같은 키의 `caseInsensitive` 집합이 바뀌었다 |
+| `route-shadowing-changed` | warning | surface | 같은 키의 registration-order 가림 상태(`not-shadowed`·`shadowed`·`path-shadowed`) 집합이 바뀌었다 — 등록 순서 변화로 그 route가 요청을 받지 못하게 됐거나 다시 받게 됐다([아래](#등록-순서-registration-order)) |
 | `removed-bound-route` | error | impact | head에서 삭제된 route에 base에서 결합하던 호출이 head에서 어디에도 결합하지 않는다. [error 전제](#error-전제)가 모두 증명됨 |
 | `removed-bound-route-unverified` | warning | impact | 위와 같지만 전제 하나 이상을 증명하지 못했다(호출마다 `reasons`) |
 | `changed-bound-route` | error | impact | head에도 있는 route에 base에서 결합하던 호출이 head에서 결합하지 않는다(제약·끝 슬래시·대소문자 변화, 다른 선언 추가로 생긴 모호함 등). 전제가 모두 증명됨 |
@@ -238,6 +239,23 @@ jobs:
   매처 입력이 같다). 선언 측 incompleteness는 표면 변화와 무관하게 낸다 — 보이지 않는 선언의 변화는 감지할 수 없다.
 - 호출이 깨졌는지는 표면 finding과 무관하게 모든 결합 호출에서 계산한다. 그래서 속성이 그대로인 route에도
   `changed-bound-route`가 날 수 있다(예: 다른 선언 추가로 모호해짐).
+
+### 등록 순서 (registration-order)
+
+registration-order 문서([GRAPH-EXCHANGE 디스패치 모델](GRAPH-EXCHANGE.md#디스패치-모델))의 순서 변화는 다음처럼 본다.
+
+- **`order` 값은 비교하지 않는다.** 앞에 등록 하나를 더하거나 빼면 뒤 등록의 index가 모두 바뀌지만 순서의 뜻은 같다.
+  index·group 문자열은 route 신원(scope·측·앵커·method·템플릿)에도 속성 비교에도 들지 않는다.
+- **순서 변화가 결합을 바꾸면 impact finding이다.** 같은 호출을 두 시점에 교차 평가하므로, 재배치로 다른 decl이 호출을
+  받게 되면 base에서 결합하던 route 기준으로 `rebound-route-calls`(head에서 다른 route에 결합), 모호해지면
+  `changed-bound-route-unverified`가 나온다. 재배치만으로는 경로 후보 집합이 바뀌지 않으므로 증명된 미결합(error)이
+  새로 생기지는 않는다(method를 먼저 거르는 규칙은 그대로다).
+- **가림 상태 변화는 호출이 없어도 보인다.** 같은 키의 가림 상태가 바뀌면 `route-shadowing-changed`다. 예: `/items/{}/`를
+  `/items/featured/` 앞으로 옮기면 `/items/featured/`가 `not-shadowed`에서 `shadowed`(method까지 가림)나
+  `path-shadowed`(경로만 가림)로 바뀐다. 클라이언트 문서가 있으면 그 route에 결합하던 호출이 `rebound-route-calls`로 함께
+  나온다.
+- **dispatch가 바뀌면 입력 오류(2)다.** 생산자의 `--dispatch specificity` 같은 옵션만 바꿔도 코드 변화 없이 결합이 바뀌므로,
+  두 시점의 문서별 `dispatch`가 인벤토리에서 달라지면 거부한다.
 
 ### error 전제
 
@@ -272,7 +290,8 @@ jobs:
 
 ## 범위와 남은 일
 
-- 구현: surface·workspace 모드, 교차 평가, finding 19종, `--fail-on`·`--strict`, 합성 fixture(`fixtures/http-diff/`).
-- 판정하지 않는 것: 필드·query·헤더 호환성, narrowed 조건 변화, 핸들러 심볼 교체, registration-order 디스패치(파서가
-  아직 거부한다), dynamic 선언 공백의 스코프(dynamic 선언은 여전히 그 측 전체의 공백이다).
+- 구현: surface·workspace 모드, 교차 평가, finding 20종, `--fail-on`·`--strict`, registration-order 순서 변화
+  ([위](#등록-순서-registration-order)), 합성 fixture(`fixtures/http-diff/`).
+- 판정하지 않는 것: 필드·query·헤더 호환성, narrowed 조건 변화, 핸들러 심볼 교체(같은 키 중복 decl의 순서만 바뀌어
+  다른 핸들러가 받는 경우 포함 — route 신원이 같다), dynamic 선언 공백의 스코프(dynamic 선언은 여전히 그 측 전체의 공백이다).
 - MCP에는 노출하지 않는다(MCP `diff`는 bridge 전용 그대로). 노출은 trace·`--pairs`와 함께 출력 상한을 정할 때 결정한다.

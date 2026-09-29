@@ -298,6 +298,12 @@ Dart·Swift 러너가 100% 통과한다.
 - Django(+DRF)·Flask 라우트(registration-order와 order, 변환기 paramConstraints, FBV의 `ANY`),
   persistence(Django app_label·db_table·FK·M2M·식별자 절단, SQLAlchemy, Flask-SQLAlchemy 3),
   graph/impact/reach. isthmus에 platform python을 추가한다.
+  - 진행(2026-09-29): pythograph `routes --role server`(`bc87783`, Django·DRF·Flask route-decl)에 맞춰 isthmus가
+    platform `python`(target `null`·`persistence`·`http`, http는 `route-decl`만)과 `dispatch: "registration-order"`·
+    `order`·가림 진단(`route-decl-shadowed`·`route-decl-path-shadowed`)을 소비한다([디스패치 모델](GRAPH-EXCHANGE.md#디스패치-모델),
+    [Phase 6 결정](GRAPH-EXCHANGE.md#phase-6-결정-platform-python과-registration-order), 벡터 `conformance/http-dispatch.json`).
+    pythograph fixture(`drf-shop`·`blog-app`)의 문서와 합성 클라이언트로 check를 돌려 입력 오류 없음과 가림 진단을
+    확인했다. persistence·graph와 Python 클라이언트 `route-call`은 남았다.
 
 종료 조건: resolver 순회·DRF router·Flask url_map 덤프 대비 route-decl 정밀도 100%. Django
 백엔드 × iOS/Android 체인 fixture에서 세 질문의 기대 경로가 일치한다.
