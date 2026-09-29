@@ -1175,6 +1175,50 @@
       }
     },
     {
+      "id": "match/shadowed-never-target",
+      "ruleId": "dispatch.match",
+      "provenance": "contract",
+      "source": "docs/GRAPH-EXCHANGE.md#디스패치-모델",
+      "appliesTo": [
+        "consumer"
+      ],
+      "note": "The earlier partial segment is unprovable for this call, but the later declaration is fully shadowed and receives no request.",
+      "input": {
+        "decls": [
+          {
+            "method": "GET",
+            "template": "/p/{}t",
+            "trailingSlash": "strict",
+            "order": {
+              "group": "django:shop.urls",
+              "index": 0
+            }
+          },
+          {
+            "method": "GET",
+            "template": "/p/ab{}t",
+            "trailingSlash": "strict",
+            "order": {
+              "group": "django:shop.urls",
+              "index": 1
+            }
+          }
+        ],
+        "call": {
+          "pathAnchor": "root",
+          "method": "GET",
+          "template": "/p/ab{}t"
+        }
+      },
+      "expect": {
+        "status": "matched",
+        "quality": "param-to-literal",
+        "targets": [
+          "GET /p/{}t"
+        ]
+      }
+    },
+    {
       "id": "shadow/path-only-when-methods-differ",
       "ruleId": "dispatch.shadow",
       "provenance": "contract",

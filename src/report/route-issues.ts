@@ -247,12 +247,13 @@ function addWithoutCall(
 
 /**
  * 같은 키 decl의 중복을 warning으로 옮긴다. narrowed decl, 경로 제약만 다른 decl, catch-all
- * 접두사 decl, 테스트 소스 decl은 충돌로 보지 않는다.
+ * 접두사 decl, 테스트 소스 decl은 충돌로 보지 않는다. 같은 registration-order group에서 앞 등록에 완전히 가려진
+ * decl도 뺀다 — 어느 쪽이 받는지 정해져 있으므로 `route-decl-shadowed`가 더 정확한 진단이다.
  */
 function addConflicts(issues: Map<string, MutableIssue>, scope: RouteScope): void {
   const groups = new Map<string, RouteDeclarationFact[]>();
   for (const fact of scope.decls) {
-    if (fact.narrowed || fact.declaration.catchAllPrefix || fact.testSource) continue;
+    if (fact.narrowed || fact.declaration.catchAllPrefix || fact.testSource || fact.shadow?.kind === 'full') continue;
     const key = JSON.stringify([fact.declaration.anchor, fact.declaration.method, fact.declaration.template,
       fact.constraintsKey]);
     groups.set(key, [...(groups.get(key) ?? []), fact]);

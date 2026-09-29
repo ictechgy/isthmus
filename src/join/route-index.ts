@@ -31,7 +31,7 @@ export interface RouteDeclaration {
   readonly registration?: RouteRegistration;
   /**
    * 같은 group에서 먼저 등록한 decl이 경로와 method를 모두 받아 어떤 요청도 받지 못하는 registration-order decl이다
-   * (`route-decl-shadowed`). suffix 후보에서만 뺀다 — root 후보는 등록 순서가 이미 가린다.
+   * (`route-decl-shadowed`). root·suffix 어느 후보에서도 match 대상에서 뺀다.
    */
   readonly unreachable?: true;
   /**
@@ -340,7 +340,10 @@ function decideExact(probe: RouteProbe, candidates: readonly RouteCandidate[]): 
     };
   }
   if (compatible.some(({ declaration }) => declaration.registration !== undefined)) {
-    return decideAcrossUnits(probe, compatible);
+    // 가려진 decl은 어떤 요청도 받지 못하므로 match 대상에서 뺀다. 가린 앞 decl이 이 호출에 대해 증명 불가 후보일
+    // 때도(부분 세그먼트 골격 등) 순서 걷기가 뒤 decl까지 닿으므로 여기서 먼저 거른다.
+    const reachable = compatible.filter(({ declaration }) => declaration.unreachable !== true);
+    return decideAcrossUnits(probe, reachable.length > 0 ? reachable : compatible);
   }
   return decideSpecificity(probe, compatible);
 }

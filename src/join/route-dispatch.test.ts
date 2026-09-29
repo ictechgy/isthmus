@@ -330,3 +330,15 @@ test('같은 registration-order 문서를 두 번 주면 사실이 하나로 합
   assert.equal(outcome(scope, '/items/featured/', 'GET'), 'matched:exact:GET /items/{}/');
   assert.deepEqual(createRouteIssues(routes).map(({ code }) => code), ['route-decl-shadowed']);
 });
+
+test('완전히 가려진 decl은 root 호출의 match 대상도, route-decl-conflict 대상도 아니다', () => {
+  const routes = joinRoutes(
+    document(['server'], [decl('GET', '/p/{}t', 0), decl('GET', '/p/ab{}t', 1), decl('GET', '/a/b', 2), decl('GET', '/a/b', 3)]),
+    document(['client'], [call('GET', '/p/ab{}t')]),
+  );
+  const scope = routes.scopes[0]!;
+  // 앞 decl은 이 호출에 증명 불가 후보라 순서 걷기가 뒤 decl까지 닿지만, 뒤 decl은 어떤 요청도 받지 못한다.
+  assert.equal(outcome(scope, '/p/ab{}t', 'GET'), 'matched:param-to-literal:GET /p/{}t');
+  const issues = createRouteIssues(routes).map(({ code, channel }) => `${code} ${channel}`).sort();
+  assert.deepEqual(issues, ['route-decl-shadowed /a/b', 'route-decl-shadowed /p/ab{}t', 'route-decl-without-call /a/b']);
+});

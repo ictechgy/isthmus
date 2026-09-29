@@ -132,8 +132,10 @@ export function pathCovers(earlier: RouteDeclaration, later: RouteDeclaration): 
     const other = later.segments[position];
     if (other === undefined || !segmentCovers(segment, constraint, other, later.constraints.get(position))) return false;
   }
+  // 여기 오면 E는 `{**}`로 끝나지 않고 D와 길이가 같다. D의 `{**}`는 E의 어떤 세그먼트도 덮지 못하므로 D도 `{**}`로
+  // 끝나지 않는다.
   if (earlier.segments.length !== later.segments.length) return false;
-  return laterEndsWithCatchAll || later.trailingSlash === 'strict' || earlier.trailingSlash === 'optional';
+  return later.trailingSlash === 'strict' || earlier.trailingSlash === 'optional';
 }
 
 /**

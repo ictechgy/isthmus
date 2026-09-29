@@ -903,7 +903,9 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
    후보가 증명 가능하고 suffix가 아닐 때). 경로를 먼저 고르는 프레임워크(Django는 첫 경로 매치의 뷰가 method를 받지
    않으면 405)에서는 거짓 match가 될 수 있지만, method가 맞는 후보가 하나도 없으면 어느 쪽이 먼저든 405라서 거짓
    error는 없다.
-2. 후보를 **디스패치 단위**로 나눈다: 구체성 decl 전체가 한 단위, registration-order decl은 (문서, `group`)마다 한
+2. 아래 가림 판정에서 경로와 method가 모두 가려진 decl(`route-decl-shadowed`)은 어떤 요청도 받지 못하므로 후보에서
+   뺀다(가린 앞 decl이 이 호출에 증명 불가 후보라 순서 걷기가 뒤까지 닿는 경우에도 대상이 되지 않게). 남은 후보를
+   **디스패치 단위**로 나눈다: 구체성 decl 전체가 한 단위, registration-order decl은 (문서, `group`)마다 한
    단위, `order` 없는 registration-order decl은 decl마다 한 단위. 순서는 **같은 문서의 같은 group 안에서만** 비교한다 —
    다른 문서의 같은 group 문자열(모노레포의 두 Django 앱이 모두 `config.urls`를 쓰는 경우 등)은 다른 체인이다.
 3. 후보의 근거 강도를 본다: **반드시 닿음**(증명 가능하고, 호출 쪽 미정 값 `{}`·부분 세그먼트가 decl 리터럴·부분
@@ -941,7 +943,8 @@ dispatch가 바꾸는 것은 `--pairs`·query·trace의 결합 대상, `route-de
   끝나면 D는 strict여야 한다).
 - E가 D의 method까지 받으면(`ANY`이거나 같은 method) **`route-decl-shadowed`**(warning)다. D는 method를 먼저 거르는
   isthmus 매처에서도, 경로를 먼저 고르는 프레임워크(Django)와 method를 보고 다음 등록으로 넘어가는 라우터(Express)
-  어디서도 요청을 받지 않는다. 이 decl은 `route-decl-without-call` 대신 이 진단으로만 보고한다.
+  어디서도 요청을 받지 않는다. 이 decl은 `route-decl-without-call`·`route-decl-conflict` 대신 이 진단으로만 보고하고,
+  root·suffix 어느 호출의 match 대상도 되지 않는다.
 - 경로만 덮고 method가 다르면 **`route-decl-path-shadowed`**(warning)다. 경로 우선 프레임워크에서는 D에 닿는 요청이
   E에서 405로 끝나고, method를 보는 라우터에서는 D가 다른 method로 여전히 닿는다. 계약이 이 차이를 싣지 않으므로
   구분해 보고하고, 미호출 진단은 그대로 둔다.
@@ -984,7 +987,7 @@ limitation 문구에 적는다.
 | `route-call-without-contract` | error | `link.contract.authoritative`, (a), (b), contract 측 `unresolved-contract-servers:`·`contract-coverage:` 없음, (e)가 모두 성립할 때만. 아니면 `-unverified` warning. 매니페스트가 없는 이 버전은 항상 `-unverified`다. 경로만 맞고 method가 다른 operation도 이 코드이며 증거에 그 operation을 싣는다 |
 | `route-decl-without-call`, `route-contract-without-call` | warning | 문구는 "스캔한 클라이언트 기준 미관찰". 호출 측 공백(호출 측 접두사 한계, dynamic 호출, 이 scope를 불렀을 수 있는 미귀속 호출)이 있거나 이 scope에 닿을 수 있는 client roles 문서가 없거나 base 앵커면 `-unverified`. catch-all 접두사 decl과 테스트 소스 decl, `route-decl-shadowed` decl은 싣지 않으며, 접두사 decl로 닿은 호출은 원본 `{**}` decl도 부른 것으로 본다 |
 | `route-contract-without-decl`, `route-decl-without-contract` | warning | 같은 link에 decl과 contract가 모두 있을 때의 드리프트. root 앵커 정적 사실만 같은 템플릿 문자열과 method(decl `ANY`는 모든 method)로 비교한다. catch-all 접두사·테스트 소스 decl은 뺀다 |
-| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed`, `route-decl-path-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키(앵커·method·템플릿) decl의 중복(`catchAllPrefix`·테스트 소스 decl은 제외, dispatch와 무관). `route-decl-shadowed`·`route-decl-path-shadowed`는 registration-order 전용 가림 진단이다([디스패치 모델](#디스패치-모델)). decl과 contract가 같은 신원의 진단을 내면 하나로 합친다 |
+| `ambiguous-route-call`, `route-trailing-slash-mismatch`, `route-case-mismatch`, `route-decl-conflict`, `route-decl-shadowed`, `route-decl-path-shadowed` | warning | `route-decl-conflict`는 narrowed도 제약 차이도 아닌 같은 키(앵커·method·템플릿) decl의 중복(`catchAllPrefix`·테스트 소스 decl과 `route-decl-shadowed` decl은 제외 — 같은 group의 중복은 먼저 등록한 쪽이 받아 가림 진단이 대신한다). `route-decl-shadowed`·`route-decl-path-shadowed`는 registration-order 전용 가림 진단이다([디스패치 모델](#디스패치-모델)). decl과 contract가 같은 신원의 진단을 내면 하나로 합친다 |
 
 error 전제는 다음과 같다. "서버 측"은 link의 server member이고, 매니페스트가 없으면 귀속 게이트가
 고른 선언 측 문서들이다.
