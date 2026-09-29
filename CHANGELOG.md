@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### Fixed — retrofit.dart base 결합 계약
+
+- [HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#base-결합) base 결합표와 [GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#base-접두사와-클라이언트-결합)가
+  retrofit.dart를 "RFC 3986 상대 해석"으로 적던 것을 고친다. retrofit_generator 10.2.11 소스와 실제 dio 5.11.1 요청을 기록한
+  모의 서버 오라클(dartograph)로 확인한 결과 두 단계다: ① 생성 코드 `_combineBaseUrls`가 `@RestApi(baseUrl)`을 dio base에
+  RFC 3986으로 해석하고 ② 메서드 경로(`@Path` 치환 후)는 그 결과에 dio 단순 문자열 연결로 붙는다. 그래서
+  `@RestApi(baseUrl: '…/rv1')` + `@GET('/users/{id}')`는 `/users/{}`가 아니라 `/rv1/users/{}`(root)다.
+- dio 단순 연결의 정의(`baseUrl + path`, `:/`가 하나면 `//`→`/`, 점 세그먼트 제거, 슬래시 삽입 없음)와, 경로 없는 base
+  리터럴 뒤 상대 경로가 host에 붙는 경우(`https://h` + `users`)를 dynamic + `ambiguous-base-join:`으로 두는 규칙을 명시한다.
+- url-compose 벡터에는 retrofit.dart 전용 케이스가 없고 기존 `rfc3986`·`dio-concat` 케이스는 새 서술과 모순되지 않아
+  벡터와 `SHA256SUMS`는 바뀌지 않는다(생산자 재벤더링 불필요).
+
 ### Added — http limitation 스코프 (Phase 4)
 
 - **http 문서의 `limitationScopes`**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)): 초안이던 경로 스코프를

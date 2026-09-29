@@ -97,10 +97,31 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
 
 | 결합 방식 | 예 | 경로 `/x` | 경로 `x` |
 |---|---|---|---|
-| RFC 3986 상대 해석 | Retrofit·Ktor·`URL(string:relativeTo:)`·retrofit.dart base | root | base |
+| RFC 3986 상대 해석 | Retrofit·Ktor·`URL(string:relativeTo:)` | root | base |
 | 슬래시 결합 | axios·chopper·Moya·openapi-fetch | base | base |
-| 단순 문자열 연결, base 리터럴 | dio | 연결 결과의 경로, root | 연결 결과의 경로, root |
-| 단순 문자열 연결, base 미상 | dio | base | dynamic + `ambiguous-base-join:` |
+| 단순 문자열 연결, base 리터럴 | dio, retrofit.dart 메서드 경로 | 연결 결과의 경로, root | 연결 결과의 경로, root |
+| 단순 문자열 연결, base 미상 | dio, retrofit.dart 메서드 경로 | base | dynamic + `ambiguous-base-join:` |
+
+**단순 문자열 연결**(dio `RequestOptions.uri`)은 경로가 `http:`·`https:`로 시작하지 않으면
+`baseUrl + path`를 그대로 이어 붙이고, 결과에 `:/`가 정확히 하나면 그 뒤의 `//`를 `/`로 바꾼 다음
+점 세그먼트를 지운다. 슬래시를 넣거나 빼지 않으므로 `https://api.example.com/v1` + `items`는
+`/v1items`다. base 리터럴에 경로가 없는데 경로가 `/`로 시작하지 않으면 경로가 host에 붙으므로
+(`https://h` + `users` → host `husers`) root 템플릿을 내지 않고 dynamic + `ambiguous-base-join:`이다.
+
+**retrofit.dart는 두 단계다.** RFC 3986은 첫 단계에만 쓰인다.
+
+1. 생성 코드의 `_combineBaseUrls(dio.options.baseUrl, @RestApi(baseUrl))`가 어노테이션 base를
+   dio base에 RFC 3986으로 해석한다. 어노테이션 base가 절대 URL이면 그대로, 비었으면 dio base다.
+2. 메서드 경로(`@Path` 치환 후)는 1단계 결과에 위 **단순 문자열 연결**로 붙는다(RFC 3986이
+   아니다). 1단계 결과의 경로가 확정되면(절대 URL 리터럴, 또는 `/`로 시작하는 어노테이션 base)
+   base 리터럴 행을, 확정되지 않으면(어노테이션 base 없음, 생성자가 `baseUrl`을 넘김, 미상 dio
+   base에 대한 상대 어노테이션 base) base 미상 행을 따른다.
+
+예: `@RestApi(baseUrl: 'https://api.example.com/rv1')` + `@GET('/users/{id}')`는 `/rv1/users/11`을
+요청한다(템플릿 `/rv1/users/{}`, root — RFC 3986이었다면 `/users/{}`). 같은 base에서
+`@POST('items')`는 `/rv1items`다. `@RestApi(baseUrl: '/rv2/')`는 dio base와 무관하게 경로가
+`/rv2/`로 확정되어 `@GET('/orders/{id}')`가 `/rv2/orders/{}` root다. 이 규칙은 retrofit_generator
+10.2.11 소스와 실제 dio 5.11.1 요청을 기록한 모의 서버 오라클(dartograph)로 확인했다.
 
 base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. host가 동적이면 base다.
 
