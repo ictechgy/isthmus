@@ -24,6 +24,32 @@ export interface RouteDeclaration {
   readonly catchAllPrefix: boolean;
   /** 세그먼트 인덱스별 제약 종류다. */
   readonly constraints: ReadonlyMap<number, RouteParamConstraint['kind']>;
+  /**
+   * `dispatch: "registration-order"` 문서의 decl이면 있다. 없으면 구체성 decl(또는 contract)이다.
+   * 순서 규칙의 정본은 GRAPH-EXCHANGE의 "디스패치 모델" 절이다.
+   */
+  readonly registration?: RouteRegistration;
+  /**
+   * 같은 group에서 먼저 등록한 decl이 경로와 method를 모두 받아 어떤 요청도 받지 못하는 registration-order decl이다
+   * (`route-decl-shadowed`). suffix 후보에서만 뺀다 — root 후보는 등록 순서가 이미 가린다.
+   */
+  readonly unreachable?: true;
+  /**
+   * params·headers 등 조건으로 같은 키를 나눈 decl이다. registration-order에서 조건이 맞지 않는 요청은 다음 등록으로
+   * 넘어가므로 순서를 걸을 때 멈추지 않는다. 구체성 판정에는 쓰지 않는다(같은 템플릿이면 모두 match 대상이다).
+   */
+  readonly narrowed?: true;
+}
+
+/**
+ * registration-order decl의 등록 순서다.
+ *
+ * `group`은 조인 층이 문서까지 구분해 만든 키라서 다른 문서의 같은 group 문자열과 섞이지 않는다. 생산자가 순서를
+ * 증명하지 못해 `order`를 싣지 않은 decl은 `group`·`index`가 모두 없고, 어느 decl과도 순서를 비교하지 않는다.
+ */
+export interface RouteRegistration {
+  readonly group?: string;
+  readonly index?: number;
 }
 
 /** 매칭할 호출 하나다. method가 없으면 동사가 동적인 호출이다. */
@@ -50,6 +76,12 @@ export interface RouteCandidate {
   readonly ranks: readonly number[];
   /** 호출 파라미터가 decl 리터럴(또는 부분 세그먼트)에 기대어 맞았다. */
   readonly paramToLiteral: boolean;
+  /**
+   * 호출 쪽 값이 정해지지 않은 세그먼트(`{}`·부분 세그먼트)가 decl 리터럴이나 부분 세그먼트에 기대어 맞았다 — 그
+   * 값이 특정 문자열일 때만 이 decl에 닿는 조건부 후보다. `paramToLiteral`과 달리 호출 리터럴이 decl 부분 세그먼트에
+   * 맞은 경우(값이 확정됨)는 포함하지 않는다. 등록 순서 판정이 "반드시 닿는 decl"을 고를 때 쓴다.
+   */
+  readonly conditional: boolean;
   /**
    * 증명할 수 없는 후보다(정규식 제약, 호출 부분 세그먼트↔decl 리터럴, 빈 끝 세그먼트↔`{**}`).
    * 구체성 비교에서 빼고 error 근거로 쓰지 않는다.
@@ -307,6 +339,19 @@ function decideExact(probe: RouteProbe, candidates: readonly RouteCandidate[]): 
       provable: candidates.every(({ unprovable }) => !unprovable),
     };
   }
+  if (compatible.some(({ declaration }) => declaration.registration !== undefined)) {
+    return decideAcrossUnits(probe, compatible);
+  }
+  return decideSpecificity(probe, compatible);
+}
+
+/**
+ * method가 맞는 구체성 후보에서 match·모호를 가린다(`decideExact`의 구체성 규칙).
+ *
+ * 증명 가능한 후보 중 호출 파라미터를 decl 리터럴에 기대지 않은 후보가 있으면 그것들만, 없으면 param-to-literal
+ * 후보로 구체성 최상위를 고른다.
+ */
+function decideSpecificity(probe: RouteProbe, compatible: readonly RouteCandidate[]): RouteSideOutcome {
   const provable = compatible.filter(({ unprovable }) => !unprovable);
   const direct = provable.filter(({ paramToLiteral }) => !paramToLiteral);
   const tier = direct.length > 0 ? direct : provable;
@@ -336,6 +381,116 @@ function decideExact(probe: RouteProbe, candidates: readonly RouteCandidate[]): 
 }
 
 /**
+ * 디스패치 단위다. 구체성 decl(과 contract)은 모두 한 단위, registration-order decl은 (문서, group)마다 한 단위,
+ * 순서 없는 registration-order decl은 decl마다 한 단위다. 단위가 다르면 누가 먼저인지 비교할 근거가 없다.
+ */
+function dispatchUnit(declaration: RouteDeclaration): string {
+  const registration = declaration.registration;
+  if (registration === undefined) return 'specificity';
+  return registration.group === undefined ? `unordered\u0000${declaration.id}` : `group\u0000${registration.group}`;
+}
+
+/** 호출 경로에 반드시 닿는 후보다: 증명 가능하고 조건부(호출 값이 특정 리터럴일 때만)가 아니다. */
+function isDefinite(candidate: RouteCandidate): boolean {
+  return !candidate.unprovable && !candidate.conditional;
+}
+
+/** 단위의 근거 강도다. 2: 반드시 닿는 후보, 1: 증명 가능한 조건부 후보만, 0: 증명 불가 후보만. */
+function unitStrength(candidates: readonly RouteCandidate[]): number {
+  if (candidates.some(isDefinite)) return 2;
+  return candidates.some(({ unprovable }) => !unprovable) ? 1 : 0;
+}
+
+/**
+ * registration-order decl이 섞인 root 후보(모두 method가 맞음)에서 결과를 정한다.
+ *
+ * 1) 후보를 디스패치 단위로 나누고, 근거 강도(반드시 닿음 > 조건부 > 증명 불가)가 가장 높은 단위만 남긴다 — 한
+ *    단위 안에서 조건부 후보보다 반드시 닿는 후보를 고르는 구체성 규칙과 같은 방향이다.
+ * 2) 남은 단위가 하나면 그 단위의 규칙(구체성 또는 등록 순서)으로 정한다.
+ * 3) 둘 이상이면 서로 순서를 비교할 근거가 없으므로 모호함이다. 모두 증명 불가 후보뿐이면 구체성 규칙처럼 모호함으로
+ *    보지 않고 전부 match 대상으로 둔다.
+ * 어느 경우에도 method 불일치·미매치는 만들지 않는다(여기 오는 후보는 모두 method가 맞는다).
+ */
+function decideAcrossUnits(probe: RouteProbe, compatible: readonly RouteCandidate[]): RouteSideOutcome {
+  const units = new Map<string, RouteCandidate[]>();
+  for (const candidate of compatible) {
+    const key = dispatchUnit(candidate.declaration);
+    units.set(key, [...(units.get(key) ?? []), candidate]);
+  }
+  const strength = Math.max(...[...units.values()].map(unitStrength));
+  const kept = [...units.entries()].filter(([, candidates]) => unitStrength(candidates) === strength);
+  if (kept.length === 1) {
+    const [key, candidates] = kept[0]!;
+    return key === 'specificity' ? decideSpecificity(probe, candidates) : decideRegistration(probe, candidates);
+  }
+  const candidates = kept.flatMap(([, unitCandidates]) => unitCandidates);
+  if (strength === 0) {
+    return { status: 'matched', quality: unprovenQuality(candidates), targets: uniqueDeclarations(candidates.map(({ declaration }) => declaration)) };
+  }
+  const targets = kept.flatMap(([key, unitCandidates]) => {
+    const outcome = key === 'specificity' ? decideSpecificity(probe, unitCandidates) : decideRegistration(probe, unitCandidates);
+    return outcome.status === 'matched' || outcome.status === 'ambiguous' ? outcome.targets : [];
+  });
+  return { status: 'ambiguous', targets: uniqueDeclarations(targets), capped: false };
+}
+
+/** 증명된 결합이 아닌 match의 품질이다. 정규식 제약 후보가 있으면 `param-to-literal-constrained`다. */
+function unprovenQuality(candidates: readonly RouteCandidate[]): RouteMatchQuality {
+  return candidates.some(({ regexConstrained }) => regexConstrained) ? 'param-to-literal-constrained' : 'param-to-literal';
+}
+
+/**
+ * registration-order 단위 하나(모두 method가 맞는 후보)에서 결과를 정한다.
+ *
+ * - 순서 없는 decl 단위(후보 하나)는 그 decl이 match다.
+ * - index 오름차순으로 걸으며 **반드시 닿는** narrowed 아닌 후보가 처음 나오는 index에서 멈춘다. 그 index의
+ *   후보(같은 등록)가 match다. 그 앞 index의 증명 불가 후보(평가하지 않은 정규식 제약 등)와 narrowed 후보(조건이 맞지
+ *   않는 요청은 다음 등록으로 넘어감)는 호출을 먼저 받았을 수 있어 함께 match 대상으로 둔다. 앞의 증명 불가 후보가
+ *   있으면 품질을 증명되지 않은 결합으로 낮춘다. 앞 index의 조건부 후보(호출 파라미터가 decl 리터럴과 같을 때만
+ *   닿음)는 구체성 규칙과 같이 건너뛴다.
+ * - 멈출 후보가 없으면: 반드시 닿는(narrowed) 후보가 있으면 지나온 후보 전부가 match 대상이고, 없으면 모든 후보가
+ *   match 대상이다. 이때 조건부 후보의 템플릿이 둘 이상이면 호출 값에 따라 받는 decl이 달라지므로 모호함이다(구체성
+ *   규칙의 param-to-literal 동률과 같다).
+ */
+function decideRegistration(probe: RouteProbe, candidates: readonly RouteCandidate[]): RouteSideOutcome {
+  const ordered = [...candidates].sort((left, right) =>
+    (left.declaration.registration?.index ?? 0) - (right.declaration.registration?.index ?? 0));
+  const passed: RouteCandidate[] = [];
+  for (const candidate of ordered) {
+    if (isDefinite(candidate) && candidate.declaration.narrowed !== true) {
+      const index = candidate.declaration.registration?.index;
+      const level = ordered.filter((other) => other.declaration.registration?.index === index && !other.conditional);
+      const earlier = passed.filter((other) => other.declaration.registration?.index !== index);
+      return {
+        status: 'matched',
+        quality: registrationQuality(probe, earlier, candidate),
+        targets: uniqueDeclarations([...earlier, ...level].map(({ declaration }) => declaration)),
+      };
+    }
+    if (candidate.unprovable || isDefinite(candidate)) passed.push(candidate);
+  }
+  const firstDefinite = passed.find(isDefinite);
+  if (firstDefinite !== undefined) {
+    return {
+      status: 'matched',
+      quality: registrationQuality(probe, passed, firstDefinite),
+      targets: uniqueDeclarations(passed.map(({ declaration }) => declaration)),
+    };
+  }
+  const declarations = uniqueDeclarations(candidates.map(({ declaration }) => declaration));
+  const conditionalTemplates = new Set(candidates.filter(({ unprovable }) => !unprovable)
+    .map(({ declaration }) => declaration.template));
+  if (conditionalTemplates.size > 1) return { status: 'ambiguous', targets: declarations, capped: false };
+  return { status: 'matched', quality: unprovenQuality(candidates), targets: declarations };
+}
+
+/** 등록 순서 match의 품질이다. 대상 중 증명 불가 후보가 먼저 있으면 증명되지 않은 결합이다. */
+function registrationQuality(probe: RouteProbe, earlier: readonly RouteCandidate[], winner: RouteCandidate): RouteMatchQuality {
+  const unproven = earlier.filter(({ unprovable }) => unprovable);
+  return unproven.length > 0 ? unprovenQuality(unproven) : candidateQuality(probe, winner);
+}
+
+/**
  * suffix 후보에서 결과를 정한다.
  *
  * 한 색인은 한 scope·한 선언 측(decl 또는 contract)이라 후보는 같은 디스패치 모델(구체성)을
@@ -346,6 +501,10 @@ function decideExact(probe: RouteProbe, candidates: readonly RouteCandidate[]): 
  * method 불일치는 error 근거가 아니다.
  */
 function decideSuffix(probe: RouteProbe, collection: SuffixCollection): RouteSideOutcome {
+  // 등록 순서는 같은 요청을 두고 다투는 decl 사이에서만 뜻이 있고, suffix 후보는 알 수 없는 base 때문에 서로 다른
+  // 요청일 수 있어 순서로 고르지 않는다. 대신 어떤 요청도 받지 못하는(가려진) decl은 어느 base에서도 호출을 받지
+  // 않으므로 후보에서 빼고, 나머지는 문서화된 구체성 규칙으로 정한다(suffix는 error 근거가 아니다).
+  collection = { ...collection, candidates: collection.candidates.filter(({ declaration }) => declaration.unreachable !== true) };
   const compatible = collection.candidates.filter(({ declaration }) =>
     methodQuality(probe.method, declaration.method) !== undefined);
   if (collection.capped) {
@@ -436,6 +595,8 @@ const RANK_UNKNOWN_BASE = -1;
 interface SegmentResult {
   readonly rank: number;
   readonly paramToLiteral: boolean;
+  /** 호출 쪽 미정 값(`{}`·부분 세그먼트)이 decl 리터럴·부분 세그먼트에 기댔다. */
+  readonly conditional?: boolean;
   readonly unprovable: boolean;
   readonly regexConstrained: boolean;
 }
@@ -458,6 +619,7 @@ export function evaluateSegments(
 ): RouteCandidate | undefined {
   const ranks: number[] = [];
   let paramToLiteral = false;
+  let conditional = false;
   let unprovable = false;
   let regexConstrained = false;
   let catchAll = declaration.catchAllPrefix;
@@ -479,6 +641,7 @@ export function evaluateSegments(
     if (result === undefined) return undefined;
     ranks.push(result.rank);
     paramToLiteral ||= result.paramToLiteral;
+    conditional ||= result.conditional === true;
     unprovable ||= result.unprovable;
     regexConstrained ||= result.regexConstrained;
     callIndex += 1;
@@ -486,7 +649,7 @@ export function evaluateSegments(
   if (callIndex !== callSegments.length) return undefined;
   if (declaration.catchAllPrefix) ranks.push(RANK_CATCH_ALL);
   return {
-    declaration, ranks, paramToLiteral, unprovable: unprovable || regexConstrained,
+    declaration, ranks, paramToLiteral, conditional, unprovable: unprovable || regexConstrained,
     regexConstrained, catchAll, suffix: false,
   };
 }
@@ -517,10 +680,10 @@ function matchSegment(
   }
   if (callSegment.kind === 'param') {
     if (declSegment.kind === 'literal') {
-      return declSegment.value === '' ? undefined : { ...plain(RANK_LITERAL), paramToLiteral: true };
+      return declSegment.value === '' ? undefined : { ...plain(RANK_LITERAL), paramToLiteral: true, conditional: true };
     }
     if (declSegment.kind === 'param') return plain(isClosedKind(constraint) ? RANK_CONSTRAINED : RANK_PARAM);
-    return { ...plain(RANK_PARTIAL), paramToLiteral: true };
+    return { ...plain(RANK_PARTIAL), paramToLiteral: true, conditional: true };
   }
   if (callSegment.kind === 'partial') {
     if (declSegment.kind === 'param') return plain(isClosedKind(constraint) ? RANK_CONSTRAINED : RANK_PARAM);
@@ -532,7 +695,10 @@ function matchSegment(
       ? fitsPartial(declSegment.value, callSegment.prefix, callSegment.suffix, same)
       : skeletonsOverlap(declSegment, callSegment, fold);
     if (!compatible) return undefined;
-    return { rank: declSegment.kind === 'literal' ? RANK_LITERAL : RANK_PARTIAL, paramToLiteral: true, unprovable: true, regexConstrained: false };
+    return {
+      rank: declSegment.kind === 'literal' ? RANK_LITERAL : RANK_PARTIAL,
+      paramToLiteral: true, conditional: true, unprovable: true, regexConstrained: false,
+    };
   }
   return undefined;
 }

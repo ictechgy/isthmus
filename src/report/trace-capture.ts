@@ -136,7 +136,7 @@ const stepKeys = ['tool', 'args', 'timeoutSeconds', 'acceptExitCodes'];
 const documentKeys = new Set(['name', 'precomputed', ...stepKeys]);
 const analysisKeys = new Set(['id', 'platform', 'role', 'precomputed', 'roots', 'maxRootsPerRun', ...stepKeys]);
 const listingKeys = new Set(['platform', 'precomputed', ...stepKeys]);
-const platforms = new Set<TraversalPlatform>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql']);
+const platforms = new Set<TraversalPlatform>(['dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'python', 'sql']);
 const roles = new Set<TraceAnalysisRole>(['forward', 'reverse', 'db-dependents']);
 const deliveries = new Set<CaptureRootsDelivery>(['arguments', 'separator', 'roots-from']);
 /** 출력 파일 이름으로도 쓰이므로 경로 구분자·점 두 개로 시작하는 이름을 막는다. */

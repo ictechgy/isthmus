@@ -15,9 +15,10 @@ import {
 /**
  * bridge-facts 생산 플랫폼이다. sql은 스키마 카탈로그를 읽는 수신 측이고,
  * openapi는 스펙 문서의 operation을 `route-contract`로만 내는 http 계약 측이다.
+ * python(pythograph)은 bridge 경계가 없어 target이 null·persistence·http 중 하나다.
  */
 export type BridgePlatform =
-  | 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'sql' | 'openapi';
+  | 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'python' | 'sql' | 'openapi';
 
 /**
  * 언어 경계를 잇는 메커니즘이다. persistence는 코드↔스키마, http는 REST 호출↔라우트 경계다.
@@ -27,8 +28,26 @@ export type BridgeTarget = 'flutter' | 'react-native' | 'capacitor' | 'persisten
 /** http 문서가 스캔한 역할이다. 사실이 0건이어도 "스캔했으나 없음"을 표현한다. */
 export type RouteDocumentRole = 'server' | 'client';
 
-/** route-decl 문서의 디스패치 모델이다. 이 버전은 `specificity`만 받는다. */
-export type RouteDispatch = 'specificity';
+/**
+ * route-decl 문서의 디스패치 모델이다. `specificity`는 구체성 최상위, `registration-order`는 같은 `order.group`
+ * 안에서 index가 가장 작은(먼저 등록한) decl이 호출을 받는다.
+ */
+export type RouteDispatch = 'specificity' | 'registration-order';
+
+/**
+ * registration-order 문서의 route-decl 등록 순서다.
+ *
+ * `group`은 한 라우터 체인(예: Django `ROOT_URLCONF`)의 생산자 이름이고 `index`는 그 안의 0부터의 등록 순번이다.
+ * 한 등록(소스 위치 하나)에서 나온 사실(method·펼친 템플릿·catch-all 접두사)은 같은 index를 공유한다. 순서는
+ * 같은 문서의 같은 group 안에서만 비교한다 — 다른 문서의 같은 group 문자열은 다른 체인이다.
+ */
+export interface RouteOrder {
+  readonly group: string;
+  readonly index: number;
+}
+
+/** `order.group` 길이 상한이다. 라우터 체인 이름(모듈 경로 등)만 담으므로 넉넉하게 잡는다. */
+export const MAX_ROUTE_ORDER_GROUP_LENGTH = 256;
 
 /** 서버 경로 앵커다. `base`는 정적으로 알 수 없는 base 경로 뒤에 붙는다는 뜻이다. */
 export type RoutePathAnchor = 'root' | 'base';
@@ -185,6 +204,8 @@ export interface BridgeFact {
   readonly configDefault?: true;
   /** route-decl 전용: 0세그먼트 catch-all을 펼친 접두사 decl이다. */
   readonly catchAllPrefix?: true;
+  /** registration-order 문서의 route-decl 전용: 등록 순서다. 생략은 순서를 증명하지 못한 decl이다. */
+  readonly order?: RouteOrder;
   /** route-call 전용: 끝 보간이 query임을 증명하고 떼어 냈다는 증거다. */
   readonly queryTailStripped?: true;
   /** dynamic route-call 전용: 증명된 리터럴 접두사 템플릿이다. 판정에 쓰지 않는다. */
@@ -330,6 +351,7 @@ function normalizeRouteFields(fact: BridgeFact): Partial<BridgeFact> {
   for (const field of routeScalarFields) {
     if (fact[field] !== undefined) copy[field] = fact[field];
   }
+  if (fact.order !== undefined) copy.order = { group: fact.order.group, index: fact.order.index };
   if (fact.paramConstraints !== undefined) {
     copy.paramConstraints = fact.paramConstraints
       .map((constraint) => ({
@@ -376,8 +398,13 @@ function validateDocumentMetadata(
   if (document.platform === 'openapi' && document.target !== null && document.target !== 'http') {
     fail('Openapi documents may only carry a null or http target.');
   }
+  // python 문서는 bridge 경계가 없다 — Python 생산자는 코드↔스키마(persistence)와 REST(http)만 기술한다.
+  if (document.platform === 'python' && document.target !== null &&
+    document.target !== 'persistence' && document.target !== 'http') {
+    fail('Python documents may only carry a null, persistence, or http target.');
+  }
   if (document.target === 'http' && !httpPlatforms.has(document.platform)) {
-    fail('The http target accepts only kotlin, swift, dart, js, and openapi documents.');
+    fail('The http target accepts only kotlin, swift, dart, js, python, and openapi documents.');
   }
   validateRouteDocumentFields(document);
   if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
@@ -647,9 +674,7 @@ function comparePositions(left: BridgeLocation, right: BridgeLocation): number {
 /**
  * http 문서 수준 필드(`roles`·`dispatch`·`sourceSets`·`service`)를 검증한다.
  *
- * 다른 target 문서에 실린 http 필드는 버리지 않고 거부한다. 계약 초안이 나중 단계로 미룬
- * 값(`registration-order`)도 조용히 무시하지 않고 원인을 밝혀 거부한다 — 무시하면 생산자가 선언한
- * 디스패치와 다른 판정이 나온다. http `limitationScopes`의 형태는 스코프 검증기가 본다.
+ * 다른 target 문서에 실린 http 필드는 버리지 않고 거부한다. http `limitationScopes`의 형태는 스코프 검증기가 본다.
  */
 function validateRouteDocumentFields(document: Record<string, unknown>): void {
   if (document.target !== 'http') {
@@ -685,11 +710,7 @@ function isCanonicalRoles(value: unknown): value is readonly RouteDocumentRole[]
 /** dispatch 값과 그 값을 가질 수 있는 문서인지 검증한다. */
 function validateRouteDispatch(value: unknown, roles: readonly RouteDocumentRole[], platform: unknown): void {
   if (value === undefined) return;
-  if (value === 'registration-order') {
-    fail('Dispatch "registration-order" is not supported yet; this isthmus version joins only '
-      + 'specificity route declarations.');
-  }
-  if (value !== 'specificity') fail('Invalid http dispatch.');
+  if (value !== 'specificity' && value !== 'registration-order') fail('Invalid http dispatch.');
   if (!roles.includes('server') || platform === 'openapi') {
     fail('Dispatch requires a non-openapi http document with the server role.');
   }
@@ -703,9 +724,6 @@ function validateRouteFact(value: Record<string, unknown>, index: number, docume
   const kind = value.kind as RouteFactKind;
   const foreign = nonRouteFieldNames.find((field) => value[field] !== undefined);
   if (foreign !== undefined) fail(`Field "${foreign}" is not valid on route facts at index ${index}.`);
-  if (value.order !== undefined) {
-    fail(`Route field "order" requires registration-order dispatch, which is not supported yet, at index ${index}.`);
-  }
   for (const [field, kinds] of routeFieldKinds) {
     if (value[field] !== undefined && !kinds.has(kind)) {
       fail(`Route field "${field}" is not valid on ${kind} facts at index ${index}.`);
@@ -803,6 +821,7 @@ function validateRouteEvidence(
   if (value.trailingSlash !== undefined && value.trailingSlash !== 'strict' && value.trailingSlash !== 'optional') {
     fail(`Invalid route trailingSlash at index ${index}.`);
   }
+  if (value.order !== undefined) validateRouteOrder(value.order, document.dispatch, index);
   validateMaskedSegments(value.maskedSegments, segments, index);
   validateChannelPrefix(value, index);
   if (value.paramConstraints !== undefined) validateParamConstraints(value.paramConstraints, segments, index);
@@ -813,6 +832,29 @@ function validateRouteEvidence(
     segments.some((segment) => segment.kind === 'catch-all') ||
     !isJsonObject(value.symbol) || value.symbol.usr === undefined)) {
     fail(`A catch-all prefix declaration must be a static template without {**} and carry symbol.usr at index ${index}.`);
+  }
+}
+
+/**
+ * route-decl의 `order`를 검증한다. registration-order 문서에서만 올 수 있고 `{group, index}` 두 키만 받는다.
+ *
+ * group은 제어 문자·앞뒤 공백 없는 비어 있지 않은 문자열({@link MAX_ROUTE_ORDER_GROUP_LENGTH}자 이하), index는 0 이상의
+ * 안전 정수다. 소수·음수·문자열 index를 반올림하거나 버리면 생산자가 선언한 순서와 다른 match가 나오므로 거부한다.
+ */
+function validateRouteOrder(value: unknown, dispatch: unknown, index: number): void {
+  if (dispatch !== 'registration-order') {
+    fail(`Route field "order" requires a document with dispatch "registration-order" at index ${index}.`);
+  }
+  if (!isJsonObject(value) || Object.keys(value).some((key) => key !== 'group' && key !== 'index')) {
+    fail(`Route order must be {"group": string, "index": integer} at index ${index}.`);
+  }
+  if (!isSafeNonEmptyString(value.group) || value.group.length > MAX_ROUTE_ORDER_GROUP_LENGTH ||
+    value.group.trim() !== value.group) {
+    fail(`Route order group must be a non-empty string of at most ${MAX_ROUTE_ORDER_GROUP_LENGTH} characters `
+      + `without control characters or surrounding whitespace at index ${index}.`);
+  }
+  if (!Number.isSafeInteger(value.index) || (value.index as number) < 0) {
+    fail(`Route order index must be a non-negative integer at index ${index}.`);
   }
 }
 
@@ -861,27 +903,64 @@ function validateParamConstraints(value: unknown, segments: readonly RouteSegmen
  * 문서 전체를 봐야 하는 http 규칙을 검증한다.
  *
  * route-decl을 담은 문서는 dispatch를 선언해야 한다. catch-all 접두사 decl은 같은 문서에
- * 원본 `{**}` decl(같은 method·symbol.usr·유효 service, 접두사 + `/{**}` 템플릿)이 있어야 한다 — 원본 없는
- * 접두사 decl은 생산자가 지어낸 선언이라 거짓 match를 만든다.
+ * 원본 `{**}` decl(같은 method·symbol.usr·유효 service·`order`, 접두사 + `/{**}` 템플릿)이 있어야 한다 — 원본 없는
+ * 접두사 decl은 생산자가 지어낸 선언이라 거짓 match를 만든다. registration-order 순서 규칙은
+ * {@link validateRouteOrderGroups}가 본다.
  */
 function validateRouteDocumentFacts(document: BridgeFactsDocument): void {
   if (document.dispatch === undefined && document.facts.some(({ kind }) => kind === 'route-decl')) {
     fail('Http documents with route-decl facts require dispatch.');
   }
   // 유효 service까지 같아야 원본과 접두사가 같은 scope에 들어간다. 갈라지면 긴 호출을 받을
-  // 원본이 없는 scope가 생겨 거짓 미매치가 된다.
+  // 원본이 없는 scope가 생겨 거짓 미매치가 된다. 등록 순서도 원본을 그대로 물려받아야 한다 — 다르면
+  // 접두사 경로만 다른 순번으로 디스패치되는 선언을 지어내게 된다.
   const originals = new Set(document.facts
     .filter((fact) => fact.kind === 'route-decl' && !fact.dynamic && fact.catchAllPrefix === undefined)
     .map((fact) => JSON.stringify([fact.method, fact.symbol?.usr ?? null, fact.channel,
-      fact.service ?? document.service ?? null])));
+      fact.service ?? document.service ?? null, orderKey(fact)])));
   document.facts.forEach((fact, index) => {
     if (fact.catchAllPrefix !== true) return;
     const channel = fact.channel as string;
     const original = channel === '/' ? '/{**}' : `${channel}/{**}`;
     if (!originals.has(JSON.stringify([fact.method, fact.symbol!.usr!, original,
-      fact.service ?? document.service ?? null]))) {
+      fact.service ?? document.service ?? null, orderKey(fact)]))) {
       fail(`A catch-all prefix declaration has no matching {**} declaration at index ${index}.`);
     }
+  });
+  validateRouteOrderGroups(document);
+}
+
+/** 등록 순서의 비교 키다. 입력 객체의 키 순서가 비교에 새지 않게 튜플로 만든다. */
+function orderKey(fact: BridgeFact): readonly [string, number] | null {
+  return fact.order === undefined ? null : [fact.order.group, fact.order.index];
+}
+
+/**
+ * registration-order 그룹 규칙을 검증한다.
+ *
+ * - index 하나는 등록 하나다: 같은 (group, index)의 사실은 같은 소스 위치(path·줄·열)여야 한다. 서로 다른 등록이
+ *   index를 공유하면 소비자가 어느 쪽이 먼저인지 알 수 없는데도 같은 등록으로 읽어 둘 다 match 대상이 된다.
+ * - group 하나는 서비스 하나다: 같은 group의 사실은 유효 service가 같아야 한다. 한 라우터 체인이 여러 scope로
+ *   갈라지면 순서가 scope마다 끊긴다.
+ */
+function validateRouteOrderGroups(document: BridgeFactsDocument): void {
+  const registrations = new Map<string, string>();
+  const groupServices = new Map<string, string | null>();
+  document.facts.forEach((fact, index) => {
+    if (fact.order === undefined) return;
+    const { group } = fact.order;
+    const service = fact.service ?? document.service ?? null;
+    if (groupServices.has(group) && groupServices.get(group) !== service) {
+      fail(`Route order group is shared by facts of different services at index ${index}.`);
+    }
+    groupServices.set(group, service);
+    const key = JSON.stringify([group, fact.order.index]);
+    const location = JSON.stringify([fact.location!.path, fact.location!.line, fact.location!.column]);
+    if (registrations.has(key) && registrations.get(key) !== location) {
+      fail(`Route order index is shared by registrations at different locations in the same group at index ${index}; `
+        + 'give each registration its own index.');
+    }
+    registrations.set(key, location);
   });
 }
 
@@ -1088,7 +1167,7 @@ function fail(message: string): never {
 
 /** 지원하는 생산 플랫폼 집합이다. */
 const bridgePlatforms = new Set<unknown>([
-  'dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'sql', 'openapi',
+  'dart', 'swift', 'kotlin', 'js', 'go', 'rust', 'python', 'sql', 'openapi',
 ]);
 
 /** 지원하는 경계 메커니즘 집합이다. */
@@ -1108,7 +1187,7 @@ const bridgeDomainTargets = new Set<BridgeTarget>([
 ]);
 
 /** http target 문서를 낼 수 있는 플랫폼이다. go·rust·sql의 http 사실은 아직 합의 전이다. */
-const httpPlatforms = new Set<unknown>(['kotlin', 'swift', 'dart', 'js', 'openapi']);
+const httpPlatforms = new Set<unknown>(['kotlin', 'swift', 'dart', 'js', 'python', 'openapi']);
 
 /** http 도메인의 사실 종류다. */
 type RouteFactKind = 'route-decl' | 'route-call' | 'route-contract';
@@ -1117,11 +1196,12 @@ type RouteFactKind = 'route-decl' | 'route-call' | 'route-contract';
 const routeFactKinds = new Set<unknown>(['route-decl', 'route-call', 'route-contract']);
 
 /**
- * (kind, platform) 허용 조합이다. 역할은 kind로 정한다. swift route-decl(Vapor 등)과
- * python은 생산자가 생길 때 합의하므로 아직 없다.
+ * (kind, platform) 허용 조합이다. 역할은 kind로 정한다. swift route-decl(Vapor 등)은 생산자가 생길 때
+ * 합의하므로 아직 없다. python은 pythograph가 내는 route-decl만 받는다 — Python 클라이언트(requests·httpx)의
+ * route-call은 생산자 구현과 url-compose 벡터가 생길 때 더한다(받아 두면 검증되지 않은 호출 사실이 error 근거가 된다).
  */
 const routeKindPlatforms = new Map<unknown, ReadonlySet<unknown>>([
-  ['route-decl', new Set(['kotlin', 'js'])],
+  ['route-decl', new Set(['kotlin', 'js', 'python'])],
   ['route-call', new Set(['kotlin', 'swift', 'dart', 'js'])],
   ['route-contract', new Set(['openapi'])],
 ]);
@@ -1143,6 +1223,7 @@ const routeFieldKinds: ReadonlyArray<readonly [string, ReadonlySet<RouteFactKind
   ['paramConstraints', new Set(['route-decl'])],
   ['configDefault', new Set(['route-decl'])],
   ['catchAllPrefix', new Set(['route-decl'])],
+  ['order', new Set(['route-decl'])],
   ['operationId', new Set(['route-contract', 'route-call'])],
   ['testSource', new Set(['route-decl', 'route-call'])],
 ];
@@ -1155,7 +1236,7 @@ const routeFieldKinds: ReadonlyArray<readonly [string, ReadonlySet<RouteFactKind
  * 배포된 생산자 문서가 깨진다.
  */
 const routeFieldNames = [
-  'pathAnchor', 'service', 'order',
+  'pathAnchor', 'service',
   ...routeFieldKinds.map(([field]) => field).filter((field) => field !== 'channelPrefix'),
 ];
 

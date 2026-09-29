@@ -292,11 +292,13 @@ test('심볼 목록은 파일 선택용 member 필드이고 platform마다 명�
   input.members[0].listings = [
     { platform: 'js', tool: 'tsograph', args: ['graph', '--project', '{project}'] },
     { platform: 'kotlin', precomputed: { root: 'work', path: 'ci/snapshot.json' } },
+    { platform: 'python', precomputed: { root: 'work', path: 'ci/pythograph-graph.json' } },
   ];
   const config = parseTraceCaptureConfig(input);
   assert.deepEqual(config.members[0]!.listings, [
     { platform: 'js', step: { tool: 'tsograph', args: ['graph', '--project', '{project}'], timeoutSeconds: DEFAULT_STEP_TIMEOUT_SECONDS, acceptExitCodes: [0] } },
     { platform: 'kotlin', precomputed: { root: 'work', path: 'ci/snapshot.json' } },
+    { platform: 'python', precomputed: { root: 'work', path: 'ci/pythograph-graph.json' } },
   ]);
   assert.deepEqual(parseTraceCaptureConfig(baseConfig()).members[0]!.listings, []);
   const listing = { platform: 'js', tool: 'tsograph', args: [] };

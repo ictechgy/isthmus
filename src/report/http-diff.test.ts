@@ -273,6 +273,36 @@ test('surface 입력 구성 차이는 관찰 차이가 아니라 입력 오류�
     clients: [] }), BridgeJoinValidationError);
 });
 
+/** registration-order(Django 등) 서버 문서다. */
+const ordered = (facts: unknown[]) => doc('python', ['server'], facts, { dispatch: 'registration-order' });
+
+/** 등록 순서가 있는 route-decl이다. */
+function orderedDecl(method: string, channel: string, index: number) {
+  return decl(method, channel, { trailingSlash: 'strict', order: { group: 'django:shop.urls', index } });
+}
+
+test('registration-order: 등록 순서만 바뀌어 다른 decl이 호출을 받으면 rebound와 가림 변화가 나온다(index 값은 비교하지 않는다)', () => {
+  const before = ordered([orderedDecl('GET', '/items/featured/', 4), orderedDecl('GET', '/items/{}/', 5), orderedDecl('GET', '/tags/', 9)]);
+  const after = ordered([orderedDecl('GET', '/items/{}/', 1), orderedDecl('GET', '/items/featured/', 2), orderedDecl('GET', '/tags/', 30)]);
+  const report = createHttpSurfaceDiff({ before: [before], after: [after], clients: [clients([call('GET', '/items/featured/')])] });
+  assert.deepEqual(codes(report), ['rebound-route-calls', 'route-shadowing-changed']);
+  const shadowing = only(report, 'route-shadowing-changed');
+  assert.deepEqual(shadowing.route, { method: 'GET', template: '/items/featured/', pathAnchor: 'root' });
+  assert.deepEqual(shadowing.change, { before: ['not-shadowed'], after: ['shadowed'] });
+  const rebound = only(report, 'rebound-route-calls');
+  assert.deepEqual(rebound.calls![0]!.after.routes, [{ method: 'GET', template: '/items/{}/', pathAnchor: 'root' }]);
+  // 앞에 등록 하나를 더해 index가 모두 밀려도 순서 의미가 같으면 차이가 없다.
+  const shifted = ordered([orderedDecl('GET', '/items/featured/', 14), orderedDecl('GET', '/items/{}/', 15), orderedDecl('GET', '/tags/', 19)]);
+  assert.deepEqual(codes(createHttpSurfaceDiff({ before: [before], after: [shifted], clients: [clients([call('GET', '/items/featured/')])] })), []);
+});
+
+test('registration-order: 두 시점의 dispatch가 다르면 결합이 코드 변화 없이 바뀌므로 입력 오류다', () => {
+  const byOrder = ordered([orderedDecl('GET', '/a/', 1)]);
+  const bySpecificity = doc('python', ['server'], [decl('GET', '/a/')]);
+  assert.throws(() => createHttpSurfaceDiff({ before: [byOrder], after: [bySpecificity], clients: [] }),
+    (error: unknown) => error instanceof HttpDiffInputError && /dispatch/.test(error.message));
+});
+
 /* ───────────── workspace ───────────── */
 
 const workspaceRoot = new URL('workspace/', fixtureRoot);

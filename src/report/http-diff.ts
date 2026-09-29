@@ -148,7 +148,8 @@ function validateSurface(inputs: HttpSurfaceInputs): void {
   for (const snapshot of [inputs.before, inputs.after]) validateDeclarationSnapshot(snapshot);
   if (inventory(inputs.before) !== inventory(inputs.after)) {
     throw new HttpDiffInputError('The before and after declaration documents must come from the same producers '
-      + '(platform and tool per document); a partial extraction compared with a full one reports false removals.');
+      + '(platform, tool, test-source setting, and dispatch per document); a partial extraction compared with a full one '
+      + 'reports false removals, and a dispatch change rebinds calls without any route change.');
   }
   if (inputs.clients.some((document) => !isClientDocument(document))) {
     throw new HttpDiffInputError('Every --clients document must have the client role; pass server and spec documents '
@@ -175,12 +176,14 @@ function isDeclarationSide(document: BridgeFactsDocument): boolean {
 }
 
 /**
- * 선언 측 문서 인벤토리(platform·도구 이름·테스트 소스 스캔 설정별 문서 수)의 결정적 직렬화다. 도구 버전 변화는
- * 허용한다. 테스트 소스 포함 여부가 시점마다 다르면 테스트 소스 선언만큼 거짓 추가·삭제가 보이므로 설정 차이로 거부한다.
+ * 선언 측 문서 인벤토리(platform·도구 이름·테스트 소스 스캔 설정·dispatch별 문서 수)의 결정적 직렬화다. 도구 버전
+ * 변화는 허용한다. 테스트 소스 포함 여부가 시점마다 다르면 테스트 소스 선언만큼 거짓 추가·삭제가 보이므로 설정 차이로
+ * 거부한다. dispatch가 바뀌면(예: 생산자 `--dispatch specificity` 옵션) 코드 변화 없이 결합이 바뀌므로 같은 이유로 거부한다.
  */
 function inventory(documents: readonly BridgeFactsDocument[]): string {
   return JSON.stringify(documents.map((document) =>
-    JSON.stringify([document.platform, document.tool.name, document.sourceSets?.tests ?? null])).sort(compareStrings));
+    JSON.stringify([document.platform, document.tool.name, document.sourceSets?.tests ?? null, document.dispatch ?? null]))
+    .sort(compareStrings));
 }
 
 /** 서버·클라이언트를 겸하는 문서를 선언 측으로만 투영한다. 순수 선언 문서는 그대로다. */

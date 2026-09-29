@@ -634,3 +634,19 @@ test('같은 핸들러를 root로 한 분석 중 신고하지 않는 쪽이 있�
   assert.deepEqual(audit.reachedFrom.map(({ analysis, evidence }) => [analysis, evidence]), [['z-forward', 'unassessed']]);
   assert.equal(hasTraceGaps(result), true);
 });
+
+test('platform python 서버 문서와 python forward·reverse 순회도 같은 route→핸들러→relation-use 체인을 만든다', () => {
+  const baseline = report();
+  const python = report((value) => {
+    for (const name of ['server', 'persistence']) value.docs[name].platform = 'python';
+    for (const id of ['server-forward', 'server-reverse']) value.analyses[id].platform = 'python';
+    value.context.analyses = value.context.analyses.map((entry: { id: string; platform: string }) =>
+      (entry.id.startsWith('server-') ? { ...entry, platform: 'python' } : entry));
+  });
+  assert.deepEqual(python.gaps, []);
+  const [chain] = python.chains;
+  assert.deepEqual(chain?.handlers.map(({ usr, platform }) => [usr, platform]), [['ts:api/users.get', 'python']]);
+  assert.deepEqual(chain?.relationUses.map(({ relation, column }) => [relation, column]),
+    baseline.chains[0]!.relationUses.map(({ relation, column }) => [relation, column]));
+  assert.deepEqual(python.summary, baseline.summary);
+});

@@ -8,6 +8,7 @@ import { parseRouteTemplate } from '../src/exchange/route-template.ts';
 import { BridgeFactsValidationError, parseBridgeFactsDocument } from '../src/exchange/parse.ts';
 import { RouteIndex } from '../src/join/route-index.ts';
 import { RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
+import { findRouteShadows } from '../src/join/route-shadow.ts';
 
 /**
  * conformance/ 공유 벡터 검증기다.
@@ -97,6 +98,9 @@ function runCase(suite, testCase) {
     'framework.spring.path-pattern': runSpringPathPattern,
     'scope.applies': runScopeApplies,
     'scope.validate': runScopeValidate,
+    'dispatch.validate': runDispatchValidate,
+    'dispatch.match': runDispatchMatch,
+    'dispatch.shadow': runDispatchShadow,
     'compose.interpolation': runCompose,
     'compose.query-tail': runCompose,
     'compose.suffix': runCompose,
@@ -270,6 +274,84 @@ function scopeDocument(scope) {
     roles: ['server'], dispatch: 'specificity', facts: [], limitations: ['framework-provided-routes: conformance'],
     limitationScopes: [{ limitationIndex: 0, ...scope }],
   };
+}
+
+/**
+ * registration-order 검증: 사실 조각을 합성 python 서버 문서로 감싸 제품 파서로 판정한다. 위치를 적지 않은 사실은
+ * 순번마다 다른 줄에 둔다(한 index는 한 등록이라 같은 index를 공유하는 케이스는 위치를 적는다).
+ */
+function runDispatchValidate({ document }) {
+  const facts = document.facts.map(({ location, ...fact }, index) => ({
+    kind: 'route-decl', dynamic: false, pathAnchor: 'root',
+    location: { path: 'shop/urls.py', line: location?.line ?? index + 1, column: location?.column ?? 1 },
+    ...fact,
+  }));
+  try {
+    parseBridgeFactsDocument({
+      format: 'bridge-facts', version: 1, tool: { name: 'conformance', version: '0' },
+      generatedAt: '2026-09-29T00:00:00Z', platform: 'python', target: 'http', project: '/conformance',
+      roles: ['server'], dispatch: document.dispatch, facts, limitations: [],
+    });
+    return { valid: true };
+  } catch (error) {
+    if (error instanceof BridgeFactsValidationError) return { valid: false };
+    throw error;
+  }
+}
+
+/**
+ * 벡터의 decl 목록을 조인 층과 같은 매칭용 선언으로 바꾼다. `dispatch: "specificity"`가 아니면 registration-order
+ * decl이고, group 키는 조인 층처럼 문서 순번(`document`, 기본 0)까지 구분한다. 경로·method가 모두 가려진 decl은
+ * 조인 층과 같이 `unreachable`을 단다.
+ */
+function dispatchDeclarations(decls) {
+  const declarations = decls.map((decl, id) => {
+    const parsed = parseRouteTemplate(decl.template);
+    const registration = decl.dispatch === 'specificity' ? undefined
+      : decl.order === undefined ? {} : { group: JSON.stringify([decl.document ?? 0, decl.order.group]), index: decl.order.index };
+    return {
+      id,
+      template: decl.template,
+      segments: parsed.ok ? parsed.segments : [],
+      method: decl.method,
+      anchor: decl.pathAnchor ?? 'root',
+      ...(decl.trailingSlash === undefined ? {} : { trailingSlash: decl.trailingSlash }),
+      caseInsensitive: decl.caseInsensitive === true,
+      catchAllPrefix: decl.catchAllPrefix === true,
+      constraints: new Map((decl.paramConstraints ?? []).map(({ segment, kind }) => [segment, kind])),
+      ...(registration === undefined ? {} : { registration }),
+      ...(decl.narrowed === true ? { narrowed: true } : {}),
+    };
+  });
+  const shadows = findRouteShadows(declarations.map((declaration, id) => ({
+    declaration, narrowed: decls[id].narrowed === true, testSource: false,
+  })), { remaining: 1_000_000 });
+  return { declarations, shadows };
+}
+
+/** registration-order 매칭: 조인 층과 같은 선언으로 제품 매처를 실행한다. */
+function runDispatchMatch({ decls, call }) {
+  const { declarations, shadows } = dispatchDeclarations(decls);
+  const indexed = declarations.map((declaration) =>
+    (shadows.get(declaration.id)?.kind === 'full' ? { ...declaration, unreachable: true } : declaration));
+  const parsed = parseRouteTemplate(call.template);
+  const outcome = new RouteIndex(indexed, { remaining: 1_000_000 }).match({
+    segments: parsed.ok ? parsed.segments : [],
+    anchor: call.pathAnchor,
+    ...(call.method === undefined ? {} : { method: call.method }),
+  });
+  return {
+    ...outcome,
+    ...(outcome.targets === undefined ? {} : { targets: outcome.targets.map(({ method, template }) => `${method} ${template}`) }),
+  };
+}
+
+/** 가림 판정: 가려진 decl을 `METHOD template @index`로 종류별로 돌려준다. */
+function runDispatchShadow({ decls }) {
+  const { declarations, shadows } = dispatchDeclarations(decls);
+  const label = (id) => `${declarations[id].method} ${declarations[id].template} @${decls[id].order?.index}`;
+  const of = (kind) => [...shadows].filter(([, shadow]) => shadow.kind === kind).map(([id]) => label(id));
+  return { shadowed: of('full'), pathShadowed: of('path') };
 }
 
 /** 소비자 매칭: isthmus 세그먼트 매처로 호출 하나를 선언 목록과 맞춘다. */
