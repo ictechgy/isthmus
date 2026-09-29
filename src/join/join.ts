@@ -15,7 +15,11 @@ import {
   isBridgeCallerDocument,
   isBridgeDomainDocument,
   isBridgeReceiverDocument,
+  isChannelLimitationScope,
+  type BridgeLimitationScope,
 } from '../exchange/parse.ts';
+import { normalizeRouteRange } from '../exchange/route-limitation-scope.ts';
+import type { HttpMethod } from '../exchange/route-template.ts';
 import type { RoutePathAnchor } from '../exchange/parse.ts';
 import {
   isClientDocument,
@@ -28,6 +32,7 @@ import {
   type RouteLinkRule,
 } from './route-join.ts';
 import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
+import { isDeclarationSideGap, MAX_ROUTE_SCOPE_COMPARISONS, RouteScopeBudgetError } from './route-limitation-scope.ts';
 
 /**
  * http 증거 끝점의 route 정보다. 증거만 봐도 호출·선언·계약과 그 키를 구분할 수 있게 한다.
@@ -169,8 +174,24 @@ export interface JoinLimitation {
   readonly tool: string;
   readonly message: string;
   readonly channels?: readonly string[];
+  /**
+   * http 문서의 한계에 붙은 경로 스코프다(GRAPH-EXCHANGE "http limitation 스코프"). 서버·계약 측 공백 접두사의
+   * 한계만 원소를 싣고, 그 밖(호출 측·모르는 접두사)은 귀속되지 않은 호출 경로를 담을 수 있어 원소 수
+   * (`withheldElements`)만 싣는다.
+   */
+  readonly routeScope?: JoinRouteScope;
   /** 소비자가 직접 센 한계에만 부여하며 생산 문서에서는 복사하지 않는다. */
   readonly origin?: 'consumer';
+}
+
+/** 조인 한계에 싣는 http 경로 스코프다. 원소 배열은 중복 없이 문자열 순이다. */
+export interface JoinRouteScope {
+  readonly templates?: readonly string[];
+  readonly templatePrefixes?: readonly string[];
+  readonly templateSuffixes?: readonly string[];
+  readonly methods?: readonly HttpMethod[];
+  /** 원소를 싣지 않은 스코프의 경로 원소 수다. 이때 세 경로 필드는 없다. */
+  readonly withheldElements?: number;
 }
 
 /** 논리 관계 이름 하나에 모인 코드 참조·스키마 선언 증거다. channel은 선언 측 한정 이름이다. */
@@ -399,6 +420,12 @@ function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRu
         + '(fewer base-anchored calls or declarations per join) and retry. No partial result is emitted.',
       );
     }
+    if (error instanceof RouteScopeBudgetError) {
+      throw new BridgeJoinValidationError(
+        `Http limitation scope matching exceeds ${MAX_ROUTE_SCOPE_COMPARISONS} comparisons; narrow the scoped `
+        + 'templates (fewer or more specific elements per limitation) or the inputs and retry. No partial result is emitted.',
+      );
+    }
     throw error;
   }
 }
@@ -597,15 +624,15 @@ function collectLimitations(
   routeLimitations: readonly JoinLimitation[],
 ): JoinLimitation[] {
   const limitations: JoinLimitation[] = documents.flatMap((document) => {
-    const scopes = new Map(document.limitationScopes?.map((scope) => [scope.limitationIndex, scope.channels]));
+    const scopes = new Map(document.limitationScopes?.map((scope) => [scope.limitationIndex, scope]));
     return document.limitations.map((message, index) => {
-      const channels = scopes.get(index);
+      const scope = scopes.get(index);
       return {
         platform: document.platform,
         target: limitationTarget(document),
         tool: document.tool.name,
         message,
-        ...(channels === undefined ? {} : { channels }),
+        ...limitationScopeFields(message, scope),
       };
     });
   });
@@ -613,6 +640,23 @@ function collectLimitations(
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
   return limitations.sort(compareLimitations);
+}
+
+/**
+ * 한계 하나의 스코프 출력 필드다. 채널 스코프는 `channels`, http 경로 스코프는 `routeScope`다.
+ *
+ * 경로 스코프는 서버·계약 측 공백 접두사일 때만 원소를 싣는다. 호출 측·모르는 접두사의 스코프는 귀속되지
+ * 않은 호출의 경로를 담을 수 있어(생산자는 귀속을 모른다) 원소 수와 method만 싣는다.
+ */
+function limitationScopeFields(message: string, scope: BridgeLimitationScope | undefined):
+  Pick<JoinLimitation, 'channels' | 'routeScope'> {
+  if (scope === undefined) return {};
+  if (isChannelLimitationScope(scope)) return { channels: scope.channels };
+  const range = normalizeRouteRange(scope);
+  if (isDeclarationSideGap(message)) return { routeScope: range };
+  const elements = (range.templates?.length ?? 0) + (range.templatePrefixes?.length ?? 0) +
+    (range.templateSuffixes?.length ?? 0);
+  return { routeScope: { ...(range.methods === undefined ? {} : { methods: range.methods }), withheldElements: elements } };
 }
 
 /**
@@ -828,7 +872,8 @@ export function compareLimitations(left: JoinLimitation, right: JoinLimitation):
     compareStrings(left.tool, right.tool) ||
     compareStrings(left.message, right.message) ||
     compareOptionalStrings(left.origin, right.origin) ||
-    compareStrings(JSON.stringify(left.channels ?? null), JSON.stringify(right.channels ?? null))
+    compareStrings(JSON.stringify(left.channels ?? null), JSON.stringify(right.channels ?? null)) ||
+    compareStrings(JSON.stringify(left.routeScope ?? null), JSON.stringify(right.routeScope ?? null))
   );
 }
 

@@ -5,6 +5,12 @@ import {
   type RouteMethod,
   type RouteSegment,
 } from './route-template.ts';
+import {
+  normalizeRouteScope,
+  routeScopeElementCount,
+  routeScopeEntryProblem,
+  type RouteLimitationScope,
+} from './route-limitation-scope.ts';
 
 /**
  * bridge-facts 생산 플랫폼이다. sql은 스키마 카탈로그를 읽는 수신 측이고,
@@ -48,10 +54,23 @@ export type BridgeMechanism = 'core' | 'expo';
 /** Swift 플랫폼 문서에 실린 Objective-C 구현을 Swift 보존 대상과 구분한다. */
 export type BridgeSourceLanguage = 'objective-c';
 
-/** 특정 한계 전체의 영향을 포함하는 채널 집합. 일부 발견 목록이 아니다. */
-export interface BridgeLimitationScope {
+/** 특정 한계 전체의 영향을 포함하는 채널 집합. 일부 발견 목록이 아니다. bridge·persistence 문서의 형태다. */
+export interface BridgeChannelLimitationScope {
   readonly limitationIndex: number;
   readonly channels: readonly string[];
+}
+
+export type { RouteLimitationScope };
+
+/**
+ * 한계 하나의 스코프 항목이다. target `http` 문서는 경로 형태(`RouteLimitationScope`), 그 밖의 문서는 채널
+ * 형태만 쓴다 — 파서가 문서 target에 맞지 않는 형태를 거부하므로 두 형태는 한 문서에 섞이지 않는다.
+ */
+export type BridgeLimitationScope = BridgeChannelLimitationScope | RouteLimitationScope;
+
+/** 채널 형태의 스코프 항목인지 확인한다. */
+export function isChannelLimitationScope(scope: BridgeLimitationScope): scope is BridgeChannelLimitationScope {
+  return 'channels' in scope;
 }
 
 /** 확장 메타데이터가 입력 자원 상한을 우회하지 못하게 한다. */
@@ -256,10 +275,9 @@ function normalizeDocument(document: BridgeFactsDocument): BridgeFactsDocument {
     facts: document.facts.map(normalizeFact),
     limitations: [...document.limitations],
     ...(document.limitationScopes === undefined ? {} : {
-      limitationScopes: document.limitationScopes.map((scope) => ({
-        limitationIndex: scope.limitationIndex,
-        channels: [...new Set(scope.channels)].sort(),
-      })).sort((a, b) => a.limitationIndex - b.limitationIndex),
+      limitationScopes: document.limitationScopes.map((scope): BridgeLimitationScope => (isChannelLimitationScope(scope)
+        ? { limitationIndex: scope.limitationIndex, channels: [...new Set(scope.channels)].sort() }
+        : normalizeRouteScope(scope))).sort((a, b) => a.limitationIndex - b.limitationIndex),
     }),
     ...(document.roles === undefined ? {} : { roles: [...document.roles] }),
     ...(document.dispatch === undefined ? {} : { dispatch: document.dispatch }),
@@ -393,7 +411,7 @@ function validateDocumentMetadata(
     fail(`Mechanism requires the react-native target at fact index ${mechanismIndex}.`);
   }
   if (!isStringArray(document.limitations)) fail('Limitations must be strings.');
-  validateLimitationScopes(document.limitationScopes, document.limitations.length);
+  validateLimitationScopes(document.limitationScopes, document.limitations.length, document.target === 'http');
   const hasUnattributedHandler = document.facts.some(
     (fact) =>
       isJsonObject(fact) &&
@@ -409,29 +427,52 @@ function validateDocumentMetadata(
   }
 }
 
-/** 잘못된 범위를 무시하면 거짓 error가 생기므로 입력 단계에서 명시적으로 거부한다. */
-function validateLimitationScopes(value: unknown, limitationCount: number): void {
+/**
+ * 잘못된 범위를 무시하면 거짓 error가 생기므로 입력 단계에서 명시적으로 거부한다.
+ *
+ * target `http` 문서는 경로 형태(`templates`·`templatePrefixes`·`templateSuffixes`·`methods`)만, 그 밖의 문서는
+ * 채널 형태만 받는다. 두 형태의 원소는 같은 문서당 상한(`MAX_SCOPED_CHANNELS`)을 함께 쓴다.
+ */
+function validateLimitationScopes(value: unknown, limitationCount: number, isHttp: boolean): void {
   if (value === undefined) return;
   if (!Array.isArray(value) || value.length > MAX_LIMITATION_SCOPES) {
     fail('Invalid limitation scopes array.');
   }
   const indices = new Set<number>();
-  let channelCount = 0;
+  let elementCount = 0;
   for (const entry of value) {
     if (!isJsonObject(entry) || !Number.isSafeInteger(entry.limitationIndex) ||
       typeof entry.limitationIndex !== 'number' || entry.limitationIndex < 0 ||
       entry.limitationIndex >= limitationCount || indices.has(entry.limitationIndex)) {
       fail('Invalid or duplicate limitation scope index.');
     }
-    if (!Array.isArray(entry.channels) || entry.channels.length === 0 ||
-      !entry.channels.every(isSafeNonEmptyString)) {
-      fail('Limitation scope channels must be non-empty safe strings.');
-    }
-    channelCount += entry.channels.length;
-    if (channelCount > MAX_SCOPED_CHANNELS) fail('Too many scoped channels.');
+    elementCount += isHttp ? validateRouteScopeEntry(entry) : validateChannelScopeEntry(entry);
+    if (elementCount > MAX_SCOPED_CHANNELS) fail('Too many scoped channels or path templates.');
     indices.add(entry.limitationIndex);
   }
 }
+
+/** 채널 형태 항목을 검증하고 원소 수를 돌려준다. 경로 필드는 http target 전용이라 거부한다. */
+function validateChannelScopeEntry(entry: Record<string, unknown>): number {
+  if (routeScopeFieldNames.some((field) => entry[field] !== undefined)) {
+    fail('Limitation scope templates, templatePrefixes, templateSuffixes, and methods require the http target.');
+  }
+  if (!Array.isArray(entry.channels) || entry.channels.length === 0 ||
+    !entry.channels.every(isSafeNonEmptyString)) {
+    fail('Limitation scope channels must be non-empty safe strings.');
+  }
+  return entry.channels.length;
+}
+
+/** 경로 형태 항목을 검증하고 원소 수를 돌려준다. */
+function validateRouteScopeEntry(entry: Record<string, unknown>): number {
+  const problem = routeScopeEntryProblem(entry);
+  if (problem !== undefined) fail(problem);
+  return routeScopeElementCount(entry);
+}
+
+/** http 스코프 전용 키다. 다른 target 문서에 실리면 버리지 않고 거부한다. */
+const routeScopeFieldNames = ['templates', 'templatePrefixes', 'templateSuffixes', 'methods'] as const;
 
 /** 사실 하나의 조인 키와 증거 필드를 검증한다. */
 function validateFact(value: unknown, index: number, document: Record<string, unknown>,
@@ -607,8 +648,8 @@ function comparePositions(left: BridgeLocation, right: BridgeLocation): number {
  * http 문서 수준 필드(`roles`·`dispatch`·`sourceSets`·`service`)를 검증한다.
  *
  * 다른 target 문서에 실린 http 필드는 버리지 않고 거부한다. 계약 초안이 나중 단계로 미룬
- * 값(`registration-order`, http `limitationScopes`)도 조용히 무시하지 않고 원인을 밝혀 거부한다 —
- * 무시하면 생산자가 선언한 디스패치·스코프와 다른 판정이 나온다.
+ * 값(`registration-order`)도 조용히 무시하지 않고 원인을 밝혀 거부한다 — 무시하면 생산자가 선언한
+ * 디스패치와 다른 판정이 나온다. http `limitationScopes`의 형태는 스코프 검증기가 본다.
  */
 function validateRouteDocumentFields(document: Record<string, unknown>): void {
   if (document.target !== 'http') {
@@ -622,10 +663,6 @@ function validateRouteDocumentFields(document: Record<string, unknown>): void {
   }
   if (document.platform === 'openapi' && (roles.length !== 1 || roles[0] !== 'server')) {
     fail('Openapi documents must declare roles ["server"].');
-  }
-  if (document.limitationScopes !== undefined) {
-    fail('Limitation scopes are not supported on http documents yet; omit limitationScopes '
-      + 'so each limitation applies to the whole document.');
   }
   validateRouteDispatch(document.dispatch, roles, document.platform);
   if (document.sourceSets !== undefined && (!isJsonObject(document.sourceSets) ||

@@ -329,8 +329,13 @@ decls, contracts}`, where `key` is the declaration-side route a call reached and
 one of `exact`, `suffix`, `any-method`, `head-as-get`, `options-any`, `catch-all`,
 `param-to-literal`, or `param-to-literal-constrained`. `query route:[<METHOD> ]<template>[ <scope>]`
 finds one scoped route key, its attributed callers, declarations and contracts, and proven prefix
-candidates of dynamic calls. Documents that use not-yet-implemented draft fields
-(`registration-order`, http `limitationScopes`, workspace manifests) fail with exit code 2.
+candidates of dynamic calls. Http documents may scope a limitation to the requests it can hide
+(`limitationScopes` entries with `templates`, `templatePrefixes`, `templateSuffixes`, and optional
+`methods`): a server- or contract-side gap then blocks error judgement only for calls that may fall
+inside the scope, and a client-side gap only for declarations such hidden calls may reach; unscoped
+limitations keep their document-wide effect ([contract](docs/GRAPH-EXCHANGE.md#http-limitation-스코프)).
+Documents that use not-yet-implemented draft fields (`registration-order`, workspace manifests)
+fail with exit code 2.
 
 ### Route impact trace (in development)
 

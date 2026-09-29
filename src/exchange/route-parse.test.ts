@@ -179,7 +179,7 @@ test('route 필드가 다른 target 문서에 실리면 버리지 않고 거부�
   assert.equal('channelPrefix' in kept.facts[0]!, false);
 });
 
-test('나중 단계의 dispatch·order·limitationScopes·workspace 매니페스트는 원인을 밝혀 거부한다', () => {
+test('나중 단계의 dispatch·order·workspace 매니페스트와 채널 형태의 http 스코프는 원인을 밝혀 거부한다', () => {
   assert.throws(() => parseBridgeFactsDocument(serverDocument([], { dispatch: 'registration-order' })),
     /registration-order" is not supported yet/);
   assert.throws(() => parseBridgeFactsDocument(serverDocument([route('route-decl', 'GET', '/x', { order: { group: 'g', index: 0 } })])),
@@ -187,7 +187,7 @@ test('나중 단계의 dispatch·order·limitationScopes·workspace 매니페스
   assert.throws(() => parseBridgeFactsDocument(httpDocument({
     limitations: ['route-call-coverage: 1 file'],
     limitationScopes: [{ limitationIndex: 0, channels: ['/x'] }],
-  })), /Limitation scopes are not supported on http documents yet/);
+  })), /Http limitation scopes use templates, templatePrefixes, or templateSuffixes instead of channels/);
   assert.throws(() => parseBridgeFactsDocument({ format: 'isthmus-workspace', version: 1 }),
     /isthmus-workspace manifests are not supported yet/);
   assert.throws(() => parseBridgeFactsDocument(serverDocument([], { dispatch: 'first-match' })), /Invalid http dispatch/);

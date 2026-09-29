@@ -227,8 +227,8 @@ jobs:
 | `clients-unscanned` | warning | incompleteness | 표면이 바뀐 scope에 닿을 수 있는 호출 측 문서가 없어 호출 영향을 평가하지 않았다 |
 | `calls-unattributed` | warning | incompleteness | 표면이 바뀐 scope를 불렀을 수 있지만 귀속되지 않은 호출 수(`counts.before`·`counts.after`). 경로·host는 싣지 않는다 |
 | `calls-dynamic` | warning | incompleteness | 표면이 바뀐 scope에 귀속됐지만 템플릿이 리터럴이 아니라 평가하지 못한 호출 수 |
-| `client-coverage-gap` | warning | incompleteness | 표면이 바뀐 scope의 호출 측 문서가 호출 측 공백 접두사 한계를 신고했다(`detail`에 접두사) |
-| `declaration-coverage-gap` | warning | incompleteness | 한 시점(`snapshot`)의 선언 측이 서버·계약 공백 접두사 한계를 신고했다. 보이는 삭제·추가가 추출 공백일 수 있다 |
+| `client-coverage-gap` | warning | incompleteness | 표면이 바뀐 scope의 호출 측 문서가 호출 측 공백 접두사 한계를 신고했다(`detail`에 접두사, 스코프 있는 한계로만 신고된 접두사는 ` (scoped)`) |
+| `declaration-coverage-gap` | warning | incompleteness | 한 시점(`snapshot`)의 선언 측이 서버·계약 공백 접두사 한계를 신고했다. 보이는 삭제·추가가 추출 공백일 수 있다. 스코프 있는 한계로만 신고된 접두사는 `detail`에 ` (scoped)`를 붙인다 — 그 공백은 스코프 밖 route의 판정을 막지 않는다 |
 | `declarations-dynamic` | warning | incompleteness | 선언 측에 템플릿이 리터럴이 아닌 선언이 있어(`counts`) 그 변화는 보이지 않는다 |
 | `link-service-ambiguous` | warning | incompleteness | workspace link의 서비스 범위를 정하지 못해 선언 일부를 잇지 않았다(`snapshot`, `detail`) |
 | `http-member-unlinked` | warning | incompleteness | head 매니페스트에서 어느 link에도 client로 들지 않은 member의 client http 문서(`counts.after`) — 그 호출은 평가하지 않았다 |
@@ -254,7 +254,7 @@ jobs:
 | `after-unattributed` | head 조인에서도 같은 scope에 귀속됐다 |
 | `after-not-evaluated` | head scope에 그 측의 선언 문서가 있다(decl 측은 route-decl을 스캔한 문서) |
 | `after-outcome-unproven` | head 결과가 `missing`이거나 모든 경로 후보가 증명 가능한 `method-mismatch`다(끝 슬래시·대소문자 불일치와 모호함은 증명된 미결합이 아니다) |
-| `after-declaration-gap` | head의 그 측에 공백 접두사 한계나 dynamic 선언이 없다 |
+| `after-declaration-gap` | head의 그 측에 이 호출에 적용되는 공백 접두사 한계나 dynamic 선언이 없다. 스코프 있는 한계는 스코프가 호출과 겹칠 수 있을 때만 적용된다([http limitation 스코프](GRAPH-EXCHANGE.md#http-limitation-스코프)). head에서 귀속되지 않은 호출은 모든 한계를 본다 |
 | `contract-not-authoritative` | contract 측이면 link `contract.authoritative`가 `true`다(surface 모드는 항상 이 reason) |
 
 ## `--fail-on`과 종료 코드
@@ -274,5 +274,5 @@ jobs:
 
 - 구현: surface·workspace 모드, 교차 평가, finding 19종, `--fail-on`·`--strict`, 합성 fixture(`fixtures/http-diff/`).
 - 판정하지 않는 것: 필드·query·헤더 호환성, narrowed 조건 변화, 핸들러 심볼 교체, registration-order 디스패치(파서가
-  아직 거부한다), http limitationScopes(초안 — 한계는 문서 전체에 적용).
+  아직 거부한다), dynamic 선언 공백의 스코프(dynamic 선언은 여전히 그 측 전체의 공백이다).
 - MCP에는 노출하지 않는다(MCP `diff`는 bridge 전용 그대로). 노출은 trace·`--pairs`와 함께 출력 상한을 정할 때 결정한다.

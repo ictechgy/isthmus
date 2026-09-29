@@ -4,7 +4,12 @@ import type { BridgeEndpoint } from '../join/join.ts';
 import { compareEndpoints } from '../join/join.ts';
 import type { RouteDeclaration, RouteMatchQuality, RouteSideOutcome } from '../join/route-index.ts';
 import type { RouteCallResult, RouteDeclarationFact, RouteScope } from '../join/route-join.ts';
-import { clientRouteGapPrefixes, contractRouteGapPrefixes, serverRouteGapPrefixes } from './route-issues.ts';
+import {
+  clientRouteGapPrefixes,
+  contractRouteGapPrefixes,
+  serverRouteGapPrefixes,
+  type RouteScopeLimitation,
+} from '../join/route-limitation-scope.ts';
 
 /**
  * `diff --http`의 finding 정책이다.
@@ -332,7 +337,7 @@ function unprovenPremises(pair: HttpDiffScopePair, side: HttpDiffSide, call: Rou
     ['after-unattributed', afterCall === undefined],
     ['after-not-evaluated', afterCall !== undefined && outcome === undefined],
     ['after-outcome-unproven', outcome !== undefined && !provenUnbound(outcome)],
-    ['after-declaration-gap', pair.after !== undefined && sideGap(pair.after, side)],
+    ['after-declaration-gap', pair.after !== undefined && sideGap(pair.after, side, afterCall)],
     ['contract-not-authoritative', side === 'contract' && !pair.contractAuthoritative],
   ];
   return checks.filter(([, failed]) => failed).map(([reason]) => reason);
@@ -343,20 +348,32 @@ function provenUnbound(outcome: RouteSideOutcome): boolean {
   return outcome.status === 'missing' || (outcome.status === 'method-mismatch' && outcome.provable);
 }
 
-/** 한 scope의 한 측에 공백(공백 접두사 한계나 dynamic 선언)이 있는지다. */
-function sideGap(scope: RouteScope, side: HttpDiffSide): boolean {
-  return sideGapPrefixes(scope, side).length > 0 || (side === 'decl' ? scope.dynamicDecls : scope.dynamicContracts) > 0;
+/**
+ * 한 scope의 한 측에 공백(공백 접두사 한계나 dynamic 선언)이 있는지다. 호출이 있으면 그 호출에 적용되는 한계만
+ * 본다(스코프 있는 한계는 스코프가 호출과 겹칠 때만). 호출이 없으면(head에서 귀속되지 않음) 모든 한계를 본다.
+ */
+function sideGap(scope: RouteScope, side: HttpDiffSide, call?: RouteCallResult): boolean {
+  const messages = call?.serverLimitations ?? scope.serverLimitations.map(({ message }) => message);
+  const prefixes: readonly string[] = side === 'decl' ? serverRouteGapPrefixes : contractRouteGapPrefixes;
+  return prefixes.some((prefix) => messages.some((message) => message.startsWith(prefix))) || dynamicCount(scope, side) > 0;
 }
 
-/** 한 측의 공백 접두사 중 서버 측 문서가 신고한 것들이다. */
+/** 한 측의 공백 접두사 중 서버 측 문서가 신고한 것들이다. 스코프 있는 한계로만 신고된 접두사는 표시를 붙인다. */
 function sideGapPrefixes(scope: RouteScope, side: HttpDiffSide): string[] {
   const prefixes: readonly string[] = side === 'decl' ? serverRouteGapPrefixes : contractRouteGapPrefixes;
   return matchedPrefixes(scope.serverLimitations, prefixes);
 }
 
-/** 한계 문구들이 쓴 접두사를 정렬해 돌려준다. */
-function matchedPrefixes(messages: readonly string[], prefixes: readonly string[]): string[] {
-  return prefixes.filter((prefix) => messages.some((message) => message.startsWith(prefix))).sort(compareStrings);
+/**
+ * 한계들이 쓴 공백 접두사를 정렬해 돌려준다. 스코프 없는 한계로 신고된 접두사는 그대로, 스코프 있는 한계로만
+ * 신고된 접두사는 `<접두사> (scoped)`로 적는다 — 스코프 밖 route의 판정은 막지 않는다는 뜻이다.
+ */
+function matchedPrefixes(limitations: readonly RouteScopeLimitation[], prefixes: readonly string[]): string[] {
+  return prefixes.flatMap((prefix) => {
+    const matching = limitations.filter(({ message }) => message.startsWith(prefix));
+    if (matching.length === 0) return [];
+    return [matching.some(({ scoped }) => !scoped) ? prefix : `${prefix} (scoped)`];
+  }).sort(compareStrings);
 }
 
 /**

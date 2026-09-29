@@ -271,6 +271,13 @@ Phase 4~6의 순서를 다시 정한다.
 - kartograph JPA 교정: `@Table`·`@Column`·`@JoinColumn`, 임베디드·상속·`@ElementCollection`,
   Boot 3·4 명명 전략 버전 감지, JPQL 모드. 그리고 `reach`.
 
+- 진행(2026-09-29): isthmus http limitation 스코프 구현([GRAPH-EXCHANGE](GRAPH-EXCHANGE.md#http-limitation-스코프) —
+  `templates`·`templatePrefixes`·`templateSuffixes`·`methods`, 서버·계약 측 한계는 호출에·호출 측 한계는 선언에 적용,
+  보수적 교집합 비교). Spring Boot 웹 앱이 항상 내는 `framework-provided-routes:`를 `/error`와 GET·HEAD 정적 리소스로
+  좁히면 GET·HEAD가 아닌 호출의 error 판정이 가능해진다. Spring PathPattern 변환 벡터(`framework.spring.path-pattern`,
+  Spring Framework v6.2.10 소스 확인)와 스코프 벡터(`http-limitation-scope`)를 더했다. kartograph·cartograph·tsograph는
+  벡터를 다시 벤더링해야 한다(각 저장소 PR).
+
 종료 조건: 공개 Spring 앱의 `/actuator/mappings` 대비 route-decl 정밀도 100%이고, 재현율과 error
 판정 가능 비율을 공개한다. Retrofit 템플릿이 MockWebServer 기록 경로와 일치한다. 명명 벡터가
 Hibernate 6·7 스키마 export와 100% 일치한다. 같은 스냅샷에서 `reach(H) ∋ U ⇔ impact(U) ∋ H`가
