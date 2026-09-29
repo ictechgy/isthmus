@@ -766,10 +766,14 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   재정의하지 않은 `${key:default}`의 기본값은 `configDefault: true` 증거와 함께 쓸 수 있다.
   환경 변수 재정의는 모델링하지 않는다.
 - 클라이언트 base + path 결합은 라이브러리별 네 갈래를 생산자가 적용한다. RFC 3986 방식
-  (Retrofit·Ktor·`URL(relativeTo:)`·retrofit.dart base)은 `/x`를 root, `x`를 base로 본다. 슬래시
-  결합 방식(axios·chopper·Moya·openapi-fetch)은 base다. dio 단순 연결은 base가 리터럴이면 실제
-  결과를 쓰고, 미상이면 `/`로 시작할 때만 base, 아니면 dynamic과 `ambiguous-base-join:`이다.
-  base 없는 API는 전체 URL의 host 뒤 경로를 쓰고, host가 동적이면 base다.
+  (Retrofit·Ktor·`URL(relativeTo:)`)은 `/x`를 root, `x`를 base로 본다. 슬래시 결합 방식
+  (axios·chopper·Moya·openapi-fetch)은 base다. dio 단순 연결(`baseUrl + path` 문자열 연결 뒤
+  `//`→`/`·점 세그먼트 제거, 슬래시를 넣지 않음)은 base가 리터럴이면 실제 결과를 쓰고, 미상이면
+  `/`로 시작할 때만 base, 아니면 dynamic과 `ambiguous-base-join:`이다. retrofit.dart는 두 방식을
+  겹친다: `@RestApi(baseUrl)`을 dio base에 RFC 3986으로 해석한 결과에 메서드 경로를 dio 단순
+  연결로 붙인다(`…/rv1` + `@GET('/users/{id}')` → `/rv1/users/{}`). base 없는 API는 전체 URL의
+  host 뒤 경로를 쓰고, host가 동적이면 base다. 세부 규칙은
+  [HTTP-WRAPPERS](HTTP-WRAPPERS.md#base-결합)에 있다.
 - 문자열 보간은 모든 생산자가 같은 규칙을 쓴다. 보간이 세그먼트 전체를 덮으면 `{}`다. 끝
   보간이 query임을 증명하면(값이 빈 문자열이거나 `?`로 시작) 떼어 내고 `queryTailStripped`를
   단다. 증명하지 못하면 dynamic과 `channelPrefix`다. 선언된 래퍼 호출은 `http-wrappers` v1
