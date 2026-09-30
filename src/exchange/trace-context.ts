@@ -15,7 +15,7 @@ import {
 } from './language-traversal.ts';
 import { adaptSchemagraphImpact } from './schemagraph-impact.ts';
 import { httpMethods, isCanonicalRouteTemplate, type RouteMethod } from './route-template.ts';
-import { PreflightValidationError } from './preflight-context.ts';
+import { PreflightValidationError } from './language-impact.ts';
 
 /**
  * `isthmus-trace-context` v1 — trace 한 번의 입력 목록과 선택이다.

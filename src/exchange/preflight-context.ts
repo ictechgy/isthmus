@@ -1,6 +1,5 @@
 import {
   isBridgeDomainDocument,
-  isProjectRelativePath,
   parseBridgeFactsDocument,
   BridgeFactsValidationError,
 } from './parse.ts';
@@ -10,37 +9,21 @@ import type {
 } from './parse.ts';
 import { parseImpactSelection } from './impact-selection.ts';
 import { createJsonGuards } from './json-guards.ts';
+import {
+  MAX_IMPACT_DEPTH,
+  MAX_IMPACT_GRAPH_ITEMS,
+  MAX_IMPACT_RELATIONSHIPS,
+  parseImpactLocation,
+  parseImpactSymbol,
+  PreflightValidationError,
+  validateLanguageImpact,
+} from './language-impact.ts';
+import type { ImpactSymbol, LanguageImpact } from './language-impact.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
 import { parseMessageBridgeDocument, validateMessageDocuments } from './messages.ts';
 import type { BridgeMessageDocument } from './messages.ts';
-
-/** 영향 분석에서 사용하는, 생산자가 증명한 심볼 식별자다. */
-export interface ImpactSymbol {
-  readonly id: string;
-  readonly qualifiedName: string;
-  readonly kind?: string;
-  readonly location?: Readonly<{ path: string; line?: number; column?: number }>;
-}
-
-/** 한 언어 producer가 한 선택에 대해 관찰한 영향 범위다. */
-export interface LanguageImpact {
-  readonly id: string;
-  readonly platform: 'dart' | 'swift' | 'kotlin';
-  readonly tool: Readonly<{ name: string; version: string }>;
-  readonly requested: ImpactSelection;
-  readonly trigger?: string;
-  readonly roots: readonly ImpactSymbol[];
-  readonly affected: readonly {
-    readonly symbol: ImpactSymbol;
-    readonly via: string;
-    readonly depth: number;
-    readonly relationships: readonly string[];
-  }[];
-  readonly limitations: readonly string[];
-  readonly truncated: boolean;
-}
 
 /** Dart fact와 query symbol을 추측 없이 연결하는 호출자 근거다. */
 export interface CallerBinding {
@@ -68,19 +51,17 @@ export interface PreflightContext {
   readonly limitations: readonly string[];
 }
 
-/** preflight 입력이 계약을 어겼음을 나타내며 원문 데이터를 오류에 넣지 않는다. */
-export class PreflightValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'PreflightValidationError';
-  }
-}
+// 영향 계약은 language-impact.ts가 소유한다. 기존 import 경로(스크립트·소비자)를 위해 다시 내보낸다.
+export { PreflightValidationError, validateLanguageImpact };
+export type { ImpactSymbol, LanguageImpact };
+export {
+  MAX_IMPACT_DEPTH as MAX_PREFLIGHT_DEPTH,
+  MAX_IMPACT_GRAPH_ITEMS as MAX_PREFLIGHT_GRAPH_ITEMS,
+  MAX_IMPACT_RELATIONSHIPS as MAX_PREFLIGHT_RELATIONSHIPS,
+};
 
 export const MAX_PREFLIGHT_ANALYSES = 256;
-export const MAX_PREFLIGHT_GRAPH_ITEMS = 50_000;
 export const MAX_PREFLIGHT_BINDINGS = 100_000;
-export const MAX_PREFLIGHT_DEPTH = 128;
-export const MAX_PREFLIGHT_RELATIONSHIPS = 32;
 
 /** 신뢰하지 않는 JSON을 정규화된 preflight-context v1으로 검증한다. */
 export function parsePreflightContext(input: unknown): PreflightContext {
@@ -115,50 +96,6 @@ function parseMessages(input: unknown, project: string): readonly BridgeMessageD
     if (error instanceof BridgeFactsValidationError) fail(`Invalid preflight messages: ${error.message}`);
     throw error;
   }
-}
-
-/** producer adapter가 만든 분석도 context parser와 같은 그래프 규칙을 사용하게 한다. */
-export function validateLanguageImpact(input: unknown): LanguageImpact {
-  const value = object(input, 'Language impact must be a JSON object.');
-  const id = safe(value.id, 'Invalid language impact id.');
-  if (value.platform !== 'dart' && value.platform !== 'swift' && value.platform !== 'kotlin') {
-    fail('Unsupported language impact platform.');
-  }
-  const toolValue = object(value.tool, 'Invalid language impact tool.');
-  const tool = {
-    name: safe(toolValue.name, 'Invalid language impact tool name.'),
-    version: safe(toolValue.version, 'Invalid language impact tool version.'),
-  };
-  let requested: ImpactSelection;
-  try {
-    requested = parseImpactSelection({ format: 'isthmus-changes', version: 1, ...object(value.requested, 'Invalid language impact selection.') });
-  } catch (error) {
-    if (error instanceof PreflightValidationError) throw error;
-    fail('Invalid language impact selection.');
-  }
-  const trigger = value.trigger === undefined
-    ? undefined
-    : safe(value.trigger, 'Invalid language impact trigger.');
-  const roots = array(value.roots, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact roots.')
-    .map((item) => parseSymbol(item, value.platform === 'kotlin'));
-  const affectedRaw = array(value.affected, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact affected symbols.');
-  const affected = affectedRaw.map((item) => parseAffected(item, value.platform === 'kotlin'));
-  const limitations = textStrings(value.limitations, Number.POSITIVE_INFINITY, 'Invalid language impact limitations.');
-  if (typeof value.truncated !== 'boolean') fail('Invalid language impact truncation flag.');
-  if (roots.length + affected.length > MAX_PREFLIGHT_GRAPH_ITEMS) {
-    fail('Language impact graph exceeds its item limit.');
-  }
-  validateGraph(roots, affected);
-  if (trigger !== undefined && (value.platform !== 'dart' || requested.files.length !== 0 ||
-    requested.symbols.length !== 1 || requested.symbols[0] !== trigger ||
-    !roots.some((root) => root.id === trigger))) {
-    fail('Continuation impact must be a Dart analysis rooted at its trigger symbol.');
-  }
-  return {
-    id, platform: value.platform, tool, requested,
-    ...(trigger === undefined ? {} : { trigger }), roots, affected, limitations,
-    truncated: value.truncated,
-  };
 }
 
 function parseSelectionMap(input: unknown): PreflightContext['selection'] {
@@ -225,7 +162,7 @@ function parseAnalyses(input: unknown): LanguageImpact[] {
     if (ids.has(analysis.id)) fail('Language impact ids must be unique.');
     ids.add(analysis.id);
     graphItems += analysis.roots.length + analysis.affected.length;
-    if (graphItems > MAX_PREFLIGHT_GRAPH_ITEMS) fail('Preflight impact graphs exceed their total item limit.');
+    if (graphItems > MAX_IMPACT_GRAPH_ITEMS) fail('Preflight impact graphs exceed their total item limit.');
     return analysis;
   });
   return analyses;
@@ -270,9 +207,9 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
   return raw.map((item) => {
     const value = object(item, 'Invalid caller binding.');
     if (value.platform !== 'dart') fail('Caller bindings must be Dart bindings.');
-    const location = parseLocation(value.location, 'Invalid caller binding location.');
+    const location = parseImpactLocation(value.location, 'Invalid caller binding location.');
     const requested = safe(value.requested, 'Invalid caller binding request.');
-    const symbol = parseSymbol(value.symbol);
+    const symbol = parseImpactSymbol(value.symbol);
     // requested는 AST의 짧은 이름이고 query qualifiedName은 producer의 전체 ID일 수 있다.
     if (symbol.location === undefined || symbol.location.path !== location.path) {
       fail('Caller binding symbol does not match its fact path.');
@@ -288,69 +225,6 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
   });
 }
 
-function parseAffected(input: unknown, partialLocation = false): LanguageImpact['affected'][number] {
-  const value = object(input, 'Invalid affected symbol.');
-  const symbol = parseSymbol(value.symbol, partialLocation);
-  const via = safe(value.via, 'Invalid affected symbol parent.');
-  if (!Number.isSafeInteger(value.depth) || (value.depth as number) < 1 || (value.depth as number) > MAX_PREFLIGHT_DEPTH) {
-    fail('Affected symbol depth must be between 1 and 128.');
-  }
-  const relationships = safeStrings(value.relationships, Number.POSITIVE_INFINITY, 'Invalid affected symbol relationships.');
-  if (relationships.length > MAX_PREFLIGHT_RELATIONSHIPS) fail('Affected symbol relationships exceed their limit.');
-  return { symbol, via, depth: value.depth as number, relationships };
-}
-
-function validateGraph(
-  roots: readonly ImpactSymbol[], affected: readonly LanguageImpact['affected'][number][],
-): void {
-  const depths = new Map<string, number>();
-  for (const root of roots) {
-    if (depths.has(root.id)) fail('Language impact symbol ids must be unique.');
-    depths.set(root.id, 0);
-  }
-  for (const row of affected) {
-    if (depths.has(row.symbol.id)) fail('Language impact symbol ids must be unique.');
-    depths.set(row.symbol.id, row.depth);
-  }
-  for (const row of affected) {
-    const parentDepth = depths.get(row.via);
-    if (parentDepth === undefined || parentDepth + 1 !== row.depth) {
-      fail('Affected symbol depth does not match its observed parent.');
-    }
-  }
-}
-
-function parseSymbol(input: unknown, partialLocation = false): ImpactSymbol {
-  const value = object(input, 'Invalid impact symbol.');
-  const result: ImpactSymbol = {
-    id: safe(value.id, 'Invalid impact symbol id.'),
-    qualifiedName: safe(value.qualifiedName, 'Invalid impact symbol qualified name.'),
-    ...(value.kind === undefined ? {} : { kind: safe(value.kind, 'Invalid impact symbol kind.') }),
-    ...(value.location === undefined ? {} : { location: partialLocation ? parseKotlinLocation(value.location)
-      : parseLocation(value.location, 'Invalid impact symbol location.') }),
-  };
-  return result;
-}
-
-/** JVM line tables가 제공하지 않은 좌표를 1로 채워 넣지 않는다. */
-function parseKotlinLocation(input: unknown): NonNullable<ImpactSymbol['location']> {
-  const value = object(input, 'Invalid Kotlin symbol location.');
-  if (!isProjectRelativePath(value.path) ||
-    (value.line !== undefined && (!Number.isSafeInteger(value.line) || (value.line as number) < 1)) ||
-    (value.column !== undefined && (value.line === undefined || !Number.isSafeInteger(value.column) || (value.column as number) < 1))) {
-    fail('Invalid Kotlin symbol location.');
-  }
-  return { path: value.path, ...(value.line === undefined ? {} : { line: value.line as number }),
-    ...(value.column === undefined ? {} : { column: value.column as number }) };
-}
-
-function parseLocation(input: unknown, message: string): BridgeLocation {
-  const value = object(input, message);
-  if (!isProjectRelativePath(value.path) || !Number.isSafeInteger(value.line) || (value.line as number) < 1 ||
-    !Number.isSafeInteger(value.column) || (value.column as number) < 1) fail(message);
-  return { path: value.path as string, line: value.line as number, column: value.column as number };
-}
-
 function locationKey(location: BridgeLocation): string {
   return `${location.path}\u0000${location.line}\u0000${location.column}`;
 }
@@ -359,4 +233,4 @@ function fail(message: string): never {
   throw new PreflightValidationError(message);
 }
 
-const { object, array, textStrings, safeStrings, safe } = createJsonGuards(fail);
+const { object, array, textStrings, safe } = createJsonGuards(fail);

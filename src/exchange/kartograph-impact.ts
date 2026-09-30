@@ -1,4 +1,10 @@
-import { PreflightValidationError, validateLanguageImpact, type LanguageImpact, type ImpactSymbol } from './preflight-context.ts';
+import {
+  MAX_IMPACT_DEPTH,
+  PreflightValidationError,
+  validateLanguageImpact,
+  type ImpactSymbol,
+  type LanguageImpact,
+} from './language-impact.ts';
 import type { ProducerImpactMetadata } from './producer-impact.ts';
 import { createJsonGuards } from './json-guards.ts';
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
@@ -64,7 +70,7 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
       const edges = array(path.edges).map(object);
       pathItems += nodes.length + edges.length;
       if (pathItems > 1_000_000) fail('Kartograph impact paths exceed their budget.');
-      if (nodes.length < 2 || nodes.length > 129 || edges.length !== nodes.length - 1 || nodes[0] !== row.usr ||
+      if (nodes.length < 2 || nodes.length > MAX_IMPACT_DEPTH + 1 || edges.length !== nodes.length - 1 || nodes[0] !== row.usr ||
         nodes.at(-1) !== path.changed || new Set(nodes).size !== nodes.length) fail('Invalid Kartograph impact path.');
       const relationships = edges.map((edge, index) => {
         const source = string(edge.source); const target = string(edge.target);
@@ -96,7 +102,7 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
     for (const [id, reasons] of [...(adjacency.get(parent) ?? [])].sort(([a], [b]) => compareStrings(a, b))) {
       if (depth.has(id)) continue;
       const distance = depth.get(parent)! + 1;
-      if (distance > 128) { omittedPaths++; continue; }
+      if (distance > MAX_IMPACT_DEPTH) { omittedPaths++; continue; }
       depth.set(id, distance); queue.push(id);
       rows.push({ symbol: symbols.get(id)!, via: parent, depth: distance, relationships: [...reasons].sort(compareStrings) });
     }

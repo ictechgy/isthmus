@@ -3,11 +3,13 @@ import { parseImpactSelection } from './impact-selection.ts';
 import { createJsonGuards } from './json-guards.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import {
+  MAX_IMPACT_DEPTH,
+  MAX_IMPACT_RELATIONSHIPS,
   validateLanguageImpact,
   PreflightValidationError,
   type ImpactSymbol,
   type LanguageImpact,
-} from './preflight-context.ts';
+} from './language-impact.ts';
 import type { BridgeLocation } from './parse.ts';
 
 /** producer 영향 문서에 주입할 isthmus 실행 문맥이다. */
@@ -46,7 +48,7 @@ export function adaptCartographImpact(raw: unknown, metadata: ProducerImpactMeta
     const relationship = safe(row.relationship, 'Invalid Cartograph relationship.');
     const edges = row.edges === undefined ? [] : rawStrings(row.edges, 'Invalid Cartograph edges.');
     const relationships = [...new Set([relationship, ...edges])];
-    if (relationships.length > 32) fail('Cartograph relationships exceed their limit.');
+    if (relationships.length > MAX_IMPACT_RELATIONSHIPS) fail('Cartograph relationships exceed their limit.');
     return { symbol, via, depth, relationships };
   });
   if (outsideLocations > 0) {
@@ -210,7 +212,9 @@ function truncation(input: unknown): boolean {
 }
 
 function positiveDepth(input: unknown): number {
-  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > 128) fail('Impact depth must be between 1 and 128.');
+  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > MAX_IMPACT_DEPTH) {
+    fail(`Impact depth must be between 1 and ${MAX_IMPACT_DEPTH}.`);
+  }
   return input as number;
 }
 

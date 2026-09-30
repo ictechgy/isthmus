@@ -1,7 +1,7 @@
 import { compareStrings } from '../compare.ts';
 import { createJsonGuards } from './json-guards.ts';
 import { isBridgeTimestamp, isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
-import type { LanguageImpact } from './preflight-context.ts';
+import { MAX_IMPACT_DEPTH, MAX_IMPACT_RELATIONSHIPS, type LanguageImpact } from './language-impact.ts';
 
 /**
  * `language-traversal` v1 — 생산자가 내는 언어 그래프 순회 결과의 공유 형식이다.
@@ -155,12 +155,12 @@ export class TraversalValidationError extends Error {
 export const MAX_TRAVERSAL_ROOTS = 10_000;
 /** 한 문서의 도달 정점 상한이다. */
 export const MAX_TRAVERSAL_REACHED = 100_000;
-/** depth 상한이다. preflight의 producer depth 상한과 같다. */
-export const MAX_TRAVERSAL_DEPTH = 128;
+/** depth 상한이다. 옛 역방향 영향(`LanguageImpact`)과 같은 값을 공유한다. */
+export const MAX_TRAVERSAL_DEPTH = MAX_IMPACT_DEPTH;
 /** 정점 하나가 싣는 root 인덱스 상한이다. 넘으면 64개만 싣고 `rootsTruncated`다. */
 export const MAX_ROOTS_PER_REACHED = 64;
 /** 정점 하나의 관계 문자열 상한이다. */
-export const MAX_TRAVERSAL_RELATIONSHIPS = 32;
+export const MAX_TRAVERSAL_RELATIONSHIPS = MAX_IMPACT_RELATIONSHIPS;
 /** 정점 하나가 신고하는 잇지 못한 호출 수 상한이다. 한 함수의 호출 지점이 이보다 많을 수 없다고 본다. */
 export const MAX_UNRESOLVED_CALLS = 1_000_000;
 
@@ -240,7 +240,7 @@ export function traversalGraphFromDocument(document: LanguageTraversal): Travers
 }
 
 /**
- * preflight 어댑터가 만든 역방향 영향(kartograph·cartograph·dartograph)을 순회 숲으로 바꾼다.
+ * 옛 역방향 영향 어댑터(kartograph·cartograph·dartograph)의 `LanguageImpact`를 순회 숲으로 바꾼다.
  *
  * 옛 형식은 정점별 root 목록이 없어 via 사슬의 대표 root 하나만 복원한다. root가 둘 이상이면
  * `rootProvenance: "witness"`로 표시해 소비자가 부분 귀속을 gap으로 밝히게 한다. 새 id를 만들지 않는다.
@@ -429,7 +429,7 @@ function witnessRoot(id: string, parents: ReadonlyMap<string, string>, rootIndex
   return fail('Traversal via chain does not reach a root.');
 }
 
-/** preflight 심볼을 순회 심볼로 옮긴다. 이름·종류·위치는 있는 것만 복사한다. */
+/** 영향 심볼을 순회 심볼로 옮긴다. 이름·종류·위치는 있는 것만 복사한다. */
 function symbolFromImpact(symbol: LanguageImpact['roots'][number]): TraversalSymbol {
   return {
     usr: symbol.id,
