@@ -101,6 +101,9 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
 | 슬래시 결합 | axios·chopper·Moya·openapi-fetch | base | base |
 | 단순 문자열 연결, base 리터럴 | dio, retrofit.dart 메서드 경로 | 연결 결과의 경로, root | 연결 결과의 경로, root |
 | 단순 문자열 연결, base 미상 | dio, retrofit.dart 메서드 경로 | base | dynamic + `ambiguous-base-join:` |
+| 연결 + 중복 슬래시 축약, base 리터럴 | Spring `DefaultUriBuilderFactory`(RestClient·WebClient `baseUrl`, `@HttpExchange` 어댑터) | `base경로 + /x`(`//`→`/`), root | `base경로 + x`, root(base `http://h`는 `/x`) |
+| 연결 + 중복 슬래시 축약, base 미상 | 같음 | base | dynamic + `ambiguous-base-join:` |
+| `/` 접두 템플릿에만 root 연결 | Spring Boot `RestTemplateBuilder.rootUri` | 리터럴이면 `root경로 + /x` root, 미상이면 base | root가 붙지 않아 요청 불가 — dynamic |
 
 **단순 문자열 연결**(dio `RequestOptions.uri`)은 경로가 `http:`·`https:`로 시작하지 않으면
 `baseUrl + path`를 그대로 이어 붙이고, 결과에 `:/`가 정확히 하나면 그 뒤의 `//`를 `/`로 바꾼 다음
@@ -122,6 +125,21 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
 `@POST('items')`는 `/rv1items`다. `@RestApi(baseUrl: '/rv2/')`는 dio base와 무관하게 경로가
 `/rv2/`로 확정되어 `@GET('/orders/{id}')`가 `/rv2/orders/{}` root다. 이 규칙은 retrofit_generator
 10.2.11 소스와 실제 dio 5.11.1 요청을 기록한 모의 서버 오라클(dartograph)로 확인했다.
+
+**Spring은 dio와 다른 단순 연결이다.** `DefaultUriBuilderFactory`는 host 없는 템플릿이면 base 빌더를 복제해 템플릿 경로를
+슬래시 없이 잇고(`UriComponentsBuilder.FullPathComponentBuilder.append`), 빌드할 때 **경로 전체의** `//`를 `/`로 줄인다
+(`getSanitizedPath`). dio와 달리 (1) 점 세그먼트를 지우지 않고(`/api` + `/users/./me/../self`는 그대로 전송된다), (2) `//` 축약을
+scheme 뒤 한 곳이 아니라 경로 전체에 적용하며(base 없이 쓴 템플릿의 `//`도 줄어든다), (3) base에 경로가 없으면 URI 문자열이
+host 뒤에 `/`를 넣는다(`http://h` + `users` → `/users`, dio는 host `husers`라 dynamic). `/api` + `users`는 dio처럼 `/apiusers`다.
+host가 있는 템플릿(`http://…`)은 base를 쓰지 않는다. Spring Boot `RestTemplateBuilder.rootUri`는 `/`로 시작하는 템플릿에만 root를
+문자열로 앞에 붙이고(`RootUriTemplateHandler.apply`) 그 결과를 base 없는 `DefaultUriBuilderFactory`가 파싱하므로 `//` 축약도
+적용된다. `/`로 시작하지 않는 템플릿은 host 없이 남아 요청할 수 없으므로 경로를 주장하지 않는다(dynamic).
+
+**`@HttpExchange`는 타입·메서드 url을 먼저 잇는다.** 둘 다 있으면 타입 url이 `/`로 끝나지 않고 메서드 url이 `/`로 시작하지 않을
+때만 `/`를 넣어 잇고, 하나만 있으면 그것이다(`HttpServiceMethod.initUrl`). 그 결과가 어댑터 클라이언트의 템플릿이 되어 위
+`DefaultUriBuilderFactory` 결합을 따른다(`/api/` + `/users` → `/api//users` → `/api/users`). 어노테이션의 `${…}`는 embedded value
+resolver가 있을 때만 풀리므로 생산자는 dynamic으로 낸다. 이 규칙들은 Spring Framework 6.2.19·Spring Boot 3.5.16 소스와 합성 앱
+오라클(kartograph, 32개 호출 일치)로 확인했고 url-compose 벡터 `base-join/spring-*`(`producer:kartograph`)가 고정한다.
 
 base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. host가 동적이면 base다.
 
@@ -157,4 +175,8 @@ base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. ho
 - 형식과 provenance 등급은 [GRAPH-EXCHANGE의 공유 적합성 벡터](GRAPH-EXCHANGE.md#공유-적합성-벡터) 절을 따른다.
 - 생산자는 두 파일을 벤더링하고 `conformance.lock`에 isthmus 커밋과 sha256을 적는다. 자기 언어
   러너로 `appliesTo`에 `producer`(또는 `producer:<이름>`)가 있는 케이스를 모두 통과해야 한다.
+- `compose.base-join` 입력의 `join`은 `rfc3986`·`slash-join`·`dio-concat`·`spring-uri-builder`·`spring-root-uri`·
+  `spring-http-exchange`(메서드 url은 `path`, 타입 url은 `typeUrl`)다. 기대값의 `authority`는 base 리터럴에서 온 소문자 authority다.
+  Spring 케이스는 `producer:kartograph`라 다른 생산자의 러너는 고르지 않는다 — Spring 클라이언트를 읽는 다른 JVM 생산자는 자기
+  이름을 `appliesTo`에 더하자고 요청한다.
   isthmus의 `npm run verify`는 같은 벡터를 제품 매처와 참조 구현으로 실행한다.
