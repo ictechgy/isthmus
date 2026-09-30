@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureTrace, CaptureTraceError } from './capture-trace.mjs';
 import { runChild } from './run-child.mjs';
 
@@ -851,6 +851,22 @@ test('surface 가져오기: sha256이 고정 값과 다르거나 계약을 어�
   });
 });
 
+/**
+ * 게시 fixture를 현재 package 버전의 CLI로 다시 내보냈을 때의 바이트다.
+ *
+ * fixture는 isthmus 0.9.0으로 내보냈고, 버전마다 달라지는 값은 `exporter.version`과 그것을 덮는 `digest`뿐이다.
+ * 두 값만 현재 버전으로 다시 계산해 버전을 올려도 "같은 서버 문서에서 CLI로 내보낸 결과와 바이트가 같다"는 검사를
+ * 유지한다. 키 순서와 들여쓰기는 fixture 그대로다(`encodeSortedJson`의 정렬·2칸 들여쓰기와 같다).
+ */
+async function surfaceFixtureAtPackageVersion() {
+  const { computeSurfaceDigest } = await import(pathToFileURL(join(repository, 'dist/exchange/http-surface.js')).href);
+  const { version } = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8'));
+  const published = JSON.parse(await readFile(join(repository, 'fixtures/http-surface/surfaces/example-api-2.4.surface.json'), 'utf8'));
+  const current = { ...published, exporter: { ...published.exporter, version } };
+  current.digest = computeSurfaceDigest(current);
+  return `${JSON.stringify(current, null, 2)}\n`;
+}
+
 test('surface 내보내기: 캡처한 서버 member로 isthmus surface export를 실행하고 surface member로 잇는다', async (t) => {
   const setup = async (st) => {
     const work = await workspace(st);
@@ -882,9 +898,10 @@ test('surface 내보내기: 캡처한 서버 member로 isthmus surface export를
     await captureTrace(config);
     // 같은 서버 문서에서 CLI로 내보낸 게시 fixture와 바이트가 같다(project·위치는 surface에 실리지 않는다).
     const exported = await readFile(join(work, 'out/api/http-surface.json'));
-    assert.equal(createHash('sha256').update(exported).digest('hex'), surfaceSha256);
+    assert.equal(exported.toString('utf8'), await surfaceFixtureAtPackageVersion());
+    const exportedSha256 = createHash('sha256').update(exported).digest('hex');
     const context = await readOutput(work, 'trace-context.json');
-    assert.deepEqual(context.members[1], { name: 'api', surface: { path: 'api/http-surface.json', sha256: surfaceSha256 } });
+    assert.deepEqual(context.members[1], { name: 'api', surface: { path: 'api/http-surface.json', sha256: exportedSha256 } });
     assert.deepEqual(context.links[0].contract, { member: 'api', authoritative: true });
     const manifest = await readOutput(work, 'capture-manifest.json');
     const step = manifest.steps.find(({ step: name }) => name === 'surface:api');
