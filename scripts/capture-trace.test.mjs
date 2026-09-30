@@ -578,6 +578,20 @@ test('심볼 목록은 파일 선택에서만 실행하고, 잘못된 목록은 
     const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
     assert.equal(manifest.artifacts.find(({ path }) => path === 'app/listings/js.json').source, 'precomputed');
   });
+  await t.test('사전 계산 목록 digest-only는 파일을 복사하지 않고 같은 선택과 SHA-256을 남긴다', async (st) => {
+    const { work, project, config } = await fileSelectionConfig(st);
+    const listing = JSON.parse(await readFile(join(repository, 'scripts/fixtures/capture-trace/listing.tsograph-graph.json'), 'utf8'));
+    const content = JSON.stringify({ ...listing, project });
+    await writeFile(join(work, 'ci', 'listing.json'), content);
+    config.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'ci/listing.json' }, artifact: 'digest-only' }];
+    await captureTrace(config);
+    const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+    assert.equal(existsSync(join(work, 'out/app/listings/js.json')), false);
+    assert.equal(manifest.artifacts.some(({ path }) => path === 'app/listings/js.json'), false);
+    assert.deepEqual(manifest.listingInputs, [{ member: 'app', platform: 'js', source: 'precomputed',
+      sha256: createHash('sha256').update(content).digest('hex'), bytes: Buffer.byteLength(content), tool: listing.tool }]);
+    assert.ok(manifest.steps.some(({ step }) => step === 'analysis:server-reverse'));
+  });
 });
 
 test('workspace 파일 선택: 선택한 파일이 없는 member의 목록은 실행하지 않고 그 이유를 적는다', async (t) => {

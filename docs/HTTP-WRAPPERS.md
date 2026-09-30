@@ -109,7 +109,11 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
 | resty `SetBaseURL`(`resty-base-url`) | go-resty v2·v3 | 끝 `/`를 뗀 base 경로 + `/x`, 리터럴이면 root, 미상이면 base | base 경로 + `/` + `x`, 같음 |
 | httpx `base_url`(`httpx-base-url`) | `httpx.Client(base_url=)` | base 경로(끝 `/` 보장) + `x`, 점 세그먼트 제거, 리터럴이면 root, 미상이면 base | 같음 |
 | aiohttp `base_url`(`aiohttp-base-url`) | `aiohttp.ClientSession(base_url=)` | RFC 3986과 같다(root) | RFC 3986과 같다(3.11+, base 경로는 `/`로 끝나야 한다) |
-| 슬래시 결합 | axios·chopper·Moya·openapi-fetch | base | base |
+| axios `baseURL`(`axios-base-url`) | axios 1.20.0 | base 경로 + `/x`, 리터럴이면 root, 미상이면 base | 같음 |
+| ky 1 `prefixUrl`(`ky-prefix-url`) | ky 1.10.0 | 요청 생성 오류(dynamic) | prefix에 끝 `/` 보장 후 `x`, 리터럴이면 root, 미상이면 base |
+| ky 2 `prefix`(`ky-prefix`) | ky 2.1.0 | 경계의 `/`를 모두 뗀 뒤 `/` 하나로 결합, 리터럴이면 root, 미상이면 base | 같음 |
+| ky 2 `baseUrl`(`ky-base-url`) | ky 2.1.0 | RFC 상대 해석(root) | RFC 상대 해석(base 리터럴이면 root, 미상이면 base) |
+| 슬래시 결합 | chopper·Moya·openapi-fetch | base | base |
 | 단순 문자열 연결, base 리터럴 | dio, retrofit.dart 메서드 경로 | 연결 결과의 경로, root | 연결 결과의 경로, root |
 | 단순 문자열 연결, base 미상 | dio, retrofit.dart 메서드 경로 | base | dynamic + `ambiguous-base-join:` |
 | 연결 + 중복 슬래시 축약, base 리터럴 | Spring `DefaultUriBuilderFactory`(RestClient·WebClient `baseUrl`, `@HttpExchange` 어댑터) | `base경로 + /x`(`//`→`/`), root | `base경로 + x`, root(base `http://h`는 `/x`) |
@@ -153,6 +157,30 @@ resolver가 있을 때만 풀리므로 생산자는 dynamic으로 낸다. 이 �
 오라클(kartograph, 32개 호출 일치)로 확인했고 url-compose 벡터 `base-join/spring-*`(`producer:kartograph`)가 고정한다.
 
 base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. host가 동적이면 base다.
+
+### JavaScript 웹·React Native 클라이언트
+
+tsograph의 `routes --role client`는 전역 `fetch`(웹·React Native), provenance로 확인한 axios·ky import 및
+`create`/`extend` 인스턴스의 요청을 `route-call`로 낸다. 요청 위치는 호출식 시작의 UTF-8 바이트 열,
+`symbol.usr`는 감싸는 함수·화면 콜백의 tsograph 그래프 id다. 테스트 소스는 기본으로 제외한다.
+
+- axios 1.20.0의 [buildFullPath](https://github.com/axios/axios/blob/v1.20.0/lib/core/buildFullPath.js)와
+  [combineURLs](https://github.com/axios/axios/blob/v1.20.0/lib/helpers/combineURLs.js): 상대 URL이면 base 끝과
+  path 앞의 `/`를 모두 뗀 뒤 `/` 하나로 잇는다. `/x`도 base 경로를 유지한다. 절대 URL·`//host/x`는 기본으로
+  base를 대체하며 `allowAbsoluteUrls: false`이면 base 뒤에 붙인다. 빈 path는 base 그대로다.
+- ky 1.10.0의 [Ky](https://github.com/sindresorhus/ky/blob/v1.10.0/source/core/Ky.ts): `prefixUrl`은 끝 `/`를
+  보장하고 input을 그대로 잇는다. input이 `/`로 시작하면 오류다. 절대 input도 prefix 뒤에 붙는다.
+- ky 2.1.0의 [Ky](https://github.com/sindresorhus/ky/blob/v2.1.0/source/core/Ky.ts): `prefixUrl`은 오류이고
+  `prefix`는 경계 `/`를 모두 떼고 `/` 하나로 결합한다. `baseUrl`은 그 결과가 상대 URL일 때
+  WHATWG `new URL(input, baseUrl)`로 해석한다. prefix와 baseUrl 동시 사용은 현재 tsograph limitation이다.
+- 실제 HTTP URL 파싱 단계의 점 세그먼트 제거를 적용한다. fetch의 `/x`는 root, 상대 `x`는 실행 환경의
+  document base를 모르므로 base다. 모르는 base의 `..`·역슬래시·scheme 접두사는 dynamic으로 남긴다. axios의 malformed HTTP URL과
+  HTTP 외 절대 URL도 기본 결합에서는 요청 경로로 주장하지 않는다.
+- 미상 설정 전개, 설정 변경, axios interceptor, ky hook, 사용자 adapter/fetch 및 증명하지 못한 동사는
+  정적 요청으로 추측하지 않는다. 원문 식·userinfo·query·fragment 값은 출력하지 않으며 공유 경로 마스킹을 적용한다.
+
+공식 소스 조회와 실제 axios 1.20.0·ky 1.10.0/2.1.0의 로컬 모의 HTTP 서버 오라클은 2026-10-01 기준이다.
+공유 벡터의 `base-join/js-*`(`producer:tsograph`)가 결합 의미를 고정한다.
 
 ### Go, Rust, Python 클라이언트
 

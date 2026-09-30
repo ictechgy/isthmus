@@ -6,6 +6,7 @@ import { parseTraceContext, type TraceAnalysis } from '../exchange/trace-context
 import {
   analysisSymbolsInFiles,
   buildCaptureContext,
+  captureDocumentTool,
   chunkCaptureRoots,
   collectCaptureRoots,
   DEFAULT_MAX_ROOTS_PER_RUN,
@@ -32,6 +33,12 @@ import {
   type CapturedMember,
 } from './trace-capture.ts';
 import type { TraversalGraph } from '../exchange/language-traversal.ts';
+
+test('수집 메타데이터는 객체 tool과 cartograph graph의 문자열 tool/version을 모두 기록한다', () => {
+  assert.deepEqual(captureDocumentTool({ tool: 'cartograph', version: '0.23.0' }), { tool: { name: 'cartograph', version: '0.23.0' } });
+  assert.deepEqual(captureDocumentTool({ tool: { name: 'tsograph', version: '0.1.0' } }), { tool: { name: 'tsograph', version: '0.1.0' } });
+  for (const value of [null, {}, { tool: 'unknown', version: '1' }, { tool: 'cartograph', version: 1 }, { tool: { name: 'x' } }]) assert.deepEqual(captureDocumentTool(value), {});
+});
 
 /** 최소 단일 project 설정이다. 각 테스트가 복사해 한 곳만 바꾼다. */
 function baseConfig(): Record<string, any> {
@@ -310,7 +317,12 @@ test('심볼 목록은 파일 선택용 member 필드이고 platform마다 명�
     { platform: 'python', precomputed: { root: 'work', path: 'ci/pythograph-graph.json' } },
   ]);
   assert.deepEqual(parseTraceCaptureConfig(baseConfig()).members[0]!.listings, []);
+  input.members[0].listings = [{ platform: 'kotlin', precomputed: { root: 'work', path: 'snapshot.json' }, artifact: 'digest-only' }];
+  assert.equal(parseTraceCaptureConfig(input).members[0]!.listings[0]!.artifact, 'digest-only');
   const listing = { platform: 'js', tool: 'tsograph', args: [] };
+  const copied = baseConfig();
+  copied.members[0].listings = [{ ...listing, artifact: 'copy' }];
+  assert.equal(parseTraceCaptureConfig(copied).members[0]!.listings[0]!.artifact, 'copy');
   rejects((value) => { value.members[0].listings = {}; }, /listings must be a list/);
   rejects((value) => { value.members[0].listings = [listing, listing]; }, /more than one listing for a platform/);
   rejects((value) => { value.members[0].listings = [{ ...listing, platform: 'sql' }]; }, /language platform/);
@@ -318,6 +330,8 @@ test('심볼 목록은 파일 선택용 member 필드이고 platform마다 명�
   rejects((value) => { value.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'a.json' }, args: [] }]; }, /no command fields/);
   rejects((value) => { value.members[0].listings = [{ ...listing, roots: 'arguments' }]; }, /listing of capture member 1 has an unknown field/);
   rejects((value) => { value.members[0].listings = [{ ...listing, tool: 'ghost' }]; }, /undeclared tool/);
+  rejects((value) => { value.members[0].listings = [{ ...listing, artifact: 'digest-only' }]; }, /precomputed/);
+  rejects((value) => { value.members[0].listings = [{ platform: 'js', precomputed: { root: 'work', path: 'a.json' }, artifact: 'unknown' }]; }, /artifact/);
   rejects((value) => { value.members[0].listings = ['x']; }, /must be an object/);
 });
 

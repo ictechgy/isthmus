@@ -785,3 +785,15 @@ providerAnalyses, delivered?, undelivered?, missingMapEntries?, notes?}]}`다. p
 - 생산자 쪽: TS 생산자의 route-decl·relation-use usr와 `reach`/impact의 language-traversal 출력,
   schemagraph impact의 language-traversal 출력은 각 저장소에서 진행 중이다. 옛 schemagraph-impact v1은
   어댑터로 받는다.
+
+### 사전 계산 심볼 목록의 복사 생략
+
+큰 사전 계산 Kotlin snapshot 등은 listing에 `"artifact": "digest-only"`를 지정하면 읽기·파싱·위치 검증과
+파일 심볼 선택은 그대로 수행하고 출력 디렉터리의 목록 사본을 생략한다. 기본값은 `"copy"`이며
+`digest-only`는 `precomputed` 목록에만 허용한다. capture manifest의 `listingInputs`에 member·platform·
+SHA-256·바이트 수·출처와 도구 신원(있으면)을 남긴다. 존재하지 않는 경로를 `artifacts`에 넣지 않는다.
+이 옵션은 디스크 복사만 줄이며 목록 읽기·검증 메모리를 줄이지 않는다.
+
+```json
+{"platform":"kotlin","precomputed":{"root":"ci","path":"snapshot.json"},"artifact":"digest-only"}
+```

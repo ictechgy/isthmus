@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   analysisSymbolsInFiles,
   buildCaptureContext,
+  captureDocumentTool,
   capturedAnalysisPath,
   capturedDocumentPath,
   capturedSurfacePath,
@@ -372,9 +373,7 @@ async function readPrecomputed(reference, session, step) {
 
 /** 문서의 도구 신원(있으면)을 manifest용으로 뽑는다. */
 function documentTool(value) {
-  const tool = value?.tool;
-  return tool && typeof tool.name === 'string' && typeof tool.version === 'string'
-    ? { tool: { name: tool.name.slice(0, 100), version: tool.version.slice(0, 100) } } : {};
+  return captureDocumentTool(value);
 }
 
 /**
@@ -847,6 +846,12 @@ async function captureListing(session, member, listing) {
     throw error;
   }
   const path = `${member.config.name}/listings/${listing.platform}.json`;
+  if (listing.artifact === 'digest-only') {
+    session.manifest.listingInputs ??= [];
+    session.manifest.listingInputs.push({ member: member.config.name, platform: listing.platform,
+      source, sha256: sha256(content), bytes: Buffer.byteLength(content), ...documentTool(value) });
+    return parsed;
+  }
   await writeOutput(session.output, path, content);
   recordArtifact(session, path, content, source, documentTool(value));
   return parsed;
