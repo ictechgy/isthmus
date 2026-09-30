@@ -857,11 +857,16 @@ test('surface 가져오기: sha256이 고정 값과 다르거나 계약을 어�
  * fixture는 isthmus 0.9.0으로 내보냈고, 버전마다 달라지는 값은 `exporter.version`과 그것을 덮는 `digest`뿐이다.
  * 두 값만 현재 버전으로 다시 계산해 버전을 올려도 "같은 서버 문서에서 CLI로 내보낸 결과와 바이트가 같다"는 검사를
  * 유지한다. 키 순서와 들여쓰기는 fixture 그대로다(`encodeSortedJson`의 정렬·2칸 들여쓰기와 같다).
+ * digest를 다시 계산하는 코드가 테스트 대상과 같으므로, 게시 fixture의 바이트 sha256과 저장된 digest를 먼저 외부
+ * 고정값으로 대조해 fixture 변조와 digest 규칙 변경을 버전과 무관하게 잡는다.
  */
 async function surfaceFixtureAtPackageVersion() {
   const { computeSurfaceDigest } = await import(pathToFileURL(join(repository, 'dist/exchange/http-surface.js')).href);
   const { version } = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8'));
-  const published = JSON.parse(await readFile(join(repository, 'fixtures/http-surface/surfaces/example-api-2.4.surface.json'), 'utf8'));
+  const bytes = await readFile(join(repository, 'fixtures/http-surface/surfaces/example-api-2.4.surface.json'));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), surfaceSha256);
+  const published = JSON.parse(bytes.toString('utf8'));
+  assert.equal(computeSurfaceDigest(published), published.digest);
   const current = { ...published, exporter: { ...published.exporter, version } };
   current.digest = computeSurfaceDigest(current);
   return `${JSON.stringify(current, null, 2)}\n`;
