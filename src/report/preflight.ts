@@ -6,7 +6,7 @@ import { joinBridgeDocuments } from '../join/join.ts';
 import type { BridgeTarget } from '../exchange/parse.ts';
 import { createCheckReport } from './check-report.ts';
 import type { CheckIssue } from './check-report.ts';
-import { encodeSortedJson } from './sorted-json.ts';
+import { canonicalJsonKey, uniqueByCanonicalJson, valuesSortedByKey } from './sorted-json.ts';
 import type { PreflightRuntimeReport } from './preflight-runtime.ts';
 import { joinMessageBridges } from '../join/messages.ts';
 import type { MessageEndpoint } from '../join/messages.ts';
@@ -135,7 +135,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     if (outgoing === undefined) { outgoing = new Map(); consumers.set(dependency, outgoing); }
     let reasons = outgoing.get(consumer);
     if (reasons === undefined) { reasons = new Map(); outgoing.set(consumer, reasons); }
-    const key = encodeSortedJson(relation, true);
+    const key = canonicalJsonKey(relation);
     if (!reasons.has(key) && ++relationCount > MAX_RELATIONS) throw new PreflightGraphError('Preflight relation budget exceeded.');
     reasons.set(key, relation);
   }
@@ -269,7 +269,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
     const subject = nodes.get(key);
     if (subject === undefined) throw new PreflightGraphError('Producer impact refers to an unknown symbol.');
     visits.set(key, { subject, depth, via: dependency,
-      relations: [...reasons.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, reason]) => reason) });
+      relations: valuesSortedByKey(reasons) });
     return true;
   });
   const rootSubjects = [...roots].sort(compareStrings).map((key) => nodes.get(key)!);
@@ -332,8 +332,7 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   if (relevant.some(({ subject }) => subject.transport === 'basic-message-channel' || subject.transport === 'event-channel')) {
     for (const limit of messages.limitations) limits.push({ code: 'message-producer-limitation', message: limit.message });
   }
-  const uniqueLimits = [...new Map(limits.map((item) => [encodeSortedJson(item, true), item])).entries()]
-    .sort(([a], [b]) => compareStrings(a, b)).map(([, item]) => item);
+  const uniqueLimits = uniqueByCanonicalJson(limits);
   const routeKeys = new Set(relevant.filter(({ subject }) => subject.transport === undefined)
     .map(({ subject }) => JSON.stringify([subject.target, subject.channel, subject.method ?? null])));
   const issues = createCheckReport(joined).issues.filter((issue) => routeKeys.has(JSON.stringify([issue.target, issue.channel, issue.method ?? null])));
