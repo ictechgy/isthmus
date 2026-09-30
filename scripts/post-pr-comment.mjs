@@ -13,11 +13,14 @@ import {
  * 보안 설계:
  * - 이 스크립트만 토큰을 받는다. 생산자(PR 코드)가 도는 분석 단계와 분리해, 권장 구성에서는 checkout도 PR 코드
  *   실행도 없는 별도 job(`pull-requests: write`)에서 돈다.
- * - `--results`로 받으면 artifact의 JSON을 Action 자신의 렌더러로 **다시 렌더링**한다. artifact는 PR 코드가 만든
- *   것이라 comment.md를 그대로 올리면 임의의 Markdown(링크·멘션)을 봇 이름으로 게시하게 된다. 다시 렌더링하면
- *   댓글은 렌더러 틀과 이스케이프를 벗어나지 못한다.
- * - PR 번호를 artifact(meta)에서 읽을 때는(workflow_run) `--expected-head-sha`와 PR head가 같아야 한다 — 공격자가
- *   다른 PR 번호를 적어 그 PR에 댓글을 달게 하지 못하게 한다.
+ * - results 디렉터리로 받으면(`comment` 명령) artifact의 JSON을 Action 자신의 렌더러로 **다시 렌더링**한다. artifact는
+ *   PR 코드가 만든 것이라 comment.md를 그대로 올리면 임의의 Markdown(링크·멘션)을 봇 이름으로 게시하게 된다. 다시
+ *   렌더링하면 댓글은 렌더러 틀과 이스케이프를 벗어나지 못한다. 이 보장은 두 job 구성에만 있다 — 같은 job의
+ *   `comment-mode: sticky`는 분석 단계가 쓴 본문 파일을 올리므로, 같은 job에서 돈 PR 코드가 그 파일(또는 게시
+ *   단계의 토큰)을 건드릴 수 있다. 표식 검사는 내용의 경계가 아니다.
+ * - PR 번호를 artifact(meta)에서 읽을 때는(workflow_run) PR의 head가 기대한 commit·저장소·브랜치와 모두 같아야 한다.
+ *   head SHA만으로는 PR 신원이 아니다 — 다른 사람의 PR head commit을 자기 포크로 가져와 PR을 열면 SHA가 같다.
+ *   head 저장소·브랜치(`workflow_run.head_repository`·`head_branch`)는 그 PR을 연 쪽만 정할 수 있다.
  * - 표식(`<!-- isthmus-http-impact:<key> -->`)으로 시작하고 지정한 작성자(기본 `github-actions[bot]`)가 쓴 댓글만
  *   고친다. 다른 사람이 표식을 흉내 낸 댓글은 건드리지 않는다.
  * - 토큰이 쓰기 권한이 없으면(포크 PR의 `pull_request` 토큰) 경고만 남기고 성공으로 끝난다 — job summary가 남는다.
@@ -70,12 +73,19 @@ async function request(context, method, path, body) {
   catch { return { ok: true, status: response.status, json: undefined }; }
 }
 
-/** PR head SHA가 기대값과 같은지 확인한다(workflow_run에서 PR 번호를 artifact로 받을 때). */
-async function verifyHead(context, prNumber, expectedHeadSha) {
+/**
+ * PR head가 기대한 commit(그리고 주면 head 저장소·브랜치)과 같은지 확인한다(workflow_run에서 PR 번호를 artifact로
+ * 받을 때). 저장소 이름은 대소문자를 가리지 않는다(GitHub 규칙).
+ */
+async function verifyHead(context, prNumber, expected) {
   const pull = await request(context, 'GET', `/repos/${context.repository}/pulls/${prNumber}`);
   if (!pull.ok) throw new PostCommentError(`Could not read pull request ${prNumber} (HTTP ${pull.status}).`);
-  if (pull.json?.head?.sha !== expectedHeadSha) {
-    throw new PostCommentError(`Pull request ${prNumber} does not point at the analysed head commit; not commenting.`);
+  const head = pull.json?.head;
+  const repositoryMatches = expected.repository === undefined
+    || (typeof head?.repo?.full_name === 'string' && head.repo.full_name.toLowerCase() === expected.repository.toLowerCase());
+  const branchMatches = expected.branch === undefined || head?.ref === expected.branch;
+  if (head?.sha !== expected.sha || !repositoryMatches || !branchMatches) {
+    throw new PostCommentError(`Pull request ${prNumber} does not point at the analysed head (commit, repository and branch); not commenting.`);
   }
 }
 
@@ -90,7 +100,8 @@ async function findSticky(context, prNumber, marker, author) {
     if (found !== undefined) return { id: found.id };
     if (comments.length < 100) return {};
   }
-  return {};
+  // 조용히 새 댓글을 만들면 스티키 댓글이 둘로 갈라지므로 오류로 멈춘다.
+  throw new PostCommentError(`The pull request has more than ${MAX_COMMENT_PAGES * 100} comments; the sticky comment could not be located.`);
 }
 
 /**
@@ -99,7 +110,7 @@ async function findSticky(context, prNumber, marker, author) {
  */
 export async function upsertStickyComment({
   token, repository, prNumber, body, key = 'default', author = DEFAULT_COMMENT_AUTHOR,
-  apiUrl = 'https://api.github.com', expectedHeadSha, fetchImpl = globalThis.fetch,
+  apiUrl = 'https://api.github.com', expectedHeadSha, expectedHeadRepository, expectedHeadBranch, fetchImpl = globalThis.fetch,
 }) {
   if (typeof token !== 'string' || token.length === 0) throw new PostCommentError('No GitHub token was given; set github-token.');
   validateRepository(repository);
@@ -108,7 +119,9 @@ export async function upsertStickyComment({
   if (typeof body !== 'string' || !body.startsWith(marker)) throw new PostCommentError('The comment body does not start with the isthmus marker.');
   if (body.length > GITHUB_COMMENT_LIMIT) throw new PostCommentError(`The comment body exceeds ${GITHUB_COMMENT_LIMIT} characters.`);
   const context = { token, repository, apiUrl: validateApiUrl(apiUrl), fetchImpl };
-  if (expectedHeadSha !== undefined) await verifyHead(context, prNumber, expectedHeadSha);
+  if (expectedHeadSha !== undefined) {
+    await verifyHead(context, prNumber, { sha: expectedHeadSha, repository: expectedHeadRepository, branch: expectedHeadBranch });
+  }
   const existing = await findSticky(context, prNumber, marker, author);
   if (existing.status === 403) return { status: 'forbidden' };
   if (existing.status !== undefined) throw new PostCommentError(`Listing pull request comments failed (HTTP ${existing.status}).`);
@@ -138,7 +151,8 @@ function metaPullRequestNumber(meta) {
 /**
  * 환경 변수 입력(`ISTHMUS_CI_*`, action.yml이 넘긴다)으로 게시한다.
  * - `ISTHMUS_CI_RESULTS_DIR`(다시 렌더링) 또는 `ISTHMUS_CI_BODY_FILE`(같은 job의 분석 단계가 쓴 본문) 중 하나.
- * - PR 번호: `ISTHMUS_CI_PR_NUMBER`(이벤트), 없으면 meta — 그때는 `ISTHMUS_CI_EXPECTED_HEAD_SHA`가 필수다.
+ * - PR 번호: `ISTHMUS_CI_PR_NUMBER`(이벤트), 없으면 meta — 그때는 `ISTHMUS_CI_EXPECTED_HEAD_SHA`·
+ *   `ISTHMUS_CI_EXPECTED_HEAD_REPOSITORY`·`ISTHMUS_CI_EXPECTED_HEAD_BRANCH`가 모두 필수다.
  */
 export async function postFromEnvironment(env = process.env, { fetchImpl = globalThis.fetch, log = (line) => process.stdout.write(line) } = {}) {
   const key = env.ISTHMUS_CI_COMMENT_KEY || 'default';
@@ -149,14 +163,22 @@ export async function postFromEnvironment(env = process.env, { fetchImpl = globa
   if (env.ISTHMUS_CI_RESULTS_DIR) ({ body, meta } = renderFromResults(resolve(env.GITHUB_WORKSPACE ?? '.', env.ISTHMUS_CI_RESULTS_DIR), { key, maxRows }));
   else if (env.ISTHMUS_CI_BODY_FILE) body = readFileSync(env.ISTHMUS_CI_BODY_FILE, 'utf8');
   else throw new PostCommentError('Give results-dir (recommended) or a comment body file.');
+  const expectedHeadRepository = env.ISTHMUS_CI_EXPECTED_HEAD_REPOSITORY || undefined;
+  const expectedHeadBranch = env.ISTHMUS_CI_EXPECTED_HEAD_BRANCH || undefined;
   const eventNumber = /^\d{1,10}$/u.test(env.ISTHMUS_CI_PR_NUMBER ?? '') ? Number(env.ISTHMUS_CI_PR_NUMBER) : undefined;
   const fromMeta = eventNumber === undefined ? metaPullRequestNumber(meta) : undefined;
-  if (fromMeta !== undefined && expectedHeadSha === undefined) {
-    throw new PostCommentError('The pull request number comes from the artifact; set expected-head-sha to the analysed head commit.');
+  if (eventNumber === undefined && fromMeta === undefined) {
+    throw new PostCommentError(env.ISTHMUS_CI_RESULTS_DIR && meta === undefined
+      ? 'No pull request number: the results have no meta.json (did the analyze step fail before writing it?) and pr-number is empty.'
+      : 'No pull request number: set pr-number, or run on a pull_request event.');
+  }
+  if (fromMeta !== undefined && (expectedHeadSha === undefined || expectedHeadRepository === undefined || expectedHeadBranch === undefined)) {
+    throw new PostCommentError('The pull request number comes from the artifact; set expected-head-sha, expected-head-repository and '
+      + 'expected-head-branch from the workflow_run event.');
   }
   const result = await upsertStickyComment({ token: env.ISTHMUS_CI_GITHUB_TOKEN, repository: env.GITHUB_REPOSITORY,
     prNumber: eventNumber ?? fromMeta, body, key, author: env.ISTHMUS_CI_COMMENT_AUTHOR || DEFAULT_COMMENT_AUTHOR,
-    apiUrl: env.GITHUB_API_URL || 'https://api.github.com', expectedHeadSha, fetchImpl });
+    apiUrl: env.GITHUB_API_URL || 'https://api.github.com', expectedHeadSha, expectedHeadRepository, expectedHeadBranch, fetchImpl });
   if (result.status === 'forbidden') {
     log('::warning title=isthmus comment::The token cannot write pull request comments (fork pull requests get a read-only token); '
       + 'the report is in the job summary. See docs/CI.md for the workflow_run setup.\n');

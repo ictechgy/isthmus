@@ -153,6 +153,19 @@ export function childEnvironment(env) {
   return Object.fromEntries(Object.entries(env).filter(([key]) => !WITHHELD_ENV_PATTERN.test(key)));
 }
 
+/**
+ * 자식 종료 상태를 사람이 읽는 문구로 바꾼다. spawnSync는 시간 초과·실행 실패·출력 상한 초과에서 던지지 않고
+ * `status: null`과 `error`를 돌려주므로 그 원인을 밝힌다.
+ */
+export function describeExit(result) {
+  if (result.status !== null && result.status !== undefined) return `status ${result.status}`;
+  const code = result.error?.code;
+  if (code === 'ETIMEDOUT') return 'no status (timed out)';
+  if (code === 'ENOBUFS') return 'no status (output exceeded the buffer limit)';
+  if (code === 'ENOENT') return 'no status (the command was not found)';
+  return `no status (${result.signal ?? code ?? 'unknown'})`;
+}
+
 /** 자식 stderr의 첫 줄을 짧게 돌려준다(오류 문구용). 줄바꿈·제어 문자는 지운다. */
 function firstLine(value) {
   const line = String(value ?? '').split(/\r?\n/u).find((entry) => entry.trim().length > 0) ?? '';
@@ -206,7 +219,7 @@ export function prepareIsthmus(options, { execute = defaultExecute, env = proces
   const result = execute('npm', ['install', '--prefix', home, '--no-save', '--no-audit', '--no-fund', '--no-package-lock',
     '--ignore-scripts', `isthmus-cli@${version}`], { env: childEnvironment(env), timeout: 10 * 60 * 1000 });
   if (result.status !== 0) {
-    throw new CiStepError('install', `npm could not install isthmus-cli@${version} (exit ${result.status}); check the version `
+    throw new CiStepError('install', `npm could not install isthmus-cli@${version} (${describeExit(result)}); check the version `
       + 'and npm registry access, or set isthmus-path to a built checkout.');
   }
   return localIsthmus(join(home, 'node_modules', 'isthmus-cli'));
@@ -296,6 +309,28 @@ function ensureCommit(execute, repositoryPath, sha, label) {
     `The ${label} commit is not available and could not be fetched; use actions/checkout with fetch-depth: 0.`);
 }
 
+/** 원래 checkout(브랜치 이름이 있으면 그 이름, 아니면 commit)이다. 끝나고 같은 상태로 되돌리기 위해 기록한다. */
+function originalCheckout(execute, repositoryPath) {
+  const sha = git(execute, repositoryPath, ['rev-parse', 'HEAD'], 'checkout', 'git rev-parse failed.').trim();
+  const branch = execute('git', ['-C', repositoryPath, 'symbolic-ref', '-q', '--short', 'HEAD'], { timeout: 60 * 1000 });
+  const name = branch.status === 0 ? String(branch.stdout ?? '').trim() : '';
+  return { sha, branch: name.length > 0 ? name : undefined };
+}
+
+/**
+ * 원래 checkout으로 되돌린다. 브랜치였으면 브랜치로(detached HEAD로 남기지 않는다), 아니면 그 commit으로.
+ * 앞선 단계가 이미 실패했으면 복원 실패가 원래 원인을 가리지 않게 원래 오류 문구에 덧붙인다.
+ */
+function restoreCheckout(execute, repositoryPath, original, failure) {
+  const target = original.branch === undefined ? ['checkout', '--quiet', '--detach', original.sha] : ['checkout', '--quiet', original.branch];
+  try {
+    git(execute, repositoryPath, target, 'checkout', 'Could not restore the original checkout.');
+  } catch (error) {
+    if (failure === undefined) throw error;
+    failure.message = `${failure.message} Restoring the original checkout also failed.`;
+  }
+}
+
 /** 작업 트리에 추적 파일 변경이 없는지 확인한다(revision을 바꾸면 변경을 잃거나 섞는다). */
 function requireCleanTree(execute, repositoryPath) {
   const status = git(execute, repositoryPath, ['status', '--porcelain', '--untracked-files=no'], 'checkout',
@@ -318,7 +353,7 @@ function runCapture(execute, isthmus, configPath, side, env, log) {
   const result = execute(process.execPath, [isthmus.capture, configPath], { env: childEnvironment(env), timeout: CAPTURE_TIMEOUT_MS });
   logUntrusted(log, `capture (${side}) messages:`, result.stderr);
   if (result.status !== 0) {
-    throw new CiStepError(`capture:${side}`, firstLine(result.stderr) || `capture-trace exited with status ${result.status}.`);
+    throw new CiStepError(`capture:${side}`, firstLine(result.stderr) || `capture-trace exited with ${describeExit(result)}.`);
   }
 }
 
@@ -333,10 +368,11 @@ export function captureBothSides(options, isthmus, { execute = defaultExecute, e
   ensureCommit(execute, repositoryPath, headSha, 'head');
   const baseSha = resolveBaseSha(execute, options);
   ensureCommit(execute, repositoryPath, baseSha, 'base');
-  const original = git(execute, repositoryPath, ['rev-parse', 'HEAD'], 'checkout', 'git rev-parse failed.').trim();
+  const original = originalCheckout(execute, repositoryPath);
   const config = readConfigAtHead(execute, options, headSha);
   const captureRoot = join(options.outputDir, 'capture');
   mkdirSync(captureRoot, { recursive: true });
+  let failure;
   try {
     for (const [side, sha] of [['base', baseSha], ['head', headSha]]) {
       git(execute, repositoryPath, ['checkout', '--quiet', '--detach', sha], 'checkout', `Could not check out the ${side} commit.`);
@@ -344,8 +380,11 @@ export function captureBothSides(options, isthmus, { execute = defaultExecute, e
       writeFileSync(configPath, `${JSON.stringify(rewriteCaptureConfig(config, { repositoryPath, outputRoot: captureRoot, side }), null, 2)}\n`);
       runCapture(execute, isthmus, configPath, side, env, log);
     }
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    git(execute, repositoryPath, ['checkout', '--quiet', '--detach', original], 'checkout', 'Could not restore the original commit.');
+    restoreCheckout(execute, repositoryPath, original, failure);
   }
   return { base: join(captureRoot, 'base', 'trace-context.json'), head: join(captureRoot, 'head', 'trace-context.json'),
     revisions: { base: baseSha, head: headSha } };
@@ -432,7 +471,7 @@ export function runDiff(isthmus, inputs, failOn, { execute = defaultExecute, env
   const result = execute(process.execPath, [isthmus.cli, ...args], { env: childEnvironment(env), timeout: ISTHMUS_TIMEOUT_MS });
   if (result.status !== 0 && result.status !== 1) {
     const hint = result.status === 64 ? ' (usage error: check fail-on tokens and that the installed isthmus supports diff --http)' : '';
-    throw new CiStepError('diff', `isthmus diff --http exited with status ${result.status}${hint}: ${firstLine(result.stderr)}`);
+    throw new CiStepError('diff', `isthmus diff --http exited with ${describeExit(result)}${hint}: ${firstLine(result.stderr)}`);
   }
   return { exitCode: result.status, stdout: result.stdout };
 }
@@ -505,7 +544,8 @@ export function runTrace(isthmus, diff, contextPath, options, { execute = defaul
   const result = execute(process.execPath, [isthmus.cli, 'trace', path, '--max-chains', String(options.maxChains),
     '--max-rows', String(options.maxRows)], { env: childEnvironment(env), timeout: ISTHMUS_TIMEOUT_MS });
   if (result.status !== 0) {
-    return { status: 'error', exitCode: result.status, message: firstLine(result.stderr) || 'isthmus trace failed.', selected: routes.length, omittedRoutes: omitted };
+    return { status: 'error', exitCode: result.status, message: firstLine(result.stderr) || `isthmus trace exited with ${describeExit(result)}.`,
+      selected: routes.length, omittedRoutes: omitted };
   }
   writeFileSync(join(options.outputDir, 'trace.json'), result.stdout);
   return { status: 'ran', selected: routes.length, omittedRoutes: omitted };
@@ -612,8 +652,12 @@ export function runCiHttpImpact(env = process.env, dependencies = {}) {
   try {
     analyze(options, meta, { ...dependencies, env, log });
   } catch (error) {
-    if (!(error instanceof CiStepError)) throw error;
-    meta.errors.push({ step: error.step, message: error.message });
+    // 예상하지 못한 예외도 댓글·artifact·출력을 남기도록 기록한다. 상세(경로가 섞일 수 있음)는 로그에만 감싸 싣는다.
+    if (error instanceof CiStepError) meta.errors.push({ step: error.step, message: error.message });
+    else {
+      meta.errors.push({ step: 'internal', message: 'Unexpected failure in the action; see the step log.' });
+      logUntrusted(log, 'isthmus: unexpected failure:', error?.stack ?? String(error));
+    }
   }
   writeFileSync(join(options.outputDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
   const diff = renderOutputs(options, meta, env);

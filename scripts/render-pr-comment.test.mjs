@@ -92,6 +92,11 @@ test('빈 결과지만 불완전: 깨짐 없음 줄과 불완전성 배너를 �
   assert.ok(body.indexOf('Incomplete analysis') < body.indexOf('#### Incompleteness'));
 });
 
+test('모순된 요약 수(증명 > 전체)는 음수 대신 ?로 싣는다', () => {
+  const body = renderPrComment({ diff: syntheticDiff({ summary: { brokenCalls: 1, provenBrokenCalls: 99 } }) });
+  assert.match(body, /— 99 proven, \? unverified\./u);
+});
+
 test('호출 영향을 평가하지 못했으면(not-assessed) 경고로 싣는다', () => {
   const body = renderPrComment({ diff: syntheticDiff({ summary: { callImpact: 'not-assessed' } }) });
   assert.match(body, /\*\*Call impact was not assessed\*\*/u);
@@ -142,6 +147,7 @@ test('inlineCode: backtick 울타리·여백·표 구분자·제어 문자·길�
   assert.equal(inlineCode('a\nb\u0007c'), '`a b c`');
   assert.equal([...singleLine('x'.repeat(500))].length, 160);
   assert.equal(singleLine('line\u2028sep'), 'line sep');
+  assert.equal(singleLine('a\u202eb\u2066c\u200bd\ufeff'), 'abcd');
 });
 
 test('escapeHtml·escapeMarkdownText는 HTML·Markdown·멘션을 무력화한다', () => {

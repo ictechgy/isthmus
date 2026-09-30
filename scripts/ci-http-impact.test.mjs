@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
-  changedRouteSelection, childEnvironment, CiStepError, classifyContextDocuments, isDeclarationSide, isHttpDiffDocument,
+  changedRouteSelection, childEnvironment, CiStepError, describeExit, classifyContextDocuments, isDeclarationSide, isHttpDiffDocument,
   logUntrusted, MAX_TRACE_ROUTES, OUTPUT_ROOT_NAME, parseInputs, requireNodeVersion, resolveBaseSha, retargetTraceContext,
   rewriteCaptureConfig, runCiHttpImpact, workspaceManifestFromContext, writeActionOutputs,
 } from './ci-http-impact.mjs';
@@ -81,7 +81,29 @@ test('capture 모드: base·head를 같은 checkout에서 수집해 깨짐·trac
   const traceContext = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'trace-context.json'), 'utf8'));
   assert.deepEqual(traceContext.selection, { routes: [{ method: 'GET', template: '/api/users/{}', scope: 'default' }] });
   assert.equal(git(demo.path, ['rev-parse', 'HEAD']), demo.head, '원래 commit으로 되돌린다');
+  assert.equal(git(demo.path, ['symbolic-ref', '--short', 'HEAD']), 'main', 'detached HEAD가 아니라 원래 브랜치로 되돌린다');
 }));
+
+test('예상하지 못한 예외도 meta·댓글·출력을 남긴다', () => withTemporaryDirectory((directory) => {
+  const env = actionEnvironment(directory, {
+    ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json', ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json' });
+  const lines = [];
+  const result = runCiHttpImpact(env, { log: (line) => lines.push(line), execute: () => { throw new TypeError('boom /secret/path'); } });
+  assert.equal(result.failed, true);
+  assert.deepEqual(result.meta.errors, [{ step: 'internal', message: 'Unexpected failure in the action; see the step log.' }]);
+  assert.match(readFileSync(result.outputs['comment-file'], 'utf8'), /Unexpected failure in the action/u);
+  assert.doesNotMatch(readFileSync(result.outputs['comment-file'], 'utf8'), /secret/u);
+  assert.match(lines.join(''), /::stop-commands::[0-9a-f]{32}\n[^]*boom/u);
+}));
+
+test('describeExit: 시간 초과·출력 상한·명령 없음·신호를 밝힌다', () => {
+  assert.equal(describeExit({ status: 2 }), 'status 2');
+  assert.equal(describeExit({ status: null, error: { code: 'ETIMEDOUT' } }), 'no status (timed out)');
+  assert.equal(describeExit({ status: null, error: { code: 'ENOBUFS' } }), 'no status (output exceeded the buffer limit)');
+  assert.equal(describeExit({ status: null, error: { code: 'ENOENT' } }), 'no status (the command was not found)');
+  assert.equal(describeExit({ status: null, signal: 'SIGKILL' }), 'no status (SIGKILL)');
+  assert.equal(describeExit({ status: null }), 'no status (unknown)');
+});
 
 test('capture 모드: 추적 파일이 바뀐 checkout은 revision을 바꾸지 않고 실패를 댓글에 싣는다', () => withTemporaryDirectory((directory) => {
   const demo = makeDemoRepository(join(directory, 'repo'));

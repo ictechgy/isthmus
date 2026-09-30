@@ -19,7 +19,8 @@
 - **보안**: `pull_request_target` 없음, 분석 job `contents: read`·댓글 job만 `pull-requests: write`, 토큰은 댓글 단계에만,
   `run`에 식을 끼워 넣지 않음, 생산자 환경에서 `GITHUB_ENV` 등 파일 명령 경로·토큰 제거, 신뢰하지 않는 로그는
   `::stop-commands::`, `comment` 명령은 artifact JSON을 다시 렌더링(comment.md를 그대로 올리지 않음), artifact에서 온 PR
-  번호는 `expected-head-sha` 대조(workflow_run), 서드파티 Action SHA 고정.
+  번호는 PR head의 commit·저장소·브랜치 대조(workflow_run — head SHA만으로는 PR 신원이 아니다), bidi·폭 없는 문자 제거,
+  서드파티 Action SHA 고정.
 - **자체 시험** `.github/workflows/action-self-test.yml`: 합성 fixture로 미리 만든 문서(surface·workspace)와 합성 git 저장소의
   capture 모드를 job summary 모드로 돌린다(댓글은 저장소 변수로 opt-in). 로컬은 `npm run verify`의 세 스크립트 테스트.
 

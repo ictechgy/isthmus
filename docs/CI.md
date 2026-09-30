@@ -219,7 +219,8 @@ member가 둘 이상이거나 link가 있으면 capture context는 workspace이�
 | `base-sha`·`head-sha` | 병합 commit 첫째 부모·`github.sha` | 비교할 두 commit. `pull_request` 밖(예: push)에서는 `base-sha`를 준다(`github.event.before` 등) |
 | `output-dir` | `runner.temp/isthmus-ci` | 비어 있어야 하는 출력 디렉터리 |
 | `upload-artifact`·`artifact-name` | `true`·`isthmus-http-impact` | JSON·댓글 artifact(행렬 job이면 이름을 다르게) |
-| `results-dir`·`pr-number`·`expected-head-sha` | —·이벤트 PR 번호·— | `comment` 명령 입력 |
+| `results-dir`·`pr-number` | —·이벤트 PR 번호 | `comment` 명령 입력 |
+| `expected-head-sha`·`expected-head-repository`·`expected-head-branch` | — | `comment` 명령에서 PR 번호를 artifact로 받을 때(workflow_run) 셋 다 필수 |
 | `github-token` | `github.token` | 댓글 단계에만 넘긴다 |
 
 출력: `failed`, `diff-exit-code`, `broken-calls`, `proven-broken-calls`, `incompleteness`, `call-impact`,
@@ -296,10 +297,12 @@ artifact에는 `diff.json`(`isthmus-http-diff` v1), `trace.json`(`isthmus-trace`
   인자 배열로 실행한다. 생산자·capture의 stderr는 `::stop-commands::`로 감싸 로그에 싣는다(워크플로 명령 주입 방지).
   `GITHUB_OUTPUT`에는 줄바꿈 없는 값만 쓴다.
 - **다시 렌더링**: `comment` 명령은 artifact의 `comment.md`를 쓰지 않고 JSON을 Action 코드로 다시 렌더링한다. artifact는
-  PR 코드가 만든 것이라 그대로 올리면 임의의 Markdown(링크·멘션)을 봇 이름으로 게시하게 된다.
+  PR 코드가 만든 것이라 그대로 올리면 임의의 Markdown(링크·멘션)을 봇 이름으로 게시하게 된다. 이 보장은 **두 job 구성에만**
+  있다. 한 job의 `comment-mode: sticky`는 분석 단계가 쓴 본문 파일을 올리므로 같은 job에서 돈 PR 코드(백그라운드 프로세스)가
+  그 파일을 바꾸거나 게시 단계의 토큰을 읽을 수 있다 — 표식 검사는 내용의 경계가 아니다.
 - **이스케이프**: 사실 문자열(경로·심볼·템플릿·scope·detail·오류 문구)은 모두 코드 스팬(표 안이면 `|` 이스케이프,
   backtick 수에 맞춘 울타리)이나 HTML 숫자 엔티티(`<summary>` 안)로만 싣는다. 줄바꿈·제어 문자는 공백으로 바꾸고
-  값마다 160자로 자른다. 숫자는 안전한 정수만 싣는다.
+  값마다 160자로 자른다. 양방향 재배치(bidi)·폭 없는 문자는 지운다. 숫자는 안전한 정수만 싣는다.
 - **크기 상한**: 댓글은 65,000자(GitHub 한도 65,536 이하)로 줄 단위로 자르고, 열린 `<details>`를 닫은 뒤 잘랐다는
   알림을 붙인다. 표마다 `max-rows`로 먼저 줄인다.
 - **스티키 댓글**: 표식(`<!-- isthmus-http-impact:<key> -->`)으로 시작하고 `comment-author`가 쓴 댓글만 고친다.
@@ -340,10 +343,14 @@ jobs:
           results-dir: ${{ runner.temp }}/isthmus-results
           pr-number: ''                                            # artifact(meta)의 번호를 쓴다
           expected-head-sha: ${{ github.event.workflow_run.head_sha }}
+          expected-head-repository: ${{ github.event.workflow_run.head_repository.full_name }}
+          expected-head-branch: ${{ github.event.workflow_run.head_branch }}
 ```
 
-PR 번호는 artifact(PR 코드가 만든 값)에서 오므로 `expected-head-sha`가 필수다 — 게시기는 그 PR의 head가 분석한
-commit과 같을 때만 댓글을 단다(다른 PR 번호를 적어 엉뚱한 PR에 댓글을 달게 하지 못한다). 본문은 JSON을 다시
+PR 번호는 artifact(PR 코드가 만든 값)에서 오므로 `expected-head-sha`·`expected-head-repository`·`expected-head-branch`가
+모두 필수다 — 게시기는 그 PR의 head commit·head 저장소·head 브랜치가 분석한 실행과 모두 같을 때만 댓글을 단다. head SHA만으로는
+PR 신원이 아니다(남의 PR head commit을 자기 포크로 가져와 PR을 열면 SHA가 같다). head 저장소·브랜치는 그 PR을 연 쪽만 정할 수
+있다. 이 값들은 식으로 `with:`에 넘기고 `run`에는 넣지 않는다(브랜치 이름은 신뢰하지 않는 문자열이다). 본문은 JSON을 다시
 렌더링하므로 렌더러 틀을 벗어나지 못한다.
 
 ## 다른 CI에서 렌더러만 쓰기

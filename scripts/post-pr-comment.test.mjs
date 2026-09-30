@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -18,7 +18,7 @@ const HEAD = 'c'.repeat(40);
  * 가짜 GitHub API다. 댓글 목록(쪽당 100개)·PR·POST·PATCH를 흉내 내고 요청을 기록한다.
  * `status`로 특정 메서드의 실패 상태를 강제한다.
  */
-function fakeGitHub({ comments = [], pullHead = HEAD, status = {} } = {}) {
+function fakeGitHub({ comments = [], pullHead = HEAD, pullRepo = 'fork-owner/repo', pullRef = 'topic', status = {} } = {}) {
   const requests = [];
   const fetchImpl = async (url, init) => {
     const { pathname, searchParams } = new URL(url);
@@ -29,7 +29,9 @@ function fakeGitHub({ comments = [], pullHead = HEAD, status = {} } = {}) {
       const page = Number(searchParams.get('page'));
       return { ok: true, status: 200, json: async () => comments.slice((page - 1) * 100, page * 100) };
     }
-    if (init.method === 'GET') return { ok: true, status: 200, json: async () => ({ head: { sha: pullHead } }) };
+    if (init.method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ head: { sha: pullHead, ref: pullRef, repo: { full_name: pullRepo } } }) };
+    }
     return { ok: true, status: init.method === 'POST' ? 201 : 200, json: async () => ({ id: 99 }) };
   };
   return { fetchImpl, requests };
@@ -76,6 +78,24 @@ test('기대 head SHA와 PR head가 다르면 댓글을 달지 않는다', async
   await assert.rejects(upsertStickyComment(call({ fetchImpl: fakeGitHub({ status: { GET: 404 } }).fetchImpl, expectedHeadSha: HEAD })), /HTTP 404/u);
 });
 
+test('같은 head SHA라도 head 저장소·브랜치가 다르면(남의 commit으로 연 PR) 댓글을 달지 않는다', async () => {
+  const expected = { expectedHeadSha: HEAD, expectedHeadRepository: 'attacker/repo', expectedHeadBranch: 'topic' };
+  const spoofed = fakeGitHub({ pullRepo: 'victim/repo' });
+  await assert.rejects(upsertStickyComment(call({ fetchImpl: spoofed.fetchImpl, ...expected })), /commit, repository and branch/u);
+  assert.ok(spoofed.requests.every(({ method }) => method === 'GET'));
+  await assert.rejects(upsertStickyComment(call({ fetchImpl: fakeGitHub({ pullRepo: 'attacker/repo', pullRef: 'other' }).fetchImpl, ...expected })),
+    /commit, repository and branch/u);
+  const genuine = fakeGitHub({ pullRepo: 'Attacker/Repo' });
+  assert.equal((await upsertStickyComment(call({ fetchImpl: genuine.fetchImpl, ...expected }))).status, 'created');
+});
+
+test('댓글이 5,000개를 넘어 스티키 댓글을 찾지 못하면 새로 만들지 않고 오류다', async () => {
+  const comments = Array.from({ length: 5000 }, (_, index) => ({ id: index + 1, body: 'x', user: { login: 'someone' } }));
+  const github = fakeGitHub({ comments });
+  await assert.rejects(upsertStickyComment(call({ fetchImpl: github.fetchImpl })), /more than 5000 comments/u);
+  assert.ok(github.requests.every(({ method }) => method === 'GET'));
+});
+
 test('성공 응답의 본문이 JSON이 아니어도 게시 결과를 돌려준다', async () => {
   const fetchImpl = async (url, init) => (init.method === 'GET'
     ? { ok: true, status: 200, json: async () => [] }
@@ -105,9 +125,12 @@ test('results 디렉터리를 다시 렌더링하고, artifact의 PR 번호는 �
     assert.doesNotMatch(body, /phish/u, 'artifact의 comment.md를 쓰지 않는다');
     const env = { ISTHMUS_CI_RESULTS_DIR: directory, ISTHMUS_CI_GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'owner/repo' };
     await assert.rejects(postFromEnvironment(env, { fetchImpl: fakeGitHub().fetchImpl, log: () => {} }), /set expected-head-sha/u);
+    await assert.rejects(postFromEnvironment({ ...env, ISTHMUS_CI_EXPECTED_HEAD_SHA: HEAD }, { fetchImpl: fakeGitHub().fetchImpl, log: () => {} }),
+      /expected-head-repository/u);
     const github = fakeGitHub();
     const logs = [];
-    const result = await postFromEnvironment({ ...env, ISTHMUS_CI_EXPECTED_HEAD_SHA: HEAD }, { fetchImpl: github.fetchImpl, log: (line) => logs.push(line) });
+    const result = await postFromEnvironment({ ...env, ISTHMUS_CI_EXPECTED_HEAD_SHA: HEAD, ISTHMUS_CI_EXPECTED_HEAD_REPOSITORY: 'fork-owner/repo',
+      ISTHMUS_CI_EXPECTED_HEAD_BRANCH: 'topic' }, { fetchImpl: github.fetchImpl, log: (line) => logs.push(line) });
     assert.equal(result.status, 'created');
     assert.equal(github.requests.at(-1).pathname, '/repos/owner/repo/issues/12/comments');
     assert.match(logs.join(''), /comment created/u);
@@ -122,6 +145,12 @@ test('results 디렉터리를 다시 렌더링하고, artifact의 PR 번호는 �
       { fetchImpl: direct.fetchImpl, log: () => {} });
     assert.equal(JSON.parse(direct.requests.at(-1).body).body, BODY);
     await assert.rejects(postFromEnvironment({ GITHUB_REPOSITORY: 'owner/repo' }, { fetchImpl: direct.fetchImpl, log: () => {} }), /results-dir/u);
+    const empty = join(directory, 'empty');
+    mkdirSync(empty);
+    await assert.rejects(postFromEnvironment({ ISTHMUS_CI_RESULTS_DIR: empty, ISTHMUS_CI_GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'owner/repo' },
+      { fetchImpl: direct.fetchImpl, log: () => {} }), /no meta\.json/u);
+    await assert.rejects(postFromEnvironment({ ISTHMUS_CI_BODY_FILE: bodyFile, ISTHMUS_CI_GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'owner/repo' },
+      { fetchImpl: direct.fetchImpl, log: () => {} }), /set pr-number/u);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -52,9 +52,11 @@ export class RenderInputError extends Error {
 /**
  * 외부 문자열을 한 줄 표시용으로 정리한다. 제어 문자·줄바꿈은 공백으로, 긴 값은 말줄임으로 자른다.
  * 줄바꿈이 남으면 표 행이 끊기고 새 Markdown 블록이 시작되므로(주입 경로) 반드시 먼저 거친다.
+ * 양방향 재배치(bidi)·폭 없는 문자는 지운다 — 코드 스팬 안에서도 보이지 않게 주변 글을 뒤집어 보이게 할 수 있다.
  */
 export function singleLine(value, maxLength = MAX_VALUE_LENGTH) {
-  const text = String(value).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ');
+  const text = String(value).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ')
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, '');
   const points = [...text];
   return points.length <= maxLength ? text : `${points.slice(0, maxLength - 1).join('')}…`;
 }
@@ -235,7 +237,8 @@ function headline(diff) {
   const broken = summary.brokenCalls;
   const proven = summary.provenBrokenCalls;
   if (isCount(broken) && broken > 0) {
-    const unverified = isCount(proven) ? broken - proven : undefined;
+    // 입력(artifact)이 모순이면(증명된 수 > 전체) 음수를 쓰지 않고 모름으로 둔다.
+    const unverified = isCount(proven) && proven <= broken ? broken - proven : undefined;
     return ['> [!CAUTION]', `> **${count(broken)} client call(s) stop binding at head** — ${count(proven)} proven, `
       + `${unverified === undefined ? '?' : unverified} unverified.`];
   }

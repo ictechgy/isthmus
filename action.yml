@@ -89,7 +89,13 @@ inputs:
     description: "`comment` command. Pull request number. Default is the event's; for workflow_run leave empty and set expected-head-sha."
     default: ${{ github.event.pull_request.number }}
   expected-head-sha:
-    description: "`comment` command. Required when the pull request number comes from the artifact; the pull request head must equal it."
+    description: "`comment` command. Required when the pull request number comes from the artifact (workflow_run): `github.event.workflow_run.head_sha`."
+    default: ''
+  expected-head-repository:
+    description: "`comment` command. Required with expected-head-sha: `github.event.workflow_run.head_repository.full_name` (a head SHA alone is not a pull request identity)."
+    default: ''
+  expected-head-branch:
+    description: "`comment` command. Required with expected-head-sha: `github.event.workflow_run.head_branch`."
     default: ''
   github-token:
     description: Token for the comment step only. No other step receives it.
@@ -193,6 +199,8 @@ runs:
         ISTHMUS_CI_MAX_ROWS: ${{ inputs.max-rows }}
         ISTHMUS_CI_PR_NUMBER: ${{ inputs.pr-number }}
         ISTHMUS_CI_EXPECTED_HEAD_SHA: ${{ inputs.expected-head-sha }}
+        ISTHMUS_CI_EXPECTED_HEAD_REPOSITORY: ${{ inputs.expected-head-repository }}
+        ISTHMUS_CI_EXPECTED_HEAD_BRANCH: ${{ inputs.expected-head-branch }}
         ISTHMUS_CI_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: node "$GITHUB_ACTION_PATH/scripts/post-pr-comment.mjs"
 
