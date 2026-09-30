@@ -210,7 +210,8 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 확장 등 일부 심볼에서만 다름) 어긋난 id는 consumer 그래프에 없다고 신고되어(3) 개수로만 남는다 — isthmus는 "앱이 부르지
 않음"과 "id가 다름"을 구분할 수 없다. 생산자가 id 안정성을 보장하지 않으면 `symbol-map`을 쓴다.
 
-capture는 아직 library를 모른다. consumer 분석은 SDK 공개 API id(또는 대응표의 consumer id)를 root로 넘겨 만든다. 반대 방향
+consumer 분석은 SDK 공개 API id(또는 대응표의 consumer id)를 root로 넘겨 만든다. capture 설정의 `libraries`가 그 root를
+provider 순회에서 계산해 넘긴다([capture의 surface와 library](#capture의-surface-member와-library)). 반대 방향
 (앱 심볼 → SDK → route) 선택은 v1에 없다 — 앱 심볼의 심볼 선택은 앱 member 안에서 route 핸들러에 닿지 않아 `non-http-entry`다.
 
 ### 사전 계산 분석
@@ -616,6 +617,76 @@ root를 더할 수 없어 trace가 `analysis-missing`을 남긴다.
 심볼을 놓칠 수 있다. dartograph는 아직 `language-traversal`과 route 사실을 내지 않아 사전 계산 artifact(옛 dartograph
 impact)로만 쓴다. `--roots-from`이 없는 cartograph는 `arguments`/`separator`로 넘긴다(root가 많으면 나눠 실행).
 
+### capture의 surface member와 library
+
+capture 설정은 trace context의 조직 경계 입력([surface member](#입력-workspace-저장소가-나뉜-서버클라이언트)·
+[`libraries`](#library-공유-sdk-저장소))도 만든다. surface member나 `libraries`가 있으면 workspace context다.
+
+```jsonc
+"members": [
+  { "name": "api", "surface": { "path": { "root": "vendor", "path": "example-api-2.4.surface.json" }, "sha256": "<파일 sha256>" } },
+  { "name": "published", "surface": { "export": { "member": "server", "name": "example-api", "revision": "v2.4",
+                                                   "includeHandlerUsrs": false, "includeLimitationText": false } } },
+  { "name": "sdk", "project": { "root": "sdk" }, "revision": { "git": true }, "documents": [ /* route-call 문서 */ ],
+    "analyses": [{ "id": "sdk-reverse", "platform": "kotlin", "role": "reverse", "tool": "kartograph", "args": ["impact", "…"],
+                   "roots": "roots-from" }] },
+  { "name": "app-a", "project": { "root": "apps", "path": "a" }, "revision": { "git": true }, "documents": [],
+    "analyses": [{ "id": "app-a-reverse", "platform": "kotlin", "role": "reverse", "tool": "kartograph", "args": ["impact", "…"],
+                   "roots": "roots-from" }] }
+],
+"libraries": [
+  { "name": "app-a<-sdk", "consumer": "app-a", "provider": "sdk", "ids": "shared",
+    "publicSymbols": { "root": "sdk", "path": "build/public-api.json" } },
+  { "name": "app-b<-sdk", "consumer": "app-b", "provider": "sdk", "ids": "symbol-map",
+    "symbolMap": [{ "provider": "kt:…OrdersSdk#order(String)", "consumer": "kt:shaded…OrdersSdk#order(String)" }],
+    "publicSymbols": ["kt:…OrdersSdk#order(String)", "kt:…OrdersSdk#placeOrder(Order)"] }
+]
+```
+
+- **surface 가져오기**(`surface: {path, sha256}`): member는 `name`과 `surface`만 받는다. 사실 단계 뒤, 순회 전에 파일을 읽어
+  (사전 계산 파일과 같은 root·realpath·크기 검사) 바이트 sha256을 고정 값과 대조하고(다르면 `surface:<member>` 단계 오류 —
+  긴 순회를 돌기 전에 실패한다) digest·계약을 trace와 같은 파서로 검증한 뒤 `<member>/http-surface.json`에 복사한다. context의
+  surface member는 복사본 경로와 같은 sha256을 싣고 trace가 다시 대조한다.
+- **surface 내보내기**(`surface: {export: {...}}`): 같은 설정의 문서 member(`member`)가 capture한 문서 중 선언 측 http 문서와
+  openapi 문서(CLI `--workspace`·`--member`와 같은 규칙)로 `isthmus surface export --name <name> --revision <revision> [공개
+  플래그] -- <문서…>`를 실행한다. `name`의 기본값은 surface member 이름, `revision`은 원본 member의 revision이다(값은 CLI
+  인자이므로 `-`로 시작할 수 없다). `includeHandlerUsrs`·`includeLimitationText`는 `--include-handler-usrs`·
+  `--include-limitation-text`로 그대로 옮긴다(기본은 가장 좁은 공개). 결과는 가져오기와 같이 검증해 `<member>/http-surface.json`에
+  쓰고 context의 surface member로 싣는다 — 이 파일이 게시할 artifact다. 원본 member에 선언 측 문서가 없으면 그 단계의 오류다.
+- manifest `members`의 surface 항목은 `{name, surface: {source: "imported"|"exported", member?, sha256, name, revision, privacy}}`이고
+  artifact 출처는 가져오기 `precomputed`, 내보내기 `isthmus`다.
+- **libraries**: `name`·`consumer`·`provider`·`ids`는 trace context와 같다. `publicSymbols`·`symbolMap`은 목록을 직접 쓰거나 root 아래
+  JSON 파일(`{root, path}` — 문자열 배열, `{provider, consumer}` 배열)로 준다. 파일은 다른 입력과 같은 경로 규칙(선언한 root 안,
+  제어 문자·비밀 이름 거부, 심링크 realpath 검사)으로 읽고, 원문 대신 sha256·항목 수를 manifest `libraries[].inputs`에 적는다.
+  `symbol-map`의 `publicSymbols`는 capture만 쓰는 점검 값이라 context에 싣지 않는다(trace는 symbol-map에서 받지 않는다).
+  library consumer인 문서 member는 `documents: []`일 수 있다.
+
+**consumer root 계산.** library consumer의 생산자 명령 역방향 순회는 다른 모든 순회(파일 선택이면 2단계까지) 뒤로 미룬다.
+root가 provider 순회의 도달에서 나오기 때문이다. platform마다:
+
+1. 후보 = provider 문서의 route-call `symbol.usr`(테스트 소스 제외 — 호출을 감싼 SDK 심볼)와, provider의 같은 platform 역방향
+   분석(생산자 명령·사전 계산 모두)에서 **그 호출부 root로부터** 닿은 정점이다. relation-use root에서만 닿은 정점은 SDK 호출의
+   영향이 아니라 넣지 않는다. root 목록이 잘린 문서(`rootsTruncated`)는 도달 정점 전부를 넣는다(넘치는 쪽).
+2. 선언대로 옮긴다 — `shared`는 같은 문자열(`publicSymbols`가 있으면 그 안만), `symbol-map`은 대응표에 있는 것만. trace의
+   [잇는 규칙](#library-공유-sdk-저장소)과 같은 후보·옮김이라, 이 root로 순회하면 trace에 `library-continuation-unrooted`가 남지 않는다.
+   link 귀속과 무관한 상위 집합이다(capture root 원칙).
+3. 옮긴 id를 consumer의 같은 platform 역방향 순회(생산자 명령) root에 더한다(`--roots-from`·`separator`·`arguments`는 분석
+   설정대로). 선택·파일 root처럼 root 위생으로 거르지 않는다 — 앱 그래프에 없는 id는 생산자의 root-not-found(부분 성공)로
+   드러나고 trace가 `notInConsumerGraph`로 센다.
+
+조용히 비는 곳은 모두 capture `warnings`(결과 JSON·stderr·manifest)로 드러난다. 이것은 trace gap 코드가 아니라 capture 경고다.
+
+- `library-no-roots`: provider에 route-call 심볼이 없거나, 후보 중 선언으로 옮길 수 있는 id가 하나도 없다(공개 API 밖 개수를
+  문구에 싣는다). consumer 분석은 다른 root가 없으면 `no roots`로 건너뛰고, trace는 `library-ids-unmatched`를 남긴다.
+- `library-map-entry-missing`: `symbol-map`에서 `publicSymbols`의 SDK id가 호출부에서 닿았는데 대응표에 없다(id는
+  `libraries[].platforms[].missingMapEntries`). trace는 그 id를 `notPublic`으로만 세므로 이 경고가 유일한 표시다.
+- `library-roots-undelivered`: 옮긴 root가 있는데 consumer에 그 platform의 생산자 명령 역방향 분석이 없고, 사전 계산 분석도 그
+  root를 갖지 않는다. trace는 `library-continuation-unrooted`를 남긴다.
+
+manifest `libraries[]`는 `{name, consumer, provider, ids, inputs, platforms: [{platform, callSites, candidates, roots, notPublic,
+providerAnalyses, delivered?, undelivered?, missingMapEntries?, notes?}]}`다. provider에 그 platform의 역방향 분석이 없으면 호출부 심볼만
+후보라 `notes`에 적는다(공개 API 함수까지 닿지 않는다).
+
 ## 현재 범위와 남은 일
 
 - 구현: 단일 project, workspace(member·link·catalog·사전 계산 분석), routes·relations·symbols·files 선택, 조직 경계
@@ -627,7 +698,7 @@ impact)로만 쓴다. `--roots-from`이 없는 cartograph는 `arguments`/`separa
   (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류).
   http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
 - 조직 경계의 남은 일: surface의 사전 계산 continuation(게시자 정방향·DB 분석), library 사슬(여러 단계 SDK), 앱 심볼 → SDK →
-  route 방향 선택, capture 설정의 surface member·library 지원.
+  route 방향 선택. capture 설정은 surface member(가져오기·내보내기)와 library를 지원한다([위](#capture의-surface-member와-library)).
 - 입력 수집은 [`scripts/capture-trace.mjs`](#capture로-한-번에-수집하기)가 맡는다. MCP `trace` 도구는 출력 상한과 함께
   노출했다([MCP](MCP.md)). 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
   있다(실제 앱 입력으로 쓸 수 없다). 조직 경계 예제는 `fixtures/http-surface/client/`(가져온 surface)와

@@ -166,7 +166,7 @@ surface는 매니페스트의 **surface member**로 가져온다. 문서 member�
 - surface는 게시자의 신고다. 소비자는 digest·sha256으로 "그 게시물"인지만 확인하고, 게시자 서버가 실제로 그 route를 받는지는
   확인하지 않는다(bridge-facts 생산자 문서와 같은 신뢰 수준).
 - 사전 계산 continuation(게시자가 정방향·DB 분석을 함께 싣고 revision 일치로 이어 가기)은 v1에 없다.
-- check·query는 아직 workspace 매니페스트를 받지 않으므로 surface도 받지 않는다. capture 설정(`scripts/capture-trace.mjs`)도
-  surface member·library를 아직 모른다(생성한 context에 손으로 더한다).
+- check·query는 아직 workspace 매니페스트를 받지 않으므로 surface도 받지 않는다. capture 설정(`scripts/capture-trace.mjs`)은
+  surface member를 가져오거나(sha256 대조 후 복사) capture한 서버 member에서 내보낸다([TRACE capture](TRACE.md#capture의-surface-member와-library)).
 - 합성 예제는 `fixtures/http-surface/`(서버 조직 문서 두 릴리스, 내보낸 surface, 클라이언트 조직의 trace context와 diff
   매니페스트)에 있다.
