@@ -129,6 +129,14 @@ function verifyWorkspaceTrace() {
   const filesReport = JSON.parse(files.stdout);
   verify(files.status === 0 && filesReport.gaps.length === 0 && filesReport.notices[0]?.code === 'file-selection-coarse',
     'workspace trace files notice');
+  // client member가 자기 route(BFF)도 선언하면 호출의 역방향 도달이 그 핸들러에 닿아 upstream route로 실리고, 그 route를
+  // server로 잇는 link가 없으므로 route-decl-unlinked gap이 --strict를 1로 만든다.
+  const upstream = run(['trace', fixture('context-upstream.json'), '--strict', '--compact']);
+  const upstreamReport = JSON.parse(upstream.stdout);
+  const [upstreamRoute] = upstreamReport.chains[0].routes[0].calls[0].upstreamRoutes ?? [];
+  verify(upstream.status === 1 && upstreamRoute?.template === '/bff/orders/{}' && upstreamRoute.depth === 2 &&
+    upstreamRoute.scopes.length === 0 && upstreamReport.summary.upstreamRoutes === 1 &&
+    upstreamReport.gaps.map(({ code }) => code).join(',') === 'route-decl-unlinked', 'workspace trace upstream route');
 }
 
 /**

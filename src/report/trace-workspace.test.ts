@@ -116,7 +116,7 @@ test('분리된 두 저장소에서 route 선택이 API·테이블·DB 의존자
   ]);
   assert.deepEqual(route?.calls[1]?.affected[0]?.location, { path: 'ios/App/Stores/OrderStore.swift', line: 31, column: 10 });
   assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
-    databaseDependents: 3, calls: 2, clientSymbols: 4, gaps: 0, notices: 0,
+    databaseDependents: 3, calls: 2, clientSymbols: 4, upstreamRoutes: 0, gaps: 0, notices: 0,
     evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 4 } });
   const ios = result.analyses.find(({ id }) => id === 'ios-reverse')!;
   assert.deepEqual([ios.member, ios.source, ios.revision, ios.revisionSource, ios.precomputed?.generatedAt],
@@ -416,6 +416,132 @@ test('파일 선택은 파일에 놓인 심볼을 과대 근사로 잇고, 분�
     [['users', undefined], ['users', 'email']]);
 });
 
+/**
+ * client member가 자기 route도 선언하게 한다(BFF): kotlin server 문서의 GET /bff/orders/{} 핸들러가 Android 호출
+ * `kt:OrdersApi.get`에서 역방향으로 두 단계 닿는 `kt:OrderDetailViewModel.refresh`다. `extra`로 decl을 더 싣는다.
+ */
+const bff = (extra: unknown[] = []) => (value: Value) => {
+  value.files['client/bff.http.json'] = {
+    format: 'bridge-facts', version: 1, tool: { name: 'synthetic-workspace', version: '0.0.0' },
+    generatedAt: '2026-09-27T00:00:00Z', platform: 'kotlin', target: 'http', project: '/work/example-client',
+    roles: ['server'], dispatch: 'specificity', sourceSets: { tests: 'excluded' }, limitations: [],
+    facts: [{ kind: 'route-decl', method: 'GET', channel: '/bff/orders/{}', dynamic: false, pathAnchor: 'root',
+      location: { path: 'bff/src/main/kotlin/example/BffController.kt', line: 12, column: 5 },
+      symbol: { qualifiedName: 'OrderDetailViewModel.refresh', usr: 'kt:OrderDetailViewModel.refresh' } }, ...extra],
+  };
+  member(value, 'client').documents.push('client/bff.http.json');
+};
+
+/** web member가 BFF(client member)의 route를 부르는 link `web->bff`를 더한다. */
+const webCallsBff = (value: Value) => {
+  value.files['web/web.http.json'] = {
+    format: 'bridge-facts', version: 1, tool: { name: 'synthetic-workspace', version: '0.0.0' },
+    generatedAt: '2026-09-27T00:00:00Z', platform: 'js', target: 'http', project: '/work/example-web',
+    roles: ['client'], sourceSets: { tests: 'excluded' }, limitations: [],
+    facts: [{ kind: 'route-call', method: 'GET', channel: '/bff/orders/{}', dynamic: false, pathAnchor: 'root',
+      authority: 'bff.example.com', location: { path: 'web/src/orders.ts', line: 3, column: 1 },
+      symbol: { qualifiedName: 'loadOrder', usr: 'ts:web/orders.loadOrder' } }],
+  };
+  value.context.members.push({ name: 'web', project: '/work/example-web', revision: 'web-1', documents: ['web/web.http.json'] });
+  value.context.links.push({ name: 'web->bff', client: 'web', server: 'client', match: { hosts: ['bff.example.com'] } });
+};
+
+test('호출 member 자신의 route 핸들러에 닿으면 upstream route로 싣고, link가 없으면 route-decl-unlinked다', () => {
+  const result = workspace(bff());
+  const [route] = result.chains[0]!.routes;
+  const [android, ios] = route!.calls;
+  assert.deepEqual(android?.upstreamRoutes, [{
+    method: 'GET', template: '/bff/orders/{}', member: 'client',
+    handler: { platform: 'kotlin', usr: 'kt:OrderDetailViewModel.refresh', qualifiedName: 'OrderDetailViewModel.refresh' },
+    depth: 2, scopes: [],
+    declarations: [{ platform: 'kotlin', member: 'client',
+      location: { path: 'bff/src/main/kotlin/example/BffController.kt', line: 12, column: 5 },
+      route: { kind: 'route-decl', method: 'GET', template: '/bff/orders/{}', pathAnchor: 'root' },
+      symbol: { qualifiedName: 'OrderDetailViewModel.refresh', usr: 'kt:OrderDetailViewModel.refresh' } }],
+  }]);
+  // 같은 member라도 platform이 다른 iOS 호출의 도달은 kotlin 핸들러와 잇지 않는다.
+  assert.equal(ios?.upstreamRoutes, undefined);
+  // 핸들러 usr가 있는 정적 decl만 담은 문서는 route 단위로 밝히므로 member 단위 http-member-unlinked가 없다.
+  assert.deepEqual(result.gaps.map(({ code, member: name, symbol }) => [code, name, symbol?.usr]),
+    [['route-decl-unlinked', 'client', 'kt:OrderDetailViewModel.refresh']]);
+  assert.match(result.gaps[0]!.detail, /GET \/bff\/orders\/\{\} is reached upstream/);
+  assert.equal(result.summary.upstreamRoutes, 1);
+  // usr 없는 decl처럼 체인이 따라갈 수 없는 선언이 있으면 그 문서는 여전히 http-member-unlinked다.
+  const opaque = workspace(bff([{ kind: 'route-decl', method: 'POST', channel: '/bff/orders', dynamic: false, pathAnchor: 'root',
+    location: { path: 'bff/src/main/kotlin/example/BffController.kt', line: 20, column: 5 } }]));
+  assert.deepEqual(opaque.gaps.map(({ code, member: name, detail }) => [code, name, detail.slice(0, 30)]), [
+    ['http-member-unlinked', 'client', '1 server-role http document(s)'],
+    ['route-decl-unlinked', 'client', 'The handler of GET /bff/orders'],
+  ]);
+});
+
+test('upstream route를 link가 server로 이으면 scope를 싣고 v1은 그 호출자를 따라가지 않았다고 밝힌다', () => {
+  const result = workspace((value) => {
+    bff()(value);
+    webCallsBff(value);
+  });
+  const [upstream] = result.chains[0]!.routes[0]!.calls[0]!.upstreamRoutes!;
+  assert.deepEqual([upstream?.template, upstream?.scopes, upstream?.depth], ['/bff/orders/{}', ['web->bff'], 2]);
+  // client member가 이제 link server라 persistence 공백도 함께 남는다(기존 규칙).
+  assert.deepEqual(result.gaps.map(({ code, member: name, route }) => [code, name, route?.scope, route?.template]), [
+    ['persistence-unscanned', 'client', undefined, undefined],
+    ['upstream-route-callers-not-followed', 'client', 'web->bff', '/bff/orders/{}'],
+  ]);
+  // 그 route를 선택하면 호출자(web)까지 이어 간다 — upstream gap이 가리킨 다음 단계다.
+  const next = workspace((value) => {
+    bff()(value);
+    webCallsBff(value);
+    value.context.selection = { routes: [{ method: 'GET', template: '/bff/orders/{}', scope: 'web->bff' }] };
+  });
+  assert.deepEqual(next.chains[0]?.routes[0]?.calls.map(({ call }) => [call.member, call.symbol?.usr]),
+    [['web', 'ts:web/orders.loadOrder']]);
+});
+
+test('역방향·route 선택이 link 없는 자기 route에 닿으면 non-http-entry·route-without-decl 대신 route-decl-unlinked다', () => {
+  const reverse = workspace((value) => {
+    bff()(value);
+    value.context.selection = { symbols: [{ member: 'client', platform: 'kotlin', usr: 'kt:OrdersApi.get' }] };
+  });
+  assert.deepEqual(reverse.gaps.map(({ code, member: name, symbol }) => [code, name, symbol?.usr]),
+    [['route-decl-unlinked', 'client', 'kt:OrderDetailViewModel.refresh']]);
+  assert.match(reverse.gaps[0]!.detail, /reached from this selection/);
+  const selected = workspace((value) => {
+    bff()(value);
+    value.context.selection = { routes: [{ method: 'GET', template: '/bff/orders/{}' }] };
+  });
+  assert.deepEqual(selected.gaps.map(({ code, member: name }) => [code, name]), [['route-decl-unlinked', 'client']]);
+  assert.deepEqual(selected.chains, []);
+  // scope를 지정하면 그 link scope에 선언이 없다는 뜻이므로 이전처럼 route-without-decl이다.
+  const scoped = workspace((value) => {
+    bff()(value);
+    value.context.selection = { routes: [{ method: 'GET', template: '/bff/orders/{}', scope: 'mobile->api' }] };
+  });
+  assert.deepEqual(codes(scoped), ['route-without-decl']);
+});
+
+test('consumer 앱의 자기 route 핸들러에도 library hop에서 upstream route로 닿는다', () => {
+  const result = library((value) => {
+    value.files['app-a/app-a.http.json'] = {
+      format: 'bridge-facts', version: 1, tool: { name: 'synthetic-library', version: '0.0.0' },
+      generatedAt: '2026-09-27T00:00:00Z', platform: 'kotlin', target: 'http', project: '/work/app-a',
+      roles: ['server'], dispatch: 'specificity', limitations: [],
+      facts: [{ kind: 'route-decl', method: 'GET', channel: '/app/orders/{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'src/main/kotlin/OrderScreen.kt', line: 7, column: 3 },
+        symbol: { qualifiedName: 'OrderScreen.load', usr: 'kt:com.example.appa.OrderScreen#load()' } }],
+    };
+    member(value, 'app-a').documents.push('app-a/app-a.http.json');
+  });
+  const get = result.chains.flatMap(({ routes }) => routes).find(({ template }) => template === '/api/orders/{}')!.calls[0]!;
+  assert.equal(get.upstreamRoutes, undefined);
+  assert.deepEqual(get.consumers?.map(({ member: name, upstreamRoutes }) =>
+    [name, upstreamRoutes?.map(({ template, depth, scopes }) => [template, depth, scopes])]), [
+    ['app-a', [['/app/orders/{}', 1, []]]],
+    ['app-b', undefined],
+  ]);
+  assert.ok(result.gaps.some(({ code, member: name }) => code === 'route-decl-unlinked' && name === 'app-a'));
+  assert.equal(result.summary.upstreamRoutes, 1);
+});
+
 /** TRACE.md gap 표의 코드 목록이다. 문서와 음성 fixture 목록이 어긋나면 이 테스트가 실패한다. */
 const documentedCodes = (await readFile(new URL('../../docs/TRACE.md', import.meta.url), 'utf8'))
   .split('\n').flatMap((line) => /^\| `([a-z-]+)` \|/u.exec(line)?.[1] ?? []).sort();
@@ -521,6 +647,17 @@ const gapFixtures: Record<string, () => TraceReport> = {
   'file-selection-fact-fallback': () => workspace(select({ files: [{ member: 'client',
     path: 'android/app/src/main/java/example/OrdersApi.kt' }] })),
   'http-member-unlinked': () => workspace((value) => { value.context.links = []; }),
+  'route-decl-unlinked': () => workspace(bff()),
+  'upstream-route-callers-not-followed': () => workspace((value) => {
+    bff()(value);
+    webCallsBff(value);
+  }),
+  'analysis-root-not-found': () => workspace((value) => {
+    const android = value.files['client/android-reverse.json'];
+    android.roots[1] = { id: 'kt:OrdersApi.get' };
+    android.reached = android.reached.filter(({ roots }: any) => roots[0] !== 1);
+    Object.assign(android, { truncated: true, truncationReasons: ['root-not-found'], limitations: ['root-not-found: kt:OrdersApi.get'] });
+  }),
   'link-service-ambiguous': () => workspace((value) => {
     twoServices(value);
     delete value.context.links[0].match.services;

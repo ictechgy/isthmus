@@ -12,7 +12,13 @@ import {
   type JoinLimitation,
   type RelationResolver,
 } from '../join/join.ts';
-import { isClientDocument, isDeclarationDocument, type RouteLinkRule, type RouteScope } from '../join/route-join.ts';
+import {
+  isClientDocument,
+  isDeclarationDocument,
+  type RouteDeclarationFact,
+  type RouteLinkRule,
+  type RouteScope,
+} from '../join/route-join.ts';
 
 /**
  * trace 입력을 member·link 단위 조인으로 준비한다.
@@ -68,6 +74,18 @@ export interface TraceUnlinkedDocuments {
   readonly count: number;
 }
 
+/**
+ * 어떤 link도 server로 잇지 않은 member 자신의 route-decl 하나다(문서 member만, 테스트 소스·usr 없는 decl 제외).
+ *
+ * link 조인에 들지 않으므로 호출과 이어지지 않지만, 핸들러 usr는 같은 member의 순회 id와 정확히 같다. 보고 층이
+ * 이것으로 client member 호출의 역방향 도달이 그 member 자신의 route 핸들러에 닿았는지(upstream route)와, 역방향·route
+ * 선택이 link 없는 route에서 멈췄는지(`route-decl-unlinked`)를 판정한다.
+ */
+export interface TraceUnlinkedRoute {
+  readonly member: string;
+  readonly fact: RouteDeclarationFact;
+}
+
 /** 준비된 trace 입력이다. */
 export interface PreparedTrace {
   readonly workspace: boolean;
@@ -76,6 +94,8 @@ export interface PreparedTrace {
   readonly limitations: readonly TraceLimitation[];
   readonly linkServiceIssues: readonly TraceLinkServiceIssue[];
   readonly unlinkedDocuments: readonly TraceUnlinkedDocuments[];
+  /** link가 server로 잇지 않은 문서 member 자신의 route-decl이다. 단일 project면 비어 있다(모든 선언이 scope에 든다). */
+  readonly unlinkedRoutes: readonly TraceUnlinkedRoute[];
 }
 
 /** surface member 이름 → 가져온 artifact다. CLI가 파일 sha256을 대조하고 검증해 넘긴다. */
@@ -109,6 +129,7 @@ function prepareSingle(project: string, documents: readonly BridgeFactsDocument[
     limitations: joined.limitations,
     linkServiceIssues: [],
     unlinkedDocuments: [],
+    unlinkedRoutes: [],
   };
 }
 
@@ -137,24 +158,59 @@ function prepareWorkspace(context: TraceContext, documents: readonly BridgeFacts
     limitations.push(...joined.limitations.map((limitation) => ({ ...limitation, link: link.name })));
   }
   return { workspace: true, members: states, scopes, limitations: limitations.sort(compareTraceLimitations), linkServiceIssues,
-    unlinkedDocuments: unlinkedDocuments(states, covered) };
+    unlinkedDocuments: unlinkedDocuments(states, covered), unlinkedRoutes: states.flatMap((state) => unlinkedRoutes(state, covered.server)) };
 }
 
 /**
  * link에 그 역할로 들지 않은 http 문서를 member·측별로 센다. member 단위가 아니라 문서 단위로 본다 — link가
  * contract 문서를 골라 쓰면 같은 member의 다른 openapi 문서나 server의 openapi 문서가 조용히 빠질 수 있기 때문이다.
+ *
+ * server 측은 문서 member에서 **체인이 쓸 수 없는 선언**을 담은 문서만 센다(contract, usr 없는·dynamic route-decl).
+ * 핸들러 usr가 있는 정적 route-decl은 `unlinkedRoutes`로 넘어가, 체인이 그 route에 닿는 곳마다 upstream route나
+ * `route-decl-unlinked`로 route 단위 공백을 밝히기 때문이다. surface member는 호출도 순회도 없어 그런 체인이 생기지
+ * 않으므로 이전처럼 선언 문서를 모두 센다.
  */
 function unlinkedDocuments(states: readonly TraceMemberInput[],
   covered: { server: ReadonlySet<BridgeFactsDocument>; client: ReadonlySet<BridgeFactsDocument> }): TraceUnlinkedDocuments[] {
-  return states.flatMap(({ key, documents }) => {
+  return states.flatMap(({ key, documents, surface }) => {
     const http = documents.filter(({ target }) => target === 'http');
     const client = http.filter((document) => isClientDocument(document) && !covered.client.has(document)).length;
-    const server = http.filter((document) => isDeclarationDocument(document) && !covered.server.has(document)).length;
+    const server = http.filter((document) => isDeclarationDocument(document) && !covered.server.has(document) &&
+      (surface !== undefined || document.facts.some(isUnfollowableDeclaration))).length;
     return [
       ...(client === 0 ? [] : [{ member: key, side: 'client' as const, count: client }]),
       ...(server === 0 ? [] : [{ member: key, side: 'server' as const, count: server }]),
     ];
   });
+}
+
+/**
+ * link 없는 선언 문서에서 upstream route·`route-decl-unlinked`로 따라갈 수 없는 선언인지다. contract는 핸들러가 없고,
+ * usr 없는·dynamic route-decl은 순회 id나 정규 템플릿으로 이을 수 없다. 테스트 소스 decl은 체인에서 늘 빠지므로 세지 않는다.
+ */
+function isUnfollowableDeclaration(fact: BridgeFact): boolean {
+  if (fact.kind === 'route-contract') return true;
+  if (fact.kind !== 'route-decl' || fact.testSource === true) return false;
+  return fact.dynamic || fact.channel === null || fact.symbol?.usr === undefined;
+}
+
+/**
+ * 문서 member의 link 없는 선언 문서(어떤 link도 server로 잇지 않은 문서)의 route-decl을 선언 측만으로 조인해 모은다.
+ *
+ * 호출 없이 선언만 조인하므로 서비스 범위는 가리지 않는다(route 키가 아니라 핸들러 usr로만 쓰인다). 테스트 소스와 usr 없는
+ * decl은 뺀다 — 체인이 핸들러 usr로만 이 선언을 찾기 때문이다.
+ */
+function unlinkedRoutes(state: TraceMemberInput, coveredServers: ReadonlySet<BridgeFactsDocument>): TraceUnlinkedRoute[] {
+  if (state.surface !== undefined) return [];
+  const documents = state.documents.filter((document) => document.target === 'http' && document.platform !== 'openapi' &&
+    isDeclarationDocument(document) && !coveredServers.has(document));
+  if (documents.length === 0) return [];
+  const own = new Set(documents);
+  const joined = joinTrace(documents, { scope: state.key, isServerDocument: (document) => own.has(document),
+    isClientDocument: () => false, attributes: () => false, includesDeclaration: () => true });
+  return (joined.routes?.scopes[0]?.decls ?? [])
+    .filter(({ testSource, endpoint }) => !testSource && endpoint.symbol?.usr !== undefined)
+    .map((fact) => ({ member: state.key, fact }));
 }
 
 /**

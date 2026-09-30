@@ -47,6 +47,10 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
   심볼이 아닌 root, 생산자가 해석하지 못한 요청은 `symbol`을 생략한다. 해석하지 못한 요청은
   원문을 `id`에 두고 `limitations`에 `root-not-found:`로 시작하는 문구, `truncationReasons`에
   `root-not-found`, `truncated: true`를 함께 싣는다. **trace는 `symbol`이 있는 root만 잇는다.**
+  `root-not-found`는 **그 요청 root에만 해당하는 사유**다: 찾은 root의 도달은 그 요청 없이 계산한 것과 같아야 하고, 다른
+  이유(깊이·출력·예산)로도 잘렸으면 그 사유를 함께 싣는다. 그래서 trace는 사유가 `root-not-found`뿐인 문서에서 찾은 root의
+  hop을 잘린 것으로 보지 않고, 못 찾은 root를 따라가야 하는 hop에만 `analysis-root-not-found`를 남긴다
+  ([TRACE](TRACE.md#root-not-found는-root-단위)).
 - `roots`의 순서는 생산자의 입력 순서이며 `reached[].roots`가 가리키는 인덱스의 의미다. 정렬을
   요구하지 않지만 id는 유일해야 하고, 같은 입력이면 같은 순서여야 한다.
 - `reached[].symbol.usr`는 **그 생산자가 bridge-facts의 `symbol.usr`(route-decl·route-call·
@@ -77,7 +81,7 @@ bridge-facts v1의 필드는 바꾸지 않는다([GRAPH-EXCHANGE](GRAPH-EXCHANGE
 - `revision`·`graphRevision`은 불투명 문자열이다. isthmus는 서로 비교만 한다(schemagraph는
   graph.json 바이트의 소문자 hex SHA-256을 `graphRevision`에 싣는다).
 - `truncated`는 깊이·출력·예산 등으로 순회가 잘렸다는 뜻이다. 잘린 순회의 부재는 아무것도
-  증명하지 않는다.
+  증명하지 않는다. 예외로 사유가 `root-not-found`뿐이면 못 찾은 요청 root만의 표시다(위 `roots[].id`).
 
 ## 근거 등급과 잇지 못한 호출 (선택 필드)
 

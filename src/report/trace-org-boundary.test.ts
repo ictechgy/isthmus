@@ -93,7 +93,9 @@ test('consumer 그래프에 없는 SDK id(root-not-found)는 개수만 싣고, r
   const create = callOf(notFound, '/api/orders').consumers![0]!;
   assert.deepEqual([create.entries, create.notInConsumerGraph, create.affected], [[], 1, []]);
   assert.ok(!notFound.gaps.some(({ code }) => code === 'library-continuation-unrooted'));
-  assert.ok(notFound.gaps.some(({ code, analysis }) => code === 'analysis-truncated' && analysis === 'app-a-reverse'));
+  // root-not-found는 그 요청 root만의 사유라 찾은 root(GET SDK 심볼)의 hop에는 analysis-truncated를 남기지 않는다.
+  assert.ok(!notFound.gaps.some(({ code }) => code === 'analysis-truncated' || code === 'analysis-root-not-found'));
+  assert.ok(callOf(notFound, '/api/orders/{}').consumers![0]!.affected.length > 0);
 
   const unrooted = trace((value) => {
     delete value.context.libraries[0].publicSymbols;
