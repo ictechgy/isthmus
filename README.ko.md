@@ -106,6 +106,7 @@ http 문서를 거부한다.
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | 확인된 사실 · 확인되지 않은 주장 |
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | `check --pairs`로 코드 → 테이블 → DB 의존자를 잇는 수동 왕복 절차 |
 | [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http`(개발 중): 한 서버·스펙 또는 workspace의 base·head route 표면, base에서 결합하던 호출이 head에서 결합하지 않는 곳, `--fail-on` 종료 코드, base..head CI 예시 |
+| [`docs/CI.md`](docs/CI.md) | GitHub Action(개발 중, 저장소 루트 `action.yml`): PR마다 base·head를 수집해 `diff --http`와 바뀐 route의 `trace`를 돌리고, 끊기는 클라이언트 호출·영향받는 테이블·클라이언트 코드를 스티키 댓글로 싣는다 |
 | [`docs/HTTP-SURFACE.md`](docs/HTTP-SURFACE.md) | `isthmus-http-surface` v1과 `surface export`(개발 중): 핸들러 경로·이름·내부를 빼고 조직 경계 너머로 게시하는 서버 route 선언, sha256을 고정한 surface member로 `trace`·`diff --http`에 가져오기 |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace`(개발 중): route → 핸들러 → 테이블 → DB 의존자, route → 호출부 → 영향받는 클라이언트 코드를 생산자 id 정확 일치와 명시적 gap으로 잇는다 |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | 생산자가 `trace`용으로 내는 정방향·역방향 순회 공유 형식 `language-traversal` v1 |
@@ -644,6 +645,11 @@ isthmus diff --http --before base.workspace.json --after head.workspace.json --s
 선언 측 공백은 항상 incompleteness finding으로 명시되므로 빈 결과가 "깨지는 클라이언트 없음"을 주장하지 않는다.
 `--fail-on`은 finding 코드·`error`·`warning`·`incomplete`를 받고 모르는 토큰은 사용 오류(64)다. `--http`는 `diff`
 바로 다음에 와야 한다. 설계, CI 절차와 워크플로 예시는 [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)에 있다.
+
+저장소 루트는 이것을 PR마다 돌리는 composite GitHub Action(개발 중)이기도 하다. capture 설정으로 base·head를 같은
+checkout에서 수집하고(생산자 설치는 사용자 workflow의 몫), `diff --http`를 돌린 뒤 non-info finding이 있는 route를
+trace해 끊기는 호출·영향받는 테이블·클라이언트 코드를 job summary나 스티키 댓글로 싣는다. 불완전성은 맨 앞에 밝힌다.
+단일 저장소·두 저장소 구성은 [`docs/CI.md`](docs/CI.md)에 있다.
 
 ## 코딩 에이전트 skill
 

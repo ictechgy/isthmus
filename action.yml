@@ -1,0 +1,216 @@
+name: isthmus HTTP route impact
+description: >-
+  Compare the HTTP route surface of a pull request's base and head with `isthmus diff --http`, trace the changed
+  routes to tables and client code with `isthmus trace`, and report the client calls the change breaks.
+author: ictechgy
+branding:
+  icon: git-pull-request
+  color: blue
+
+# 보안 설계(docs/CI.md):
+# - 입력과 이벤트 값은 `run` 스크립트에 식으로 끼워 넣지 않고 환경 변수로만 넘긴다(식 주입 방지).
+# - 분석 단계(PR 코드인 생산자가 도는 곳)는 토큰을 받지 않는다. 토큰은 댓글 단계에만 있다.
+# - 서드파티 Action은 commit SHA로 고정한다.
+inputs:
+  command:
+    description: "`analyze` (capture, diff, trace, render) or `comment` (re-render downloaded results and post the sticky comment)."
+    default: analyze
+  capture-config:
+    description: >-
+      Path (relative to repository-path) of an isthmus-trace-capture v1 config, read from the head commit and run once
+      for base and once for head in the same checkout. Relative roots resolve against repository-path.
+    default: ''
+  before:
+    description: Precomputed mode. Base server/spec documents, a base workspace manifest, or a base surface artifact (whitespace-separated paths).
+    default: ''
+  after:
+    description: Precomputed mode. Head server/spec documents, a head workspace manifest, or a head surface artifact.
+    default: ''
+  clients:
+    description: Precomputed surface mode. Client documents evaluated against both snapshots.
+    default: ''
+  trace-context:
+    description: Precomputed mode. An isthmus-trace-context whose selection is replaced by the changed routes.
+    default: ''
+  trace:
+    description: Trace the routes that have a non-info finding (`true` or `false`).
+    default: 'true'
+  trace-side:
+    description: Capture mode. Which capture to trace, `base` (default; removed routes exist only there) or `head`.
+    default: base
+  fail-on:
+    description: >-
+      `isthmus diff --http --fail-on` tokens (finding codes, `error`, `warning`, `incomplete`). Empty or `none`
+      reports without failing. Stricter gate: `error,incomplete`.
+    default: error
+  comment-mode:
+    description: "`summary` (job summary only) or `sticky` (also create/update one pull request comment; needs pull-requests: write)."
+    default: summary
+  comment-key:
+    description: Distinguishes several isthmus comments on one pull request (letters, digits, `.`, `_`, `-`).
+    default: default
+  comment-author:
+    description: Login whose comment is updated in place. Change it only when github-token is not the default token.
+    default: github-actions[bot]
+  max-rows:
+    description: Rows per table in the comment, and `isthmus trace --max-rows`.
+    default: '20'
+  max-chains:
+    description: "`isthmus trace --max-chains`."
+    default: '50'
+  isthmus-version:
+    description: Exact isthmus-cli version to install from npm. Defaults to the version of this action's ref.
+    default: ''
+  isthmus-path:
+    description: A built isthmus checkout (`npm ci && npm run build`) to use instead of npm, for testing.
+    default: ''
+  repository-path:
+    description: The git checkout that capture mode switches between base and head.
+    default: ${{ github.workspace }}
+  base-sha:
+    description: Base commit. Default is the first parent of the pull request merge commit, else the event base SHA.
+    default: ''
+  head-sha:
+    description: Head commit. Default is the checked-out commit (the pull request merge commit).
+    default: ${{ github.sha }}
+  output-dir:
+    description: Empty directory for diff.json, trace.json, meta.json and comment.md.
+    default: ${{ runner.temp }}/isthmus-ci
+  upload-artifact:
+    description: Upload the JSON outputs and the comment as a workflow artifact (`true` or `false`).
+    default: 'true'
+  artifact-name:
+    description: Name of the uploaded artifact (make it unique per matrix job).
+    default: isthmus-http-impact
+  results-dir:
+    description: "`comment` command. Directory holding the downloaded artifact (diff.json, trace.json, meta.json)."
+    default: ''
+  pr-number:
+    description: "`comment` command. Pull request number. Default is the event's; for workflow_run leave empty and set expected-head-sha."
+    default: ${{ github.event.pull_request.number }}
+  expected-head-sha:
+    description: "`comment` command. Required when the pull request number comes from the artifact (workflow_run): `github.event.workflow_run.head_sha`."
+    default: ''
+  expected-head-repository:
+    description: "`comment` command. Required with expected-head-sha: `github.event.workflow_run.head_repository.full_name` (a head SHA alone is not a pull request identity)."
+    default: ''
+  expected-head-branch:
+    description: "`comment` command. Required with expected-head-sha: `github.event.workflow_run.head_branch`."
+    default: ''
+  github-token:
+    description: Token for the comment step only. No other step receives it.
+    default: ${{ github.token }}
+
+outputs:
+  failed:
+    description: "`true` when fail-on matched or a step failed."
+    value: ${{ steps.analyze.outputs.failed }}
+  diff-exit-code:
+    description: Exit code of `isthmus diff --http` (0 or 1).
+    value: ${{ steps.analyze.outputs.diff-exit-code }}
+  broken-calls:
+    description: Calls that stop binding at head, unverified included.
+    value: ${{ steps.analyze.outputs.broken-calls }}
+  proven-broken-calls:
+    description: Broken calls whose error premises are all proven.
+    value: ${{ steps.analyze.outputs.proven-broken-calls }}
+  incompleteness:
+    description: Number of incompleteness findings (non-zero means an empty result is not evidence of safety).
+    value: ${{ steps.analyze.outputs.incompleteness }}
+  call-impact:
+    description: "`breaks-found`, `no-breaks-observed` (not a completeness claim) or `not-assessed`."
+    value: ${{ steps.analyze.outputs.call-impact }}
+  output-dir:
+    description: Directory with diff.json, trace.json, meta.json and comment.md.
+    value: ${{ steps.analyze.outputs.output-dir }}
+  comment-file:
+    description: The rendered Markdown comment.
+    value: ${{ steps.analyze.outputs.comment-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check inputs
+      shell: bash
+      env:
+        ISTHMUS_CI_COMMAND: ${{ inputs.command }}
+        ISTHMUS_CI_COMMENT_MODE: ${{ inputs.comment-mode }}
+      run: |
+        case "$ISTHMUS_CI_COMMAND" in analyze|comment) ;; *) echo "::error title=isthmus::command must be analyze or comment"; exit 1 ;; esac
+        case "$ISTHMUS_CI_COMMENT_MODE" in sticky|summary) ;; *) echo "::error title=isthmus::comment-mode must be sticky or summary"; exit 1 ;; esac
+
+    - name: Analyze (capture, diff, trace, render)
+      id: analyze
+      if: inputs.command == 'analyze'
+      shell: bash
+      env:
+        ISTHMUS_CI_CAPTURE_CONFIG: ${{ inputs.capture-config }}
+        ISTHMUS_CI_BEFORE: ${{ inputs.before }}
+        ISTHMUS_CI_AFTER: ${{ inputs.after }}
+        ISTHMUS_CI_CLIENTS: ${{ inputs.clients }}
+        ISTHMUS_CI_TRACE_CONTEXT: ${{ inputs.trace-context }}
+        ISTHMUS_CI_TRACE: ${{ inputs.trace }}
+        ISTHMUS_CI_TRACE_SIDE: ${{ inputs.trace-side }}
+        ISTHMUS_CI_FAIL_ON: ${{ inputs.fail-on }}
+        ISTHMUS_CI_COMMENT_KEY: ${{ inputs.comment-key }}
+        ISTHMUS_CI_MAX_ROWS: ${{ inputs.max-rows }}
+        ISTHMUS_CI_MAX_CHAINS: ${{ inputs.max-chains }}
+        ISTHMUS_CI_ISTHMUS_VERSION: ${{ inputs.isthmus-version }}
+        ISTHMUS_CI_ISTHMUS_PATH: ${{ inputs.isthmus-path }}
+        ISTHMUS_CI_REPOSITORY_PATH: ${{ inputs.repository-path }}
+        ISTHMUS_CI_BASE_SHA: ${{ inputs.base-sha }}
+        ISTHMUS_CI_HEAD_SHA: ${{ inputs.head-sha }}
+        ISTHMUS_CI_EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        ISTHMUS_CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+        ISTHMUS_CI_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        ISTHMUS_CI_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: node "$GITHUB_ACTION_PATH/scripts/ci-http-impact.mjs"
+
+    - name: Post sticky comment
+      if: always() && inputs.command == 'analyze' && inputs.comment-mode == 'sticky' && steps.analyze.outputs.comment-file != '' && github.event.pull_request.number != ''
+      shell: bash
+      env:
+        ISTHMUS_CI_BODY_FILE: ${{ steps.analyze.outputs.comment-file }}
+        ISTHMUS_CI_COMMENT_KEY: ${{ inputs.comment-key }}
+        ISTHMUS_CI_COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        ISTHMUS_CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+        ISTHMUS_CI_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "$GITHUB_ACTION_PATH/scripts/post-pr-comment.mjs"
+
+    - name: Upload results
+      if: always() && inputs.command == 'analyze' && inputs.upload-artifact == 'true' && steps.analyze.outputs.output-dir != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ steps.analyze.outputs.output-dir }}/*.json
+          ${{ steps.analyze.outputs.output-dir }}/comment.md
+          ${{ steps.analyze.outputs.output-dir }}/capture/*/capture-manifest.json
+        if-no-files-found: warn
+        overwrite: true
+
+    - name: Post sticky comment from results
+      if: inputs.command == 'comment'
+      shell: bash
+      env:
+        ISTHMUS_CI_RESULTS_DIR: ${{ inputs.results-dir }}
+        ISTHMUS_CI_COMMENT_KEY: ${{ inputs.comment-key }}
+        ISTHMUS_CI_COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        ISTHMUS_CI_MAX_ROWS: ${{ inputs.max-rows }}
+        ISTHMUS_CI_PR_NUMBER: ${{ inputs.pr-number }}
+        ISTHMUS_CI_EXPECTED_HEAD_SHA: ${{ inputs.expected-head-sha }}
+        ISTHMUS_CI_EXPECTED_HEAD_REPOSITORY: ${{ inputs.expected-head-repository }}
+        ISTHMUS_CI_EXPECTED_HEAD_BRANCH: ${{ inputs.expected-head-branch }}
+        ISTHMUS_CI_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "$GITHUB_ACTION_PATH/scripts/post-pr-comment.mjs"
+
+    - name: Enforce fail-on
+      if: always() && inputs.command == 'analyze'
+      shell: bash
+      env:
+        ISTHMUS_CI_FAILED: ${{ steps.analyze.outputs.failed }}
+      run: |
+        if [ "$ISTHMUS_CI_FAILED" != "false" ]; then
+          echo "::error title=isthmus::fail-on matched or a step failed; see the job summary."
+          exit 1
+        fi
