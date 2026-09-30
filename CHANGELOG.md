@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added — python·go·rust 클라이언트 `route-call`과 결합 방식 (Phase 8)
+
+- **계약**: platform `python`·`go`·`rust`의 http 문서가 `route-call`을 낼 수 있다(이전에는 입력 오류). 조인·귀속·심각도 규칙은
+  다른 호출 측 플랫폼과 같다([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#target과-kind)).
+- **결합 방식**([HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#go-rust-python-클라이언트)): 공식 소스와 실행 기록으로 확인한 규칙을 이름으로
+  적었다 — `rfc3986`(Go `ResolveReference`, Rust `Url::join`; base 리터럴이면 RFC 3986 해석 결과), `go-join-path`(Go 1.19+
+  `url.JoinPath`), `resty-base-url`(go-resty v2·v3), `httpx-base-url`(httpx 0.28), `aiohttp-base-url`(aiohttp 3.11+, 버전 제약 포함).
+  base 없는 net/http·reqwest·requests는 전체 URL 규칙을 쓴다. `http-wrappers` 선언의 `language`에 `go`·`rust`·`python`을 더했다.
+- **벡터**: url-compose에 `compose.base-join` 39건(`producer:gartograph`·`producer:rustograph`·`producer:pythograph`)을 더하고
+  SHA256SUMS를 갱신했다. 참조 구현은 `scripts/verify-conformance.mjs`에 있다.
+
 ### Added — dynamic 선언의 스코프 `dynamicScope` (Phase 8)
 
 - **계약**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)): dynamic `route-decl`·`route-contract`가

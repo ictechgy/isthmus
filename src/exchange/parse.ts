@@ -1225,13 +1225,14 @@ const routeFactKinds = new Set<unknown>(['route-decl', 'route-call', 'route-cont
 
 /**
  * (kind, platform) 허용 조합이다. 역할은 kind로 정한다. swift route-decl(Vapor 등)은 생산자가 생길 때
- * 합의하므로 아직 없다. python(pythograph)·go(gartograph)·rust(rustograph)는 서버 route-decl만 받는다 — 그 언어
- * 클라이언트(requests·httpx, net/http·resty, reqwest 등)의 route-call은 생산자 구현과 url-compose 벡터가 생길 때 더한다
- * (받아 두면 검증되지 않은 호출 사실이 error 근거가 된다).
+ * 합의하므로 아직 없다. python(pythograph)·go(gartograph)·rust(rustograph)는 서버 route-decl과 클라이언트 route-call을
+ * 모두 받는다 — 클라이언트(net/http·resty, reqwest, requests·httpx·aiohttp)의 base 결합 규칙을 HTTP-WRAPPERS와
+ * url-compose 벡터(`producer:<이름>`)로 고정한 뒤에 열었다. 검증되지 않은 결합 규칙의 호출 사실이 error 근거가 되지 않게
+ * 하기 위해서다.
  */
 const routeKindPlatforms = new Map<unknown, ReadonlySet<unknown>>([
   ['route-decl', new Set(['kotlin', 'js', 'python', 'go', 'rust'])],
-  ['route-call', new Set(['kotlin', 'swift', 'dart', 'js'])],
+  ['route-call', new Set(['kotlin', 'swift', 'dart', 'js', 'python', 'go', 'rust'])],
   ['route-contract', new Set(['openapi'])],
 ]);
 
