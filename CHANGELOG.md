@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+### Added — capture 설정의 surface member와 library (`scripts/capture-trace.mjs`)
+
+- **surface 가져오기**([TRACE capture](docs/TRACE.md#capture의-surface-member와-library)): member `{name, surface: {path, sha256}}`.
+  사실 단계 뒤·순회 전에 파일 바이트 sha256을 고정 값과 대조하고(다르면 `surface:<member>` 단계 오류) digest·계약을 trace와 같은
+  파서로 검증한 뒤 `<member>/http-surface.json`에 복사해 context surface member로 싣는다. manifest `members`에 출처·sha256·
+  이름·revision·공개 수준을 남긴다.
+- **surface 내보내기**: member `{name, surface: {export: {member, name?, revision?, includeHandlerUsrs?, includeLimitationText?}}}`.
+  같은 capture의 문서 member가 모은 선언 측 http·openapi 문서로 `isthmus surface export`를 실행하고 공개 수준 플래그를 그대로
+  넘긴다. 결과는 게시할 artifact이자 context surface member다.
+- **libraries**: trace context와 같은 선언(`ids: "shared" | "symbol-map"`)을 받고 `publicSymbols`·`symbolMap`은 직접 쓰거나 root 아래
+  JSON 파일로 준다(기존 경로 규칙). consumer 역방향 순회는 모든 순회 뒤로 미루고, provider route-call 심볼과 provider 역방향
+  분석이 그 호출부에서 닿은 SDK 심볼을 선언대로 옮긴 id를 root로 더한다(`--roots-from` 등 분석 설정대로). context에
+  `libraries`를 싣고, library consumer는 `documents: []`일 수 있다. `symbol-map`의 `publicSymbols`는 capture 전용 점검 값이다.
+- **새 경고**: `library-no-roots`(consumer가 그 library에서 root를 하나도 받지 못함 → trace `library-ids-unmatched`),
+  `library-map-entry-missing`(호출부에서 닿은 공개 SDK id가 대응표에 없음), `library-roots-undelivered`(옮긴 root를 받을 생산자
+  명령 역방향 분석이 없음 → trace `library-continuation-unrooted`). manifest `libraries[]`에 platform별 후보·root·공개 API 밖 수를
+  남긴다.
+- surface member·library가 없는 설정의 실행 순서·context·manifest는 그대로다.
+
 ### Added — 조직 경계: http surface와 공유 SDK library (Phase 7a)
 
 - **`isthmus-http-surface` v1**([HTTP-SURFACE](docs/HTTP-SURFACE.md)): 한 workspace 매니페스트로 묶을 수 없는 조직(서버·클라이언트

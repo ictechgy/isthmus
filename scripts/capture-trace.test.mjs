@@ -727,3 +727,277 @@ test('종료 코드 64: 문서가 없거나 root-not-found를 기록하지 않�
     assert.deepEqual(manifest.steps.find(({ step: name }) => name === 'analysis:server-reverse').rootsNotFound, ['ts:ghost/symbol']);
   });
 });
+
+/** 가져온 surface fixture의 파일 sha256이다(fixtures/trace-library/context.json이 고정한 값). */
+const surfaceSha256 = '6ad0a3bbfc35ef56bccb0b745c9d5e2ea0057a76cb393a2f0ce69060f14ff183';
+const sdkOrder = 'kt:com.example.sdk.OrdersSdk#order(String)';
+const sdkPlaceOrder = 'kt:com.example.sdk.OrdersSdk#placeOrder(Order)';
+
+/**
+ * fixtures/trace-library(surface로 가져온 API, SDK provider, shared·symbol-map consumer 앱 둘)를 capture 설정으로 옮긴다.
+ * app-b의 대응표는 root 아래 JSON 파일로 준다(파일 참조 경로 검사).
+ */
+async function libraryCaptureConfig(t) {
+  const work = await workspace(t);
+  for (const name of ['sdk', 'app-a', 'app-b']) await mkdir(join(work, name));
+  await writeFile(join(work, 'app-b.symbol-map.json'), JSON.stringify([
+    { provider: sdkOrder, consumer: 'kt:shaded.orders.OrdersSdk#order(String)' },
+    { provider: sdkPlaceOrder, consumer: 'kt:shaded.orders.OrdersSdk#placeOrder(Order)' },
+  ]));
+  const traverse = (name, extra = []) => ['traverse', fixture(`trace-library/${name}`), '--project', '{project}', ...extra];
+  const reverse = (id, name, roots) => ({ id, platform: 'kotlin', role: 'reverse', tool: 'kartograph', args: traverse(name), roots });
+  const config = {
+    format: 'isthmus-trace-capture', version: 1, roots: { work, repo: repository },
+    output: { root: 'work', path: 'out' }, generatedAt: '2026-09-30T00:00:00Z', tools: { kartograph: tool('kartograph') },
+    members: [
+      { name: 'api', surface: { path: fixture('http-surface/surfaces/example-api-2.4.surface.json'), sha256: surfaceSha256 } },
+      { name: 'sdk', project: { root: 'work', path: 'sdk' }, revision: 'sdk-1.8.0',
+        documents: [{ name: 'sdk.http.json', tool: 'kartograph', args: ['emit', fixture('trace-library/sdk/sdk.http.json'), '--project', '{project}'] }],
+        analyses: [reverse('sdk-reverse', 'sdk/sdk-reverse.json', 'roots-from')] },
+      { name: 'app-a', project: { root: 'work', path: 'app-a' }, revision: 'a-5.0.0', documents: [],
+        analyses: [reverse('app-a-reverse', 'app-a/app-a-reverse.json', 'roots-from')] },
+      { name: 'app-b', project: { root: 'work', path: 'app-b' }, revision: 'b-2.1.0', documents: [],
+        analyses: [reverse('app-b-reverse', 'app-b/app-b-reverse.json', 'separator')] },
+    ],
+    links: [{ name: 'sdk->api', client: 'sdk', server: 'api', match: { hosts: ['api.example.com'] } }],
+    libraries: [
+      { name: 'app-a<-sdk', consumer: 'app-a', provider: 'sdk', ids: 'shared', publicSymbols: [sdkOrder, sdkPlaceOrder] },
+      { name: 'app-b<-sdk', consumer: 'app-b', provider: 'sdk', ids: 'symbol-map', symbolMap: { root: 'work', path: 'app-b.symbol-map.json' } },
+    ],
+    selection: { routes: [{ method: 'GET', template: '/api/orders/{}' }, { method: 'POST', template: '/api/orders' }] },
+  };
+  return { work, config };
+}
+
+/** 출력의 JSON 파일 하나를 읽는다. */
+async function readOutput(work, path, out = 'out') {
+  return JSON.parse(await readFile(join(work, out, path), 'utf8'));
+}
+
+test('library·surface 가져오기: provider 도달에서 옮긴 SDK id로 consumer를 root하고 참조 trace와 같은 체인을 만든다', async (t) => {
+  const { work, config } = await libraryCaptureConfig(t);
+  const calls = recordArguments(t, work);
+  const result = await captureTrace(config);
+  assert.equal(result.warnings, undefined);
+  const context = await readOutput(work, 'trace-context.json');
+  assert.deepEqual(context.members.map(({ name }) => name), ['api', 'sdk', 'app-a', 'app-b']);
+  assert.deepEqual(context.members[0], { name: 'api', surface: { path: 'api/http-surface.json', sha256: surfaceSha256 } });
+  assert.deepEqual(context.members[2].documents, []);
+  assert.deepEqual(context.libraries[0], { name: 'app-a<-sdk', consumer: 'app-a', provider: 'sdk', ids: 'shared',
+    publicSymbols: [sdkOrder, sdkPlaceOrder] });
+  assert.equal(context.libraries[1].symbolMap.length, 2);
+  const copied = await readFile(join(work, 'out/api/http-surface.json'));
+  assert.equal(createHash('sha256').update(copied).digest('hex'), surfaceSha256);
+
+  // consumer root = provider 호출부에서 닿은 SDK 공개 심볼을 선언대로 옮긴 것(shared는 그대로, symbol-map은 대응표로).
+  const argv = await calls();
+  const traversal = (fixtureName) => argv.find((entry) => entry[1] === 'traverse' && entry[2].endsWith(fixtureName));
+  assert.deepEqual(JSON.parse(await readFile(traversal('app-a-reverse.json')[6], 'utf8')), [sdkOrder, sdkPlaceOrder]);
+  assert.deepEqual(traversal('app-b-reverse.json').slice(5),
+    ['--', 'kt:shaded.orders.OrdersSdk#order(String)', 'kt:shaded.orders.OrdersSdk#placeOrder(Order)']);
+  // consumer 순회는 provider 순회 뒤에 실행한다.
+  const order = argv.filter((entry) => entry[1] === 'traverse').map((entry) => entry[2].split('/').pop());
+  assert.deepEqual(order, ['sdk-reverse.json', 'app-a-reverse.json', 'app-b-reverse.json']);
+
+  const trace = await readOutput(work, 'trace.json');
+  const reference = referenceTrace('fixtures/trace-library/context.json');
+  assert.deepEqual(trace.chains, reference.chains);
+  assert.deepEqual(trace.summary, reference.summary);
+  assert.deepEqual(trace.gaps.map(({ code }) => code), reference.gaps.map(({ code }) => code));
+  assert.ok(!trace.gaps.some(({ code }) => code.startsWith('library-')));
+
+  const manifest = await readOutput(work, 'capture-manifest.json');
+  assert.deepEqual(manifest.members.find(({ name }) => name === 'api').surface,
+    { source: 'imported', sha256: surfaceSha256, name: 'example-api', revision: 'v2.4', privacy: { handlers: 'opaque', limitations: 'prefix-only' } });
+  assert.equal(manifest.artifacts.find(({ path }) => path === 'api/http-surface.json').source, 'precomputed');
+  const [shared, mapped] = manifest.libraries;
+  assert.deepEqual(shared.inputs, { publicSymbols: { source: 'config', entries: 2 } });
+  assert.equal(mapped.inputs.symbolMap.source, 'file');
+  assert.equal(mapped.inputs.symbolMap.entries, 2);
+  // 후보 = 호출부 2 + 닿은 SDK 공개 심볼 2. 호출부(내부 클래스)는 공개 API 밖이라 옮기지 않는다.
+  assert.deepEqual(shared.platforms, [{ platform: 'kotlin', callSites: 2, candidates: 4, roots: 2, notPublic: 2,
+    providerAnalyses: 1, delivered: true }]);
+  assert.equal(manifest.steps.find(({ step }) => step === 'analysis:app-a-reverse').roots, 2);
+  assert.match(manifest.steps.find(({ step }) => step === 'pairs:app-a').skipped, /both sides/u);
+});
+
+test('surface 가져오기: sha256이 고정 값과 다르거나 계약을 어기면 그 단계의 오류다', async (t) => {
+  await t.test('sha256 불일치', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    config.members[0].surface.sha256 = 'f'.repeat(64);
+    await rejectsAt(captureTrace(config), 'surface:api', /does not match its pinned sha256/u);
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    assert.equal(manifest.failure.step, 'surface:api');
+    // 긴 순회 전에 실패한다.
+    assert.ok(!manifest.steps.some(({ step }) => step.startsWith('analysis:')));
+    assert.equal(existsSync(join(work, 'out/api/http-surface.json')), false);
+  });
+  await t.test('digest를 다시 계산하지 않고 고친 surface', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    const surface = JSON.parse(await readFile(join(repository, 'fixtures/http-surface/surfaces/example-api-2.4.surface.json'), 'utf8'));
+    const tampered = `${JSON.stringify({ ...surface, revision: 'v9' })}\n`;
+    await writeFile(join(work, 'tampered.surface.json'), tampered);
+    config.members[0].surface = { path: { root: 'work', path: 'tampered.surface.json' },
+      sha256: createHash('sha256').update(tampered).digest('hex') };
+    await rejectsAt(captureTrace(config), 'surface:api', /violates the isthmus-http-surface contract/u);
+  });
+  await t.test('root 밖 심링크', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    await symlink(join(repository, 'fixtures/http-surface/surfaces/example-api-2.4.surface.json'), join(work, 'linked.surface.json'));
+    config.members[0].surface.path = { root: 'work', path: 'linked.surface.json' };
+    await rejectsAt(captureTrace(config), 'surface:api', /symbolic link/u);
+  });
+});
+
+test('surface 내보내기: 캡처한 서버 member로 isthmus surface export를 실행하고 surface member로 잇는다', async (t) => {
+  const setup = async (st) => {
+    const work = await workspace(st);
+    for (const name of ['server', 'client']) await mkdir(join(work, name));
+    const emit = (name) => ['emit', fixture(`http-surface/${name}`), '--project', '{project}'];
+    const config = {
+      format: 'isthmus-trace-capture', version: 1, roots: { work, repo: repository },
+      output: { root: 'work', path: 'out' }, generatedAt: '2026-09-30T00:00:00Z', tools: structuredClone(baseTools),
+      members: [
+        { name: 'server', project: { root: 'work', path: 'server' }, revision: 'v2.4',
+          documents: [
+            { name: 'server.http.json', tool: 'tsograph', args: emit('server/release-2.4/server.http.json') },
+            { name: 'api.openapi.json', tool: 'tsograph', args: emit('server/release-2.4/api.openapi.json') },
+          ] },
+        { name: 'api', surface: { export: { member: 'server', name: 'example-api' } } },
+        { name: 'client', project: { root: 'work', path: 'client' }, revision: 'cli-3.2.0',
+          documents: [{ name: 'android.http.json', tool: 'kartograph', args: emit('client/android.http.json') }],
+          analyses: [{ id: 'android-reverse', platform: 'kotlin', role: 'reverse', tool: 'kartograph',
+            args: ['traverse', fixture('http-surface/client/android-reverse.json'), '--project', '{project}'], roots: 'arguments' }] },
+      ],
+      links: [{ name: 'mobile->api', client: 'client', server: 'api', match: { hosts: ['api.example.com'] },
+        contract: { member: 'api', authoritative: true } }],
+      selection: { routes: [{ method: 'GET', template: '/api/orders/{}' }] },
+    };
+    return { work, config };
+  };
+  await t.test('기본 공개 수준', async (st) => {
+    const { work, config } = await setup(st);
+    await captureTrace(config);
+    // 같은 서버 문서에서 CLI로 내보낸 게시 fixture와 바이트가 같다(project·위치는 surface에 실리지 않는다).
+    const exported = await readFile(join(work, 'out/api/http-surface.json'));
+    assert.equal(createHash('sha256').update(exported).digest('hex'), surfaceSha256);
+    const context = await readOutput(work, 'trace-context.json');
+    assert.deepEqual(context.members[1], { name: 'api', surface: { path: 'api/http-surface.json', sha256: surfaceSha256 } });
+    assert.deepEqual(context.links[0].contract, { member: 'api', authoritative: true });
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    const step = manifest.steps.find(({ step: name }) => name === 'surface:api');
+    assert.deepEqual(step.command.slice(2, 9), ['surface', 'export', '--name', 'example-api', '--revision', 'v2.4', '--']);
+    assert.deepEqual(step.command.slice(9).map((path) => path.slice(join(work, 'out').length + 1)),
+      ['server/documents/server.http.json', 'server/documents/api.openapi.json']);
+    assert.deepEqual(manifest.members.find(({ name }) => name === 'api').surface.source, 'exported');
+    assert.equal(manifest.artifacts.find(({ path }) => path === 'api/http-surface.json').source, 'isthmus');
+    const trace = await readOutput(work, 'trace.json');
+    const reference = referenceTrace('fixtures/http-surface/client/context.json');
+    assert.deepEqual(trace.chains, reference.chains);
+    assert.ok(trace.gaps.some(({ code, member }) => code === 'server-surface-opaque' && member === 'api'));
+  });
+  await t.test('공개 수준 플래그와 revision을 그대로 넘긴다', async (st) => {
+    const { work, config } = await setup(st);
+    config.members[1].surface.export = { member: 'server', revision: 'v2.4-rc1', includeHandlerUsrs: true, includeLimitationText: true };
+    await captureTrace({ ...config, trace: false });
+    const surface = await readOutput(work, 'api/http-surface.json');
+    assert.equal(surface.name, 'api');
+    assert.equal(surface.revision, 'v2.4-rc1');
+    assert.deepEqual(surface.privacy, { handlers: 'usr', limitations: 'full' });
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    const { command } = manifest.steps.find(({ step }) => step === 'surface:api');
+    assert.ok(command.includes('--include-handler-usrs') && command.includes('--include-limitation-text'));
+  });
+  await t.test('선언 측 문서가 없는 member', async (st) => {
+    const { config } = await setup(st);
+    config.members[1].surface.export.member = 'client';
+    await rejectsAt(captureTrace(config), 'surface:api', /member client has no http server or openapi document/u);
+  });
+  await t.test('surface revision으로 쓸 수 없는 member revision', async (st) => {
+    const { config } = await setup(st);
+    config.members[0].revision = '-v2.4';
+    await rejectsAt(captureTrace(config), 'surface:api', /set export\.revision/u);
+  });
+});
+
+test('library 오류 경로: 대응표 누락·root 없음·전달 불가는 경고로 드러나고 trace gap으로 이어진다', async (t) => {
+  await t.test('symbol-map 누락 항목', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    // 대응표에서 placeOrder를 빼고, capture 전용 publicSymbols로 공개 API를 밝힌다.
+    await writeFile(join(work, 'app-b.symbol-map.json'), JSON.stringify([{ provider: sdkOrder, consumer: 'kt:shaded.orders.OrdersSdk#order(String)' }]));
+    config.libraries[1].publicSymbols = [sdkOrder, sdkPlaceOrder];
+    config.members[3].analyses[0].args.push('--subset');
+    const result = await captureTrace(config);
+    assert.deepEqual(result.warnings.map(({ step, code, roots }) => [step, code, roots]),
+      [['library:app-b<-sdk', 'library-map-entry-missing', 1]]);
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    assert.deepEqual(manifest.libraries[1].platforms[0].missingMapEntries, [sdkPlaceOrder]);
+    // capture 전용 publicSymbols는 context에 싣지 않는다(trace는 symbol-map에서 받지 않는다).
+    const context = await readOutput(work, 'trace-context.json');
+    assert.equal(context.libraries[1].publicSymbols, undefined);
+    assert.deepEqual(context.libraries[1].symbolMap, [{ provider: sdkOrder, consumer: 'kt:shaded.orders.OrdersSdk#order(String)' }]);
+    const trace = await readOutput(work, 'trace.json');
+    const post = trace.chains.find(({ selector }) => selector.route.method === 'POST');
+    const hop = post.routes[0].calls[0].consumers.find(({ member }) => member === 'app-b');
+    assert.deepEqual([hop.entries, hop.notPublic], [[], 2]);
+  });
+  await t.test('consumer에 맞는 root 없음', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    config.libraries[0].publicSymbols = ['kt:com.example.sdk.OrdersSdk#cancel(String)'];
+    const result = await captureTrace(config);
+    assert.deepEqual(result.warnings.map(({ step, code }) => [step, code]), [['library:app-a<-sdk', 'library-no-roots']]);
+    assert.match(result.warnings[0].detail, /None of the 4 kotlin SDK id\(s\).*4 outside the declared public API/u);
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    assert.match(manifest.steps.find(({ step }) => step === 'analysis:app-a-reverse').skipped, /library providers/u);
+    const trace = await readOutput(work, 'trace.json');
+    assert.ok(trace.gaps.some(({ code, member }) => code === 'library-ids-unmatched' && member === 'app-a'));
+  });
+  await t.test('provider에 호출부 심볼이 없음', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    const facts = JSON.parse(await readFile(join(repository, 'fixtures/trace-library/sdk/sdk.http.json'), 'utf8'));
+    await writeFile(join(work, 'sdk.nosymbol.json'), JSON.stringify({ ...facts,
+      facts: facts.facts.map(({ symbol, ...fact }) => fact) }));
+    config.members[1].documents[0].args[1] = { root: 'work', path: 'sdk.nosymbol.json' };
+    config.members[1].analyses = [];
+    const result = await captureTrace({ ...config, trace: false });
+    assert.deepEqual(result.warnings.map(({ code }) => code), ['library-no-roots', 'library-no-roots']);
+    assert.match(result.warnings[0].detail, /carries no route-call symbol/u);
+  });
+  await t.test('생산자 명령 없는 consumer', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    const project = join(work, 'app-b');
+    const partial = JSON.parse(await readFile(join(repository, 'fixtures/trace-library/app-b/app-b-reverse.json'), 'utf8'));
+    await writeFile(join(work, 'app-b-reverse.json'), JSON.stringify({ ...partial, project,
+      roots: partial.roots.slice(0, 1), reached: partial.reached.filter(({ roots }) => roots.includes(0)) }));
+    config.members[3].analyses = [{ id: 'app-b-reverse', platform: 'kotlin', role: 'reverse',
+      precomputed: { path: { root: 'work', path: 'app-b-reverse.json' } } }];
+    const result = await captureTrace(config);
+    // 사전 계산 분석이 이미 가진 root(order)는 빼고, 가지지 않은 root(placeOrder)만 경고한다.
+    assert.deepEqual(result.warnings.map(({ code, roots }) => [code, roots]), [['library-roots-undelivered', 1]]);
+    const manifest = await readOutput(work, 'capture-manifest.json');
+    assert.deepEqual(manifest.libraries[1].platforms[0].delivered, false);
+    assert.equal(manifest.libraries[1].platforms[0].undelivered, 1);
+    const trace = await readOutput(work, 'trace.json');
+    assert.ok(trace.gaps.some(({ code, member }) => code === 'library-continuation-unrooted' && member === 'app-b'));
+  });
+  await t.test('대응표 파일 오류', async (st) => {
+    const { work, config } = await libraryCaptureConfig(st);
+    await writeFile(join(work, 'app-b.symbol-map.json'), JSON.stringify([{ provider: sdkOrder }]));
+    await rejectsAt(captureTrace(config), 'library:app-b<-sdk', /symbolMap entries must be \{provider, consumer\}/u);
+    config.output = { root: 'work', path: 'out2' };
+    config.libraries[1].symbolMap = { root: 'work', path: 'missing.json' };
+    await rejectsAt(captureTrace(config), 'library:app-b<-sdk', /does not exist/u);
+  });
+});
+
+test('파일 선택과 library: consumer 역방향은 파일 심볼과 library root를 함께 받아 마지막에 한 번 실행한다', async (t) => {
+  const { work, config } = await libraryCaptureConfig(t);
+  const calls = recordArguments(t, work);
+  config.selection = { files: [{ member: 'app-a', path: 'app/src/main/kotlin/com/example/appa/OrderScreen.kt' }] };
+  await captureTrace({ ...config, trace: false });
+  const traversals = (await calls()).filter((entry) => entry[1] === 'traverse');
+  assert.deepEqual(traversals.map((entry) => entry[2].split('/').pop()), ['sdk-reverse.json', 'app-a-reverse.json', 'app-b-reverse.json']);
+  const manifest = await readOutput(work, 'capture-manifest.json');
+  assert.equal(manifest.fileSelection.find(({ member }) => member === 'app-a').source, 'traversal');
+  assert.equal(manifest.libraries[0].platforms[0].delivered, true);
+});

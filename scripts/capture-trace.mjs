@@ -8,21 +8,31 @@ import {
   buildCaptureContext,
   capturedAnalysisPath,
   capturedDocumentPath,
+  capturedSurfacePath,
   chunkCaptureRoots,
   expandCaptureArgument,
+  isSurfaceLabel,
   listedSymbolsInFiles,
   MAX_ROOT_ARGUMENT_BYTES,
+  orderCapturedMembers,
   pairsDocumentIndexes,
+  parseLibraryPublicSymbols,
+  parseLibrarySymbolMap,
   parseSymbolListing,
   parseTraceCaptureConfig,
   planCaptureRoots,
+  planLibraryRoots,
+  provisionalSurface,
+  resolveCaptureLibrary,
   ROOT_NOT_FOUND_EXIT_CODE,
   rootArguments,
   selectedCaptureFiles,
   selectedSymbols,
+  surfaceDocumentIndexes,
   TraceCaptureValidationError,
   unresolvedTraversalRoots,
 } from '../dist/report/trace-capture.js';
+import { HttpSurfaceValidationError, importHttpSurface } from '../dist/exchange/http-surface.js';
 import { parseBridgeFactsDocument } from '../dist/exchange/parse.js';
 import {
   analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
@@ -38,6 +48,9 @@ import { runChild } from './run-child.mjs';
  * (c) 그 root로 생산자 순회 명령 → (d) trace context·artifact·manifest 기록 → (e) 선택적으로 `isthmus trace`다.
  * 파일 선택이면 (c)를 두 단계로 나눈다: 역방향이 아닌 순회와 생산자 심볼 목록을 먼저 모으고, 선택한 파일에 놓인
  * 심볼을 찾아 역방향 순회의 root에 더한 뒤 역방향을 실행한다({@link collectFileSymbols}).
+ * surface member는 (a) 뒤에 가져오거나(sha256 대조 후 복사) 문서 member에서 `isthmus surface export`로 만든다
+ * ({@link captureSurface}). library consumer의 역방향 순회는 모든 다른 순회 뒤로 미룬다 — 그 root가 provider 역방향
+ * 순회의 도달에서 나오기 때문이다({@link planLibraries}).
  * 모든 자식은 인자 배열로 셸 없이 실행하고, 단계마다 시간 제한을 둔다.
  */
 
@@ -85,15 +98,23 @@ export async function captureTrace(input, { execute = runChild, now = () => new 
     host: { node: process.version, platform: process.platform, arch: process.arch },
     tools: {}, members: [], steps: [], artifacts: [],
   };
-  const session = { config, roots, output, manifest, execute, generatedAt };
+  const consumers = new Set(config.libraries.map(({ consumer }) => consumer));
+  const session = { config, roots, output, manifest, execute, generatedAt, consumers };
   try {
     await recordTools(session);
+    const libraries = await resolveLibraries(session);
     const members = [];
     for (const member of config.members) members.push(await captureFacts(session, member));
     // 모든 사실이 모인 뒤 선택을 해석한다 — 심볼 선택의 usr는 역방향 root에 더해야 하기 때문이다.
+    const capturedMembers = () => members.map(({ captured }) => captured);
     let provisional;
-    try { provisional = parseTraceContext(buildCaptureContext(config, members.map(({ captured }) => captured))); }
-    catch (error) { throw new CaptureTraceError('context', error.message); }
+    try {
+      provisional = parseTraceContext(buildCaptureContext(config,
+        orderCapturedMembers(config, capturedMembers(), config.surfaces.map(provisionalSurface)), [], libraries));
+    } catch (error) { throw new CaptureTraceError('context', error.message); }
+    // surface는 긴 순회 전에 모은다 — sha256이 어긋난 artifact로 순회 시간을 쓰지 않기 위해서다.
+    const surfaces = [];
+    for (const surface of config.surfaces) surfaces.push(await captureSurface(session, surface, members));
     for (const member of members) await capturePairs(session, member);
     // 파일 선택이면 역방향 순회를 뒤로 미룬다. 그 root에 파일의 심볼을 더하려면 먼저 목록·정방향 순회가 있어야 한다.
     const files = 'files' in provisional.selection;
@@ -106,9 +127,13 @@ export async function captureTrace(input, { execute = runChild, now = () => new 
     } else {
       for (const member of members) skipListings(session, member);
     }
+    if (libraries.length > 0) {
+      planLibraries(session, members, libraries);
+      for (const member of members) await captureAnalyses(session, member, provisional, 'library');
+    }
     // context의 분석 순서는 실행 순서가 아니라 설정 순서다(나눈 묶음은 실행 순서를 지킨다).
     for (const { captured } of members) captured.analyses.sort((left, right) => left.order - right.order);
-    const context = buildCaptureContext(config, members.map(({ captured }) => captured), fileSymbols);
+    const context = buildCaptureContext(config, orderCapturedMembers(config, capturedMembers(), surfaces), fileSymbols, libraries);
     try { parseTraceContext(context); }
     catch (error) { throw new CaptureTraceError('context', error.message); }
     await writeOutput(output, 'trace-context.json', encodeSortedJson(context));
@@ -406,9 +431,181 @@ async function captureFacts(session, member) {
     documents.push({ name: document.name, path });
     parsed.push(facts);
   }
-  return { config: member, values, parsed, normalized: [], fileRoots: new Map(), graphNodes: new Map(),
+  return { config: member, values, parsed, normalized: [], fileRoots: new Map(), libraryRoots: new Map(), graphNodes: new Map(),
     captured: { name: member.name, project,
     ...(revision === undefined ? {} : { revision }), ...(catalog === undefined ? {} : { catalog }), documents, analyses: [] } };
+}
+
+/**
+ * library 선언의 목록 파일(`publicSymbols`·`symbolMap`이 `{root, path}`일 때)을 root 안에서 읽어 검증하고 선언을 푼다.
+ * 목록 원문은 context에 실리므로 artifact로 복사하지 않고, 읽은 파일의 sha256과 항목 수를 manifest `libraries`에 남긴다.
+ */
+async function resolveLibraries(session) {
+  const resolved = [];
+  if (session.config.libraries.length > 0) session.manifest.libraries = [];
+  for (const library of session.config.libraries) {
+    const step = `library:${library.name}`;
+    const loaded = {};
+    const inputs = {};
+    for (const [field, parse] of [['publicSymbols', parseLibraryPublicSymbols], ['symbolMap', parseLibrarySymbolMap]]) {
+      const value = library[field];
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        inputs[field] = { source: 'config', entries: value.length };
+        continue;
+      }
+      const content = await readPrecomputed(value, session, step);
+      try { loaded[field] = parse(parseJson(content.toString('utf8'), step, `the library ${field} file`)); }
+      catch (error) {
+        if (error instanceof TraceCaptureValidationError) throw new CaptureTraceError(step, error.message);
+        throw error;
+      }
+      inputs[field] = { source: 'file', sha256: sha256(content), entries: loaded[field].length };
+    }
+    session.manifest.libraries.push({ name: library.name, consumer: library.consumer, provider: library.provider,
+      ids: library.ids, inputs, platforms: [] });
+    resolved.push(resolveCaptureLibrary(library, loaded));
+  }
+  return resolved;
+}
+
+/**
+ * surface member 하나를 모은다. 가져오기는 파일 sha256을 설정의 고정 값과 대조하고(다르면 이 단계의 오류 — 다른 릴리스이거나
+ * 받다가 깨졌다) 계약·digest를 검증한 뒤 복사한다. 내보내기는 원본 문서 member의 선언 측 http·openapi 문서로
+ * `isthmus surface export`를 실행한다. 돌려주는 값은 context surface member다.
+ */
+async function captureSurface(session, member, members) {
+  const step = `surface:${member.name}`;
+  const path = capturedSurfacePath(member.name);
+  let content;
+  let source;
+  if (member.surface.kind === 'import') {
+    content = await readPrecomputed(member.surface.path, session, step);
+    if (sha256(content) !== member.surface.sha256) {
+      throw new CaptureTraceError(step, 'the http surface file does not match its pinned sha256; download the surface release '
+        + 'the config names again, or update the pin after reviewing the new release.');
+    }
+    source = 'precomputed';
+  } else {
+    content = await exportSurface(session, member, members, step);
+    source = 'isthmus';
+  }
+  const { surface } = validateSurface(content, step);
+  await writeOutput(session.output, path, content);
+  const digest = sha256(content);
+  const identity = { name: surface.name, revision: surface.revision, privacy: surface.privacy };
+  recordArtifact(session, path, content, source, { surface: identity });
+  session.manifest.members.push({ name: member.name, surface: { source: member.surface.kind === 'import' ? 'imported' : 'exported',
+    ...(member.surface.kind === 'export' ? { member: member.surface.member } : {}), sha256: digest, ...identity } });
+  return { name: member.name, surface: { path, sha256: digest } };
+}
+
+/**
+ * `isthmus surface export`를 실행해 surface 원문을 돌려준다. 문서는 capture가 이미 검증해 출력에 복사한 원본 member의
+ * 선언 측 문서만 넘긴다({@link surfaceDocumentIndexes}). 공개 수준 플래그는 설정 그대로 옮긴다.
+ */
+async function exportSurface(session, member, members, step) {
+  const { surface } = member;
+  const origin = members.find(({ config }) => config.name === surface.member);
+  const indexes = surfaceDocumentIndexes(origin.parsed);
+  if (indexes.length === 0) {
+    throw new CaptureTraceError(step, `member ${surface.member} has no http server or openapi document to publish.`);
+  }
+  const revision = surface.revision ?? origin.captured.revision;
+  if (!isSurfaceLabel(revision)) {
+    throw new CaptureTraceError(step, `member ${surface.member} revision cannot be a surface revision (at most 256 characters, `
+      + 'no surrounding spaces, no leading "-"); set export.revision.');
+  }
+  const args = ['surface', 'export', '--name', surface.name ?? member.name, '--revision', revision,
+    ...(surface.includeHandlerUsrs ? ['--include-handler-usrs'] : []),
+    ...(surface.includeLimitationText ? ['--include-limitation-text'] : []),
+    '--', ...indexes.map((index) => join(session.output, origin.captured.documents[index].path))];
+  const { stdout } = await run(session, { step, label: 'isthmus surface export', command: [process.execPath, isthmusMain], args,
+    timeoutSeconds: ISTHMUS_TIMEOUT_SECONDS });
+  return stdout;
+}
+
+/** surface 원문을 trace와 같은 파서로 검증한다(계약·digest). */
+function validateSurface(content, step) {
+  const value = parseJson(content.toString('utf8'), step, 'the http surface');
+  try { return importHttpSurface(value); }
+  catch (error) {
+    if (error instanceof HttpSurfaceValidationError) {
+      throw new CaptureTraceError(step, `the http surface violates the isthmus-http-surface contract: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * library마다 consumer 역방향 root를 계산해 `member.libraryRoots`에 두고 manifest `libraries[].platforms`에 적는다.
+ *
+ * root는 provider의 route-call 심볼과 provider 역방향 순회가 그 호출부에서 닿은 SDK 심볼을 library 선언(`shared`·
+ * `symbol-map`)대로 옮긴 것이다({@link planLibraryRoots}). 조용히 비는 곳은 모두 경고로 드러낸다.
+ * - `library-no-roots`: provider에 호출부 심볼이 없거나 옮긴 id가 하나도 없다 — consumer는 그 library에서 root를 받지 못하고
+ *   trace가 `library-ids-unmatched`를 남긴다.
+ * - `library-map-entry-missing`: `symbol-map`에서 capture 전용 `publicSymbols`의 SDK id가 호출에서 닿았는데 대응표에 없다.
+ * - `library-roots-undelivered`: 옮긴 root가 있는데 consumer에 그 platform의 생산자 명령 역방향 분석이 없고, 사전 계산 분석도
+ *   그 root를 갖지 않는다 — trace가 `library-continuation-unrooted`를 남긴다.
+ */
+function planLibraries(session, members, libraries) {
+  const byName = new Map(members.map((member) => [member.config.name, member]));
+  for (const [index, library] of libraries.entries()) {
+    const step = `library:${library.name}`;
+    const provider = byName.get(library.provider);
+    const consumer = byName.get(library.consumer);
+    const record = session.manifest.libraries[index];
+    const plans = planLibraryRoots(library, provider.parsed, provider.normalized);
+    if (plans.length === 0) {
+      warn(session, { step, code: 'library-no-roots', roots: 0,
+        detail: `Provider ${library.provider} carries no route-call symbol, so consumer ${library.consumer} gets no roots from `
+          + 'this library and trace reports library-ids-unmatched.' });
+    }
+    for (const plan of plans) record.platforms.push(libraryPlatformRecord(session, step, library, consumer, plan));
+  }
+}
+
+/** library 하나·platform 하나의 계획을 consumer에 전달하고 manifest 항목을 만든다(경고 포함). */
+function libraryPlatformRecord(session, step, library, consumer, plan) {
+  const { platform, roots, missingMapEntries } = plan;
+  const entry = { platform, callSites: plan.callSites, candidates: plan.candidates, roots: roots.length, notPublic: plan.notPublic,
+    providerAnalyses: plan.providerAnalyses };
+  if (plan.providerAnalyses === 0) {
+    entry.notes = [`No reverse ${platform} analysis of the provider: only the call-site symbols are candidates, so public SDK `
+      + 'functions that wrap them are not rooted in the consumer.'];
+  }
+  if (missingMapEntries.length > 0) {
+    entry.missingMapEntries = missingMapEntries;
+    warn(session, { step, code: 'library-map-entry-missing', roots: missingMapEntries.length,
+      detail: `${missingMapEntries.length} public ${platform} SDK id(s) reached by the provider's call sites have no symbolMap `
+        + `entry (listed in libraries[].platforms[].missingMapEntries), so consumer ${library.consumer} is not rooted at them `
+        + 'and trace counts them only as notPublic; add the entries.' });
+  }
+  if (roots.length === 0) {
+    warn(session, { step, code: 'library-no-roots', roots: 0,
+      detail: `None of the ${plan.candidates} ${platform} SDK id(s) known from the provider's call sites translate to a consumer `
+        + `id through the library declaration (${plan.notPublic} outside the declared public API), so consumer `
+        + `${library.consumer} gets no roots from this library and trace reports library-ids-unmatched.` });
+    return entry;
+  }
+  const delivered = consumer.config.analyses.some((analysis) => analysis.platform === platform && isDeferred(analysis));
+  entry.delivered = delivered;
+  if (delivered) {
+    consumer.libraryRoots.set(platform, [...new Set([...consumer.libraryRoots.get(platform) ?? [], ...roots])]);
+    return entry;
+  }
+  // 생산자 명령이 없으면 root를 넘길 수 없다. 이미 모은 사전 계산 역방향 분석이 root로 가진 id는 trace가 잇으므로 뺀다.
+  const covered = new Set(consumer.normalized.filter((analysis) => analysis.role === 'reverse' && analysis.platform === platform)
+    .flatMap(({ graph }) => graph.roots.map(({ id }) => id)));
+  const uncovered = roots.filter((root) => !covered.has(root));
+  if (uncovered.length > 0) {
+    entry.undelivered = uncovered.length;
+    warn(session, { step, code: 'library-roots-undelivered', roots: uncovered.length,
+      detail: `Consumer ${library.consumer} has no reverse ${platform} analysis with a producer command, so ${uncovered.length} `
+        + 'library root(s) that no precomputed analysis covers were not passed to a traversal and trace reports '
+        + 'library-continuation-unrooted for them.' });
+  }
+  return entry;
 }
 
 /** 인자 목록의 자리표시자와 경로 참조를 푼다. 경로 참조는 존재해야 하고 root 안이어야 한다. */
@@ -459,30 +656,49 @@ function isDeferred(analysis) {
 }
 
 /**
+ * 이 단계(`phase`)에서 실행할 분석인지 본다. library consumer의 미루는 역방향 순회는 언제나 마지막 `library` 단계에서만
+ * 실행한다 — 그 root가 provider 역방향 순회(파일 선택이면 2단계일 수 있다)의 도달에서 나오기 때문이다.
+ */
+function runsInPhase(phase, analysis, consumer) {
+  const library = consumer && isDeferred(analysis);
+  if (phase === 'all') return !library;
+  if (phase === 'stage1') return !isDeferred(analysis);
+  if (phase === 'stage2') return isDeferred(analysis) && !library;
+  return library;
+}
+
+/**
  * (c) member의 순회 분석을 모은다. 생산자 명령은 사실 문서에서 뽑은 root로 실행하고, root가 많으면 나눠
  * 여러 분석으로 기록한다(trace가 같은 역할·플랫폼·member 분석을 합친다). 사전 계산 artifact는 복사하고
  * sha256을 `precomputed`에 싣는다.
  *
- * `phase`: `all`은 전부, `stage1`은 미룬 역방향을 뺀 나머지, `stage2`는 미룬 역방향만 실행한다. `stage2`의 root에는
- * {@link collectFileSymbols}가 찾은 파일 심볼(`member.fileRoots`)을 더한다.
+ * `phase`: `all`은 library consumer의 역방향을 뺀 전부, `stage1`은 미룬 역방향을 뺀 나머지, `stage2`는 미룬 역방향 중
+ * library consumer의 것을 뺀 나머지, `library`는 library consumer의 미룬 역방향만 실행한다({@link runsInPhase}).
+ * `stage2`의 root에는 {@link collectFileSymbols}가 찾은 파일 심볼(`member.fileRoots`)을, `library`의 root에는 그것과
+ * {@link planLibraries}가 provider에서 옮긴 SDK id(`member.libraryRoots`)를 더한다.
  */
 async function captureAnalyses(session, member, provisional, phase) {
   const memberName = session.config.workspace ? member.config.name : undefined;
   const ids = new Set(session.config.members.flatMap(({ analyses }) => analyses.map(({ id }) => id)));
+  const consumer = session.consumers.has(member.config.name);
   for (const [order, analysis] of member.config.analyses.entries()) {
-    if (phase !== 'all' && isDeferred(analysis) !== (phase === 'stage2')) continue;
+    if (!runsInPhase(phase, analysis, consumer)) continue;
     const step = `analysis:${analysis.id}`;
     if (analysis.precomputed !== undefined) {
       await capturePrecomputedAnalysis(session, member, analysis, provisional, step, order);
       continue;
     }
-    const extra = phase === 'stage2' ? member.fileRoots.get(analysis.platform) ?? [] : [];
+    const extra = phase === 'stage2' || phase === 'library' ? [...member.fileRoots.get(analysis.platform) ?? [],
+      ...(phase === 'library' ? member.libraryRoots.get(analysis.platform) ?? [] : [])] : [];
     const plan = planCaptureRoots(member.parsed, analysis.role, analysis.platform,
       [...selectedSymbols(provisional, memberName, analysis.platform), ...extra], member.graphNodes.get(analysis.platform));
     recordRootFilter(session, memberName, analysis, plan);
     const { roots } = plan;
     if (roots.length === 0) {
-      session.manifest.steps.push({ step, skipped: 'no roots: the member documents carry no traversable symbol for this role and platform' });
+      // library consumer는 provider에서 받은 root가 없다는 경고(library-no-roots 등)가 따로 남는다.
+      session.manifest.steps.push({ step, skipped: phase === 'library'
+        ? 'no roots: neither the member documents nor its library providers give a traversable symbol for this role and platform (see warnings)'
+        : 'no roots: the member documents carry no traversable symbol for this role and platform' });
       continue;
     }
     const delivery = analysis.step.roots;
