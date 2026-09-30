@@ -4,6 +4,84 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-30
+
+호환 릴리스 세트: cartograph 0.23.0 · kartograph 0.18.0 · dartograph 0.16.0 · schemagraph 0.7.0 ·
+gartograph 0.9.0 · rustograph 0.4.0.
+
+0.9.0 이후 #104–#135를 담는다. bridge 전용이던 isthmus가 persistence(코드↔스키마 relation)와 http(route 선언↔호출↔
+OpenAPI) 도메인을 받고, route·테이블에서 핸들러·DB 의존자·클라이언트 코드까지 잇는 `trace`와 API 변경의 클라이언트
+영향을 보는 `diff --http`, 그리고 PR마다 그 결과를 보고하는 GitHub Action을 더한다. 먼저 아래 "동작 변경"을 읽는다.
+그 아래 요약 뒤의 세부 절은 개발 중 기록한 그대로다(최근 PR이 위).
+
+### 동작 변경 — 업그레이드 전에 확인할 것
+
+0.9.0은 target `http`·`persistence`와 platform `go`·`rust`·`python`·`sql`·`openapi` 문서를 모두
+`Unsupported bridge target.`/`Unsupported bridge platform.`(종료 코드 2)으로 거부했다. 0.10.0은 http 문서를
+`check`·`query`·`trace`·`diff --http`·`surface export`에서, persistence 문서를 `check`·`query`·`trace`·`impact`에서 받고,
+받지 않는 명령은 원인을 밝혀 거부한다. bridge 문서만 넣는 기존 입력의 대표 명령 출력과 종료 코드는 바이트 단위로
+고정해 두었다(#115). 0.9.0에서도 코드 2였던 입력은 대개 거부 문구만 원인을 밝히게 바뀐다. 결과나 종료 코드가 새로
+달라질 수 있는 곳은 persistence를 받는 `impact`의 `--strict`·`--runtime`과 `query`의 `relation:`·`route:` 이름이다.
+
+- **http 문서는 `graph`·`diff`·`impact`·`retentions`·preflight context에서 계속 종료 코드 2**: 0.9.0의
+  `Unsupported bridge target.` 대신 그 명령이 http 문서를 받지 않는다는 원인 문구로 거부한다(개발 빌드 한때의 빈 정상
+  결과는 발행되지 않았다). bridge `diff`는 `isthmus diff --http`를 안내한다. http 비교는 `diff --http`, 영향 추적은
+  `trace`를 쓴다(#118, #122).
+- **persistence 입력**(#109–#116, 0.9.0은 모두 코드 2였다):
+  - `retentions --for kartograph|cartograph`: 같은 플랫폼의 persistence 문서만 수신 측으로 들어오면 원인 문구와 종료
+    코드 2다(개발 빌드의 빈 목록·0을 고쳤다).
+  - `diff`: persistence·sql 문서를 "persistence 비교를 아직 지원하지 않는다"는 원인 문구로 거부한다(2). preflight
+    context도 persistence 문서를 원인 문구로 거부한다.
+  - `impact`: 비한정 사용(`users`)이 닿는 한정 선언(`public.users`)의 `column-use-without-decl`을 조인과 같은 규칙으로
+    귀속하고, 선택한 persistence 사실의 진단은 경고도 `--strict` blocker다 — `--strict` 결과가 1로 바뀔 수 있다.
+  - `impact --runtime`: persistence 문서만 있는 native 플랫폼 주소의 `staticStatus`가 `unobserved` 대신
+    `unsupported`다(두 값 모두 런타임 공백이라 `--strict` 종료 코드는 같다).
+  - bridge 문서 판정은 한 규칙이다: target이 flutter·react-native·capacitor이거나 `target: null`이고 platform이
+    dart·js·swift·kotlin인 문서만 bridge 문서다. 관계 사용이 0건인 kotlin·swift·dart persistence 문서(`target: null`)는
+    bridge 문서로 세지며, 오류 문구가 그 원인을 밝힌다.
+- **다른 target 문서의 route 필드는 입력 오류(2)**: http 전용 필드(경로 스코프, `dynamicScope`, `order` 등)가 bridge·
+  persistence 문서에 실리면 거부한다. `channelPrefix`는 기존 계약 필드라 예외로 버린다.
+- **`query` 이름 접두사**: `relation:<name>`·`route:[<METHOD> ]<template>`로 시작하는 이름이 관계·route 질의가 된다.
+  같은 이름의 관계가 있으면 bridge 키보다 우선하므로 그 bridge 키는 qualifiedName으로 질의한다. `relation:`만 있는
+  이름과 형식이 맞지 않는 `route:` 이름은 사용 오류(64)다.
+
+### 요약 — 새 기능
+
+- **GitHub Action**(#135, [CI](docs/CI.md)): 저장소 루트 composite Action을 `uses: ictechgy/isthmus@v0.10.0`(실제로는 그
+  태그의 commit SHA)으로 쓴다. Action과 CLI가 같은 태그로 나가며, `action.yml`의 `isthmus-version` 기본값은 Action ref의
+  `package.json` 버전이라 태그를 따른다(`@v0.10.0`이면 `isthmus-cli@0.10.0`). PR마다 base·head를 수집해 `diff --http`와
+  바뀐 route의 `trace`를 돌리고 job summary·artifact·선택적 스티키 댓글로 남긴다. 렌더러 `scripts/render-pr-comment.mjs`는
+  npm 패키지에 들어 있어 다른 CI에서도 쓴다.
+- **persistence 도메인**(#108–#116): platform `go`·`rust`·`sql` 문서, 코드 `relation-use`↔스키마 `relation-decl` 조인,
+  `check --pairs`(사용↔선언 쌍), `query relation:<name>`, [수동 왕복 추적](docs/PERSISTENCE-TRACE.md).
+- **http 도메인**(#118, #126–#128, #131, #133): route 사실 검증과 세그먼트 매처·진단, `query route:`, http limitation
+  스코프와 Spring PathPattern 벡터, platform `python`과 `registration-order` 디스패치, go·rust 서버 `route-decl`,
+  python·go·rust 클라이언트 `route-call`과 결합 방식, dynamic 선언의 `dynamicScope`.
+- **`trace`**(#119–#121, #123–#125, #130–#131, #133): route·relation·심볼·파일에서 핸들러 → 테이블 → DB 의존자, 호출부 →
+  영향받는 클라이언트 코드를 생산자 id 정확 일치와 명시적 gap으로 잇는다. 입력은 생산자의 `language-traversal`
+  문서다. 근거 등급, 다중 저장소 workspace, `files` 선택, `scripts/capture-trace.mjs`와 MCP `trace`, upstream route와
+  `upstreamDepth` 전이 추적을 포함한다.
+- **`diff --http`**(#122): 한 서버·스펙 또는 workspace의 base·head route 표면을 비교해 base에서 결합하던 호출이 head에서
+  결합하지 않는 곳을 찾는다(`--fail-on`).
+- **조직 경계**(#129–#130): `isthmus-http-surface` v1과 `surface export`, sha256으로 고정한 surface member, 공유 SDK
+  `libraries`.
+- **적합성 벡터**: http-template·url-compose·http-limitation-scope에 케이스를 더하고 http-dispatch suite를 새로 냈다.
+  `SHA256SUMS`가 바뀌었지만 기존 케이스의 기대값은 그대로라 옛 벤더본도 통과한다(#134는 aiohttp 두 케이스의
+  `versionRange`만 적었다).
+- **검증 하네스**(#104–#107): RN build witness, iPhone release, RN 새 아키텍처 lifecycle 검사. 제품 동작 변화는 없다.
+- **내부**(#132): preflight를 trace 공유 모듈 위로 수렴했다. 출력·종료 코드는 바이트 단위로 같다.
+
+### Changed — 호환 세트와 cold-cache (릴리스 준비)
+
+- `compatibility.json`과 [호환 버전](docs/COMPATIBILITY.md)·README의 producer 세트를 cartograph 0.23.0·kartograph
+  0.18.0·dartograph 0.16.0으로 올리고 schemagraph 0.7.0·gartograph 0.9.0·rustograph 0.4.0 행을 더했다. tsograph와
+  pythograph 행은 발행 뒤 저장소 manifest만 바꾸는 후속으로 더한다.
+- cold-cache workflow가 cartograph를 `brew install` 대신 manifest 버전의 GitHub Release 아카이브로 받는다. tap에는 최신
+  formula 하나뿐이라 버전을 고정할 수 없어 cartograph를 발행할 때마다 이 job이 깨졌다(2026-09-28부터 실패). formula의
+  `url`이 같은 아카이브라 설치되는 실행 파일은 같고, 무결성은 GitHub release asset digest(sha256)로 대조한다.
+- cold-cache에 `api-producers` job을 더했다: schemagraph·gartograph·rustograph 발행 아카이브를 manifest 버전으로 받아
+  발행 checksum과 `--version`을 대조한다(설치·버전만 — trace e2e는 아니다).
+
 ### Added — PR마다 HTTP route 영향을 보고하는 GitHub Action (Phase 3 CI)
 
 - **위치**([CI](docs/CI.md)): 저장소 루트 composite Action `action.yml`(`uses: ictechgy/isthmus@<tag>`). Action과 CLI가 같은

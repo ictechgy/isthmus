@@ -36,6 +36,9 @@ jobs:
   # 발행 producer 설치본이 fixtures/bridge-app을 스캔해 Dart↔Swift↔Kotlin
   # 3방향 조인까지 재현한다. isthmus와 producer를 compatibility.json 버전으로
   # 고정하고 설치본의 --version을 정본과 대조한다.
+  # cartograph는 brew 대신 GitHub Release 아카이브를 받는다 — tap에는 최신
+  # formula 하나뿐이라 brew로는 버전을 고정할 수 없고(새 발행마다 이 job이
+  # 깨졌다), formula의 url이 같은 아카이브라 설치되는 실행 파일은 같다.
   producers:
     runs-on: macos-latest
     timeout-minutes: 20
@@ -55,9 +58,30 @@ jobs:
         id: compatibility
         run: |
           echo "isthmus=$(node -p "require('./compatibility.json').isthmus")" >> "$GITHUB_OUTPUT"
+          echo "cartograph=$(node -p "require('./compatibility.json').producers.cartograph")" >> "$GITHUB_OUTPUT"
           echo "dartograph=$(node -p "require('./compatibility.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
           echo "kartograph=$(node -p "require('./compatibility.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
-      - run: brew install ictechgy/tap/cartograph
+      - name: Install cartograph release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARTOGRAPH_VERSION: ${{ steps.compatibility.outputs.cartograph }}
+        run: |
+          set -euo pipefail
+          archive="cartograph-$CARTOGRAPH_VERSION-macos-universal.tar.gz"
+          curl -fsSL --retry 3 \
+            "https://github.com/ictechgy/cartograph/releases/download/$CARTOGRAPH_VERSION/$archive" \
+            -o "$RUNNER_TEMP/$archive"
+          # cartograph 릴리스에는 checksum 파일이 없다. brew formula가 하던 무결성 검사를
+          # GitHub가 기록한 release asset digest(sha256) 대조로 유지한다.
+          digest="$(gh api "repos/ictechgy/cartograph/releases/tags/$CARTOGRAPH_VERSION" \
+            --jq ".assets[] | select(.name == \"$archive\") | .digest")"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "cartograph $CARTOGRAPH_VERSION: release asset $archive has no sha256 digest; check the release assets." >&2; exit 1 ;;
+          esac
+          echo "${digest#sha256:}  $RUNNER_TEMP/$archive" | shasum -a 256 --check
+          mkdir -p "$RUNNER_TEMP/cartograph"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/cartograph"
       - run: dart pub global activate dartograph ${{ steps.compatibility.outputs.dartograph }}
       - name: Install kartograph release
         run: |
@@ -69,7 +93,7 @@ jobs:
       - run: npm install --global isthmus-cli@${{ steps.compatibility.outputs.isthmus }}
       - name: Record installed versions
         run: |
-          cartograph --version
+          "$RUNNER_TEMP/cartograph/cartograph/cartograph" --version
           "$HOME/.pub-cache/bin/dartograph" --version
           find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' -exec {} --version \;
       - name: Verify installed versions
@@ -77,11 +101,70 @@ jobs:
           kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
           node scripts/verify-installed-compatibility.mjs \
             isthmus="$(command -v isthmus)" \
-            cartograph="$(brew --prefix)/bin/cartograph" \
+            cartograph="$RUNNER_TEMP/cartograph/cartograph/cartograph" \
             dartograph="$HOME/.pub-cache/bin/dartograph" \
             kartograph="$kartograph_bin"
       - name: Cold-cache producer verification
         run: |
           kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
           node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
-            "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" "$kartograph_bin"
+            "$RUNNER_TEMP/cartograph/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$kartograph_bin"
+
+  # API 영향 producer(schemagraph·gartograph·rustograph)의 발행 아카이브를
+  # compatibility.json 버전으로 받아 발행 checksum과 --version을 대조한다.
+  # 이 job은 설치·버전만 확인한다 — 이 도구들의 문서로 trace까지 잇는 e2e는
+  # 각 producer 저장소의 검증 범위다. Linux x86_64 아카이브를 쓰며 npm
+  # isthmus 설치가 필요 없어 발행 전에도 실행할 수 있다.
+  api-producers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - name: Read compatible versions
+        id: compatibility
+        run: |
+          echo "schemagraph=$(node -p "require('./compatibility.json').producers.schemagraph")" >> "$GITHUB_OUTPUT"
+          echo "gartograph=$(node -p "require('./compatibility.json').producers.gartograph")" >> "$GITHUB_OUTPUT"
+          echo "rustograph=$(node -p "require('./compatibility.json').producers.rustograph")" >> "$GITHUB_OUTPUT"
+      - name: Download release archives and verify checksums
+        env:
+          SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
+          GARTOGRAPH_VERSION: ${{ steps.compatibility.outputs.gartograph }}
+          RUSTOGRAPH_VERSION: ${{ steps.compatibility.outputs.rustograph }}
+        run: |
+          set -euo pipefail
+          fetch() { curl -fsSL --retry 3 "$1" -o "$2"; }
+          base=https://github.com/ictechgy
+          mkdir -p "$RUNNER_TEMP/api/schemagraph" "$RUNNER_TEMP/api/gartograph" "$RUNNER_TEMP/api/rustograph"
+          cd "$RUNNER_TEMP/api/schemagraph"
+          fetch "$base/schemagraph/releases/download/v$SCHEMAGRAPH_VERSION/schemagraph-$SCHEMAGRAPH_VERSION-x86_64-unknown-linux-gnu.tar.gz" \
+            "schemagraph-$SCHEMAGRAPH_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          fetch "$base/schemagraph/releases/download/v$SCHEMAGRAPH_VERSION/SHA256SUMS" SHA256SUMS
+          sha256sum --check --ignore-missing --strict SHA256SUMS
+          tar -xzf "schemagraph-$SCHEMAGRAPH_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          cd "$RUNNER_TEMP/api/gartograph"
+          fetch "$base/gartograph/releases/download/v$GARTOGRAPH_VERSION/gartograph-$GARTOGRAPH_VERSION-linux-amd64.tar.gz" \
+            "gartograph-$GARTOGRAPH_VERSION-linux-amd64.tar.gz"
+          fetch "$base/gartograph/releases/download/v$GARTOGRAPH_VERSION/checksums.txt" checksums.txt
+          sha256sum --check --ignore-missing --strict checksums.txt
+          tar -xzf "gartograph-$GARTOGRAPH_VERSION-linux-amd64.tar.gz"
+          cd "$RUNNER_TEMP/api/rustograph"
+          fetch "$base/rustograph/releases/download/v$RUSTOGRAPH_VERSION/rustograph-$RUSTOGRAPH_VERSION-linux-amd64.tar.gz" \
+            "rustograph-$RUSTOGRAPH_VERSION-linux-amd64.tar.gz"
+          fetch "$base/rustograph/releases/download/v$RUSTOGRAPH_VERSION/checksums.txt" checksums.txt
+          sha256sum --check --ignore-missing --strict checksums.txt
+          tar -xzf "rustograph-$RUSTOGRAPH_VERSION-linux-amd64.tar.gz"
+      - name: Verify installed versions
+        env:
+          SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
+          GARTOGRAPH_VERSION: ${{ steps.compatibility.outputs.gartograph }}
+          RUSTOGRAPH_VERSION: ${{ steps.compatibility.outputs.rustograph }}
+        run: |
+          api="$RUNNER_TEMP/api"
+          node scripts/verify-installed-compatibility.mjs \
+            schemagraph="$api/schemagraph/schemagraph-$SCHEMAGRAPH_VERSION/schemagraph" \
+            gartograph="$api/gartograph/gartograph-$GARTOGRAPH_VERSION-linux-amd64/gartograph" \
+            rustograph="$api/rustograph/rustograph-$RUSTOGRAPH_VERSION-linux-amd64/rustograph"

@@ -1,7 +1,7 @@
 # 공개 호환 버전 세트
 
-2026-09-21 갱신한 isthmus 0.9.0의 호환 대상 세트다. 이번 갱신의 설치본 검증은
-[0.9.0 / 0.14.0 절](#090--0140-호환-갱신-2026-09-21)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
+2026-09-30 갱신한 isthmus 0.10.0의 호환 대상 세트다. 이번 갱신의 설치본 검증은
+[0.10.0 절](#0100-호환-갱신-2026-09-30)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
@@ -15,7 +15,8 @@
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
 세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증도 보존한다. npm 0.9.0의 원본은
 [v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
-세트이며, 현재 저장소 manifest는 0.9.0 + 0.14.0을 대상으로 한다. 기존 npm 아카이브는 불변이다.
+세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표의 세트를 담는다.
+기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
@@ -27,10 +28,13 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.9.0** | `npm install --global isthmus-cli@0.9.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`·`retentions`·`impact`·`preflight`·`verify-runtime`·`extract-js` |
-| cartograph | **0.20.0** | `brew install ictechgy/tap/cartograph` | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions` |
-| kartograph | **0.14.0** | GitHub Release 아카이브(`kartograph-0.14.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`) |
-| dartograph | **0.15.0** | `dart pub global activate dartograph` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact` |
+| isthmus-cli | **0.10.0** | `npm install --global isthmus-cli@0.10.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`, GitHub Action `ictechgy/isthmus@v0.10.0` |
+| cartograph | **0.23.0** | GitHub Release 아카이브(`cartograph-0.23.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
+| kartograph | **0.18.0** | GitHub Release 아카이브(`kartograph-0.18.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
+| dartograph | **0.16.0** | `dart pub global activate dartograph 0.16.0` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |
+| schemagraph | **0.7.0** | `cargo install schemagraph-cli --version 0.7.0 --locked` 또는 GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
+| gartograph | **0.9.0** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.0` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
+| rustograph | **0.4.0** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.0` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
@@ -52,10 +56,34 @@ kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.
 재현해 0.12.0에서 수정했다. [공개 코퍼스](../experiments/real-corpus/README.md)는
 원래 npm 0.8.0 설치본의 결과와 후속 개발 검증을 별도 파일로 보존한다.
 
+## 0.10.0 호환 갱신 (2026-09-30)
+
+isthmus 0.10.0은 http 도메인(check·query·`diff --http`·trace·surface)과 persistence·language-traversal 입력을
+받는다. 이 세트의 producer는 그 문서를 생산하는 첫 발행본이다 — cartograph 0.23.0(Homebrew·GitHub Release),
+kartograph 0.18.0(GitHub Release·Gradle Plugin Portal), dartograph 0.16.0(pub.dev), schemagraph 0.7.0(crates.io
+`schemagraph-cli`·GitHub Release 아카이브), gartograph 0.9.0·rustograph 0.4.0(GitHub Release·Homebrew). 새로 더한
+schemagraph·gartograph·rustograph 행은 cold-cache CI가 발행 아카이브의 checksum과 `--version`을 manifest와 대조한다.
+cold-cache는 빌드 시간이 없는 schemagraph 릴리스 아카이브를 쓰고, crates.io 설치 경로는 아래 발행 전 확인에서 따로
+확인했다.
+
+발행 전 확인(2026-09-30, macOS arm64): 위 여섯 producer의 발행 아카이브(cartograph는 formula·릴리스 노트의
+sha256, kartograph TAR·gartograph·rustograph·schemagraph는 발행 checksum 파일과 일치)와 격리한 pub cache의
+dartograph 0.16.0, 릴리스 브랜치에서 `npm pack`한 isthmus-cli 0.10.0 후보 tarball의 격리 설치본이
+`scripts/verify-installed-compatibility.mjs`를 통과했다. 같은 후보와 cartograph·dartograph·kartograph 발행본으로
+`scripts/verify-cold-cache.mjs`의 고정 문서 조인·retention·preflight와 `fixtures/bridge-app` 3방향 MethodChannel
+조인도 통과했다. crates.io에서 격리 root로 `cargo install schemagraph-cli --version 0.7.0 --locked`한 설치본도
+`verify-installed-compatibility`를 통과했다. npm 0.10.0 설치본의 대조는 발행 뒤 cold-cache workflow로 확인한다.
+
+이 확인은 설치·버전·기존 bridge 조인 경로다. 이 세트 producer의 http·persistence·language-traversal 문서를
+발행본으로 만들어 trace까지 잇는 e2e는 각 producer 저장소의 개발 검증(isthmus 76b6141·3a45450 벡터 lock)에 있고,
+이 세트의 발행본으로 다시 측정하지 않았다.
+rustograph 0.4.0은 서버 `route-decl`의 `location.column`을 UTF-16 코드 단위로 센다(GRAPH-EXCHANGE는 UTF-8
+바이트) — 비ASCII 문자가 있는 줄에서 열 위치가 어긋나는 알려진 결함이다.
+
 ## 0.9.0 / 0.14.0 호환 갱신 (2026-09-21)
 
 npm의 isthmus 0.9.0, Homebrew의 cartograph 0.20.0, pub.dev의 dartograph 0.15.0,
-GitHub Release의 kartograph 0.14.0 TAR 설치본을 현재 manifest와 대조했다.
+GitHub Release의 kartograph 0.14.0 TAR 설치본을 당시 manifest와 대조했다.
 kartograph TAR의 SHA-256은 발행 checksum과 일치하며, 격리한 npm 설치와 pub cache를 사용했다.
 `scripts/verify-cold-cache.mjs`에서 고정 문서의 정상·오류 조인, retention 출력,
 preflight summary와 `fixtures/bridge-app`의 실제 producer 추출 → 3방향 MethodChannel
@@ -127,20 +155,37 @@ release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로�
 
 ```bash
 # 발행 패키지만으로 고정 fixture 검증 (Ubuntu 포함 어느 OS나)
-npm install --global isthmus-cli@0.9.0
+npm install --global isthmus-cli@0.10.0
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
 
 # producer까지 포함한 3방향 조인 검증 (macOS)
-brew install ictechgy/tap/cartograph
-dart pub global activate dartograph 0.15.0
-curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.14.0/kartograph-0.14.0.tar -o kartograph-0.14.0.tar
-tar -xf kartograph-0.14.0.tar
+curl -fsSL https://github.com/ictechgy/cartograph/releases/download/0.23.0/cartograph-0.23.0-macos-universal.tar.gz -o cartograph-0.23.0.tar.gz
+tar -xzf cartograph-0.23.0.tar.gz   # cartograph/cartograph
+dart pub global activate dartograph 0.16.0
+curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.18.0/kartograph-0.18.0.tar -o kartograph-0.18.0.tar
+tar -xf kartograph-0.18.0.tar
 node scripts/verify-installed-compatibility.mjs \
-  isthmus="$(command -v isthmus)" cartograph="$(brew --prefix)/bin/cartograph" \
-  dartograph="$HOME/.pub-cache/bin/dartograph" kartograph="$PWD/kartograph-0.14.0/bin/kartograph"
+  isthmus="$(command -v isthmus)" cartograph="$PWD/cartograph/cartograph" \
+  dartograph="$HOME/.pub-cache/bin/dartograph" kartograph="$PWD/kartograph-0.18.0/bin/kartograph"
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
-  "$(brew --prefix)/bin/cartograph" "$HOME/.pub-cache/bin/dartograph" "$PWD/kartograph-0.14.0/bin/kartograph"
+  "$PWD/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$PWD/kartograph-0.18.0/bin/kartograph"
+
+# API 영향 producer의 발행 아카이브 버전 대조 (Linux x86_64 예시 — macOS는 darwin 아카이브)
+curl -fsSLO https://github.com/ictechgy/gartograph/releases/download/v0.9.0/gartograph-0.9.0-linux-amd64.tar.gz
+curl -fsSLO https://github.com/ictechgy/rustograph/releases/download/v0.4.0/rustograph-0.4.0-linux-amd64.tar.gz
+curl -fsSLO https://github.com/ictechgy/schemagraph/releases/download/v0.7.0/schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz
+for archive in *.tar.gz; do tar -xzf "$archive"; done
+node scripts/verify-installed-compatibility.mjs \
+  gartograph="$PWD/gartograph-0.9.0-linux-amd64/gartograph" \
+  rustograph="$PWD/rustograph-0.4.0-linux-amd64/rustograph" \
+  schemagraph="$PWD/schemagraph-0.7.0/schemagraph"
 ```
+
+cartograph는 Homebrew formula 대신 같은 GitHub Release 아카이브를 manifest 버전으로 받는다. tap에는
+최신 formula 하나만 있어 `brew install`로는 버전을 고정할 수 없다 — 그래서 cartograph를 새로 발행할 때마다
+manifest를 올리기 전까지 cold-cache가 실패했다. formula의 `url`이 바로 이 아카이브이므로 설치되는 실행 파일은
+같다. cartograph 릴리스에는 checksum 파일이 없어 workflow는 GitHub가 기록한 release asset digest(sha256)와
+대조한다. formula 자체(`brew test`)는 producer 릴리스 절차가 확인한다.
 
 두 번째 명령은 `fixtures/bridge-app`을 세 producer가 각각 스캔한다 —
 Swift는 `swift build`로 실제 컴파일러 인덱스를 만들고, Kotlin은 스냅샷 없는
@@ -254,9 +299,9 @@ jobs:
       - uses: subosito/flutter-action@<pin-sha>
         with:
           channel: stable
-      - run: brew install ictechgy/tap/cartograph
-      - run: dart pub global activate dartograph
-      - run: npm install --global isthmus-cli@0.9.0
+      - run: brew install ictechgy/tap/cartograph   # tap 최신판 — 고정하려면 위 cold-cache 절처럼 릴리스 아카이브
+      - run: dart pub global activate dartograph 0.16.0
+      - run: npm install --global isthmus-cli@0.10.0
       - run: flutter pub get
       - name: Capture bridge facts and producer analyses
         env:

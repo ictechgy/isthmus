@@ -383,8 +383,8 @@ Action을 합성 fixture에 돌린다. 댓글은 달지 않는다(job summary �
 
 ## 한계
 
-- isthmus-cli npm 최신판(0.9.0)에는 `diff --http`가 없다. 그것을 싣는 릴리스가 나오기 전에는 `isthmus-path`로 빌드한
-  checkout을 쓴다(`diff --http`가 사용 오류 64로 끝나면 댓글에 원인을 싣는다).
+- `diff --http`와 `trace`는 isthmus-cli 0.10.0부터 발행본에 있다. `isthmus-version`에 0.9.0 이하를 주면
+  `diff --http`가 사용 오류 64로 끝나고 댓글에 원인을 싣는다. 0.10.0 이전 태그에는 `action.yml`이 없다.
 - 생산자 설치·실행 시간은 저장소마다 다르다. capture 단계별 시간 제한은 capture 설정(`timeoutSeconds`)이 정한다.
 - trace 선택은 바뀐 route 1,000개까지다(넘치면 댓글에 수를 싣는다). trace 출력은 `max-chains`·`max-rows`로 잘린
   artifact다 — 전체가 필요하면 artifact의 `trace-context.json`으로 상한 없이 다시 돌린다.
