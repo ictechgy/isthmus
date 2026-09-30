@@ -23,6 +23,35 @@
   남긴다.
 - surface member·library가 없는 설정의 실행 순서·context·manifest는 그대로다.
 
+### Added — trace upstream route, root 단위 root-not-found, go·rust http, Spring 결합 (Phase 7 후속)
+
+- **upstream route**([TRACE](docs/TRACE.md#upstream-route-호출-member-자신의-route)): 서비스 A가 B를 부르면서 자기 route도 가질 때,
+  B route → A 호출의 역방향 도달이 A 자신의 route-decl 핸들러 usr와 정확히 같으면 호출 hop(과 library consumer hop)에
+  `upstreamRoutes: [{method, template, member?, handler, depth, declarations, scopes}]`를 싣는다. 같은 member·platform 안의 정확한
+  usr 일치만 쓴다. v1은 한 단계다 — route를 link가 server로 이으면 scope마다 **`upstream-route-callers-not-followed`**(그 route를
+  선택해 이어 간다), 잇는 link가 없으면 **`route-decl-unlinked`**다. `summary.upstreamRoutes`를 더했다(항상 실리는 새 키).
+- **link 없는 자기 route의 gap 정리**: 역방향 선택이 link 없는 자기 route 핸들러에 닿으면 `non-http-entry` 대신, scope 없는 route
+  선택이 그런 route와 같으면 `route-without-decl` 대신 `route-decl-unlinked`다. 그래서 server 측 **`http-member-unlinked`**는
+  체인이 따라갈 수 없는 선언(contract, usr 없는·dynamic route-decl)을 담은 문서만 센다(surface member는 이전처럼 모든 선언 문서).
+  kartograph #124 e2e의 A(`orders-service`)처럼 핸들러 usr가 있는 route만 가진 member에는 member 단위 gap 대신 route 단위 gap이 남는다.
+- **root-not-found는 root 단위**([TRACE](docs/TRACE.md#root-not-found는-root-단위)): 사유가 `root-not-found`뿐인 순회 문서는
+  찾은 root의 hop에 `analysis-truncated`를 남기지 않는다. 못 찾은 root를 따라가야 하는 hop만 새 **`analysis-root-not-found`**
+  (이전 `analysis-missing`)를 받는다. 다른 사유가 함께 있으면 그 사유만 `analysis-truncated`에 싣고, `symbol` 없는 root 없이
+  root-not-found만 신고한 문서는 이전처럼 전체 잘림이다. library 공개 API를 root로 넘긴 분석이 `--strict`를 실패시키던 잡음이
+  사라진다(#129의 열린 질문). LANGUAGE-TRAVERSAL에 root-not-found가 요청 root만의 사유라는 생산자 보장을 적었다.
+- **platform `go`·`rust`의 http**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#gorust의-http-v1-확장)): target `http`와 서버
+  `route-decl`(`specificity`·`registration-order`)을 받는다. 이전에는 `Go/Rust documents may only carry a null or persistence
+  target.`(2)이었고 문구가 `… a null, persistence, or http target.`로 바뀌었다. `route-call`은 생산자와 url-compose 벡터가 생길
+  때까지 입력 오류다. language-traversal·capture의 go·rust는 이미 받는다.
+- **Spring 클라이언트 base 결합**([HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#base-결합)): `DefaultUriBuilderFactory`(연결 + 경로 전체
+  `//` 축약, 점 세그먼트 유지, host 뒤 `/` 삽입), Boot `RestTemplateBuilder.rootUri`(`/` 접두 템플릿에만), `@HttpExchange` 타입·메서드
+  url 결합을 표와 본문에 더하고 GRAPH-EXCHANGE의 "네 갈래"를 다섯 갈래로 고쳤다. url-compose 벡터 13개(`base-join/spring-*`,
+  `producer:kartograph`, join `spring-uri-builder`·`spring-root-uri`·`spring-http-exchange`)를 더했다 — `url-compose.json` sha256이
+  바뀌었다. **kartograph는 다시 벤더링하고 러너에 세 join을 더해야 한다.** cartograph·dartograph·tsograph·pythograph는 이 케이스를
+  고르지 않으므로 코드 변경 없이 새 해시로 다시 벤더링만 하면 된다(옛 벤더본도 계속 통과한다).
+- **합성 fixture**: `fixtures/trace-workspace/context-upstream.json`·`client/bff.http.json`(client member의 BFF route). CLI 계약이
+  upstream route와 `route-decl-unlinked`의 `--strict` 1을 확인한다.
+
 ### Added — 조직 경계: http surface와 공유 SDK library (Phase 7a)
 
 - **`isthmus-http-surface` v1**([HTTP-SURFACE](docs/HTTP-SURFACE.md)): 한 workspace 매니페스트로 묶을 수 없는 조직(서버·클라이언트
