@@ -3,7 +3,7 @@
 _기록: 2026-09-27 · 상태: 개발 중(Phase 3 소비자 — 단일 project와 workspace) · [API 변경 영향 계획](API-IMPACT-PLAN.md)_
 
 ```bash
-isthmus trace trace-context.json [--strict] [--compact] [--max-chains <1..1000>] [--max-rows <1..10000>]
+isthmus trace trace-context.json [--strict] [--compact] [--max-chains <1..1000>] [--max-rows <1..10000>] [--upstream-depth <1..8>]
 node scripts/capture-trace.mjs capture.json   # 생산자 실행부터 context·trace까지 한 번에(아래 capture 절)
 ```
 
@@ -21,7 +21,7 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
   그 usr를 `symbol.usr`로 가진 relation-use → persistence 조인 → relation-decl VertexId →
   schemagraph 의존자(`db-dependents`). 그리고 route → 귀속된 route-call → 호출을 감싼 심볼의
   클라이언트 역방향 순회(`reverse`) → 그 도달이 호출 member 자신의 route 핸들러에 닿으면 그 route
-  ([upstream route](#upstream-route-호출-member-자신의-route), 한 단계).
+  ([upstream route](#upstream-route-호출-member-자신의-route), 기본 한 단계, `upstreamDepth`로 최대 8단계).
 - **relation·심볼 선택**: relation-use를 감싼 심볼(또는 선택한 심볼) → 역방향 순회 → route-decl
   핸들러 → route → 클라이언트. relation 선택은 그 relation의 VertexId 의존자도 싣는다.
 - **파일 선택**: 파일에 놓인 심볼(분석 위치, 없으면 사실 위치) → 심볼 선택과 같은 역방향 체인. 파일에 놓인
@@ -74,6 +74,9 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 - `fileSymbols`(선택, 파일 선택 전용): `[{path, platform, usrs}]`(workspace는 `member`도) — 선택한 파일에 생산자 심볼
   목록이 놓은 심볼이다. capture가 채운다([2단계 수집](#파일-선택의-2단계-수집)). 선택하지 않은 파일, sql platform,
   (member, path, platform) 중복, 항목당 usr 1~10,000개(중복 없음)·전체 100,000개를 벗어나면 입력 오류다.
+- `upstreamDepth`(선택, 1..8 정수, workspace context도 같다): upstream route를 몇 단계까지 따라갈지다. 생략하면 1(한 단계)이고
+  CLI `--upstream-depth`(MCP `upstreamDepth`)가 있으면 그 값이 우선한다. 범위 밖이면 입력 오류(CLI 값이면 사용 오류 64)다
+  ([전이 추적](#전이-추적-upstreamdepth)).
 - 맨 `format: "isthmus-workspace"` 매니페스트는 원인 문구와 함께 거부한다. 매니페스트의 member·link를 아래
   workspace context로 옮기고 member별 `analyses`와 `selection`을 더한다.
 
@@ -267,11 +270,34 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 - **모양**: `{method, template, member?, handler: {platform, usr, qualifiedName?}, depth, declarations, scopes}`. 도달 근거(path·
   등급·목격)는 같은 hop `affected`의 그 핸들러 행이다. `scopes`는 이 route를 server 선언으로 잇는 link 이름(단일 project면 service
   scope)이고, 선언은 link가 잇는 decl과 link 없는 자기 decl 모두에서 모은다. `summary.upstreamRoutes`가 hop별 수를 센다.
-- **한 단계(v1)**: upstream route의 호출자로는 올라가지 않는다. 전이 추적은 member 사이 순환(A→B→A)과 hop마다 커지는 출력을
-  다뤄야 하는데, 한 단계면 출력이 호출 hop의 `affected` 이하로 묶이고 요약·상한·근거 수 규칙이 그대로다. 대신 멈춘 곳을
+- **기본 한 단계(v1 동작)**: `upstreamDepth`가 1(기본)이면 upstream route의 호출자로는 올라가지 않는다. 멈춘 곳을
   gap으로 밝힌다: `scopes`가 있으면 scope마다 `upstream-route-callers-not-followed`(`route`에 그 scope 키 — 그 route를 선택하면
   이어 간다), 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모르므로 `route-decl-unlinked`다. 이 체인이 이미
   싣는 route(재귀 호출 — 선택한 route의 다른 scope 포함)가 upstream이면 그 호출자가 이미 체인에 있어 gap을 만들지 않는다.
+
+#### 전이 추적 (`upstreamDepth`)
+
+`upstreamDepth` N(2..8)이면 upstream route를 N단계까지 따라간다(opt-in — 기본 1의 출력은 v1과 바이트가 같다). 선택한 route의
+호출 hop이 1단계이고, 그 호출에서 닿은 upstream route의 호출자가 2단계, 그 호출자에서 닿은 upstream route의 호출자가 3단계다.
+예: D `GET /d/items/{}` ← C 호출(`c.fetchItem`) → C `GET /c/items/{}` ← B 호출 → B `GET /b/view/{}` ← A 호출 → A `POST /a/page`.
+
+- **따라가기**: 단계 L의 호출 hop에서 닿은 upstream route는, L < N이면 그 route를 server 선언으로 잇는 scope(link)마다 route
+  선택과 같은 규칙으로 route hop을 만들어(그 scope의 귀속 호출 중 이 route에 match된 것, 테스트 소스 제외) upstream route의
+  `callers: [{scope, calls}]`에 싣는다. `calls`는 선택한 route의 `calls`와 같은 모양(`affected`·`upstreamRoutes`·`consumers`)이라
+  다음 단계가 같은 식으로 이어진다. 호출이 없어도 따라갔으면 빈 `calls`를 싣고, route hop의 scope 공백(`http-clients-unscanned`·
+  `unattributed-calls-omitted`·`dynamic-route-calls`·`ambiguous-route-call`·`test-source-omitted`)은 그 upstream route 키로 남는다.
+  library consumer hop의 upstream route도 같은 규칙으로 따라간다.
+- **순환**: 방문 집합은 경로의 조상 키 (member, scope, method, template)다 — 선택한 route(모든 scope)와 이 경로에서 이미 따라간
+  upstream route. upstream route가 조상이면 따라가지 않고(그 호출자는 체인 앞쪽에 이미 있다) 알림 `upstream-route-cycle`을
+  남긴다. 알림이라 `--strict`를 실패시키지 않는다. 조상은 경로마다 따로 본다 — 두 갈래가 같은 route에 닿으면 각 갈래에서
+  따라간다(아래 상한이 전체 크기를 묶는다).
+- **멈춤**: L = N이면 `upstream-route-callers-not-followed`(깊이에 멈췄다는 문구)다. 체인마다 따라간 단계(2단계 이상)의 호출 hop과
+  그 `affected`를 합쳐 10,000행까지 싣고, 다 쓰면 남은 upstream route는 같은 코드(상한에 멈췄다는 문구)로 멈춘다. 1단계 호출
+  hop은 상한을 쓰지 않는다(v1과 같다). 보고서 전체 1,000,000항목 상한은 그대로다.
+- **순서**: upstream route는 (template, method, platform, 핸들러) 순, scope는 이름 순, 호출 hop은 끝점 순으로 깊이 우선으로
+  만든다. 행 상한도 이 순서로 쓰므로 같은 입력이면 같은 곳에서 멈춘다.
+- **요약·출력**: `summary.calls`·`clientSymbols`·`upstreamRoutes`·`evidence`는 따라간 호출 hop까지 센다. 2 이상이면 보고서에
+  `upstreamDepth`를 싣는다. `--max-rows`는 `callers`와 그 `calls`(와 그 아래 목록)도 목록마다 자른다.
 - **link 없는 자기 route**: 어떤 link도 server로 잇지 않은 member의 선언 문서에서 핸들러 usr가 있는 정적 route-decl을 이 판정에
   쓴다. 역방향 선택(relation·심볼·파일)이 그런 핸들러에 닿으면 `non-http-entry` 대신 `route-decl-unlinked`, route 선택(scope
   미지정)이 그런 route와 정확히 같으면 `route-without-decl` 대신 member마다 `route-decl-unlinked`다. 그래서 member 단위
@@ -376,7 +402,7 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 - **출력 상한(`--max-chains`·`--max-rows`)**: 주면 `chains`를 앞에서 N개, 그 밖의 행 목록(최상위 `gaps`·`notices`·
   `limitations`·`analysisLimitations`·`analyses`, chain의 `routes`·`handlers`·`relationUses`·`database`, route의
   `declarations`·`contracts`·`calls`, 호출의 `affected`·`upstreamRoutes`·`consumers`, consumer hop의 `entries`·`affected`·
-  `upstreamRoutes`, upstream route의 `declarations`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
+  `upstreamRoutes`, upstream route의 `declarations`·`callers`와 따라간 `calls`(같은 규칙으로 재귀), 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
   `reachedFrom`, DB 정점의 `dependents`)을 **목록마다** M개로 자른다. 하나만 주면 다른 하나는 범위 상한이다. 출력에
   `truncation: {maxChains, maxRows, truncated, omittedLists, omitted: [{path, total, shown}]}`(자른 목록의 JSON 경로,
   최대 1,000개 — 넘으면 `omittedLists`로 전체 수만)를 더한다. hop 증거인 `path`·`relationships`와 `selection`은 자르지
@@ -405,9 +431,11 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 | `analysis-revision-unknown` | context(workspace면 member)가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다. member `catalog.graphSha`가 있는데 sql 분석에 graphRevision이 없어도 같다 |
 | `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전). link 없는 자기 route 핸들러에 닿았으면 대신 `route-decl-unlinked`다 |
 | `route-decl-unlinked` | 체인이 어떤 link도 server로 잇지 않은 member 자신의 route-decl에 닿았다 — upstream route(호출자를 모름), 역방향 선택이 닿은 핸들러, 또는 scope 없이 선택한 route. 그 route의 호출자·핸들러 체인은 따라가지 않았다(`member`, 핸들러면 `symbol`) |
-| `upstream-route-callers-not-followed` | upstream route를 link가 server로 잇지만 v1은 한 단계만 올라가 그 route의 호출자를 따라가지 않았다. `route`의 scope 키로 선택하면 이어 간다(`member`·`symbol`) |
+| `upstream-route-callers-not-followed` | upstream route를 link가 server로 잇지만 그 호출자를 따라가지 않았다 — 그 route의 단계가 `upstreamDepth`(기본 1)에 닿았거나 체인의 upstream 행 상한(10,000)을 다 썼다(문구가 어느 쪽인지 밝힌다). `route`의 scope 키로 선택하거나 깊이를 늘리면 이어 간다(`member`·`symbol`) |
+| `upstream-route-cycle` | **알림(notice)**. `upstreamDepth` 2 이상에서 upstream route가 이미 체인에 있는 route(선택한 route나 얕은 단계에서 따라간 route)라 다시 따라가지 않았다. 그 호출자는 체인 앞쪽에 이미 있다(`route`·`member`·`symbol`) |
 | `unattributed-calls-omitted` | 이 scope를 불렀을 수 있는 귀속되지 않은 호출 수. 경로·host는 싣지 않는다 |
 | `dynamic-route-calls` | 이 scope에 귀속됐지만 템플릿이 리터럴이 아니라 매칭하지 못한 호출 수 |
+| `route-dynamic-decls` | 선언 측 키가 없는 route 선택(`route-without-decl`)에서, 이 scope의 dynamic 선언 중 선택한 (method, 템플릿)을 받을 수 있는 것의 수. `dynamicScope`가 없는 dynamic 선언은 항상 센다([dynamic 선언의 스코프](GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)) |
 | `ambiguous-route-call` | 이 route와 다른 선언 사이에서 모호한 귀속 호출(따라가지 않음) |
 | `test-source-omitted` | 체인에서 뺀 테스트 소스 route 사실 수 |
 | `http-clients-unscanned` | 이 scope에 닿을 수 있는 client roles 문서가 없다 |
@@ -744,9 +772,8 @@ providerAnalyses, delivered?, undelivered?, missingMapEntries?, notes?}]}`다. p
 - 남은 일: link match의 `interfaces`와 `baseRefs[].pathPrefix`
   (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류).
   http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
-- upstream route의 전이 추적(A route → A를 부르는 C → C route …)은 v1에 없다 — 한 단계만 싣고
-  `upstream-route-callers-not-followed`로 멈춘 곳을 밝힌다. 넣을 때는 깊이 상한과 (scope, method, template) 방문 집합으로
-  순환을 끊는다.
+- upstream route의 전이 추적은 `upstreamDepth`(opt-in, 최대 8단계)로 들어갔다([전이 추적](#전이-추적-upstreamdepth)). 기본은
+  여전히 한 단계다.
 - 조직 경계의 남은 일: surface의 사전 계산 continuation(게시자 정방향·DB 분석), library 사슬(여러 단계 SDK), 앱 심볼 → SDK →
   route 방향 선택. capture 설정은 surface member(가져오기·내보내기)와 library를 지원한다([위](#capture의-surface-member와-library)).
 - 입력 수집은 [`scripts/capture-trace.mjs`](#capture로-한-번에-수집하기)가 맡는다. MCP `trace` 도구는 출력 상한과 함께

@@ -290,3 +290,16 @@ test('--max-chains·--max-rows는 목록을 자르고 truncation에 적으며 �
     assert.equal(result.exitCode, 64, args.join(' '));
   }
 });
+
+test('--upstream-depth는 1..8 정수만 받고, 1이면 출력이 기본과 같으며 2 이상이면 보고서에 깊이를 싣는다', async () => {
+  const full = await runTraceCommand(['trace', '/fx/context.json'], reader());
+  const one = await runTraceCommand(['trace', '/fx/context.json', '--upstream-depth', '1'], reader());
+  assert.equal(one.standardOutput, full.standardOutput);
+  const deeper = JSON.parse((await runTraceCommand(['trace', '/fx/context.json', '--upstream-depth', '8'], reader())).standardOutput);
+  assert.equal(deeper.upstreamDepth, 8);
+  for (const value of ['0', '9', '1.5', '2e0', '-1', 'two']) {
+    const result = await runTraceCommand(['trace', '/fx/context.json', '--upstream-depth', value], reader());
+    assert.equal(result.exitCode, 64, value);
+    assert.match(result.standardError, /--upstream-depth <1\.\.8>/);
+  }
+});

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseRouteTemplate } from '../src/exchange/route-template.ts';
 import { BridgeFactsValidationError, parseBridgeFactsDocument } from '../src/exchange/parse.ts';
 import { RouteIndex } from '../src/join/route-index.ts';
-import { RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
+import { dynamicDeclarationRange, RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
 import { findRouteShadows } from '../src/join/route-shadow.ts';
 
 /**
@@ -98,6 +98,8 @@ function runCase(suite, testCase) {
     'framework.spring.path-pattern': runSpringPathPattern,
     'scope.applies': runScopeApplies,
     'scope.validate': runScopeValidate,
+    'scope.dynamic-validate': runDynamicScopeValidate,
+    'scope.dynamic-applies': runDynamicScopeApplies,
     'dispatch.validate': runDispatchValidate,
     'dispatch.match': runDispatchMatch,
     'dispatch.shadow': runDispatchShadow,
@@ -266,6 +268,55 @@ function runScopeValidate({ scope }) {
   }
 }
 
+/**
+ * dynamic 선언 검증: 선언 조각 하나를 kind에 맞는 합성 http 문서(decl은 서버, contract는 openapi, call은 클라이언트)로
+ * 감싸 제품 파서가 받는지 본다.
+ */
+function runDynamicScopeValidate({ declaration }) {
+  try {
+    parseBridgeFactsDocument(dynamicDocument(declaration));
+    return { valid: true };
+  } catch (error) {
+    if (error instanceof BridgeFactsValidationError) return { valid: false };
+    throw error;
+  }
+}
+
+/**
+ * dynamic 선언 적용: dynamic route-decl 하나를 제품 파서로 검증하고, 조인 층과 같은 상한(`dynamicDeclarationRange`)과
+ * 스코프 색인으로 호출 하나에 그 선언의 공백이 적용되는지 본다.
+ */
+function runDynamicScopeApplies({ declaration, probe }) {
+  const document = parseBridgeFactsDocument(dynamicDocument({ kind: 'route-decl', pathAnchor: 'root', dynamic: true, ...declaration }));
+  const range = dynamicDeclarationRange(document.facts[0]);
+  const parsed = parseRouteTemplate(probe.template);
+  const index = new RouteLimitationScopeIndex([{ message: 'unjoined-dynamic-routes', ...(range === undefined ? {} : { range }) }],
+    { remaining: 1_000_000 });
+  const applicable = index.applicable({
+    segments: parsed.ok ? parsed.segments : [],
+    anchor: probe.pathAnchor ?? 'root',
+    ...(probe.method === undefined ? {} : { method: probe.method }),
+    side: 'call',
+  });
+  return { applies: applicable.length > 0 };
+}
+
+/** 선언 조각 하나를 담은 합성 http 문서다. dynamic 선언의 channel은 적지 않으면 null이다. */
+function dynamicDocument({ kind, channel, ...fact }) {
+  const contract = kind === 'route-contract';
+  const client = kind === 'route-call';
+  return {
+    format: 'bridge-facts', version: 1, tool: { name: 'conformance', version: '0' },
+    generatedAt: '2026-09-30T00:00:00Z', platform: contract ? 'openapi' : 'kotlin', target: 'http', project: '/conformance',
+    roles: [client ? 'client' : 'server'], ...(contract || client ? {} : { dispatch: 'specificity' }), limitations: [],
+    facts: [{
+      kind, channel: channel ?? null, ...fact,
+      location: { path: contract ? 'openapi.yaml' : 'src/Routes.kt', line: 1, column: 1 },
+      symbol: contract ? { qualifiedName: 'operation' } : { qualifiedName: 'handler', usr: 'conformance:handler' },
+    }],
+  };
+}
+
 /** 스코프 하나를 한계 하나에 붙인 합성 http 서버 문서다. */
 function scopeDocument(scope) {
   return {
@@ -428,17 +479,22 @@ function runCompose({ parts }) {
 }
 
 /**
- * base + path 결합의 다섯 갈래(RFC 3986, 슬래시 결합, dio 단순 연결, Spring 연결 + `//` 축약)다. Spring은
- * `DefaultUriBuilderFactory`(`spring-uri-builder`), Boot `RestTemplateBuilder.rootUri`(`spring-root-uri`), `@HttpExchange`
- * 타입·메서드 url 결합 뒤 `DefaultUriBuilderFactory`(`spring-http-exchange`)다.
+ * base + path 결합 갈래다(HTTP-WRAPPERS "base 결합"). RFC 3986(`rfc3986` — Retrofit·Ktor, Go `ResolveReference`, Rust
+ * `Url::join`), 슬래시 결합, dio 단순 연결, Spring 연결 + `//` 축약(`spring-uri-builder`·`spring-root-uri`·
+ * `spring-http-exchange`), Go `url.JoinPath`(`go-join-path`), resty `SetBaseURL`(`resty-base-url`), httpx `base_url`
+ * (`httpx-base-url`), aiohttp `base_url`(`aiohttp-base-url`)이다.
  */
 function runBaseJoin({ join, base, path, typeUrl }) {
   if (join === 'spring-uri-builder') return springUriBuilder(base, path);
   if (join === 'spring-http-exchange') return springUriBuilder(base, httpExchangeUrl(typeUrl, path));
   if (join === 'spring-root-uri') return springRootUri(base, path);
+  if (join === 'rfc3986') return rfc3986Join(base, path);
+  if (join === 'go-join-path') return goJoinPath(base, path);
+  if (join === 'resty-base-url') return restyBaseUrl(base, path);
+  if (join === 'httpx-base-url') return httpxBaseUrl(base, path);
+  if (join === 'aiohttp-base-url') return aiohttpBaseUrl(base, path);
   const rooted = path.startsWith('/');
   const relativeTemplate = normalizeLiteral(`/${path.replace(/^\/+/u, '')}`);
-  if (join === 'rfc3986') return rooted ? { template: normalizeLiteral(path), pathAnchor: 'root' } : { template: relativeTemplate, pathAnchor: 'base' };
   if (join === 'slash-join') return { template: relativeTemplate, pathAnchor: 'base' };
   if (base !== null) return { template: runStrip({ url: `${base}${path}` }).template, pathAnchor: 'root' };
   return rooted ? { template: normalizeLiteral(path), pathAnchor: 'base' } : { dynamic: true, limitation: 'ambiguous-base-join:' };
@@ -472,6 +528,136 @@ function httpExchangeUrl(typeUrl, methodUrl) {
   if (!typeUrl) return methodUrl;
   if (!methodUrl) return typeUrl;
   return `${typeUrl}${!typeUrl.endsWith('/') && !methodUrl.startsWith('/') ? '/' : ''}${methodUrl}`;
+}
+
+/** base를 알 수 없어 결합 결과를 주장하지 않는 결과다(검증기 본문이 먼저 실행되므로 상수 대신 함수로 둔다). */
+function ambiguousJoin() {
+  return { dynamic: true, limitation: 'ambiguous-base-join:' };
+}
+
+/** 경로에 `..` 세그먼트가 있는지다. base를 모르면 어느 세그먼트를 지우는지 알 수 없다. */
+function hasDotDot(path) {
+  return path.split('/').includes('..');
+}
+
+/**
+ * RFC 3986 5.2.2(참조 해석)·5.2.3(merge)·5.2.4(점 세그먼트 제거)를 경로에만 적용한다. `//`로 시작하는 참조는 authority를
+ * 바꾸는 network-path 참조라 그 authority와 경로(없으면 `/`)를 쓴다. base를 모르면 `/`로 시작하는 참조만 root이고, 상대
+ * 참조는 알 수 없는 base 디렉터리 뒤라 base 앵커다(`..`가 있으면 지울 세그먼트를 몰라 dynamic).
+ */
+function rfc3986Join(base, path) {
+  if (path.startsWith('//')) {
+    const parsed = parseBase(`http:${path}`);
+    return { template: normalizeLiteral(removeDotSegments(parsed.path) || '/'), pathAnchor: 'root', authority: parsed.authority };
+  }
+  if (path.startsWith('/')) {
+    return { template: normalizeLiteral(removeDotSegments(path)), pathAnchor: 'root',
+      ...(base === null ? {} : { authority: parseBase(base).authority }) };
+  }
+  if (base === null) {
+    if (path === '' || hasDotDot(path)) return ambiguousJoin();
+    return { template: normalizeLiteral(removeDotSegments(`/${path}`)), pathAnchor: 'base' };
+  }
+  const parsed = parseBase(base);
+  const merged = path === '' ? parsed.path
+    : parsed.path === '' ? `/${path}` : `${parsed.path.slice(0, parsed.path.lastIndexOf('/') + 1)}${path}`;
+  return { template: normalizeLiteral(removeDotSegments(merged) || '/'), pathAnchor: 'root', authority: parsed.authority };
+}
+
+/** RFC 3986 5.2.4 `remove_dot_segments`다. */
+function removeDotSegments(input) {
+  let rest = input;
+  let output = '';
+  while (rest.length > 0) {
+    if (rest.startsWith('../')) rest = rest.slice(3);
+    else if (rest.startsWith('./')) rest = rest.slice(2);
+    else if (rest.startsWith('/./')) rest = rest.slice(2);
+    else if (rest === '/.') rest = '/';
+    else if (rest.startsWith('/../') || rest === '/..') {
+      rest = rest === '/..' ? '/' : rest.slice(3);
+      output = output.slice(0, Math.max(0, output.lastIndexOf('/')));
+    } else if (rest === '.' || rest === '..') rest = '';
+    else {
+      const next = rest.indexOf('/', rest.startsWith('/') ? 1 : 0);
+      const segment = next < 0 ? rest : rest.slice(0, next);
+      output += segment;
+      rest = next < 0 ? '' : rest.slice(next);
+    }
+  }
+  return output;
+}
+
+/**
+ * Go `(*url.URL).JoinPath`(Go 1.19+)다. base 경로와 원소를 `path.Join`으로 잇는다 — `/`를 넣고, `//`를 줄이고, `.`·`..`를
+ * 지운다(`..`는 base 경로 밖으로도 나간다). 원소의 앞 `/`는 무시되고, 마지막 원소가 `/`로 끝나면 끝 슬래시 하나를 남긴다.
+ */
+function goJoinPath(base, path) {
+  const trailing = path.endsWith('/');
+  if (base === null) {
+    if (hasDotDot(path)) return ambiguousJoin();
+    return { template: normalizeLiteral(withTrailing(goCleanPath(`/${path}`), trailing)), pathAnchor: 'base' };
+  }
+  const parsed = parseBase(base);
+  const joined = goCleanPath(`${parsed.path.startsWith('/') ? '' : '/'}${parsed.path}/${path}`);
+  return { template: normalizeLiteral(withTrailing(joined, trailing)), pathAnchor: 'root', authority: parsed.authority };
+}
+
+/** Go `path.Clean`을 `/`로 시작하는 경로에 적용한다. */
+function goCleanPath(path) {
+  const segments = [];
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment);
+  }
+  return `/${segments.join('/')}`;
+}
+
+/** 끝 슬래시를 하나 붙인다(이미 있으면 그대로). */
+function withTrailing(path, trailing) {
+  return trailing && !path.endsWith('/') ? `${path}/` : path;
+}
+
+/**
+ * go-resty `SetBaseURL`(v2)·v3 결합이다. base의 끝 `/`를 모두 떼고, 경로가 `/`로 시작하지 않으면 `/`를 붙여 문자열로 잇는다.
+ * `//`·점 세그먼트는 그대로 남는다. base를 모르면 그 결과 경로가 알 수 없는 base 뒤의 꼬리다.
+ */
+function restyBaseUrl(base, path) {
+  const tail = path.startsWith('/') ? path : `/${path}`;
+  if (base === null) return { template: normalizeLiteral(tail), pathAnchor: 'base' };
+  const parsed = parseBase(base);
+  return { template: normalizeLiteral(`${parsed.path.replace(/\/+$/u, '')}${tail}`), pathAnchor: 'root', authority: parsed.authority };
+}
+
+/**
+ * httpx `Client(base_url=)` 결합이다. base 경로가 `/`로 끝나게 하고(`_enforce_trailing_slash`), 상대 URL 경로의 앞 `/`를 모두
+ * 떼어 잇고(`_merge_url`), 점 세그먼트를 지운다(`normalize_path`). `//`로 시작하는 경로는 host로 파싱되어 경로가 사라지므로
+ * 주장하지 않는다. base를 모르면 `..`가 없을 때만 base 앵커 꼬리다.
+ */
+function httpxBaseUrl(base, path) {
+  if (path.startsWith('//')) return ambiguousJoin();
+  const relative = path.replace(/^\/+/u, '');
+  if (base === null) {
+    if (relative === '' || hasDotDot(relative)) return ambiguousJoin();
+    return { template: normalizeLiteral(removeDotSegments(`/${relative}`)), pathAnchor: 'base' };
+  }
+  const parsed = parseBase(base);
+  const directory = parsed.path.endsWith('/') ? parsed.path : `${parsed.path}/`;
+  return { template: normalizeLiteral(removeDotSegments(`${directory}${relative}`) || '/'), pathAnchor: 'root',
+    authority: parsed.authority };
+}
+
+/**
+ * aiohttp `ClientSession(base_url=)`(3.11+) 결합이다. yarl `URL.join`이라 RFC 3986과 같다. 경로가 있는 base가 `/`로 끝나지
+ * 않으면 세션 생성이 실패하고(`ValueError`), `//`로 시작하는 경로는 절대 URL로 읽혀 base를 쓰지 않으므로 둘 다 주장하지 않는다.
+ */
+function aiohttpBaseUrl(base, path) {
+  if (path.startsWith('//')) return ambiguousJoin();
+  if (base !== null) {
+    const { path: basePath } = parseBase(base);
+    if (basePath !== '' && basePath !== '/' && !basePath.endsWith('/')) return ambiguousJoin();
+  }
+  return rfc3986Join(base, path);
 }
 
 /** 경로의 연속 슬래시를 하나로 줄인다(Spring `getSanitizedPath`). */

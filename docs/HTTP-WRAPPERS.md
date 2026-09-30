@@ -1,7 +1,8 @@
 # HTTP 래퍼 선언과 호출 조립 규칙 (`http-wrappers` v1)
 
 _상태: 개발 중 계약(v1). isthmus는 이 파일을 읽지 않는다. 호출 측 생산자(cartograph·kartograph·
-dartograph·TS 생산자 등)가 읽는 입력 스키마와, 그 생산자들이 함께 지켜야 하는 해석 규칙이다._
+dartograph·TS 생산자·gartograph·rustograph·pythograph 등)가 읽는 입력 스키마와, 그 생산자들이 함께 지켜야 하는
+해석 규칙이다._
 
 앱은 보통 HTTP 라이브러리를 직접 부르지 않고 자체 래퍼(엔드포인트 기술자, `send(path, method)`
 같은 함수)를 거친다. 이 래퍼는 소스만 보고 "어느 인자가 경로이고 어느 인자가 동사인지"를
@@ -18,7 +19,7 @@ dartograph·TS 생산자 등)가 읽는 입력 스키마와, 그 생산자들이
   "version": 1,
   "wrappers": [
     {
-      "language": "swift",                 // swift | kotlin | dart | js (호출 측 생산자 언어)
+      "language": "swift",                 // swift | kotlin | dart | js | go | rust | python (호출 측 생산자 언어)
       "kind": "constructor",               // constructor | function
       "owner": "Network.Endpoint",         // 소유 타입(생성자·메서드) 또는 모듈 경로. 생산자 심볼 규칙
       "name": "init",                      // 생성자면 생성자 이름(swift init, kotlin <init>), 함수면 함수 이름
@@ -34,7 +35,8 @@ dartograph·TS 생산자 등)가 읽는 입력 스키마와, 그 생산자들이
 ```
 
 - `methodArg`와 `pathArg`는 `index`(0부터 시작하는 인자 위치)나 `label`(Swift 인자 레이블,
-  Kotlin 매개변수 이름, JS 객체 속성 이름) 중 하나 이상을 적는다. 둘 다 적으면 아래 바인딩
+  Kotlin 매개변수 이름, JS 객체 속성 이름, Python 키워드 인자 이름) 중 하나 이상을 적는다. Go·Rust는 이름 붙은 인자가
+  없어 `index`만 쓴다(구조체 필드로 넘기는 래퍼는 선언 대상이 아니다 — 필드 흐름을 증명하지 못하면 `http-wrapper-undeclared:`). 둘 다 적으면 아래 바인딩
   규칙을 따른다. 동사가 경로와 한 인자 객체에 들어 있으면(`request({ url, method })`) 두 인자
   모두 같은 `index`와 서로 다른 `label`을 쓴다.
 - `methodArg`가 없으면 `defaultMethod`가 필수다(동사가 고정된 래퍼). 둘 다 없으면 선언 오류다.
@@ -77,7 +79,9 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
    쿼리 빌더 결과, `"?" + ...` 연결) 나머지 가지가 빈 문자열·`orEmpty()`이면 query 꼬리로 보고 뗀다
    (`queryTailStripped: true`). 증명하지 못하면 dynamic이다. 중간에 오는 query 꼬리도 dynamic이다.
 3. **세그먼트 보간** (`compose.interpolation`): 보간(Swift `\(expr)`, Kotlin `${expr}`·`$ident`,
-   Dart `${expr}`, JS 템플릿 `${expr}`)은 **세그먼트 전체를 채울 때만** `{}`가 된다. 즉 앞이 `/`로
+   Dart `${expr}`, JS 템플릿 `${expr}`, Go `fmt.Sprintf`의 동사(`%s`·`%d`·`%v` 등, 폭·플래그 포함)와 `+` 연결,
+   Rust `format!`의 `{}`·`{name}`, Python f-string `{expr}`·`%` 서식·`str.format`의 `{}`)은 **세그먼트 전체를 채울 때만** `{}`가 된다.
+   `%%`·`{{`·`}}` 같은 이스케이프는 리터럴이다. 즉 앞이 `/`로
    끝나고 뒤가 `/`로 시작하거나 경로 끝이어야 한다. 세그먼트 일부만 채우거나(`/files/${name}.json`)
    한 세그먼트에 둘 이상이면 호출은 dynamic이다. 서버 템플릿의 부분 세그먼트(`p{}s`)와 달리
    호출 쪽 부분 보간은 값 경계를 증명할 수 없기 때문이다.
@@ -85,7 +89,9 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
    싣고, 문제 되는 첫 보간 앞까지의 조립 결과가 `/`로 시작하면 그 정규 템플릿을 `channelPrefix`로
    싣는다(`/files/`, `/api/v1/articles`). `channelPrefix`는 query의 `prefix-candidate` 표시에만 쓰인다.
 5. **같은 파일 상수**: 경로 인자나 보간이 같은 파일의 컴파일 타임 상수(Kotlin `const val`, Swift
-   `static let` 리터럴, Dart `const`, JS `const` 리터럴)이면 값을 치환한다. 파일 밖 상수는 생산자가
+   `static let` 리터럴, Dart `const`, JS `const` 리터럴, Go `const`, Rust `const`·`static`의 `&str` 리터럴, Python은 모듈
+   최상위에서 한 번만 대입되고 파일 안에서 다시 대입되지 않는 문자열 리터럴)이면 값을 치환한다. Python의 대문자 이름
+   관례는 증명이 아니다. 파일 밖 상수는 생산자가
    증명할 수 있을 때만 치환하고, 아니면 dynamic이다.
 6. **정규화** (`compose.normalize`): 조립한 리터럴은 [정규 경로 템플릿](GRAPH-EXCHANGE.md#정규-경로-템플릿)
    표기로 쓴다. 비ASCII와 금지 문자는 UTF-8 대문자 퍼센트 인코딩, unreserved 인코딩은 디코드,
@@ -97,7 +103,12 @@ API를 부르는 iOS·Android 호출이 서로 다른 키로 조인된다. 각 �
 
 | 결합 방식 | 예 | 경로 `/x` | 경로 `x` |
 |---|---|---|---|
-| RFC 3986 상대 해석 | Retrofit·Ktor·`URL(string:relativeTo:)` | root | base |
+| RFC 3986 상대 해석(`rfc3986`), base 미상 | Retrofit·Ktor·`URL(string:relativeTo:)`, Go `ResolveReference`, Rust `Url::join` | root | base(`..`가 있으면 dynamic + `ambiguous-base-join:`) |
+| RFC 3986 상대 해석(`rfc3986`), base 리터럴 | 같음 | `x`(base 경로를 바꾼다), root | base 경로의 마지막 `/`까지 + `x`, 점 세그먼트 제거, root |
+| Go `url.JoinPath`(`go-join-path`) | `(*url.URL).JoinPath`·`url.JoinPath` | base 경로 + `/x`(`path.Join`), 리터럴이면 root, 미상이면 base | 같음 |
+| resty `SetBaseURL`(`resty-base-url`) | go-resty v2·v3 | 끝 `/`를 뗀 base 경로 + `/x`, 리터럴이면 root, 미상이면 base | base 경로 + `/` + `x`, 같음 |
+| httpx `base_url`(`httpx-base-url`) | `httpx.Client(base_url=)` | base 경로(끝 `/` 보장) + `x`, 점 세그먼트 제거, 리터럴이면 root, 미상이면 base | 같음 |
+| aiohttp `base_url`(`aiohttp-base-url`) | `aiohttp.ClientSession(base_url=)` | RFC 3986과 같다(root) | RFC 3986과 같다(3.11+, base 경로는 `/`로 끝나야 한다) |
 | 슬래시 결합 | axios·chopper·Moya·openapi-fetch | base | base |
 | 단순 문자열 연결, base 리터럴 | dio, retrofit.dart 메서드 경로 | 연결 결과의 경로, root | 연결 결과의 경로, root |
 | 단순 문자열 연결, base 미상 | dio, retrofit.dart 메서드 경로 | base | dynamic + `ambiguous-base-join:` |
@@ -143,6 +154,71 @@ resolver가 있을 때만 풀리므로 생산자는 dynamic으로 낸다. 이 �
 
 base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. host가 동적이면 base다.
 
+### Go, Rust, Python 클라이언트
+
+gartograph(Go)·rustograph(Rust)·pythograph(Python)가 `route-call`을 낼 때 따르는 결합 규칙이다. 결과는 각 라이브러리 소스와
+실행 기록으로 확인했고(2026-09-30, 아래 버전) url-compose 벡터 `base-join/go-*`·`resty-*`·`rust-*`·`rfc3986-unknown-*`·`httpx-*`·
+`aiohttp-*`가 고정한다. 결합 방식 이름(`join`)은 벡터 입력과 같다. 결과 경로의 정규화(퍼센트 인코딩 등)는 위 `compose.normalize`다.
+
+**base가 없는 라이브러리** — 호출 식의 URL이 곧 요청 URL이다. 전체 URL 리터럴은 `compose.strip`, 문자열 조립은 위 보간 규칙을 쓴다.
+
+- Go `net/http`: `http.Client`에는 base URL이 없다(필드는 `Transport`·`CheckRedirect`·`Jar`·`Timeout`). `http.NewRequest`·
+  `http.Get` 등은 전체 URL을 받는다.
+- Rust reqwest(0.13.5): `Client`·`ClientBuilder`에 base URL 설정이 없고 요청은 `IntoUrl`을 받는다
+  ([client.rs](https://github.com/seanmonstar/reqwest/blob/v0.13.5/src/async_impl/client.rs#L2596-L2599)).
+- Python requests(2.34.2): `Session`에 base URL이 없다([sessions.py](https://github.com/psf/requests/blob/v2.34.2/src/requests/sessions.py#L427-L440)).
+
+**RFC 3986 해석(`rfc3986`)** — 참조를 base에 대해 해석한다(RFC 3986 5.2.2 → 5.2.3 merge → 5.2.4 점 세그먼트 제거).
+
+- Go `(*url.URL).ResolveReference`([url.go](https://github.com/golang/go/blob/go1.23.0/src/net/url/url.go#L1116-L1153), go1.23.0
+  소스와 go1.27.1 실행이 같다).
+- Rust `url::Url::join`(url 2.5.8, [lib.rs](https://github.com/servo/rust-url/blob/v2.5.8/url/src/lib.rs#L413-L473)) — WHATWG URL
+  파서에 base를 준 것이고, http(s)의 이 입력들에서 결과가 RFC 3986 해석과 같다. reqwest 코드가 `Url::join`을 부를 때만 해당한다.
+- 규칙: `/`로 시작하는 참조는 base 경로 전체를 바꾼다. 상대 참조는 base 경로의 마지막 `/`까지를 남기고 붙인다 — 끝 `/` 없는
+  base(`…/api`)에 `users`를 붙이면 `/users`다. `//host/p`는 authority까지 바꾸는 참조라 그 host와 `/p`(없으면 `/`)다.
+- base 리터럴이면 결과 경로는 root다. base가 미상이면 `/`로 시작하는 참조는 root(점 세그먼트 제거 후), 상대 참조는 알 수 없는
+  base 디렉터리 뒤라 base(`./`는 지운다)이고, `..`가 있거나 빈 참조면 지울 세그먼트를 알 수 없어 dynamic + `ambiguous-base-join:`이다.
+
+**Go `url.JoinPath`(`go-join-path`, Go 1.19+)** — [url.go](https://github.com/golang/go/blob/go1.23.0/src/net/url/url.go#L1237-L1256).
+base 경로와 원소를 `path.Join`으로 잇는다: `/`를 넣고, `//`를 줄이고, `.`·`..`를 지운다(`..`는 base 경로 밖으로도 나간다 —
+`…/api` + `../x` → `/x`). 원소의 앞 `/`는 경로를 바꾸지 않는다(`/users` → `/api/users`). 마지막 원소가 `/`로 끝나면 끝 슬래시
+하나를 남긴다. base가 미상이면 정리한 원소 경로가 base 앵커 꼬리이고, `..`가 있으면 dynamic + `ambiguous-base-join:`이다.
+
+**go-resty(`resty-base-url`)** — v2.17.2 `SetBaseURL`은 끝 `/`를 모두 떼고
+([client.go](https://github.com/go-resty/resty/blob/v2.17.2/client.go#L193-L197)), 요청 URL이 절대 URL이 아니면 `/`로 시작하지
+않을 때 `/`를 붙여 문자열로 잇는다([middleware.go](https://github.com/go-resty/resty/blob/v2.17.2/middleware.go#L103-L126)). v3.0.0-rc.4는
+base를 그대로 두고 조립할 때 끝 `/`를 뗀다([middleware.go](https://github.com/go-resty/resty/blob/v3.0.0-rc.4/middleware.go#L130-L153)).
+두 버전 모두 `//`·점 세그먼트를 그대로 보낸다(로컬 서버가 받은 RequestURI로 확인: `…/api` + `//users` → `/api//users`, `./users` →
+`/api/./users`). 요청 URL이 절대 URL(scheme 있음)이면 base를 쓰지 않는다(`compose.strip`). 경로가 빈 문자열이면 v2는 끝 `/`를 뗀
+base 경로, v3(rc)는 base 원문 경로라 끝 슬래시가 갈린다 — base가 `/`로 끝나고 major 버전을 모르면 dynamic +
+`ambiguous-base-join:`으로 낸다. base가 미상이면 `/`를 붙인 경로가 base 앵커 꼬리다(`rfc3986`과 달리 `/`로 시작해도 root가 아니다).
+
+**httpx(`httpx-base-url`)** — 0.28.1. `base_url` 설정이 경로 끝 `/`를 보장하고
+([_client.py](https://github.com/encode/httpx/blob/0.28.1/httpx/_client.py#L234-L237)), `_merge_url`이 상대 URL 경로의 앞 `/`를
+**모두** 떼어 붙인다([_client.py](https://github.com/encode/httpx/blob/0.28.1/httpx/_client.py#L391-L411)). 합친 URL은 다시 파싱되며
+점 세그먼트를 지운다([_urlparse.py](https://github.com/encode/httpx/blob/0.28.1/httpx/_urlparse.py#L447-L475)) — `..`는 base 경로
+밖으로도 나간다. 가운데 `//`는 줄이지 않는다(`a//b` → `/api/a//b`). 그래서 `…/api`·`…/api/` 어느 쪽이든 `users`·`/users`는
+`/api/users`다. `//`로 시작하는 경로는 host로 파싱되어 경로가 사라지므로(`//users` → base 경로 그대로) 주장하지 않고 dynamic +
+`ambiguous-base-join:`이다. 절대 URL(scheme과 host)은 base를 쓰지 않는다. base가 미상이면 앞 `/`를 뗀 경로가 base 앵커 꼬리이고,
+`..`가 있으면 dynamic + `ambiguous-base-join:`이다.
+
+**aiohttp(`aiohttp-base-url`)** — `ClientSession(base_url=)`는 상대 URL을 yarl `URL.join`(RFC 3986)으로 합친다
+([client.py](https://github.com/aio-libs/aiohttp/blob/v3.14.3/aiohttp/client.py#L531-L535), 3.14.3·yarl 1.25.1 실행 확인). 결과는
+`rfc3986`과 같고 다음 제약이 더해진다.
+
+- 버전: 3.8.0에서 `base_url`이 생겼고 그때는 base가 경로 없는 origin이어야 하고 요청 경로가 `/`로 시작해야 했다(assert). 3.11.0부터
+  base에 경로를 쓸 수 있고(`/`로 끝나야 함) `/` 없는 상대 경로를 받는다. 3.12.0부터 절대 URL 요청이 base를 건너뛴다. 생산자는
+  aiohttp 3.11 이상을 증명하지 못하면 `/` 없는 상대 경로와 경로 있는 base를 dynamic + `ambiguous-base-join:`으로, 3.12 이상을
+  증명하지 못하면 base 세션의 절대 URL 요청을 dynamic으로 낸다(그 버전에서는 요청이 실패한다).
+- 경로가 있는 base가 `/`로 끝나지 않으면 세션 생성이 `ValueError`로 실패한다
+  ([client.py](https://github.com/aio-libs/aiohttp/blob/v3.14.3/aiohttp/client.py#L355-L363)) — dynamic + `ambiguous-base-join:`.
+- aiohttp 문서대로 요청 경로가 `/`로 시작하면 base 경로를 버린다(`…/api/` + `/users` → `/users`).
+- `//`로 시작하는 경로는 yarl이 절대 URL로 읽는다 — 주장하지 않고 dynamic + `ambiguous-base-join:`이다.
+
+**그 밖**: 벡터가 없는 결합(`urllib.parse.urljoin`, requests-toolbelt `BaseUrlSession`, 사용자 정의 base 헬퍼 등)은 결합 결과를
+주장하지 않는다. base 뒤 경로가 `/`로 시작하는 리터럴이면 base 앵커 꼬리로만, 아니면 dynamic + `ambiguous-base-join:`으로 낸다.
+새 라이브러리는 공식 소스를 확인해 이 절과 벡터에 결합 방식을 더한 뒤 쓴다.
+
 ### 제거와 마스킹
 
 - `compose.strip`: 전체 URL에서 scheme·userinfo·query·fragment를 떼고, host는 소문자
@@ -176,7 +252,10 @@ base 없이 전체 URL 리터럴을 쓰면 host 뒤 경로를 root로 쓴다. ho
 - 생산자는 두 파일을 벤더링하고 `conformance.lock`에 isthmus 커밋과 sha256을 적는다. 자기 언어
   러너로 `appliesTo`에 `producer`(또는 `producer:<이름>`)가 있는 케이스를 모두 통과해야 한다.
 - `compose.base-join` 입력의 `join`은 `rfc3986`·`slash-join`·`dio-concat`·`spring-uri-builder`·`spring-root-uri`·
-  `spring-http-exchange`(메서드 url은 `path`, 타입 url은 `typeUrl`)다. 기대값의 `authority`는 base 리터럴에서 온 소문자 authority다.
+  `spring-http-exchange`(메서드 url은 `path`, 타입 url은 `typeUrl`)·`go-join-path`·`resty-base-url`·`httpx-base-url`·
+  `aiohttp-base-url`이다. 기대값의 `authority`는 base 리터럴(또는 network-path 참조)에서 온 소문자 authority다. `rfc3986`의 base
+  리터럴 케이스와 Go·Rust·Python 케이스는 `producer:gartograph`·`producer:rustograph`·`producer:pythograph`로 좁혀 두었다 —
+  같은 방식을 쓰는 다른 생산자는 자기 이름을 `appliesTo`에 더하자고 요청한다. `versionRange`는 그 라이브러리 버전이다.
   Spring 케이스는 `producer:kartograph`라 다른 생산자의 러너는 고르지 않는다 — Spring 클라이언트를 읽는 다른 JVM 생산자는 자기
   이름을 `appliesTo`에 더하자고 요청한다.
   isthmus의 `npm run verify`는 같은 벡터를 제품 매처와 참조 구현으로 실행한다.

@@ -1,4 +1,4 @@
-import type { BridgeFactsDocument, RoutePathAnchor } from '../exchange/parse.ts';
+import type { BridgeFact, BridgeFactsDocument, RoutePathAnchor } from '../exchange/parse.ts';
 import { isChannelLimitationScope } from '../exchange/parse.ts';
 import type { RouteLimitationRange } from '../exchange/route-limitation-scope.ts';
 import { parseRouteTemplate, type HttpMethod, type RouteMethod, type RouteSegment } from '../exchange/route-template.ts';
@@ -105,9 +105,49 @@ export interface RouteScopeProbe {
 }
 
 /**
+ * 색인에 넣는 공백 하나다. `range`가 없으면 모든 요청에 적용되는(문서 전체 효과) 공백이다.
+ *
+ * 문서의 한계(`limitations`와 `limitationScopes`)뿐 아니라 dynamic 선언의 `dynamicScope`도 같은 비교를 쓴다 — 둘 다
+ * "이 공백이 가릴 수 있는 요청의 보수적 상한"이기 때문이다.
+ */
+export interface RouteScopeEntry {
+  readonly message: string;
+  readonly range?: RouteLimitationRange;
+}
+
+/** 입력이 문서인지(한계 목록을 펼칠 대상인지) 공백 항목인지 구분한다. */
+function isDocument(value: BridgeFactsDocument | RouteScopeEntry): value is BridgeFactsDocument {
+  return 'format' in value;
+}
+
+/** 문서들의 한계를 문서 순서·문서 안 순서대로 공백 항목으로 펼친다. */
+function documentEntries(document: BridgeFactsDocument): RouteScopeEntry[] {
+  const ranges = routeRanges(document);
+  return document.limitations.map((message, index) => {
+    const range = ranges.get(index);
+    return range === undefined ? { message } : { message, range };
+  });
+}
+
+/**
+ * dynamic 선언 하나가 받을 수 있는 요청의 상한이다. `dynamicScope`가 없으면 undefined(모든 요청 — 하위 호환)다.
+ *
+ * 스코프가 있으면 선언의 method도 상한에 넣는다: `ANY`가 아닌 decl·contract는 그 method의 요청만 받는다(HEAD·OPTIONS
+ * 예외는 비교가 적용한다). `ANY` decl은 스코프의 `methods`(없으면 모든 method)다. 스코프를 싣지 않은 선언에는 method로도
+ * 좁히지 않는다 — 옛 문서의 dynamic 선언은 이전처럼 scope 전체의 공백이어야 하기 때문이다.
+ */
+export function dynamicDeclarationRange(fact: BridgeFact): RouteLimitationRange | undefined {
+  const scope = fact.dynamicScope;
+  if (scope === undefined) return undefined;
+  if (fact.method === undefined || fact.method === 'ANY') return scope;
+  return { ...scope, methods: [fact.method as HttpMethod] };
+}
+
+/**
  * 한 측(서버 측 문서들 또는 호출 측 문서들)의 한계와 스코프 색인이다.
  *
  * 스코프 없는 한계는 모든 요청에 적용되고(기존 문서 전체 효과), 스코프 있는 한계는 비교가 겹칠 때만 적용된다.
+ * 문서 대신 공백 항목(`RouteScopeEntry`)을 받으면 그 항목들을 같은 규칙으로 색인한다(dynamic 선언 공백).
  */
 export class RouteLimitationScopeIndex {
   /** 이 측 문서들의 모든 한계다. 문서 순서·문서 안 순서를 유지한다. */
@@ -118,20 +158,17 @@ export class RouteLimitationScopeIndex {
   readonly #scoped: readonly CompiledScope[];
   readonly #budget: { remaining: number };
 
-  /** 문서들의 한계를 색인한다. 예산은 같은 조인의 모든 색인이 공유한다. */
-  constructor(documents: readonly BridgeFactsDocument[], budget: { remaining: number }) {
+  /** 문서들의 한계(또는 공백 항목)를 색인한다. 예산은 같은 조인의 모든 색인이 공유한다. */
+  constructor(sources: ReadonlyArray<BridgeFactsDocument | RouteScopeEntry>, budget: { remaining: number }) {
     this.#budget = budget;
     const limitations: RouteScopeLimitation[] = [];
     const unscoped: string[] = [];
     const scoped: CompiledScope[] = [];
-    for (const document of documents) {
-      const ranges = routeRanges(document);
-      document.limitations.forEach((message, index) => {
-        const range = ranges.get(index);
-        limitations.push({ message, scoped: range !== undefined });
-        if (range === undefined) unscoped.push(message);
-        else scoped.push(compileScope(message, range));
-      });
+    const entries = sources.flatMap((source) => (isDocument(source) ? documentEntries(source) : [source]));
+    for (const { message, range } of entries) {
+      limitations.push({ message, scoped: range !== undefined });
+      if (range === undefined) unscoped.push(message);
+      else scoped.push(compileScope(message, range));
     }
     this.limitations = limitations;
     this.messages = limitations.map(({ message }) => message);

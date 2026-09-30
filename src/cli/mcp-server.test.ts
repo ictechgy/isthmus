@@ -289,6 +289,8 @@ test('광고된 스키마 밖의 인자는 -32602로 거부한다', async () => 
     [43, 'trace', { context: 'context.json', maxChains: 1001 }],
     [44, 'trace', { context: '' }],
     [45, 'trace', { context: 'context.json', pairs: true }],
+    [46, 'trace', { context: 'context.json', upstreamDepth: 9 }],
+    [47, 'trace', { context: 'context.json', upstreamDepth: 1.5 }],
   ];
   for (const [id, name, args] of invalidCases) {
     const response = JSON.parse(
@@ -359,4 +361,7 @@ test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문
   assert.deepEqual(narrowed.summary, report.summary);
   const missing = await call(52, { context: '/nonexistent/context.json' });
   assert.equal(missing.result.isError, true);
+  // upstreamDepth는 CLI --upstream-depth로 넘어가 보고서에 깊이가 실린다.
+  const deeper = JSON.parse((await call(53, { context: contextPath, upstreamDepth: 3 })).result.content[0].text);
+  assert.equal(deeper.upstreamDepth, 3);
 });

@@ -313,14 +313,18 @@ function orderedDecl(method: string, channel: string, index: number, extra: Reco
   });
 }
 
-test('platform python은 null·persistence·http target이고 http에서는 route-decl만 낸다', () => {
+test('platform python은 null·persistence·http target이고 http에서는 route-decl과 route-call을 낸다', () => {
   const decl = route('route-decl', 'ANY', '/items/', { location: { path: 'shop/urls.py', line: 3, column: 10 } });
   const parsed = parseBridgeFactsDocument(serverDocument([decl], { platform: 'python' }));
   assert.equal(parsed.platform, 'python');
   assert.equal(parsed.facts[0]!.method, 'ANY');
-  // Python 클라이언트(requests·httpx)의 route-call은 생산자와 벡터가 생길 때까지 받지 않는다.
-  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', facts: [route('route-call', 'GET', '/items/')] })),
-    /not valid for platform/);
+  // Python 클라이언트(requests·httpx·aiohttp)의 route-call은 url-compose 벡터가 결합 규칙을 고정한 뒤로 받는다.
+  const call = parseBridgeFactsDocument(httpDocument({ platform: 'python', facts: [route('route-call', 'GET', '/items/', {
+    authority: 'api.example.com', location: { path: 'app/client.py', line: 7, column: 5 } })] }));
+  assert.equal(call.facts[0]!.kind, 'route-call');
+  // route-contract는 여전히 openapi 전용이다.
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', roles: ['server'], dispatch: 'specificity',
+    facts: [route('route-contract', 'GET', '/items/')] })), /not valid for platform/);
   assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'python', roles: undefined, target: 'flutter', facts: [
     { kind: 'channel-create', channel: 'c', dynamic: false, location: { path: 'a.py', line: 1, column: 1 } },
   ] })), /Python documents may only carry a null, persistence, or http target/);
@@ -339,7 +343,7 @@ test('platform python은 null·persistence·http target이고 http에서는 rout
   })), /not valid for platform/);
 });
 
-test('platform go·rust는 http에서 서버 route-decl만 내고 두 dispatch를 모두 받는다', () => {
+test('platform go·rust는 http에서 서버 route-decl과 클라이언트 route-call을 내고 두 dispatch를 모두 받는다', () => {
   for (const platform of ['go', 'rust']) {
     const decl = route('route-decl', 'GET', '/items/{}', { location: { path: 'internal/api/items.go', line: 3, column: 2 },
       symbol: { qualifiedName: 'api.GetItem', usr: `${platform}:api.GetItem` } });
@@ -349,10 +353,20 @@ test('platform go·rust는 http에서 서버 route-decl만 내고 두 dispatch�
     // actix-web·gorilla/mux처럼 먼저 등록한 경로가 받는 라우터는 registration-order로 낸다.
     const ordered = parseBridgeFactsDocument(orderedDocument([orderedDecl('GET', '/items/{}', 0)], { platform }));
     assert.equal(ordered.dispatch, 'registration-order');
-    // 클라이언트 route-call은 생산자와 url-compose 벡터가 생길 때까지 받지 않는다(client roles 문서는 사실 0건만).
-    assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform, facts: [route('route-call', 'GET', '/items/')] })),
-      /not valid for platform/);
+    // 클라이언트 route-call(net/http·resty, reqwest)은 url-compose 벡터가 결합 규칙을 고정한 뒤로 받는다.
+    const calls = parseBridgeFactsDocument(httpDocument({ platform, facts: [
+      route('route-call', 'POST', '/items', { location: { path: 'client/items.go', line: 9, column: 2 } }),
+      route('route-call', 'GET', '/items/{}', { pathAnchor: 'base', maskedSegments: 1,
+        location: { path: 'client/items.go', line: 12, column: 2 } }),
+      { kind: 'route-call', channel: null, dynamic: true, methodDynamic: true, pathAnchor: 'root', channelPrefix: '/items/',
+        location: { path: 'client/items.go', line: 15, column: 2 } },
+    ] }));
+    assert.deepEqual(calls.facts.map(({ kind, pathAnchor }) => `${kind} ${pathAnchor}`),
+      ['route-call root', 'route-call base', 'route-call root']);
     assert.equal(parseBridgeFactsDocument(httpDocument({ platform })).facts.length, 0);
+    // 서버 문서의 route-call은 역할 규칙대로 거부한다.
+    assert.throws(() => parseBridgeFactsDocument(serverDocument([route('route-call', 'GET', '/items/')], { platform })),
+      /matching document role/);
   }
 });
 

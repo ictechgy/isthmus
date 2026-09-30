@@ -17,9 +17,11 @@ import {
   type RouteSideOutcome,
 } from './route-index.ts';
 import {
+  dynamicDeclarationRange,
   RouteLimitationScopeIndex,
   RouteScopeBudgetError,
   MAX_ROUTE_SCOPE_COMPARISONS,
+  type RouteScopeEntry,
   type RouteScopeLimitation,
 } from './route-limitation-scope.ts';
 import {
@@ -80,6 +82,14 @@ export interface RouteCallResult {
    * 문서의 모든 한계 문구를 싣는다.
    */
   readonly serverLimitations: readonly string[];
+  /**
+   * 이 호출에 적용되는 dynamic decl 공백이 있는지다(error 전제 (d)). `dynamicScope` 없는 dynamic decl은 모든 호출에,
+   * 스코프 있는 dynamic decl은 스코프가 이 호출과 겹칠 수 있을 때만 적용된다. `serverLimitations`처럼 어느 측이 match가
+   * 아닌 호출만 스코프로 좁히고, match된 호출은 scope에 dynamic decl이 있는지만 싣는다.
+   */
+  readonly dynamicDeclGap: boolean;
+  /** 이 호출에 적용되는 dynamic contract 공백이 있는지다. 규칙은 `dynamicDeclGap`과 같다. */
+  readonly dynamicContractGap: boolean;
 }
 
 /** 귀속된 dynamic 호출 중 증명된 리터럴 접두사가 있는 것이다. query 후보로만 쓴다. */
@@ -109,6 +119,13 @@ export interface RouteScope {
   readonly clientLimitations: readonly RouteScopeLimitation[];
   readonly dynamicDecls: number;
   readonly dynamicContracts: number;
+  /**
+   * dynamic decl·contract 공백 항목이다(스코프 없는 사실은 `range` 없음, `message`는 내부 사실 키). 같은 위치의 같은 사실은 한 번만 세되, 스코프가
+   * 서로 다르면 항목을 따로 두고 스코프 없는 사본이 하나라도 있으면 스코프 없는 항목 하나로 합친다. trace가 선택한
+   * route와 겹치는 dynamic 선언을 찾을 때 쓴다.
+   */
+  readonly dynamicDeclEntries: readonly RouteScopeEntry[];
+  readonly dynamicContractEntries: readonly RouteScopeEntry[];
   readonly dynamicCalls: number;
   /** 귀속되지 않았지만 이 scope를 불렀을 수 있는 호출 수다. */
   readonly unboundCalls: number;
@@ -247,6 +264,7 @@ function buildLinkScope(
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const serverScopes = new RouteLimitationScopeIndex(servers, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clients, scopeBudget);
+  const dynamic = dynamicGaps(servers, included, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
@@ -267,7 +285,7 @@ function buildLinkScope(
         continue;
       }
       calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
-        contractDocuments > 0 ? contractIndex : undefined, serverScopes));
+        contractDocuments > 0 ? contractIndex : undefined, serverScopes, dynamic));
     }
   }
   return {
@@ -277,8 +295,7 @@ function buildLinkScope(
     clientDocuments: clients.length,
     serverLimitations: serverScopes.limitations,
     clientLimitations: clientScopes.limitations,
-    dynamicDecls: countDynamic(servers, 'route-decl', included),
-    dynamicContracts: countDynamic(servers, 'route-contract', included),
+    ...dynamic.summary,
     dynamicCalls,
     unboundCalls,
     decls: withShadows(markCalled(decls, calls, 'decl', clientScopes), shadows),
@@ -430,6 +447,7 @@ function buildScope(
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
   const serverScopes = new RouteLimitationScopeIndex(serverDocuments, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clientDocuments, scopeBudget);
+  const dynamic = dynamicGaps(documents, inScope, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
@@ -445,7 +463,7 @@ function buildScope(
         continue;
       }
       calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
-        contractDocuments > 0 ? contractIndex : undefined, serverScopes));
+        contractDocuments > 0 ? contractIndex : undefined, serverScopes, dynamic));
     }
   }
   return {
@@ -455,8 +473,7 @@ function buildScope(
     clientDocuments: clientDocuments.length,
     serverLimitations: serverScopes.limitations,
     clientLimitations: clientScopes.limitations,
-    dynamicDecls: countDynamic(documents, 'route-decl', inScope),
-    dynamicContracts: countDynamic(documents, 'route-contract', inScope),
+    ...dynamic.summary,
     dynamicCalls,
     unboundCalls: unattributed.filter((service) => mayReach(service, scopeService)).length,
     decls: withShadows(markCalled(decls, calls, 'decl', clientScopes), shadows),
@@ -476,6 +493,7 @@ function matchCall(
   declIndex: RouteIndex | undefined,
   contractIndex: RouteIndex | undefined,
   serverScopes: RouteLimitationScopeIndex,
+  dynamic: DynamicGaps,
 ): RouteCallResult {
   const parsed = parseRouteTemplate(fact.channel as string);
   // 파서가 이미 검증한 템플릿이라 실패하면 내부 불변 위반이다.
@@ -490,6 +508,8 @@ function matchCall(
   // match되지 않은 측이 있으면 좁힌다. error 판정(missing·method-mismatch)뿐 아니라 diff가 증명하지 못한 전제를
   // reason으로 나열할 때(모호·끝 슬래시·대소문자)도 호출 단위의 공백을 쓰기 위해서다.
   const unbound = [decl, contract].some((outcome) => outcome !== undefined && outcome.status !== 'matched');
+  const applies = (index: RouteLimitationScopeIndex): boolean =>
+    (unbound ? index.applicable({ ...probe, side: 'call' }) : index.messages).length > 0;
   return {
     endpoint,
     ...methodField(fact),
@@ -500,6 +520,8 @@ function matchCall(
     ...(decl === undefined ? {} : { decl }),
     ...(contract === undefined ? {} : { contract }),
     serverLimitations: unbound ? serverScopes.applicable({ ...probe, side: 'call' }) : serverScopes.messages,
+    dynamicDeclGap: applies(dynamic.decls),
+    dynamicContractGap: applies(dynamic.contracts),
   };
 }
 
@@ -635,21 +657,66 @@ function uniqueCalls(calls: readonly RouteCallResult[], compareEndpoints: Compar
     compareEndpoints(left.endpoint, right.endpoint) || Number(left.masked) - Number(right.masked));
 }
 
-/** scope에 속한 dynamic 선언 측 사실 수다. 같은 위치의 중복은 한 번만 센다. */
-function countDynamic(
+/** scope 하나의 dynamic 선언 측 공백이다. 색인은 호출마다 적용 여부를 볼 때, `summary`는 scope 결과에 싣는다. */
+interface DynamicGaps {
+  readonly decls: RouteLimitationScopeIndex;
+  readonly contracts: RouteLimitationScopeIndex;
+  readonly summary: Pick<RouteScope, 'dynamicDecls' | 'dynamicContracts' | 'dynamicDeclEntries' | 'dynamicContractEntries'>;
+}
+
+/** scope의 dynamic decl·contract를 모아 공백 색인을 만든다. 비교 예산은 한계 스코프 색인과 공유한다. */
+function dynamicGaps(
+  documents: readonly BridgeFactsDocument[],
+  inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
+  scopeBudget: { remaining: number },
+): DynamicGaps {
+  const decls = collectDynamic(documents, 'route-decl', inScope);
+  const contracts = collectDynamic(documents, 'route-contract', inScope);
+  return {
+    decls: new RouteLimitationScopeIndex(decls.entries, scopeBudget),
+    contracts: new RouteLimitationScopeIndex(contracts.entries, scopeBudget),
+    summary: {
+      dynamicDecls: decls.count,
+      dynamicContracts: contracts.count,
+      dynamicDeclEntries: decls.entries,
+      dynamicContractEntries: contracts.entries,
+    },
+  };
+}
+
+/**
+ * scope에 속한 dynamic 선언 측 사실 수와 공백 항목이다. 같은 위치의 중복은 한 번만 센다.
+ *
+ * 같은 사실 키가 스코프 없는 사본을 하나라도 가지면 스코프 없는 항목 하나로 합친다(넓은 쪽). 그렇지 않으면 서로 다른
+ * 스코프마다 항목을 둔다 — 어느 사본이 맞는지 고르지 않고 모두 공백으로 본다.
+ */
+function collectDynamic(
   documents: readonly BridgeFactsDocument[],
   kind: 'route-decl' | 'route-contract',
   inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
-): number {
-  const keys = new Set<string>();
+): { count: number; entries: RouteScopeEntry[] } {
+  const ranges = new Map<string, Map<string, RouteScopeEntry> | null>();
   for (const document of documents) {
     for (const fact of document.facts) {
-      if (fact.kind === kind && (fact.dynamic || fact.channel === null) && inScope(document, fact)) {
-        keys.add(factKey(document.platform, fact));
+      if (fact.kind !== kind || !(fact.dynamic || fact.channel === null) || !inScope(document, fact)) continue;
+      const key = factKey(document.platform, fact);
+      const range = dynamicDeclarationRange(fact);
+      const known = ranges.get(key);
+      if (known === null) continue;
+      if (range === undefined) {
+        ranges.set(key, null);
+        continue;
       }
+      const group = known ?? new Map<string, RouteScopeEntry>();
+      // 문구는 사실 키다 — 한 사실의 여러 스코프 사본이 겹쳐도 trace가 사실 하나로 세게 한다(출력에는 싣지 않는다).
+      group.set(JSON.stringify(range), { message: key, range });
+      ranges.set(key, group);
     }
   }
-  return keys.size;
+  const entries = [...ranges.entries()].sort(([left], [right]) => compareStrings(left, right))
+    .flatMap(([key, group]): RouteScopeEntry[] => group === null ? [{ message: key }]
+      : [...group.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, entry]) => entry));
+  return { count: ranges.size, entries };
 }
 
 /** route 사실을 보고용 끝점으로 바꾼다. authority·baseRef는 싣지 않는다. */
@@ -693,17 +760,21 @@ interface ConsumerCountRule {
 /**
  * 소비자가 직접 센 http 한계다. 플랫폼별로 dynamic 선언 측 사실, dynamic 호출, 귀속되지
  * 않은 정적 호출을 센다. 문구에는 개수만 싣는다 — 귀속되지 않은 호출의 경로·host는
- * 어떤 출력에도 싣지 않는다.
+ * 어떤 출력에도 싣지 않는다. dynamic 선언 중 `dynamicScope`를 실은 것이 있으면 그 수를 문구 끝에 더한다(없으면
+ * 이전 문구와 바이트가 같다).
  */
 function routeConsumerLimitations(
   documents: readonly BridgeFactsDocument[],
   rule: ConsumerCountRule,
 ): JoinLimitation[] {
-  const counts = new Map<string, { platform: BridgePlatform; prefix: string; subject: string; keys: Set<string> }>();
+  const counts = new Map<string, {
+    platform: BridgePlatform; prefix: string; subject: string; keys: Set<string>; scoped: Set<string>;
+  }>();
   const add = (platform: BridgePlatform, prefix: string, subject: string, fact: BridgeFact): void => {
     const groupKey = `${platform}\u0000${prefix}`;
-    const group = counts.get(groupKey) ?? { platform, prefix, subject, keys: new Set<string>() };
+    const group = counts.get(groupKey) ?? { platform, prefix, subject, keys: new Set<string>(), scoped: new Set<string>() };
     group.keys.add(factKey(platform, fact));
+    if (fact.dynamicScope !== undefined) group.scoped.add(factKey(platform, fact));
     counts.set(groupKey, group);
   };
   for (const document of documents) {
@@ -723,12 +794,13 @@ function routeConsumerLimitations(
       }
     }
   }
-  return [...counts.values()].map(({ platform, prefix, subject, keys }) => ({
+  return [...counts.values()].map(({ platform, prefix, subject, keys, scoped }) => ({
     platform,
     target: 'http',
     tool: 'isthmus',
     origin: 'consumer',
-    message: `${prefix}: ${keys.size} ${subject} were not joined`,
+    message: `${prefix}: ${keys.size} ${subject} were not joined`
+      + (scoped.size === 0 ? '' : `; ${scoped.size} of them declare a dynamicScope and only affect calls inside it`),
   }));
 }
 

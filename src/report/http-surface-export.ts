@@ -134,6 +134,8 @@ function exportFact(fact: BridgeFact, openapi: boolean, handlerTokens: ReadonlyM
     pathAnchor: fact.pathAnchor,
     ...copyDefined(fact, ['service', 'trailingSlash', 'caseInsensitive', 'narrowed', 'configDefault', 'catchAllPrefix', 'operationId']),
     ...(fact.paramConstraints === undefined ? {} : { paramConstraints: fact.paramConstraints }),
+    // dynamic 선언의 증명된 상한은 선언 측 경로라 한계 스코프처럼 그대로 싣는다(가져오는 쪽 판정이 같아지게).
+    ...(fact.dynamicScope === undefined ? {} : { dynamicScope: fact.dynamicScope }),
     ...(fact.order === undefined ? {} : { order: { group: groupTokens.get(fact.order.group)!, index: fact.order.index } }),
     ...(handler === undefined ? {} : { handler }),
     ...(openapi && fact.symbol !== undefined ? { symbol: { qualifiedName: fact.symbol.qualifiedName } } : {}),

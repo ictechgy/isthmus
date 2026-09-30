@@ -306,6 +306,9 @@ Dart·Swift 러너가 100% 통과한다.
     [Phase 6 결정](GRAPH-EXCHANGE.md#phase-6-결정-platform-python과-registration-order), 벡터 `conformance/http-dispatch.json`).
     pythograph fixture(`drf-shop`·`blog-app`)의 문서와 합성 클라이언트로 check를 돌려 입력 오류 없음과 가림 진단을
     확인했다. persistence·graph와 Python 클라이언트 `route-call`은 남았다.
+  - 진행(2026-09-30): isthmus가 python·go·rust 클라이언트 `route-call`을 받는다. requests·httpx·aiohttp(와 Go net/http·resty,
+    Rust reqwest·`Url::join`)의 결합 방식을 [HTTP-WRAPPERS](HTTP-WRAPPERS.md#go-rust-python-클라이언트)와 url-compose 벡터로
+    고정했다. 생산자 쪽 발행은 각 저장소에서 진행한다.
 
 종료 조건: resolver 순회·DRF router·Flask url_map 덤프 대비 route-decl 정밀도 100%. Django
 백엔드 × iOS/Android 체인 fixture에서 세 질문의 기대 경로가 일치한다.

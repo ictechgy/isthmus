@@ -227,7 +227,15 @@ export interface TraceContext {
   readonly selection: TraceSelection;
   /** 선택한 파일에 생산자 목록이 놓은 심볼이다. 파일 선택에서만 받는다. */
   readonly fileSymbols?: readonly TraceFileSymbols[];
+  /**
+   * upstream route를 몇 단계까지 따라갈지다(1..{@link MAX_TRACE_UPSTREAM_DEPTH}). 생략하면 1(한 단계, v1 동작)이다.
+   * CLI `--upstream-depth`가 있으면 그 값이 우선한다.
+   */
+  readonly upstreamDepth?: number;
 }
+
+/** upstream route 전이 추적 깊이의 상한이다. hop마다 커지는 출력과 순환 탐색을 묶는다. */
+export const MAX_TRACE_UPSTREAM_DEPTH = 8;
 
 /** 역할·플랫폼이 확인된 분석과 정규화된 순회 숲이다. */
 export interface TraceAnalysis {
@@ -276,8 +284,26 @@ export const MAX_LIBRARY_SYMBOL_MAP_ENTRIES = 100_000;
 
 const roles = new Set<string>(['forward', 'reverse', 'db-dependents']);
 const routeMethods = new Set<string>([...httpMethods, 'ANY']);
-const singleKeys = new Set(['format', 'version', 'project', 'revision', 'documents', 'analyses', 'selection', 'fileSymbols']);
-const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'libraries', 'selection', 'fileSymbols']);
+const singleKeys = new Set(['format', 'version', 'project', 'revision', 'documents', 'analyses', 'selection', 'fileSymbols',
+  'upstreamDepth']);
+const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'libraries', 'selection', 'fileSymbols', 'upstreamDepth']);
+
+/**
+ * upstream 깊이 값이 1..{@link MAX_TRACE_UPSTREAM_DEPTH}의 정수인지다. context와 CLI가 같은 범위를 쓴다.
+ *
+ * @param value 검증 전 값
+ * @returns 범위 안의 안전 정수면 true
+ */
+export function isTraceUpstreamDepth(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= MAX_TRACE_UPSTREAM_DEPTH;
+}
+
+/** context의 선택 필드 `upstreamDepth`를 읽는다. 생략은 undefined(기본 1)이고 범위 밖은 입력 오류다. */
+function parseUpstreamDepth(value: unknown): { upstreamDepth?: number } {
+  if (value === undefined) return {};
+  if (!isTraceUpstreamDepth(value)) fail(`Trace context upstreamDepth must be an integer from 1 to ${MAX_TRACE_UPSTREAM_DEPTH}.`);
+  return { upstreamDepth: value };
+}
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 
 /** 신뢰하지 않는 JSON을 검증된 trace context로 바꾼다. */
@@ -303,7 +329,7 @@ function parseSingleContext(input: Record<string, unknown>): TraceContext {
   const fileSymbols = parseFileSymbols(input.fileSymbols, selection, undefined);
   return {
     format: 'isthmus-trace-context', version: 1, project, ...(revision === undefined ? {} : { revision }),
-    documents, analyses, selection, ...(fileSymbols === undefined ? {} : { fileSymbols }),
+    documents, analyses, selection, ...(fileSymbols === undefined ? {} : { fileSymbols }), ...parseUpstreamDepth(input.upstreamDepth),
   };
 }
 
@@ -331,7 +357,7 @@ function parseWorkspaceContext(input: Record<string, unknown>): TraceContext {
   const fileSymbols = parseFileSymbols(input.fileSymbols, selection, selectable);
   return {
     format: 'isthmus-trace-context', version: 1, workspace: { members, links, libraries }, documents, analyses,
-    selection, ...(fileSymbols === undefined ? {} : { fileSymbols }),
+    selection, ...(fileSymbols === undefined ? {} : { fileSymbols }), ...parseUpstreamDepth(input.upstreamDepth),
   };
 }
 

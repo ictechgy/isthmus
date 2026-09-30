@@ -284,7 +284,7 @@ registration-order 문서([GRAPH-EXCHANGE 디스패치 모델](GRAPH-EXCHANGE.md
 | `after-unattributed` | head 조인에서도 같은 scope에 귀속됐다 |
 | `after-not-evaluated` | head scope에 그 측의 선언 문서가 있다(decl 측은 route-decl을 스캔한 문서) |
 | `after-outcome-unproven` | head 결과가 `missing`이거나 모든 경로 후보가 증명 가능한 `method-mismatch`다(끝 슬래시·대소문자 불일치와 모호함은 증명된 미결합이 아니다) |
-| `after-declaration-gap` | head의 그 측에 이 호출에 적용되는 공백 접두사 한계나 dynamic 선언이 없다. 스코프 있는 한계는 스코프가 호출과 겹칠 수 있을 때만 적용된다([http limitation 스코프](GRAPH-EXCHANGE.md#http-limitation-스코프)). head에서 귀속되지 않은 호출은 모든 한계를 본다 |
+| `after-declaration-gap` | head의 그 측에 이 호출에 적용되는 공백 접두사 한계나 dynamic 선언이 없다. 스코프 있는 한계는 스코프가 호출과 겹칠 수 있을 때만 적용된다([http limitation 스코프](GRAPH-EXCHANGE.md#http-limitation-스코프)). dynamic 선언도 `dynamicScope`가 있으면 스코프가 호출과 겹칠 때만, 없으면 항상 적용된다([dynamic 선언의 스코프](GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)). head에서 귀속되지 않은 호출은 모든 한계와 모든 dynamic 선언을 본다 |
 | `contract-not-authoritative` | contract 측이면 link `contract.authoritative`가 `true`다(surface 모드는 항상 이 reason) |
 
 ## `--fail-on`과 종료 코드
@@ -306,5 +306,5 @@ registration-order 문서([GRAPH-EXCHANGE 디스패치 모델](GRAPH-EXCHANGE.md
   ([위](#등록-순서-registration-order)), 조직 경계 surface(artifact 두 개·surface member), 합성 fixture(`fixtures/http-diff/`,
   `fixtures/http-surface/client/`의 before·after 매니페스트).
 - 판정하지 않는 것: 필드·query·헤더 호환성, narrowed 조건 변화, 핸들러 심볼 교체(같은 키 중복 decl의 순서만 바뀌어
-  다른 핸들러가 받는 경우 포함 — route 신원이 같다), dynamic 선언 공백의 스코프(dynamic 선언은 여전히 그 측 전체의 공백이다).
+  다른 핸들러가 받는 경우 포함 — route 신원이 같다). dynamic 선언은 `dynamicScope`가 없으면 여전히 그 측 전체의 공백이다.
 - MCP에는 노출하지 않는다(MCP `diff`는 bridge 전용 그대로). 노출은 trace·`--pairs`와 함께 출력 상한을 정할 때 결정한다.

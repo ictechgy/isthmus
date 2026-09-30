@@ -4,6 +4,42 @@
 
 ## [Unreleased]
 
+### Added — trace upstream route 전이 추적 `upstreamDepth` (Phase 8)
+
+- **opt-in**([TRACE](docs/TRACE.md#전이-추적-upstreamdepth)): CLI `--upstream-depth <1..8>`, MCP `upstreamDepth`, context
+  `upstreamDepth`(CLI 값 우선). 기본 1은 v1과 출력 바이트가 같다.
+- **따라가기**: upstream route를 server로 잇는 link마다 그 route에 match된 호출 hop을 `callers: [{scope, calls}]`에 싣고, 그 호출
+  hop이 다시 자기 upstream route를 싣는다. library consumer hop도 같다.
+- **순환·상한**: (member, scope, method, template) 조상 집합으로 순환을 끊고 알림 `upstream-route-cycle`을 남긴다. 따라간 단계의
+  호출 hop·`affected`는 체인마다 10,000행까지이고, 깊이·상한에 멈춘 곳은 기존 `upstream-route-callers-not-followed`(문구로 구분)다.
+  순서는 깊이 우선·정렬 순서로 결정적이다.
+- **요약·상한**: `summary.calls`·`clientSymbols`·`upstreamRoutes`·`evidence`가 따라간 호출 hop까지 세고, `--max-rows`가 `callers`
+  아래 목록도 자른다.
+
+### Added — python·go·rust 클라이언트 `route-call`과 결합 방식 (Phase 8)
+
+- **계약**: platform `python`·`go`·`rust`의 http 문서가 `route-call`을 낼 수 있다(이전에는 입력 오류). 조인·귀속·심각도 규칙은
+  다른 호출 측 플랫폼과 같다([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#target과-kind)).
+- **결합 방식**([HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#go-rust-python-클라이언트)): 공식 소스와 실행 기록으로 확인한 규칙을 이름으로
+  적었다 — `rfc3986`(Go `ResolveReference`, Rust `Url::join`; base 리터럴이면 RFC 3986 해석 결과), `go-join-path`(Go 1.19+
+  `url.JoinPath`), `resty-base-url`(go-resty v2·v3), `httpx-base-url`(httpx 0.28), `aiohttp-base-url`(aiohttp 3.11+, 버전 제약 포함).
+  base 없는 net/http·reqwest·requests는 전체 URL 규칙을 쓴다. `http-wrappers` 선언의 `language`에 `go`·`rust`·`python`을 더했다.
+- **벡터**: url-compose에 `compose.base-join` 39건(`producer:gartograph`·`producer:rustograph`·`producer:pythograph`)을 더하고
+  SHA256SUMS를 갱신했다. 참조 구현은 `scripts/verify-conformance.mjs`에 있다.
+
+### Added — dynamic 선언의 스코프 `dynamicScope` (Phase 8)
+
+- **계약**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)): dynamic `route-decl`·`route-contract`가
+  `dynamicScope: {templates?, templatePrefixes?, templateSuffixes?, methods?}`로 받을 수 있는 요청의 증명된 상한을 싣는다. 모양·원소
+  문법·비교는 http limitation 스코프와 같고, `methods`는 `ANY` decl 전용, base 앵커는 `templateSuffixes`·`templatePrefixes: ["/"]`만
+  받는다. 정적 사실·`route-call`·다른 target 사실에 실리면 입력 오류다. 스코프를 실은 선언은 자기 method로도 좁힌다.
+- **소비자**: check error 전제 (d)·`-unverified`, `diff --http` `after-declaration-gap`이 호출마다 겹치는 dynamic 선언만 본다.
+  trace는 선언 없는 route 선택에 겹칠 수 있는 dynamic 선언이 있으면 `route-dynamic-decls` gap을 더한다. `unjoined-dynamic-routes`
+  문구는 스코프를 실은 선언 수를 끝에 더하고(없으면 이전 바이트), surface는 `dynamicScope`를 그대로 싣는다.
+- **하위 호환**: `dynamicScope` 없는 dynamic 선언은 이전처럼 scope 전체의 공백이다.
+- **벡터**: `http-limitation-scope`에 `scope.dynamic-validate` 17건·`scope.dynamic-applies` 14건을 더했다(SHA256SUMS 갱신 —
+  이 파일을 벤더링한 생산자는 다시 벤더링한다).
+
 ### Changed — preflight를 trace 공유 모듈 위로 수렴 (Phase 7d, 내부 리팩터)
 
 - 사용자에게 보이는 변화는 없다. `isthmus preflight`·`isthmus trace`의 입력 계약, JSON 출력 바이트, 종료 코드, stderr 문구가

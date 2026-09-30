@@ -54,14 +54,59 @@ export function routeScopeEntryProblem(entry: Readonly<Record<string, unknown>>)
   }
   const unknown = Object.keys(entry).find((key) => !allowedKeys.has(key));
   if (unknown !== undefined) return 'Http limitation scopes accept only limitationIndex, templates, templatePrefixes, templateSuffixes, and methods.';
+  return rangeProblem(entry, 'Http limitation scope', 'Http limitation scopes');
+}
+
+/** dynamic 선언의 `dynamicScope`가 가질 수 있는 키다. 한계 인덱스가 없다는 점만 limitation 스코프와 다르다. */
+const dynamicScopeKeys = new Set<string>([...routeScopePathFields, 'methods']);
+
+/**
+ * dynamic `route-decl`·`route-contract` 사실의 `dynamicScope` 하나를 검증한다.
+ *
+ * 형태와 원소 규칙은 http limitation 스코프와 같다(경로 필드 하나 이상, 정규 템플릿 원소, 접두사·접미사 제한).
+ * 여기에 사실과의 관계 규칙 둘을 더한다 — 둘 다 스코프가 사실보다 넓거나 모순되면 거짓 error가 생기기 때문이다.
+ *
+ * - `methods`는 method가 `ANY`인 decl에만 쓴다. 다른 method의 decl은 그 method가 이미 상한이라 적으면 중복이고,
+ *   다르게 적으면 모순이다. contract는 method가 항상 확정이라 `methods`를 쓰지 않는다.
+ * - base 앵커 사실은 알 수 없는 앞부분 뒤의 요청이라 root 기준 원소(`templates`, `/`가 아닌 `templatePrefixes`)를
+ *   증명할 수 없다. `templateSuffixes`와 `templatePrefixes: ["/"]`만 받는다.
+ *
+ * @param value 사실의 `dynamicScope` 값(검증 전)
+ * @param fact 이미 kind·method·pathAnchor를 검증한 사실
+ * @returns 위반 사유 문구(입력 원문을 담지 않는다). 통과하면 undefined다.
+ */
+export function dynamicScopeProblem(value: unknown, fact: Readonly<Record<string, unknown>>): string | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'A route dynamicScope must be a JSON object.';
+  const entry = value as Readonly<Record<string, unknown>>;
+  if (Object.keys(entry).some((key) => !dynamicScopeKeys.has(key))) {
+    return 'A route dynamicScope accepts only templates, templatePrefixes, templateSuffixes, and methods.';
+  }
+  const problem = rangeProblem(entry, 'Route dynamicScope', 'Route dynamicScope entries');
+  if (problem !== undefined) return problem;
+  if (entry.methods !== undefined && fact.method !== 'ANY') {
+    return 'A route dynamicScope may declare methods only on an ANY route-decl; other declarations are already bounded by their method.';
+  }
+  if (fact.pathAnchor === 'base' && (entry.templates !== undefined ||
+    (entry.templatePrefixes !== undefined && (entry.templatePrefixes as readonly string[]).some((prefix) => prefix !== '/')))) {
+    return 'A base-anchored route dynamicScope may use only templateSuffixes and templatePrefixes ["/"]; '
+      + 'root-relative templates cannot be proven behind an unknown base.';
+  }
+  return undefined;
+}
+
+/**
+ * 경로 필드·`methods` 검증을 limitation 스코프와 `dynamicScope`가 함께 쓴다. `label`은 오류 문구의 주어이고, `plural`은
+ * 경로 필드가 없을 때 문구의 복수 주어다(limitation 스코프의 기존 문구를 바이트 그대로 둔다).
+ */
+function rangeProblem(entry: Readonly<Record<string, unknown>>, label: string, plural: string): string | undefined {
   if (!routeScopePathFields.some((field) => entry[field] !== undefined)) {
-    return 'Http limitation scopes require at least one of templates, templatePrefixes, or templateSuffixes.';
+    return `${plural} require at least one of templates, templatePrefixes, or templateSuffixes.`;
   }
   for (const field of routeScopePathFields) {
-    const problem = pathFieldProblem(field, entry[field]);
+    const problem = pathFieldProblem(field, entry[field], label);
     if (problem !== undefined) return problem;
   }
-  return methodsProblem(entry.methods);
+  return methodsProblem(entry.methods, label);
 }
 
 /** 항목의 경로 원소 수(정규화 전)다. 문서당 원소 상한 계산에 쓴다. */
@@ -98,36 +143,36 @@ export function normalizeRouteRange(range: RouteLimitationRange): RouteLimitatio
  * 끝 세그먼트로 끝나면(`/a/`) 뜻이 모호해 거부하고, 접미사 `/`는 모든 경로를 덮는 뜻이 되어 접두사 `/`로
  * 쓰게 한다.
  */
-function pathFieldProblem(field: RouteScopePathField, value: unknown): string | undefined {
+function pathFieldProblem(field: RouteScopePathField, value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length === 0) return `Http limitation scope ${field} must be a non-empty array.`;
+  if (!Array.isArray(value) || value.length === 0) return `${label} ${field} must be a non-empty array.`;
   for (const element of value) {
-    if (typeof element !== 'string') return `Http limitation scope ${field} must contain path template strings.`;
+    if (typeof element !== 'string') return `${label} ${field} must contain path template strings.`;
     const parsed = parseRouteTemplate(element);
-    if (!parsed.ok) return `Http limitation scope ${field} contains a non-canonical path template (${parsed.reason}).`;
+    if (!parsed.ok) return `${label} ${field} contains a non-canonical path template (${parsed.reason}).`;
     if (field === 'templates') continue;
     if (parsed.segments.some(({ kind }) => kind === 'catch-all')) {
-      return `Http limitation scope ${field} must not contain {**}; a prefix already covers every path below it.`;
+      return `${label} ${field} must not contain {**}; a prefix already covers every path below it.`;
     }
     const last = parsed.segments.at(-1)!;
     const endsEmpty = last.kind === 'literal' && last.value === '';
     if (field === 'templatePrefixes' && endsEmpty && element !== '/') {
-      return 'Http limitation scope templatePrefixes must not end with "/" except the root prefix "/".';
+      return `${label} templatePrefixes must not end with "/" except the root prefix "/".`;
     }
     if (field === 'templateSuffixes' && element === '/') {
-      return 'Http limitation scope templateSuffixes must not be "/"; use templatePrefixes ["/"] to cover every path.';
+      return `${label} templateSuffixes must not be "/"; use templatePrefixes ["/"] to cover every path.`;
     }
   }
   return undefined;
 }
 
 /** `methods`를 검증한다. 선택 필드이며 중복 없는 HTTP 동사의 비어 있지 않은 배열이다. */
-function methodsProblem(value: unknown): string | undefined {
+function methodsProblem(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.length === 0 || value.length > methodSet.size ||
     !value.every((method) => typeof method === 'string' && methodSet.has(method)) ||
     new Set(value).size !== value.length) {
-    return 'Http limitation scope methods must be a non-empty array of distinct HTTP methods (GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, TRACE).';
+    return `${label} methods must be a non-empty array of distinct HTTP methods (GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, TRACE).`;
   }
   return undefined;
 }

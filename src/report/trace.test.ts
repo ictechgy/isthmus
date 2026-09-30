@@ -244,6 +244,35 @@ test('계약만 있는 route와 없는 route는 핸들러를 만들지 않고 ga
   assert.deepEqual(missing.chains, []);
 });
 
+test('선언이 없는 route 선택은 그 route와 겹칠 수 있는 dynamic 선언이 있을 때만 route-dynamic-decls를 더한다', () => {
+  const withDynamic = (dynamicScope?: unknown) => (value: Fixture) => {
+    value.docs.server.facts.push({ kind: 'route-decl', method: 'ANY', channel: null, dynamic: true, pathAnchor: 'root',
+      location: { path: 'server/routes/admin.ts', line: 5, column: 3 }, symbol: { qualifiedName: 'admin.any', usr: 'ts:api/admin' },
+      ...(dynamicScope === undefined ? {} : { dynamicScope }) });
+    value.context.selection = { routes: [{ method: 'GET', template: '/admin/panel' }, { method: 'POST', template: '/nope' }] };
+  };
+  const scoped = report(withDynamic({ templatePrefixes: ['/admin'], methods: ['GET'] }));
+  assert.deepEqual(codes(scoped), ['route-dynamic-decls', 'route-without-decl']);
+  assert.deepEqual(scoped.gaps.filter(({ code }) => code === 'route-dynamic-decls').map(({ route, detail }) => [route, detail]), [[
+    { scope: 'default', method: 'GET', template: '/admin/panel' },
+    '1 dynamic route declaration(s) or contract(s) in this scope may serve this route; their templates are unknown, so their '
+      + 'handlers and callers are not in this trace.',
+  ]]);
+  assert.equal(scoped.gaps.filter(({ code }) => code === 'route-without-decl').length, 2);
+  // 같은 사실을 다른 스코프로 실은 문서가 하나 더 있어도(둘 다 겹침) 선언 하나로 센다.
+  const duplicated = report((value) => {
+    withDynamic({ templatePrefixes: ['/admin'], methods: ['GET'] })(value);
+    value.docs.serverCopy = structuredClone(value.docs.server);
+    value.docs.serverCopy.facts.at(-1).dynamicScope = { templatePrefixes: ['/admin/panel'] };
+    value.context.documents.push('server-copy.http.json');
+  });
+  assert.match(duplicated.gaps.find(({ code }) => code === 'route-dynamic-decls')!.detail, /^1 dynamic route declaration/);
+  // 스코프 없는 dynamic 선언은 어떤 route든 받을 수 있다.
+  const unscoped = report(withDynamic());
+  assert.deepEqual(unscoped.gaps.filter(({ code }) => code === 'route-dynamic-decls').map(({ route }) => route?.template),
+    ['/admin/panel', '/nope']);
+});
+
 test('분석이 없거나 잘렸거나 root 귀속이 부분적이면 gap이다', () => {
   assert.deepEqual(codes(report((value) => { delete value.analyses['server-forward']; })), ['analysis-missing']);
   assert.deepEqual(codes(report((value) => { delete value.analyses.db; })), ['analysis-missing']);

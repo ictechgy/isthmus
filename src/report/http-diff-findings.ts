@@ -359,13 +359,16 @@ function provenUnbound(outcome: RouteSideOutcome): boolean {
 }
 
 /**
- * 한 scope의 한 측에 공백(공백 접두사 한계나 dynamic 선언)이 있는지다. 호출이 있으면 그 호출에 적용되는 한계만
- * 본다(스코프 있는 한계는 스코프가 호출과 겹칠 때만). 호출이 없으면(head에서 귀속되지 않음) 모든 한계를 본다.
+ * 한 scope의 한 측에 공백(공백 접두사 한계나 dynamic 선언)이 있는지다. 호출이 있으면 그 호출에 적용되는 한계와 dynamic
+ * 선언만 본다(스코프 있는 한계·`dynamicScope`는 스코프가 호출과 겹칠 때만). 호출이 없으면(head에서 귀속되지 않음) 모든
+ * 한계와 모든 dynamic 선언을 본다.
  */
 function sideGap(scope: RouteScope, side: HttpDiffSide, call?: RouteCallResult): boolean {
   const messages = call?.serverLimitations ?? scope.serverLimitations.map(({ message }) => message);
   const prefixes: readonly string[] = side === 'decl' ? serverRouteGapPrefixes : contractRouteGapPrefixes;
-  return prefixes.some((prefix) => messages.some((message) => message.startsWith(prefix))) || dynamicCount(scope, side) > 0;
+  const dynamic = call === undefined ? dynamicCount(scope, side) > 0
+    : side === 'decl' ? call.dynamicDeclGap : call.dynamicContractGap;
+  return prefixes.some((prefix) => messages.some((message) => message.startsWith(prefix))) || dynamic;
 }
 
 /** 한 측의 공백 접두사 중 서버 측 문서가 신고한 것들이다. 스코프 있는 한계로만 신고된 접두사는 표시를 붙인다. */

@@ -7,6 +7,7 @@ import { runQueryCommand } from './query-command.ts';
 import { runRetentionsCommand } from './retentions-command.ts';
 import { runTraceCommand } from './trace-command.ts';
 import { MAX_TRACE_VIEW_CHAINS, MAX_TRACE_VIEW_ROWS } from '../report/trace-view.ts';
+import { MAX_TRACE_UPSTREAM_DEPTH } from '../exchange/trace-context.ts';
 import type { CommandResult, ReadTextFile, WriteTextFile } from './command-support.ts';
 
 /**
@@ -234,6 +235,12 @@ const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
         },
         strict: { type: 'boolean', description: 'Exit nonzero when the uncapped trace has gaps.' },
         compact: { type: 'boolean' },
+        upstreamDepth: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_TRACE_UPSTREAM_DEPTH,
+          description: 'How many upstream route hops to follow (default: the context value, else 1).',
+        },
       },
       required: ['context'],
       additionalProperties: false,
@@ -571,6 +578,7 @@ function buildToolArgv(
         String(typeof args.maxRows === 'number' ? args.maxRows : MCP_TRACE_DEFAULT_ROWS),
         ...booleanFlag('--strict', args.strict),
         ...booleanFlag('--compact', args.compact),
+        ...(typeof args.upstreamDepth === 'number' ? ['--upstream-depth', String(args.upstreamDepth)] : []),
       ];
     case 'retentions':
       if (args.producer !== 'cartograph' && args.producer !== 'kartograph') return undefined;
