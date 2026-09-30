@@ -1,7 +1,8 @@
 # 공개 호환 버전 세트
 
 2026-09-30 갱신한 isthmus 0.10.0의 호환 대상 세트다. 이번 갱신의 설치본 검증은
-[0.10.0 절](#0100-호환-갱신-2026-09-30)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
+[0.10.0 절](#0100-호환-갱신-2026-09-30)에, 이후 더한 tsograph 행은
+[2026-10-01 절](#tsograph-010-추가-2026-10-01)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
@@ -15,7 +16,9 @@
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
 세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증도 보존한다. npm 0.9.0의 원본은
 [v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
-세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표의 세트를 담는다.
+세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표에서 tsograph를
+뺀 세트를 담는다 — tsograph 0.1.0 행은 npm 0.10.0 발행 뒤 저장소 manifest에만 더했고, npm은 재발행하지 않으며
+다음 isthmus 릴리스의 tarball이 포함한다.
 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
@@ -35,6 +38,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 | schemagraph | **0.7.0** | `cargo install schemagraph-cli --version 0.7.0 --locked` 또는 GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
 | gartograph | **0.9.0** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.0` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
 | rustograph | **0.4.0** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.0` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
+| tsograph | **0.1.0** | `npm i -g tsograph@0.1.0` (Node 22.18.0 이상) | `openapi`(OpenAPI 2.0/3.0/3.1 → `route-contract`), `routes --role server`(Next.js App Router·Pages Router API, Hono·Express·Fastify·Koa·NestJS), `schema`(Prisma·SQL 텍스트 persistence `relation-use`), `graph`·`reach`·`impact`(language-traversal v1) |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
@@ -55,6 +59,15 @@ kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.
 0.11.0은 이 정상 명령을 코드 64로 거부하는 회귀가 있었고, 공개 expo-haptics 원본에서
 재현해 0.12.0에서 수정했다. [공개 코퍼스](../experiments/real-corpus/README.md)는
 원래 npm 0.8.0 설치본의 결과와 후속 개발 검증을 별도 파일로 보존한다.
+
+## tsograph 0.1.0 추가 (2026-10-01)
+
+npm 0.10.0 발행 뒤 저장소 manifest에 tsograph 0.1.0(npm)을 더했다. npm의 isthmus-cli 0.10.0 tarball에 든
+`compatibility.json`에는 tsograph가 없고, isthmus npm은 재발행하지 않는다 — 다음 isthmus 릴리스의 tarball이 이
+행을 포함한다. 격리한 npm prefix에 설치한 tsograph 0.1.0의 `--version`이 `scripts/verify-installed-compatibility.mjs`로
+manifest와 일치함을 확인했고(macOS arm64), cold-cache workflow의 `api-producers` job이 같은 대조를 npm 설치본으로
+반복한다. 이 확인은 설치·버전 범위다 — tsograph 문서를 isthmus 0.10.0 발행본의 check·trace로 잇는 e2e는 이 세트의
+발행본으로 측정하지 않았다.
 
 ## 0.10.0 호환 갱신 (2026-09-30)
 
@@ -179,6 +192,10 @@ node scripts/verify-installed-compatibility.mjs \
   gartograph="$PWD/gartograph-0.9.0-linux-amd64/gartograph" \
   rustograph="$PWD/rustograph-0.4.0-linux-amd64/rustograph" \
   schemagraph="$PWD/schemagraph-0.7.0/schemagraph"
+
+# tsograph는 npm 발행본을 설치해 버전을 대조한다
+npm install --global tsograph@0.1.0
+node scripts/verify-installed-compatibility.mjs tsograph="$(command -v tsograph)"
 ```
 
 cartograph는 Homebrew formula 대신 같은 GitHub Release 아카이브를 manifest 버전으로 받는다. tap에는
