@@ -8,6 +8,7 @@ import {
 import type { ProducerImpactMetadata } from './producer-impact.ts';
 import { createJsonGuards } from './json-guards.ts';
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
+import { breadthFirstShortestPaths } from '../breadth-first.ts';
 import { compareStrings } from '../compare.ts';
 
 /** Kartograph의 현재 시점 영향 근거를 공통 사전 점검 형식으로 연결한다. */
@@ -94,19 +95,12 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
     }
   }
   // 같은 current 그래프의 관찰 간선만 사용한다. 한 정점의 대표 경로는 가장 짧은 경로다.
-  const queue = [...rootIds].sort(compareStrings);
-  const depth = new Map(queue.map((id) => [id, 0]));
   const rows: Array<LanguageImpact['affected'][number]> = [];
-  for (let index = 0; index < queue.length; index++) {
-    const parent = queue[index]!;
-    for (const [id, reasons] of [...(adjacency.get(parent) ?? [])].sort(([a], [b]) => compareStrings(a, b))) {
-      if (depth.has(id)) continue;
-      const distance = depth.get(parent)! + 1;
-      if (distance > MAX_IMPACT_DEPTH) { omittedPaths++; continue; }
-      depth.set(id, distance); queue.push(id);
-      rows.push({ symbol: symbols.get(id)!, via: parent, depth: distance, relationships: [...reasons].sort(compareStrings) });
-    }
-  }
+  const depth = breadthFirstShortestPaths(rootIds, (parent) => adjacency.get(parent), (id, parent, distance, reasons) => {
+    if (distance > MAX_IMPACT_DEPTH) { omittedPaths++; return false; }
+    rows.push({ symbol: symbols.get(id)!, via: parent, depth: distance, relationships: [...reasons].sort(compareStrings) });
+    return true;
+  });
   omittedPaths += affected.filter((row) => symbols.has(string(row.usr)) && !depth.has(string(row.usr))).length;
   const unresolved = array(value.unresolved);
   if (unresolved.length > 0) limitations.push(`kartograph-unresolved: ${unresolved.length} requested item(s) require review`);

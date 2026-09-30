@@ -1,3 +1,4 @@
+import { breadthFirstShortestPaths } from '../breadth-first.ts';
 import { compareStrings } from '../compare.ts';
 import type { ImpactSymbol, PreflightContext } from '../exchange/preflight-context.ts';
 import type { BridgeEndpoint, JoinLimitation } from '../join/join.ts';
@@ -263,22 +264,14 @@ export function createPreflightReport(context: PreflightContext): PreflightRepor
   for (const route of messages.routes) boundary('flutter', route.channel, undefined, route.senders, route.handlers, [],
     { kind: route.transport, matching: route.matching });
 
-  const depths = new Map([...roots].map((key) => [key, 0]));
   const visits = new Map<string, PreflightAffected>();
-  const queue = [...roots].sort(compareStrings);
-  for (let head = 0; head < queue.length; head++) {
-    const dependency = queue[head]!;
-    for (const [key, reasons] of [...(consumers.get(dependency) ?? [])].sort(([a], [b]) => compareStrings(a, b))) {
-      if (depths.has(key)) continue;
-      const subject = nodes.get(key);
-      if (subject === undefined) throw new PreflightGraphError('Producer impact refers to an unknown symbol.');
-      const depth = depths.get(dependency)! + 1;
-      depths.set(key, depth);
-      visits.set(key, { subject, depth, via: dependency,
-        relations: [...reasons.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, reason]) => reason) });
-      queue.push(key);
-    }
-  }
+  const depths = breadthFirstShortestPaths(roots, (dependency) => consumers.get(dependency), (key, dependency, depth, reasons) => {
+    const subject = nodes.get(key);
+    if (subject === undefined) throw new PreflightGraphError('Producer impact refers to an unknown symbol.');
+    visits.set(key, { subject, depth, via: dependency,
+      relations: [...reasons.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, reason]) => reason) });
+    return true;
+  });
   const rootSubjects = [...roots].sort(compareStrings).map((key) => nodes.get(key)!);
   const affected = [...visits.values()].sort((a, b) => a.depth - b.depth || compareStrings(a.subject.key, b.subject.key));
   const reachedFiles = new Set([...rootSubjects, ...affected.map(({ subject }) => subject)]
