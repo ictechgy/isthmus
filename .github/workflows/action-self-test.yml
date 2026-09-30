@@ -1,0 +1,192 @@
+name: Action self-test
+
+# 저장소 루트의 composite Action(action.yml)을 합성 fixture로 실행한다. 댓글은 달지 않는다(job summary 모드).
+# PR 댓글 경로까지 보려면 저장소 변수 ISTHMUS_SELF_TEST_COMMENT를 'true'로 둔다(같은 저장소 PR에서만 돈다).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  precomputed:
+    name: precomputed (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: surface
+            before: fixtures/http-diff/surface/before.server.json
+            after: fixtures/http-diff/surface/after.server.json
+            clients: fixtures/http-diff/surface/clients.json
+            trace-context: ''
+            broken: '4'
+            proven: '3'
+            trace-status: no-context
+          - case: workspace
+            before: fixtures/http-diff/workspace/before.workspace.json
+            after: fixtures/http-diff/workspace/after.workspace.json
+            clients: ''
+            trace-context: fixtures/trace-workspace/context.json
+            broken: '1'
+            proven: '1'
+            trace-status: ran
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Run the action (report only)
+        id: report
+        uses: ./
+        with:
+          isthmus-path: .
+          before: ${{ matrix.before }}
+          after: ${{ matrix.after }}
+          clients: ${{ matrix.clients }}
+          trace-context: ${{ matrix.trace-context }}
+          fail-on: none
+          comment-mode: summary
+          output-dir: ${{ runner.temp }}/report
+          artifact-name: isthmus-self-test-${{ matrix.case }}
+
+      - name: Check the report outputs
+        env:
+          FAILED: ${{ steps.report.outputs.failed }}
+          BROKEN: ${{ steps.report.outputs.broken-calls }}
+          PROVEN: ${{ steps.report.outputs.proven-broken-calls }}
+          COMMENT: ${{ steps.report.outputs.comment-file }}
+          OUTPUT_DIR: ${{ steps.report.outputs.output-dir }}
+          EXPECT_BROKEN: ${{ matrix.broken }}
+          EXPECT_PROVEN: ${{ matrix.proven }}
+          EXPECT_TRACE: ${{ matrix.trace-status }}
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const env = process.env;
+            const check = (condition, message) => { if (!condition) { console.error(message); process.exit(1); } };
+            check(env.FAILED === "false", `failed=${env.FAILED}`);
+            check(env.BROKEN === env.EXPECT_BROKEN, `broken-calls=${env.BROKEN}`);
+            check(env.PROVEN === env.EXPECT_PROVEN, `proven-broken-calls=${env.PROVEN}`);
+            const meta = JSON.parse(readFileSync(`${env.OUTPUT_DIR}/meta.json`, "utf8"));
+            check(meta.trace.status === env.EXPECT_TRACE, `trace=${meta.trace.status}`);
+            const comment = readFileSync(env.COMMENT, "utf8");
+            check(comment.startsWith("<!-- isthmus-http-impact:default -->"), "marker");
+            check(comment.includes("#### Client calls that stop binding"), "broken calls table");
+            check(comment.length <= 65536, "size");
+          '
+
+      - name: Run the action with fail-on error (must fail)
+        id: gate
+        continue-on-error: true
+        uses: ./
+        with:
+          isthmus-path: .
+          before: ${{ matrix.before }}
+          after: ${{ matrix.after }}
+          clients: ${{ matrix.clients }}
+          trace: 'false'
+          fail-on: error
+          output-dir: ${{ runner.temp }}/gate
+          upload-artifact: 'false'
+
+      - name: Check that fail-on failed the step
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          FAILED: ${{ steps.gate.outputs.failed }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$FAILED" = true
+
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build the synthetic base..head repository
+        id: demo
+        run: |
+          node scripts/fixtures/ci/make-demo-repo.mjs "$RUNNER_TEMP/demo" > "$RUNNER_TEMP/demo.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const demo = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/demo.json`, "utf8"));
+            appendFileSync(process.env.GITHUB_OUTPUT, `base=${demo.base}\nhead=${demo.head}\n`);
+          '
+
+      - name: Run the action in capture mode
+        id: impact
+        uses: ./
+        with:
+          isthmus-path: .
+          capture-config: .isthmus/capture.json
+          repository-path: ${{ runner.temp }}/demo
+          base-sha: ${{ steps.demo.outputs.base }}
+          head-sha: ${{ steps.demo.outputs.head }}
+          fail-on: none
+          comment-mode: summary
+          comment-key: self-test
+          output-dir: ${{ runner.temp }}/impact
+          artifact-name: isthmus-self-test-capture
+
+      - name: Check the capture outputs
+        env:
+          BROKEN: ${{ steps.impact.outputs.broken-calls }}
+          COMMENT: ${{ steps.impact.outputs.comment-file }}
+          HEAD_SHA: ${{ steps.demo.outputs.head }}
+          DEMO: ${{ runner.temp }}/demo
+        run: |
+          test "$BROKEN" = 1
+          grep -F -- '`main.users`' "$COMMENT"
+          grep -F -- '`UsersApi.get`' "$COMMENT"
+          grep -F -- '<!-- isthmus-http-impact:self-test -->' "$COMMENT"
+          test "$(git -C "$DEMO" rev-parse HEAD)" = "$HEAD_SHA"
+
+  # 두 job 구성의 댓글 경로(opt-in). 분석 job의 artifact(JSON)를 받아 Action 코드로 다시 렌더링해 게시한다.
+  # `uses: ./`라 이 job은 PR의 Action 코드를 checkout한다 — 그래서 같은 저장소 PR에서만, 변수로 켰을 때만 돈다.
+  comment:
+    needs: capture
+    if: >-
+      github.event_name == 'pull_request' && vars.ISTHMUS_SELF_TEST_COMMENT == 'true'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: isthmus-self-test-capture
+          path: ${{ runner.temp }}/results
+      - uses: ./
+        with:
+          command: comment
+          results-dir: ${{ runner.temp }}/results
+          comment-key: self-test
