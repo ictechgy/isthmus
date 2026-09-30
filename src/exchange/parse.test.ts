@@ -76,7 +76,7 @@ test('go 문서에 어떤 fact kind도 허용하지 않는다', () => {
   }
 });
 
-test('go·rust 문서는 target을 null 또는 persistence로만 싣는다', () => {
+test('go·rust 문서는 target을 null·persistence·http로만 싣는다', () => {
   // go·rust는 브리지 메커니즘에 참여하지 않는다 — bridge target은 입력 오류다.
   for (const platform of ['go', 'rust']) {
     for (const target of ['flutter', 'react-native', 'capacitor']) {
@@ -86,7 +86,7 @@ test('go·rust 문서는 target을 null 또는 persistence로만 싣는다', () 
           platform,
           target,
         }),
-        /Go\/Rust documents may only carry a null or persistence target/,
+        /Go\/Rust documents may only carry a null, persistence, or http target/,
       );
     }
   }

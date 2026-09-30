@@ -15,7 +15,7 @@ import {
 /**
  * bridge-facts 생산 플랫폼이다. sql은 스키마 카탈로그를 읽는 수신 측이고,
  * openapi는 스펙 문서의 operation을 `route-contract`로만 내는 http 계약 측이다.
- * python(pythograph)은 bridge 경계가 없어 target이 null·persistence·http 중 하나다.
+ * python(pythograph)·go(gartograph)·rust(rustograph)는 bridge 경계가 없어 target이 null·persistence·http 중 하나다.
  */
 export type BridgePlatform =
   | 'dart' | 'swift' | 'kotlin' | 'js' | 'go' | 'rust' | 'python' | 'sql' | 'openapi';
@@ -382,13 +382,13 @@ function validateDocumentMetadata(
   if (document.target !== null && !bridgeTargets.has(document.target)) {
     fail('Unsupported bridge target.');
   }
-  // go·rust 문서가 가질 수 있는 비null target은 persistence뿐이다 — bridge
+  // go·rust 문서가 가질 수 있는 비null target은 persistence와 http뿐이다 — bridge
   // 도메인의 go는 cgo·gomobile, rust는 PyO3·cbindgen 같은 심볼 경계
-  // interop이 정적 채널 키로 귀속되지 않아 사실을 내지 않는다.
+  // interop이 정적 채널 키로 귀속되지 않아 사실을 내지 않는다. http는 서버 route-decl만 낸다.
   // sql 문서도 같은 이유로 null 또는 persistence 외 target을 가질 수 없다.
   if ((document.platform === 'go' || document.platform === 'rust') &&
-    document.target !== null && document.target !== 'persistence') {
-    fail('Go/Rust documents may only carry a null or persistence target.');
+    document.target !== null && document.target !== 'persistence' && document.target !== 'http') {
+    fail('Go/Rust documents may only carry a null, persistence, or http target.');
   }
   if (document.platform === 'sql' && document.target !== null &&
     document.target !== 'persistence') {
@@ -404,7 +404,7 @@ function validateDocumentMetadata(
     fail('Python documents may only carry a null, persistence, or http target.');
   }
   if (document.target === 'http' && !httpPlatforms.has(document.platform)) {
-    fail('The http target accepts only kotlin, swift, dart, js, python, and openapi documents.');
+    fail('The http target accepts only kotlin, swift, dart, js, python, go, rust, and openapi documents.');
   }
   validateRouteDocumentFields(document);
   if (!isSafeNonEmptyString(document.project)) fail('Invalid project path.');
@@ -1186,8 +1186,8 @@ const bridgeDomainTargets = new Set<BridgeTarget>([
   'capacitor',
 ]);
 
-/** http target 문서를 낼 수 있는 플랫폼이다. go·rust·sql의 http 사실은 아직 합의 전이다. */
-const httpPlatforms = new Set<unknown>(['kotlin', 'swift', 'dart', 'js', 'python', 'openapi']);
+/** http target 문서를 낼 수 있는 플랫폼이다. sql의 http 사실은 없다. go·rust는 route-decl만 낸다. */
+const httpPlatforms = new Set<unknown>(['kotlin', 'swift', 'dart', 'js', 'python', 'go', 'rust', 'openapi']);
 
 /** http 도메인의 사실 종류다. */
 type RouteFactKind = 'route-decl' | 'route-call' | 'route-contract';
@@ -1197,11 +1197,12 @@ const routeFactKinds = new Set<unknown>(['route-decl', 'route-call', 'route-cont
 
 /**
  * (kind, platform) 허용 조합이다. 역할은 kind로 정한다. swift route-decl(Vapor 등)은 생산자가 생길 때
- * 합의하므로 아직 없다. python은 pythograph가 내는 route-decl만 받는다 — Python 클라이언트(requests·httpx)의
- * route-call은 생산자 구현과 url-compose 벡터가 생길 때 더한다(받아 두면 검증되지 않은 호출 사실이 error 근거가 된다).
+ * 합의하므로 아직 없다. python(pythograph)·go(gartograph)·rust(rustograph)는 서버 route-decl만 받는다 — 그 언어
+ * 클라이언트(requests·httpx, net/http·resty, reqwest 등)의 route-call은 생산자 구현과 url-compose 벡터가 생길 때 더한다
+ * (받아 두면 검증되지 않은 호출 사실이 error 근거가 된다).
  */
 const routeKindPlatforms = new Map<unknown, ReadonlySet<unknown>>([
-  ['route-decl', new Set(['kotlin', 'js', 'python'])],
+  ['route-decl', new Set(['kotlin', 'js', 'python', 'go', 'rust'])],
   ['route-call', new Set(['kotlin', 'swift', 'dart', 'js'])],
   ['route-contract', new Set(['openapi'])],
 ]);
