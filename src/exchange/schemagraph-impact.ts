@@ -1,4 +1,5 @@
 import { compareStrings } from '../compare.ts';
+import { createJsonGuards } from './json-guards.ts';
 import { isJsonObject, isSafeNonEmptyString } from './parse.ts';
 import {
   compareReached,
@@ -88,16 +89,13 @@ function parseImpacted(input: unknown): TraversalReached {
   };
 }
 
-function strings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || input.length > 50_000 || !input.every((item) => typeof item === 'string')) fail(message);
-  return [...input] as string[];
-}
-
-function safe(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
-}
-
 function fail(message: string): never {
   throw new TraversalValidationError(message);
+}
+
+const guard = createJsonGuards(fail);
+const { safe } = guard;
+
+function strings(input: unknown, message: string): string[] {
+  return guard.textStrings(input, 50_000, message);
 }

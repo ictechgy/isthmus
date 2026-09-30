@@ -1,5 +1,6 @@
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
 import { parseImpactSelection } from './impact-selection.ts';
+import { createJsonGuards } from './json-guards.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import {
   validateLanguageImpact,
@@ -213,31 +214,24 @@ function positiveDepth(input: unknown): number {
   return input as number;
 }
 
-function object(input: unknown, message: string): Record<string, unknown> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) fail(message);
-  return input as Record<string, unknown>;
+function fail(message: string): never {
+  throw new PreflightValidationError(message);
 }
 
+/** 옛 생산자 영향 문서의 목록 상한이다. */
+const MAX_RAW_ITEMS = 50_000;
+
+const guard = createJsonGuards(fail);
+const { object, safe } = guard;
+
 function rawArray(input: unknown, message: string): unknown[] {
-  if (!Array.isArray(input) || input.length > 50_000) fail(message);
-  return input;
+  return guard.array(input, MAX_RAW_ITEMS, message);
 }
 
 function rawStrings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || input.length > 50_000 || !input.every((item) => isSafeNonEmptyString(item))) fail(message);
-  return [...input] as string[];
+  return guard.safeStrings(input, MAX_RAW_ITEMS, message);
 }
 
 function textStrings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || input.length > 50_000 || !input.every((item) => typeof item === 'string')) fail(message);
-  return [...input] as string[];
-}
-
-function safe(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
-}
-
-function fail(message: string): never {
-  throw new PreflightValidationError(message);
+  return guard.textStrings(input, MAX_RAW_ITEMS, message);
 }

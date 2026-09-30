@@ -1,7 +1,6 @@
 import {
   isBridgeDomainDocument,
   isProjectRelativePath,
-  isSafeNonEmptyString,
   parseBridgeFactsDocument,
   BridgeFactsValidationError,
 } from './parse.ts';
@@ -10,6 +9,7 @@ import type {
   BridgeLocation,
 } from './parse.ts';
 import { parseImpactSelection } from './impact-selection.ts';
+import { createJsonGuards } from './json-guards.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
@@ -88,15 +88,15 @@ export function parsePreflightContext(input: unknown): PreflightContext {
   if (value.format !== 'isthmus-preflight-context' || value.version !== 1) {
     fail('Expected isthmus-preflight-context version 1.');
   }
-  const project = safeString(value.project, 'Invalid preflight project.');
-  const revision = safeString(value.revision, 'Invalid preflight revision.');
+  const project = safe(value.project, 'Invalid preflight project.');
+  const revision = safe(value.revision, 'Invalid preflight revision.');
   const selection = parseSelectionMap(value.selection);
   const bridges = parseBridges(value.bridges, project);
   const messages = value.messages === undefined ? undefined : parseMessages(value.messages, project);
   const analyses = parseAnalyses(value.analyses);
   validateSelectionCoverage(selection, analyses);
   const bindings = parseBindings(value.bindings, [...bridges, ...(messages ?? [])]);
-  const limitations = strings(value.limitations, 'Invalid preflight limitations.');
+  const limitations = textStrings(value.limitations, Number.POSITIVE_INFINITY, 'Invalid preflight limitations.');
   return {
     format: 'isthmus-preflight-context', version: 1, project, revision,
     selection, bridges, ...(messages === undefined ? {} : { messages }), bindings, analyses, limitations,
@@ -120,14 +120,14 @@ function parseMessages(input: unknown, project: string): readonly BridgeMessageD
 /** producer adapter가 만든 분석도 context parser와 같은 그래프 규칙을 사용하게 한다. */
 export function validateLanguageImpact(input: unknown): LanguageImpact {
   const value = object(input, 'Language impact must be a JSON object.');
-  const id = safeString(value.id, 'Invalid language impact id.');
+  const id = safe(value.id, 'Invalid language impact id.');
   if (value.platform !== 'dart' && value.platform !== 'swift' && value.platform !== 'kotlin') {
     fail('Unsupported language impact platform.');
   }
   const toolValue = object(value.tool, 'Invalid language impact tool.');
   const tool = {
-    name: safeString(toolValue.name, 'Invalid language impact tool name.'),
-    version: safeString(toolValue.version, 'Invalid language impact tool version.'),
+    name: safe(toolValue.name, 'Invalid language impact tool name.'),
+    version: safe(toolValue.version, 'Invalid language impact tool version.'),
   };
   let requested: ImpactSelection;
   try {
@@ -138,12 +138,12 @@ export function validateLanguageImpact(input: unknown): LanguageImpact {
   }
   const trigger = value.trigger === undefined
     ? undefined
-    : safeString(value.trigger, 'Invalid language impact trigger.');
+    : safe(value.trigger, 'Invalid language impact trigger.');
   const roots = array(value.roots, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact roots.')
     .map((item) => parseSymbol(item, value.platform === 'kotlin'));
   const affectedRaw = array(value.affected, MAX_PREFLIGHT_GRAPH_ITEMS, 'Invalid language impact affected symbols.');
   const affected = affectedRaw.map((item) => parseAffected(item, value.platform === 'kotlin'));
-  const limitations = strings(value.limitations, 'Invalid language impact limitations.');
+  const limitations = textStrings(value.limitations, Number.POSITIVE_INFINITY, 'Invalid language impact limitations.');
   if (typeof value.truncated !== 'boolean') fail('Invalid language impact truncation flag.');
   if (roots.length + affected.length > MAX_PREFLIGHT_GRAPH_ITEMS) {
     fail('Language impact graph exceeds its item limit.');
@@ -271,7 +271,7 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
     const value = object(item, 'Invalid caller binding.');
     if (value.platform !== 'dart') fail('Caller bindings must be Dart bindings.');
     const location = parseLocation(value.location, 'Invalid caller binding location.');
-    const requested = safeString(value.requested, 'Invalid caller binding request.');
+    const requested = safe(value.requested, 'Invalid caller binding request.');
     const symbol = parseSymbol(value.symbol);
     // requested는 AST의 짧은 이름이고 query qualifiedName은 producer의 전체 ID일 수 있다.
     if (symbol.location === undefined || symbol.location.path !== location.path) {
@@ -291,11 +291,11 @@ function parseBindings(input: unknown, bridges: readonly (BridgeFactsDocument | 
 function parseAffected(input: unknown, partialLocation = false): LanguageImpact['affected'][number] {
   const value = object(input, 'Invalid affected symbol.');
   const symbol = parseSymbol(value.symbol, partialLocation);
-  const via = safeString(value.via, 'Invalid affected symbol parent.');
+  const via = safe(value.via, 'Invalid affected symbol parent.');
   if (!Number.isSafeInteger(value.depth) || (value.depth as number) < 1 || (value.depth as number) > MAX_PREFLIGHT_DEPTH) {
     fail('Affected symbol depth must be between 1 and 128.');
   }
-  const relationships = safeStrings(value.relationships, 'Invalid affected symbol relationships.');
+  const relationships = safeStrings(value.relationships, Number.POSITIVE_INFINITY, 'Invalid affected symbol relationships.');
   if (relationships.length > MAX_PREFLIGHT_RELATIONSHIPS) fail('Affected symbol relationships exceed their limit.');
   return { symbol, via, depth: value.depth as number, relationships };
 }
@@ -323,9 +323,9 @@ function validateGraph(
 function parseSymbol(input: unknown, partialLocation = false): ImpactSymbol {
   const value = object(input, 'Invalid impact symbol.');
   const result: ImpactSymbol = {
-    id: safeString(value.id, 'Invalid impact symbol id.'),
-    qualifiedName: safeString(value.qualifiedName, 'Invalid impact symbol qualified name.'),
-    ...(value.kind === undefined ? {} : { kind: safeString(value.kind, 'Invalid impact symbol kind.') }),
+    id: safe(value.id, 'Invalid impact symbol id.'),
+    qualifiedName: safe(value.qualifiedName, 'Invalid impact symbol qualified name.'),
+    ...(value.kind === undefined ? {} : { kind: safe(value.kind, 'Invalid impact symbol kind.') }),
     ...(value.location === undefined ? {} : { location: partialLocation ? parseKotlinLocation(value.location)
       : parseLocation(value.location, 'Invalid impact symbol location.') }),
   };
@@ -351,31 +351,6 @@ function parseLocation(input: unknown, message: string): BridgeLocation {
   return { path: value.path as string, line: value.line as number, column: value.column as number };
 }
 
-function object(input: unknown, message: string): Record<string, unknown> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) fail(message);
-  return input as Record<string, unknown>;
-}
-
-function array(input: unknown, maximum: number, message: string): unknown[] {
-  if (!Array.isArray(input) || input.length > maximum) fail(message);
-  return input;
-}
-
-function strings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || !input.every((item) => typeof item === 'string')) fail(message);
-  return [...input] as string[];
-}
-
-function safeStrings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || !input.every(isSafeNonEmptyString)) fail(message);
-  return [...input] as string[];
-}
-
-function safeString(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
-}
-
 function locationKey(location: BridgeLocation): string {
   return `${location.path}\u0000${location.line}\u0000${location.column}`;
 }
@@ -383,3 +358,5 @@ function locationKey(location: BridgeLocation): string {
 function fail(message: string): never {
   throw new PreflightValidationError(message);
 }
+
+const { object, array, textStrings, safeStrings, safe } = createJsonGuards(fail);

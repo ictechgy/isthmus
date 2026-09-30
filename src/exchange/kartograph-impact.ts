@@ -1,5 +1,6 @@
 import { PreflightValidationError, validateLanguageImpact, type LanguageImpact, type ImpactSymbol } from './preflight-context.ts';
 import type { ProducerImpactMetadata } from './producer-impact.ts';
+import { createJsonGuards } from './json-guards.ts';
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
 import { compareStrings } from '../compare.ts';
 
@@ -112,16 +113,9 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
     roots, affected: rows, limitations, truncated });
 }
 
-function object(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('Invalid Kartograph impact object.');
-  return value as Record<string, unknown>;
-}
-function array(value: unknown): unknown[] {
-  if (!Array.isArray(value) || value.length > 50_000) fail('Invalid Kartograph impact array.');
-  return value;
-}
-function string(value: unknown): string {
-  if (!isSafeNonEmptyString(value)) fail('Invalid Kartograph impact string.');
-  return value;
-}
+const guard = createJsonGuards(fail);
+
+function object(value: unknown): Record<string, unknown> { return guard.object(value, 'Invalid Kartograph impact object.'); }
+function array(value: unknown): unknown[] { return guard.array(value, 50_000, 'Invalid Kartograph impact array.'); }
+function string(value: unknown): string { return guard.safe(value, 'Invalid Kartograph impact string.'); }
 function fail(message: string): never { throw new PreflightValidationError(message); }

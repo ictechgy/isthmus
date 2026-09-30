@@ -1,5 +1,6 @@
 import { compareStrings } from '../compare.ts';
 import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isRouteAuthority, isSafeNonEmptyString } from './parse.ts';
+import { createJsonGuards } from './json-guards.ts';
 import { adaptKartographImpact } from './kartograph-impact.ts';
 import { adaptCartographImpact, adaptDartographImpact } from './producer-impact.ts';
 import type { ProducerImpactMetadata } from './producer-impact.ts';
@@ -865,13 +866,10 @@ function uniquePaths(input: unknown, maximum: number, message: string): string[]
   return [...input] as string[];
 }
 
-function safe(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
-}
-
 function fail(message: string): never {
   throw new TraceContextValidationError(message);
 }
+
+const { safe } = createJsonGuards(fail);
 
 export { TraversalValidationError };

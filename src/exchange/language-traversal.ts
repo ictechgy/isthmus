@@ -1,5 +1,6 @@
 import { compareStrings } from '../compare.ts';
-import { isBridgeTimestamp, isJsonObject, isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
+import { createJsonGuards } from './json-guards.ts';
+import { isBridgeTimestamp, isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
 import type { LanguageImpact } from './preflight-context.ts';
 
 /**
@@ -523,16 +524,6 @@ function onlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, 
   if (Object.keys(value).some((key) => !allowed.has(key))) fail(message);
 }
 
-function object(input: unknown, message: string): Record<string, unknown> {
-  if (!isJsonObject(input)) fail(message);
-  return input;
-}
-
-function array(input: unknown, maximum: number, message: string): unknown[] {
-  if (!Array.isArray(input) || input.length > maximum) fail(message);
-  return input;
-}
-
 function sortedUniqueStrings(input: unknown, maximum: number, message: string): string[] {
   const values = array(input, maximum, message);
   if (!values.every(isSafeNonEmptyString) ||
@@ -540,21 +531,12 @@ function sortedUniqueStrings(input: unknown, maximum: number, message: string): 
   return [...values] as string[];
 }
 
-function textStrings(input: unknown, message: string): string[] {
-  const values = array(input, 50_000, message);
-  if (!values.every((item) => typeof item === 'string')) fail(message);
-  return [...values] as string[];
-}
-
-function safe(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
-}
-
-function optionalSafe(input: unknown, message: string): string | undefined {
-  return input === undefined ? undefined : safe(input, message);
-}
-
 function fail(message: string): never {
   throw new TraversalValidationError(message);
+}
+
+const { object, array, safe, optionalSafe, textStrings: guardedTextStrings } = createJsonGuards(fail);
+
+function textStrings(input: unknown, message: string): string[] {
+  return guardedTextStrings(input, 50_000, message);
 }
