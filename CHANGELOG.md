@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 현재 저장소의 호환 producer 세트에 tsograph 0.1.0(npm)을 더했다. npm 0.10.0 아카이브의 manifest에는
+  tsograph가 없으며 재발행하지 않는다. cold-cache `api-producers` job이 npm 설치본의 `--version`을 대조한다.
+
 ## [0.10.0] - 2026-09-30
 
 호환 릴리스 세트: cartograph 0.23.0 · kartograph 0.18.0 · dartograph 0.16.0 · schemagraph 0.7.0 ·

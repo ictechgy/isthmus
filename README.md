@@ -41,10 +41,11 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 
 The currently verified producer set for **0.10.0** is:
 cartograph **0.23.0**, kartograph **0.18.0**, dartograph **0.16.0**, schemagraph **0.7.0**,
-gartograph **0.9.0**, and rustograph **0.4.0** — see
+gartograph **0.9.0**, rustograph **0.4.0**, and tsograph **0.1.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. Earlier npm archives keep the manifest they
-were published with. MethodChannel joins and the retention
+were published with; tsograph was added to the repository manifest after the npm 0.10.0
+tarball was published, so that tarball does not list it and the next release will. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the previous public
 set (cartograph 0.15.1, dartograph 0.10.0, isthmus 0.6.0).

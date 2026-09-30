@@ -112,6 +112,7 @@ jobs:
 
   # API 영향 producer(schemagraph·gartograph·rustograph)의 발행 아카이브를
   # compatibility.json 버전으로 받아 발행 checksum과 --version을 대조한다.
+  # tsograph는 아카이브 대신 npm 발행본을 설치해 --version만 대조한다.
   # 이 job은 설치·버전만 확인한다 — 이 도구들의 문서로 trace까지 잇는 e2e는
   # 각 producer 저장소의 검증 범위다. Linux x86_64 아카이브를 쓰며 npm
   # isthmus 설치가 필요 없어 발행 전에도 실행할 수 있다.
@@ -129,6 +130,7 @@ jobs:
           echo "schemagraph=$(node -p "require('./compatibility.json').producers.schemagraph")" >> "$GITHUB_OUTPUT"
           echo "gartograph=$(node -p "require('./compatibility.json').producers.gartograph")" >> "$GITHUB_OUTPUT"
           echo "rustograph=$(node -p "require('./compatibility.json').producers.rustograph")" >> "$GITHUB_OUTPUT"
+          echo "tsograph=$(node -p "require('./compatibility.json').producers.tsograph")" >> "$GITHUB_OUTPUT"
       - name: Download release archives and verify checksums
         env:
           SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
@@ -157,6 +159,7 @@ jobs:
           fetch "$base/rustograph/releases/download/v$RUSTOGRAPH_VERSION/checksums.txt" checksums.txt
           sha256sum --check --ignore-missing --strict checksums.txt
           tar -xzf "rustograph-$RUSTOGRAPH_VERSION-linux-amd64.tar.gz"
+      - run: npm install --global tsograph@${{ steps.compatibility.outputs.tsograph }}
       - name: Verify installed versions
         env:
           SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
@@ -167,4 +170,5 @@ jobs:
           node scripts/verify-installed-compatibility.mjs \
             schemagraph="$api/schemagraph/schemagraph-$SCHEMAGRAPH_VERSION/schemagraph" \
             gartograph="$api/gartograph/gartograph-$GARTOGRAPH_VERSION-linux-amd64/gartograph" \
-            rustograph="$api/rustograph/rustograph-$RUSTOGRAPH_VERSION-linux-amd64/rustograph"
+            rustograph="$api/rustograph/rustograph-$RUSTOGRAPH_VERSION-linux-amd64/rustograph" \
+            tsograph="$(command -v tsograph)"
