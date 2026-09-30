@@ -10,16 +10,18 @@ import {
   type TraversalReached,
 } from '../exchange/language-traversal.ts';
 import type { HttpSurfacePrivacy, ImportedHttpSurface } from '../exchange/http-surface.ts';
-import type {
-  TraceAnalysis,
-  TraceAnalysisRole,
-  TraceContext,
-  TraceLibrary,
-  TraceLinkMatch,
-  TracePrecomputed,
-  TraceRouteSelection,
-  TraceSelection,
-  TraceSymbolSelection,
+import {
+  isTraceUpstreamDepth,
+  MAX_TRACE_UPSTREAM_DEPTH,
+  type TraceAnalysis,
+  type TraceAnalysisRole,
+  type TraceContext,
+  type TraceLibrary,
+  type TraceLinkMatch,
+  type TracePrecomputed,
+  type TraceRouteSelection,
+  type TraceSelection,
+  type TraceSymbolSelection,
 } from '../exchange/trace-context.ts';
 import { parseRouteTemplate, type HttpMethod, type RouteMethod } from '../exchange/route-template.ts';
 import { compareEndpoints, relationDeclKey, type BridgeEndpoint } from '../join/join.ts';
@@ -73,6 +75,10 @@ export interface TraceInput {
   readonly analyses: readonly TraceAnalysis[];
   /** workspace surface member 이름 → 가져온 `isthmus-http-surface`다(CLI가 sha256 대조·검증 후 넘긴다). */
   readonly surfaces?: TraceSurfaces;
+  /**
+   * upstream route 추적 깊이(1..8)다. CLI `--upstream-depth`가 준다. 없으면 context `upstreamDepth`, 그것도 없으면 1(v1 동작)이다.
+   */
+  readonly upstreamDepth?: number;
 }
 
 /** 체인의 시작 선택 하나다. workspace면 relation·파일 선택에 `member`가 붙는다. */
@@ -162,8 +168,9 @@ export interface TraceLibraryHop {
  * 같은 member 안의 정확한 usr 일치로만 잇는다(platform 포함). 도달 근거(depth·path·등급)는 같은 hop `affected`의 그 핸들러
  * 행이고, `depth` 0은 호출을 감싼 심볼이 곧 핸들러라는 뜻이다. `scopes`는 이 route를 server 선언으로 잇는 link(단일
  * project면 service scope) 이름이다 — 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모른다
- * (`route-decl-unlinked`). v1은 한 단계만 올라간다: scope가 있어도 그 route의 호출자는 따라가지 않고
- * `upstream-route-callers-not-followed`로 남긴다(그 route를 선택해 이어 간다).
+ * (`route-decl-unlinked`). 기본(`upstreamDepth` 1)은 한 단계만 올라간다: scope가 있어도 그 route의 호출자는 따라가지 않고
+ * `upstream-route-callers-not-followed`로 남긴다(그 route를 선택해 이어 간다). 깊이를 늘리면 따라간 scope마다 `callers`에
+ * 그 route에 match된 호출 hop을 싣고, 그 호출 hop이 다시 자기 upstream route를 싣는다.
  */
 export interface TraceUpstreamRoute {
   readonly method: RouteMethod;
@@ -174,6 +181,17 @@ export interface TraceUpstreamRoute {
   readonly depth: number;
   readonly declarations: readonly TraceEndpoint[];
   readonly scopes: readonly string[];
+  /**
+   * 따라간 scope마다 이 route에 match된 호출 hop이다(`upstreamDepth` 2 이상에서 그 단계가 깊이 안이고 순환·상한에 걸리지 않은
+   * scope만, scope 이름 순). 호출이 없어도 따라갔으면 빈 `calls`로 싣는다 — 따라가지 않은 scope(키 없음)와 구분하기 위해서다.
+   */
+  readonly callers?: readonly TraceUpstreamCallers[];
+}
+
+/** upstream route 하나를 한 scope(link)에서 따라간 결과다. `calls`는 route 선택의 호출 hop과 같은 모양이다. */
+export interface TraceUpstreamCallers {
+  readonly scope: string;
+  readonly calls: readonly TraceCallHop[];
 }
 
 /** route에 match된 귀속 호출 하나와 그 호출을 감싼 심볼의 클라이언트 영향이다. */
@@ -306,6 +324,8 @@ export interface TraceReport {
   readonly project?: string;
   readonly revision?: string;
   readonly workspace?: TraceWorkspaceSummary;
+  /** upstream route 추적 깊이다. 기본값 1이면 싣지 않는다(v1 출력 바이트 유지). */
+  readonly upstreamDepth?: number;
   readonly complete: false;
   readonly scope: Readonly<{ granularity: 'route'; fieldCompatibility: 'not-assessed'; queryAndHeaders: 'not-assessed' }>;
   readonly selection: TraceSelection;
@@ -319,7 +339,7 @@ export interface TraceReport {
   readonly summary: Readonly<{
     chains: number; routes: number; handlers: number; relationUses: number; databaseVertices: number;
     databaseDependents: number; calls: number; clientSymbols: number;
-    /** 호출·consumer hop의 upstream route 수다(같은 route가 여러 hop에 실리면 hop마다 센다). */
+    /** 호출·consumer hop의 upstream route 수다(같은 route가 여러 hop에 실리면 hop마다 센다, 따라간 호출 hop의 것 포함). */
     upstreamRoutes: number;
     gaps: number; notices: number;
     /** 보고서의 모든 도달 근거(relation-use·핸들러 reachedFrom, 클라이언트 affected, DB dependents)의 등급별 수다. */
@@ -332,9 +352,16 @@ export const MAX_TRACE_OUTPUT_ITEMS = 1_000_000;
 
 /**
  * 알림(notice) 등급 코드다. 이 코드들은 영향을 숨길 수 없고 과대 보고만 할 수 있다 — 그래서 `gaps`가 아니라
- * `notices`에 싣고 `--strict` 실패로 세지 않는다. 지금은 파일 단위 과대 근사 하나다.
+ * `notices`에 싣고 `--strict` 실패로 세지 않는다. 파일 단위 과대 근사와, 이미 체인에 있는 route로 돌아온 upstream 순환이다
+ * (그 route의 호출자는 체인의 앞쪽에 이미 실려 있다).
  */
-export const TRACE_NOTICE_CODES: ReadonlySet<string> = new Set(['file-selection-coarse']);
+export const TRACE_NOTICE_CODES: ReadonlySet<string> = new Set(['file-selection-coarse', 'upstream-route-cycle']);
+
+/**
+ * `upstreamDepth` 2 이상에서 한 체인이 따라간 upstream 호출 hop에 실을 수 있는 행(호출 hop과 그 `affected`) 수의 상한이다.
+ * 다 쓰면 남은 upstream route는 `upstream-route-callers-not-followed`로 멈춘다(부분 결과가 아니라 멈춘 곳을 밝힌다).
+ */
+export const MAX_TRACE_UPSTREAM_ROWS = 10_000;
 
 /** 개수를 싣는 gap이 문구에 함께 드는 예시 id 수 상한이다. 문구가 무한정 길어지지 않게 한다. */
 export const MAX_GAP_EXAMPLES = 5;
@@ -343,7 +370,11 @@ export const MAX_GAP_EXAMPLES = 5;
 export function createTraceReport(input: TraceInput): TraceReport {
   validateAnalysisMembers(input);
   const prepared = prepareTraceInputs(input.context, input.documents, input.surfaces);
-  const builder = new TraceBuilder(input, prepared);
+  const upstreamDepth = input.upstreamDepth ?? input.context.upstreamDepth ?? 1;
+  if (!isTraceUpstreamDepth(upstreamDepth)) {
+    throw new TraceInputError(`Trace upstreamDepth must be an integer from 1 to ${MAX_TRACE_UPSTREAM_DEPTH}.`);
+  }
+  const builder = new TraceBuilder(input, prepared, upstreamDepth);
   const chains = builder.buildChains();
   const gaps = builder.finishGaps();
   const notices = builder.finishNotices();
@@ -354,6 +385,7 @@ export function createTraceReport(input: TraceInput): TraceReport {
     ...(context.project === undefined ? {} : { project: context.project }),
     ...(context.revision === undefined ? {} : { revision: context.revision }),
     ...(context.workspace === undefined ? {} : { workspace: summarizeWorkspace(context, prepared) }),
+    ...(upstreamDepth === 1 ? {} : { upstreamDepth }),
     complete: false,
     scope: { granularity: 'route', fieldCompatibility: 'not-assessed', queryAndHeaders: 'not-assessed' },
     selection: context.selection,
@@ -439,20 +471,26 @@ class TraceBuilder {
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
   private readonly workspace: boolean;
   /**
-   * 지금 만드는 체인이 싣는 route 키(scope, method, template)다. upstream route가 이 중 하나면 그 호출자가 이미 체인에 있으므로
-   * `upstream-route-callers-not-followed`를 만들지 않는다. route hop을 만들기 전에 체인마다 정한다.
+   * 지금 만드는 체인이 싣는 route의 upstream 조상 키(member, scope, method, template)다. upstream route가 이 중 하나면 그
+   * 호출자가 이미 체인에 있으므로 따라가지도, `upstream-route-callers-not-followed`를 만들지도 않는다. route hop을 만들기 전에
+   * 체인마다 정하고, 따라간 upstream route는 그 아래 단계의 조상에 더한다.
    */
   private chainRoutes: ReadonlySet<string> = new Set();
+  /** 지금 만드는 체인에서 upstream 호출 hop에 더 실을 수 있는 행 수다. 체인마다 {@link MAX_TRACE_UPSTREAM_ROWS}로 되돌린다. */
+  private upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
   private outputItems = 0;
   /** dynamic 선언 스코프 비교의 예산이다. 한 보고서의 모든 route 선택이 공유한다. */
   private readonly dynamicScopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
 
   private readonly input: TraceInput;
   private readonly prepared: PreparedTrace;
+  /** upstream route를 따라갈 단계 수다(1이면 v1처럼 한 단계). */
+  private readonly upstreamDepth: number;
 
-  constructor(input: TraceInput, prepared: PreparedTrace) {
+  constructor(input: TraceInput, prepared: PreparedTrace, upstreamDepth: number) {
     this.input = input;
     this.prepared = prepared;
+    this.upstreamDepth = upstreamDepth;
     this.workspace = prepared.workspace;
     this.members = new Map(prepared.members.map((member) => [member.key, member]));
     this.scopes = prepared.scopes;
@@ -502,7 +540,8 @@ class TraceBuilder {
     const scopes = this.scopes.filter((candidate) => scope === undefined || candidate.scope.scope === scope);
     this.chainRoutes = new Set(scopes.filter(({ scope: { decls, contracts } }) => [...decls, ...contracts].some(({ declaration }) =>
       declaration.method === method && declaration.template === template))
-      .map((candidate) => routeKeyString(routeKey(candidate.scope.scope, method, template))));
+      .map((candidate) => upstreamKey(candidate.server, candidate.scope.scope, method, template)));
+    this.upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
     const found = scopes.flatMap((candidate) => {
       const hop = this.routeHop(selector, candidate, method, template);
       return hop === undefined ? [] : [{ linked: candidate, ...hop }];
@@ -786,7 +825,9 @@ class TraceBuilder {
             + '(scheduled jobs, queues, CLIs) or the reverse traversal is incomplete.' });
       }
     }
-    this.chainRoutes = new Set([...routes.values()].map(routeKeyString));
+    this.chainRoutes = new Set([...routes.values()].map((key) =>
+      upstreamKey(this.scopes.find((candidate) => candidate.scope.scope === key.scope)!.server, key.scope, key.method, key.template)));
+    this.upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
     const hops = [...routes.values()].sort(compareRouteKeys).flatMap((key) => {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
@@ -798,7 +839,8 @@ class TraceBuilder {
    * 한 scope에서 route 키 하나의 선언 측 증거와 클라이언트 hop을 만든다.
    * 선언 측 사실이 없으면 undefined다. 테스트 소스 사실은 기본으로 뺀다.
    */
-  private routeHop(selector: TraceSelector, linked: TraceLinkedScope, method: RouteMethod, template: string):
+  private routeHop(selector: TraceSelector, linked: TraceLinkedScope, method: RouteMethod, template: string,
+    upstream: UpstreamContext = { level: 1, ancestors: this.chainRoutes }):
     { hop: TraceRouteHop; declFacts: RouteDeclarationFact[] } | undefined {
     const { scope } = linked;
     const key = routeKey(scope.scope, method, template);
@@ -837,7 +879,7 @@ class TraceBuilder {
       }
       calls.push({
         call: this.endpoint(linked.client, call.endpoint), side: matched.side, quality: matched.quality,
-        ...this.callImpact(selector, key, linked.client, call.endpoint),
+        ...this.callImpact(selector, key, linked.client, call.endpoint, upstream),
       });
     }
     this.routeScopeGaps(selector, key, linked, testSources);
@@ -877,33 +919,40 @@ class TraceBuilder {
    * 호출을 감싼 심볼의 클라이언트 역방향 영향이다. client member의 분석만 쓴다. 호출 member가 library provider면
    * consumer 앱마다 이어 간 영향(`consumers`)을 더한다.
    */
-  private callImpact(selector: TraceSelector, route: TraceRouteKey, member: string, endpoint: BridgeEndpoint):
-    Pick<TraceCallHop, 'affected' | 'consumers'> {
+  private callImpact(selector: TraceSelector, route: TraceRouteKey, member: string, endpoint: BridgeEndpoint,
+    upstream: UpstreamContext): Pick<TraceCallHop, 'affected' | 'consumers'> {
     const usr = endpoint.symbol?.usr;
+    // 따라간 upstream 단계의 호출 hop만 행 상한을 쓴다(선택한 route의 호출 hop은 v1처럼 모두 싣는다). 이 hop의 행을 upstream
+    // route를 따라가기 전에 빼야 그 아래 단계를 따라갈지 판정할 때 이 hop까지 실은 행이 반영된다.
+    const spend = (rows: number): void => {
+      if (upstream.level > 1) this.upstreamRows -= rows;
+    };
     if (usr === undefined) {
+      spend(1);
       this.gap({ code: 'call-without-symbol', selector, route, evidence: this.endpoint(member, endpoint),
         detail: 'The route call carries no symbol.usr, so affected client code cannot be followed.' });
       return { affected: [] };
     }
     const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
-    const upstream = this.upstreamRoutes(selector, member, endpoint.platform,
-      [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))]);
-    const hop = { affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
+    spend(1 + affected.length);
+    const routes = this.upstreamRoutes(selector, member, endpoint.platform,
+      [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))], upstream);
+    const hop = { affected, ...(routes.length === 0 ? {} : { upstreamRoutes: routes }) };
     const libraries = this.librariesByProvider.get(member);
     if (libraries === undefined) return hop;
     const provided = [usr, ...affected.map((row) => row.usr)];
     return { ...hop, consumers: libraries.map((library) =>
-      this.libraryHop(selector, route, library, endpoint.platform, usr, provided)) };
+      this.libraryHop(selector, route, library, endpoint.platform, usr, provided, upstream)) };
   }
 
   /**
    * member 자신의 route 중 핸들러 usr가 `reached`(역방향으로 닿은 심볼과 depth, 시작 심볼은 0)에 든 것을 모은다.
    *
    * 같은 member·platform 안의 정확한 usr 일치만 쓴다(link가 server로 잇는 선언과 link 없는 자기 선언 모두). 이름·경로로
-   * 추측하지 않는다. 한 단계만 올라가며, 찾은 route마다 호출자를 따라가지 않은 이유를 gap으로 남긴다.
+   * 추측하지 않는다. 찾은 route마다 깊이·순환·상한 규칙으로 호출자를 따라가거나, 따라가지 않은 이유를 gap으로 남긴다.
    */
   private upstreamRoutes(selector: TraceSelector, member: string, platform: BridgePlatform,
-    reached: ReadonlyArray<{ usr: string; depth: number }>): TraceUpstreamRoute[] {
+    reached: ReadonlyArray<{ usr: string; depth: number }>, upstream: UpstreamContext): TraceUpstreamRoute[] {
     const depths = new Map<string, number>();
     for (const { usr, depth } of reached) depths.set(usr, Math.min(depth, depths.get(usr) ?? depth));
     const found = new Map<string, MutableUpstream>();
@@ -916,33 +965,71 @@ class TraceBuilder {
         addUpstream(found, { platform, usr, depth, fact, declaration: this.endpoint(member, fact.endpoint) });
       }
     }
-    const routes = valuesSortedByKey(found).map((entry) => finishUpstream(entry, this.memberField(member)));
-    for (const upstream of routes) this.upstreamGaps(selector, member, upstream);
-    return routes;
+    return valuesSortedByKey(found).map((entry) =>
+      this.followUpstream(selector, member, finishUpstream(entry, this.memberField(member)), upstream));
   }
 
   /**
-   * upstream route의 호출자를 따라가지 않은 곳을 밝힌다. link가 이 route를 server로 잇지 않으면 호출자를 알 수 없고
-   * (`route-decl-unlinked`), 잇는 scope가 있으면 v1이 한 단계만 올라가서 그 scope의 호출자를 싣지 않았다
-   * (`upstream-route-callers-not-followed`). 이 체인이 이미 싣는 route(재귀 호출 — 다른 scope의 같은 route 포함)는 그 호출자가
-   * 체인에 있으므로 뺀다.
+   * upstream route 하나의 호출자를 scope(link)마다 따라가거나, 따라가지 않은 이유를 밝힌다.
+   *
+   * - link가 이 route를 server로 잇지 않으면 호출자를 알 수 없다(`route-decl-unlinked`).
+   * - 조상(선택한 route, 이미 따라간 upstream route — 다른 scope의 같은 route 포함은 체인 route 규칙 그대로)에 있으면 순환이다.
+   *   그 호출자는 체인 앞쪽에 이미 있으므로 따라가지 않고, 깊이를 늘렸을 때만 `upstream-route-cycle` 알림을 남긴다(기본
+   *   깊이 1의 출력 바이트를 v1과 같게 둔다).
+   * - 이 route의 단계가 `upstreamDepth`에 닿았거나 체인의 upstream 행 상한을 다 썼으면 `upstream-route-callers-not-followed`다.
+   * - 그 밖에는 그 scope의 route hop을 한 단계 아래에서 만들어 `callers`에 싣는다(조상에 이 route를 더한다).
    */
-  private upstreamGaps(selector: TraceSelector, member: string, upstream: TraceUpstreamRoute): void {
+  private followUpstream(selector: TraceSelector, member: string, upstream: TraceUpstreamRoute,
+    context: UpstreamContext): TraceUpstreamRoute {
     const { method, template, handler } = upstream;
     const symbol = { platform: handler.platform, usr: handler.usr };
     if (upstream.scopes.length === 0) {
       this.gap({ code: 'route-decl-unlinked', selector, ...this.memberField(member), symbol,
         detail: `The handler of ${method} ${template} is reached upstream of a traced route call, but no workspace link names `
           + 'this member as the server of that route, so its callers were not followed.' });
-      return;
+      return upstream;
     }
+    const callers: TraceUpstreamCallers[] = [];
     for (const scope of upstream.scopes) {
-      if (this.chainRoutes.has(routeKeyString(routeKey(scope, method, template)))) continue;
-      this.gap({ code: 'upstream-route-callers-not-followed', selector, route: routeKey(scope, method, template),
-        ...this.memberField(member), symbol,
-        detail: 'This route of the calling member is reached upstream of a traced route call; trace follows one upstream '
-          + 'hop, so the callers of this route were not followed (select this route to continue the chain).' });
+      const key = upstreamKey(member, scope, method, template);
+      const route = routeKey(scope, method, template);
+      if (context.ancestors.has(key)) {
+        if (this.upstreamDepth > 1) {
+          this.gap({ code: 'upstream-route-cycle', selector, route, ...this.memberField(member), symbol,
+            detail: 'This upstream route is already in the chain (selected or followed at a shallower hop), so its callers '
+              + 'are not followed again.' });
+        }
+        continue;
+      }
+      if (context.level >= this.upstreamDepth || this.upstreamRows <= 0) {
+        this.gap({ code: 'upstream-route-callers-not-followed', selector, route, ...this.memberField(member), symbol,
+          detail: this.notFollowedDetail(context.level) });
+        continue;
+      }
+      const linked = this.scopes.find((candidate) => candidate.scope.scope === scope)!;
+      const hop = this.routeHop(selector, linked, method, template,
+        { level: context.level + 1, ancestors: new Set([...context.ancestors, key]) });
+      callers.push({ scope, calls: hop?.hop.calls ?? [] });
     }
+    return callers.length === 0 ? upstream : { ...upstream, callers };
+  }
+
+  /**
+   * `upstream-route-callers-not-followed`의 문구다. 기본 깊이 1은 v1 문구 그대로 두고, 깊이를 늘렸으면 깊이·상한 중 무엇에
+   * 멈췄는지 밝힌다.
+   */
+  private notFollowedDetail(level: number): string {
+    if (this.upstreamDepth === 1) {
+      return 'This route of the calling member is reached upstream of a traced route call; trace follows one upstream '
+        + 'hop, so the callers of this route were not followed (select this route to continue the chain).';
+    }
+    if (level >= this.upstreamDepth) {
+      return `This route of the calling member is reached ${level} upstream hop(s) above the traced route; trace follows `
+        + `${this.upstreamDepth} upstream hops (upstreamDepth), so its callers were not followed (raise upstreamDepth or `
+        + 'select this route to continue the chain).';
+    }
+    return `The upstream caller row cap (${MAX_TRACE_UPSTREAM_ROWS} per chain) was reached, so the callers of this route `
+      + 'were not followed (select this route to continue the chain).';
   }
 
   /**
@@ -954,7 +1041,7 @@ class TraceBuilder {
    * "그 노드 없음"이라 개수만 싣는다.
    */
   private libraryHop(selector: TraceSelector, route: TraceRouteKey, library: TraceLibrary, platform: BridgePlatform,
-    callUsr: string, provided: readonly string[]): TraceLibraryHop {
+    callUsr: string, provided: readonly string[], upstream: UpstreamContext): TraceLibraryHop {
     const translate = libraryTranslation(library);
     const entries: Array<{ provider: string; consumer: string }> = [];
     const unrooted: string[] = [];
@@ -981,10 +1068,10 @@ class TraceBuilder {
     const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
     const affected = affectedRows(hits);
     // consumer root는 SDK 심볼 id(앱 코드가 아니다)라 도달 행만 본다.
-    const upstream = this.upstreamRoutes(selector, library.consumer, platform,
-      affected.map((row) => ({ usr: row.usr, depth: row.depth })));
+    const routes = this.upstreamRoutes(selector, library.consumer, platform,
+      affected.map((row) => ({ usr: row.usr, depth: row.depth })), upstream);
     return { library: library.name, member: library.consumer, ids: library.ids, entries, notInConsumerGraph,
-      ...(declaresApi ? { notPublic } : {}), affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
+      ...(declaresApi ? { notPublic } : {}), affected, ...(routes.length === 0 ? {} : { upstreamRoutes: routes }) };
   }
 
   /**
@@ -1422,10 +1509,12 @@ class TraceBuilder {
     this.witnessGaps(chain);
     this.candidateGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
+    // 따라간 upstream 호출 hop도 선택한 route의 호출 hop과 같은 식으로 센다(깊이 1이면 이전과 같은 수).
+    const callItems = (call: TraceCallHop): number => 1 + call.affected.length +
+      affected(call.consumers ?? []) + (call.consumers ?? []).reduce((count, hop) => count + hop.entries.length, 0) +
+      upstreamRows(call).reduce((count, upstream) => count + 1 + upstream.declarations.length + (upstream.callers?.length ?? 0), 0);
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
-      route.calls.length + affected(route.calls) + route.calls.reduce((total, call) => total +
-        affected(call.consumers ?? []) + (call.consumers ?? []).reduce((count, hop) => count + hop.entries.length, 0) +
-        upstreamRows(call).reduce((count, upstream) => count + 1 + upstream.declarations.length, 0), 0), 0) +
+      allCallHops(route.calls).reduce((total, call) => total + callItems(call), 0), 0) +
       chain.handlers.length + chain.relationUses.length +
       chain.database.reduce((sum, hop) => sum + 1 + hop.dependents.length, 0));
     return chain;
@@ -1438,7 +1527,7 @@ class TraceBuilder {
       ...optionalMember(member), symbol: { platform, usr },
       detail: 'The producer witness for this root entry leads back to the root itself (a cycle); the depth is authoritative '
         + 'but the path from the other root is unknown and not reconstructed.' });
-    const affected = [...chain.routes.flatMap(({ calls }) => calls.flatMap(consumerAndClientRows)),
+    const affected = [...chain.routes.flatMap(({ calls }) => allCallHops(calls).flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents)];
     for (const row of affected) if (row.witnessPartial) partial(row.analysis, row.member, row.platform, row.usr);
     for (const handler of chain.handlers) {
@@ -1480,8 +1569,7 @@ class TraceBuilder {
       }
     }
     for (const route of chain.routes) {
-      const key = routeKey(route.scope, route.method, route.template);
-      for (const call of route.calls) {
+      for (const { key, call } of routedCallHops(routeKey(route.scope, route.method, route.template), route.calls)) {
         const usr = call.call.symbol?.usr;
         if (usr === undefined) continue;
         this.candidateListGaps(call.affected, (analysis, detail) => this.gap({ code: 'candidate-dispatch', selector,
@@ -1584,6 +1672,33 @@ function finishUpstream(entry: MutableUpstream, member: { member?: string }): Tr
 /** 호출 hop과 그 consumer hop의 upstream route 전부다. */
 function upstreamRows(call: TraceCallHop): TraceUpstreamRoute[] {
   return [...(call.upstreamRoutes ?? []), ...(call.consumers ?? []).flatMap(({ upstreamRoutes }) => upstreamRoutes ?? [])];
+}
+
+/**
+ * upstream 따라가기의 문맥이다. `level`은 지금 만드는 호출 hop이 선택한 route에서 몇 번째 단계인지(선택한 route의 호출이 1),
+ * `ancestors`는 이 경로에서 이미 지나온 route의 {@link upstreamKey}다(순환 판정).
+ */
+interface UpstreamContext {
+  readonly level: number;
+  readonly ancestors: ReadonlySet<string>;
+}
+
+/** upstream 조상 키다. route를 선언한 member와 route 키(scope, method, template)로 정한다. */
+function upstreamKey(member: string, scope: string, method: RouteMethod, template: string): string {
+  return JSON.stringify([member, scope, method, template]);
+}
+
+/** 호출 hop 목록과, 그 hop들의 upstream route가 따라간 호출 hop 전부다(깊이 우선, 출력 순서). */
+function allCallHops(calls: readonly TraceCallHop[]): TraceCallHop[] {
+  return calls.flatMap((call) => [call, ...allCallHops(upstreamRows(call)
+    .flatMap(({ callers }) => (callers ?? []).flatMap(({ calls: nested }) => nested)))]);
+}
+
+/** 호출 hop마다 그 hop이 match된 route 키를 붙인다. 따라간 호출 hop은 upstream route의 그 scope 키다. */
+function routedCallHops(key: TraceRouteKey, calls: readonly TraceCallHop[]): Array<{ key: TraceRouteKey; call: TraceCallHop }> {
+  return calls.flatMap((call) => [{ key, call }, ...upstreamRows(call).flatMap((upstream) =>
+    (upstream.callers ?? []).flatMap(({ scope, calls: nested }) =>
+      routedCallHops(routeKey(scope, upstream.method, upstream.template), nested)))]);
 }
 
 /**
@@ -1738,11 +1853,6 @@ function routeKey(scope: string, method: RouteMethod, template: string): TraceRo
   return { scope, method, template };
 }
 
-/** route 키의 직렬화다(체인 route 집합 비교용). */
-function routeKeyString(key: TraceRouteKey): string {
-  return JSON.stringify([key.scope, key.method, key.template]);
-}
-
 function compareRouteKeys(left: TraceRouteKey, right: TraceRouteKey): number {
   return compareStrings(left.scope, right.scope) || compareStrings(left.template, right.template) ||
     compareStrings(left.method, right.method);
@@ -1814,11 +1924,11 @@ function summarize(chains: readonly TraceChain[], gaps: number, notices: number)
     relationUses: sum(({ relationUses }) => relationUses.length),
     databaseVertices: sum(({ database }) => database.length),
     databaseDependents: sum(({ database }) => database.reduce((total, hop) => total + hop.dependents.length, 0)),
-    calls: sum(({ routes }) => routes.reduce((total, route) => total + route.calls.length, 0)),
+    calls: sum(({ routes }) => routes.reduce((total, route) => total + allCallHops(route.calls).length, 0)),
     clientSymbols: sum(({ routes }) => routes.reduce((total, route) =>
-      total + route.calls.reduce((count, call) => count + consumerAndClientRows(call).length, 0), 0)),
+      total + allCallHops(route.calls).reduce((count, call) => count + consumerAndClientRows(call).length, 0), 0)),
     upstreamRoutes: sum(({ routes }) => routes.reduce((total, route) =>
-      total + route.calls.reduce((count, call) => count + upstreamRows(call).length, 0), 0)),
+      total + allCallHops(route.calls).reduce((count, call) => count + upstreamRows(call).length, 0), 0)),
     gaps,
     notices,
     evidence: countEvidence(chains),
@@ -1832,7 +1942,7 @@ function countEvidence(chains: readonly TraceChain[]): TraceEvidenceCounts {
     const reaches: ReadonlyArray<{ evidence: TraceEvidence }> = [
       ...chain.relationUses.flatMap(({ reachedFrom }) => reachedFrom),
       ...chain.handlers.flatMap(({ reachedFrom }) => reachedFrom),
-      ...chain.routes.flatMap(({ calls }) => calls.flatMap(consumerAndClientRows)),
+      ...chain.routes.flatMap(({ calls }) => allCallHops(calls).flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents),
     ];
     for (const { evidence } of reaches) counts[evidence] += 1;

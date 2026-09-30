@@ -1,4 +1,4 @@
-import type { TraceChain, TraceReport, TraceUpstreamRoute } from './trace.ts';
+import type { TraceCallHop, TraceChain, TraceReport, TraceUpstreamRoute } from './trace.ts';
 
 /**
  * `trace --max-chains`·`--max-rows`의 출력 상한이다.
@@ -42,7 +42,8 @@ export type LimitedTraceReport = TraceReport & {
  *
  * 자르는 목록: `chains`(maxChains), 최상위 `gaps`·`notices`·`limitations`·`analysisLimitations`·`analyses`, chain의
  * `routes`·`handlers`·`relationUses`·`database`, route의 `declarations`·`contracts`·`calls`, 호출의 `affected`·`upstreamRoutes`·
- * `consumers`와 consumer hop의 `entries`·`affected`·`upstreamRoutes`, upstream route의 `declarations`, 핸들러의
+ * `consumers`와 consumer hop의 `entries`·`affected`·`upstreamRoutes`, upstream route의 `declarations`·`callers`와 따라간 scope의
+ * `calls`(그 호출 hop은 같은 규칙으로 다시 자른다), 핸들러의
  * `routes`·`reachedFrom`, relation 사용의 `decls`·`reachedFrom`, DB 정점의 `dependents`(각 maxRows). hop 하나의 증거인
  * `path`·`relationships`와 `selection`은 자르지 않는다 — 잘린 경로는 틀린 증거가 되기 때문이다.
  */
@@ -56,11 +57,37 @@ export function limitTraceReport(report: TraceReport, limits: TraceLimits): Limi
     return items.slice(0, limit);
   };
   const rows = <T>(items: readonly T[], path: string): T[] => take(items, limits.maxRows, path);
-  // upstream route는 있을 때만 싣는 목록이다 — 없으면 키를 만들지 않아 상한 없는 출력과 모양이 같다.
-  const upstream = (items: readonly TraceUpstreamRoute[] | undefined, path: string) => items === undefined ? {} : {
-    upstreamRoutes: rows(items, path).map((entry, index) => ({
-      ...entry, declarations: rows(entry.declarations, `${path}[${index}].declarations`) })),
-  };
+  // upstream route는 있을 때만 싣는 목록이다 — 없으면 키를 만들지 않아 상한 없는 출력과 모양이 같다. 따라간 호출 hop
+  // (`callers[].calls`)은 선택한 route의 호출 hop과 같은 규칙으로 재귀해 자른다.
+  const upstream = (items: readonly TraceUpstreamRoute[] | undefined, path: string): { upstreamRoutes?: TraceUpstreamRoute[] } =>
+    items === undefined ? {} : {
+      upstreamRoutes: rows(items, path).map((entry, index) => {
+        const at = `${path}[${index}]`;
+        return {
+          ...entry, declarations: rows(entry.declarations, `${at}.declarations`),
+          ...(entry.callers === undefined ? {} : {
+            callers: rows(entry.callers, `${at}.callers`).map((caller, callerIndex) => ({
+              ...caller, calls: callHops(caller.calls, `${at}.callers[${callerIndex}].calls`),
+            })),
+          }),
+        };
+      }),
+    };
+  const callHops = (calls: readonly TraceCallHop[], path: string): TraceCallHop[] => rows(calls, path).map((call, callIndex) => {
+    const callAt = `${path}[${callIndex}]`;
+    return {
+      ...call, affected: rows(call.affected, `${callAt}.affected`),
+      ...upstream(call.upstreamRoutes, `${callAt}.upstreamRoutes`),
+      ...(call.consumers === undefined ? {} : {
+        consumers: rows(call.consumers, `${callAt}.consumers`).map((hop, hopIndex) => ({
+          ...hop,
+          entries: rows(hop.entries, `${callAt}.consumers[${hopIndex}].entries`),
+          affected: rows(hop.affected, `${callAt}.consumers[${hopIndex}].affected`),
+          ...upstream(hop.upstreamRoutes, `${callAt}.consumers[${hopIndex}].upstreamRoutes`),
+        })),
+      }),
+    };
+  });
   const chains = take(report.chains, limits.maxChains, 'chains').map((chain, index): TraceChain => {
     const at = `chains[${index}]`;
     return {
@@ -71,21 +98,7 @@ export function limitTraceReport(report: TraceReport, limits: TraceLimits): Limi
           ...route,
           declarations: rows(route.declarations, `${routeAt}.declarations`),
           contracts: rows(route.contracts, `${routeAt}.contracts`),
-          calls: rows(route.calls, `${routeAt}.calls`).map((call, callIndex) => {
-            const callAt = `${routeAt}.calls[${callIndex}]`;
-            return {
-              ...call, affected: rows(call.affected, `${callAt}.affected`),
-              ...upstream(call.upstreamRoutes, `${callAt}.upstreamRoutes`),
-              ...(call.consumers === undefined ? {} : {
-                consumers: rows(call.consumers, `${callAt}.consumers`).map((hop, hopIndex) => ({
-                  ...hop,
-                  entries: rows(hop.entries, `${callAt}.consumers[${hopIndex}].entries`),
-                  affected: rows(hop.affected, `${callAt}.consumers[${hopIndex}].affected`),
-                  ...upstream(hop.upstreamRoutes, `${callAt}.consumers[${hopIndex}].upstreamRoutes`),
-                })),
-              }),
-            };
-          }),
+          calls: callHops(route.calls, `${routeAt}.calls`),
         };
       }),
       handlers: rows(chain.handlers, `${at}.handlers`).map((handler, handlerIndex) => ({

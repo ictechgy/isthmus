@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### Added — trace upstream route 전이 추적 `upstreamDepth` (Phase 8)
+
+- **opt-in**([TRACE](docs/TRACE.md#전이-추적-upstreamdepth)): CLI `--upstream-depth <1..8>`, MCP `upstreamDepth`, context
+  `upstreamDepth`(CLI 값 우선). 기본 1은 v1과 출력 바이트가 같다.
+- **따라가기**: upstream route를 server로 잇는 link마다 그 route에 match된 호출 hop을 `callers: [{scope, calls}]`에 싣고, 그 호출
+  hop이 다시 자기 upstream route를 싣는다. library consumer hop도 같다.
+- **순환·상한**: (member, scope, method, template) 조상 집합으로 순환을 끊고 알림 `upstream-route-cycle`을 남긴다. 따라간 단계의
+  호출 hop·`affected`는 체인마다 10,000행까지이고, 깊이·상한에 멈춘 곳은 기존 `upstream-route-callers-not-followed`(문구로 구분)다.
+  순서는 깊이 우선·정렬 순서로 결정적이다.
+- **요약·상한**: `summary.calls`·`clientSymbols`·`upstreamRoutes`·`evidence`가 따라간 호출 hop까지 세고, `--max-rows`가 `callers`
+  아래 목록도 자른다.
+
 ### Added — python·go·rust 클라이언트 `route-call`과 결합 방식 (Phase 8)
 
 - **계약**: platform `python`·`go`·`rust`의 http 문서가 `route-call`을 낼 수 있다(이전에는 입력 오류). 조인·귀속·심각도 규칙은

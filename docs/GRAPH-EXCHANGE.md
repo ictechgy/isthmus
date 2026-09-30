@@ -1509,6 +1509,8 @@ pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안
   플랫폼별 분기가 없다 — 받은 템플릿만 본다. 이름을 붙인 이유는 같은 "base URL"이라도 라이브러리마다 앞 `/`·끝 `/`·점 세그먼트·
   `//` 처리가 달라(`…/api` + `/users`가 Go `ResolveReference`와 aiohttp는 `/users`, `JoinPath`·resty·httpx는 `/api/users`) 생산자가
   라이브러리 이름이 아니라 방식 이름으로 같은 규칙을 공유하게 하기 위해서다.
+- **trace upstream 전이 추적은 교환 형식을 바꾸지 않는다.** `upstreamDepth`는 trace context·CLI 선택이고 출력 모양만 더한다
+  ([TRACE](TRACE.md#전이-추적-upstreamdepth)).
 - **trace는 선언 없는 route 선택에만 쓴다.** 정적으로 match된 호출에 dynamic 선언이 겹쳐도 그 호출이 선택한 route를 부른다는
   근거는 그대로라 체인을 바꾸지 않고, 선언이 없어 체인을 만들지 못한 선택에서만 "dynamic 선언이 받을 수 있음"을 gap으로 밝힌다.
 

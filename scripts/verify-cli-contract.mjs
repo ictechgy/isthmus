@@ -100,6 +100,12 @@ function verifyTrace() {
   verify(run(['trace', fixture('server-forward.json')]).status === 2, 'trace invalid context');
   verify(run(['trace']).status === 64, 'trace usage');
   verify(run(['help', 'trace']).stdout.startsWith('Usage: isthmus trace'), 'trace help');
+  // upstream 추적 깊이: 1은 기본과 같은 바이트, 2 이상은 보고서에 깊이를 싣고, 범위 밖은 사용 오류다.
+  verify(run([...args, '--upstream-depth', '1']).stdout === first.stdout, 'trace upstream depth default');
+  const deeper = run([...args, '--upstream-depth', '8']);
+  verify(deeper.status === 0 && JSON.parse(deeper.stdout).upstreamDepth === 8, 'trace upstream depth');
+  verify(run([...args, '--upstream-depth', '9']).status === 64, 'trace upstream depth range');
+  verify(run(['help', 'trace']).stdout.includes('--upstream-depth <1..8>'), 'trace upstream depth help');
 }
 
 /**

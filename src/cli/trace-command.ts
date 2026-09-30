@@ -4,6 +4,8 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { TraversalValidationError } from '../exchange/language-traversal.ts';
 import {
   analysisProject,
+  isTraceUpstreamDepth,
+  MAX_TRACE_UPSTREAM_DEPTH,
   normalizeTraceAnalysis,
   parseTraceContext,
   TraceContextValidationError,
@@ -35,12 +37,15 @@ import type { ImportedHttpSurface } from '../exchange/http-surface.ts';
  * context가 가리키는 문서·분석 경로는 context 파일이 있는 디렉터리 기준으로 해석한다(절대 경로는
  * 그대로). 제품은 JSON만 읽고 생산자를 실행하지 않는다. `--strict`는 gap이 하나라도 있으면 1이다.
  * `--max-chains`·`--max-rows`는 출력 목록을 자르고 `truncation`에 자른 곳을 적는다(MCP 응답 상한용). 종료 코드와
- * `summary`는 자르기 전 보고서로 정한다.
+ * `summary`는 자르기 전 보고서로 정한다. `--upstream-depth`는 upstream route를 따라갈 단계 수(1..8)이고 context의
+ * `upstreamDepth`보다 우선한다.
  */
 export async function runTraceCommand(arguments_: readonly string[], readTextFile: ReadTextFile): Promise<CommandResult> {
-  const parsed = parseCommandArguments(arguments_.slice(1), ['--max-chains', '--max-rows'], ['--strict', '--compact']);
+  const parsed = parseCommandArguments(arguments_.slice(1), ['--max-chains', '--max-rows', '--upstream-depth'],
+    ['--strict', '--compact']);
   const limits = parsed === undefined ? undefined : parseLimits(parsed.valueFlags);
-  if (parsed === undefined || parsed.positionals.length !== 1 || limits === null) {
+  const upstreamDepth = parsed === undefined ? undefined : parseUpstreamDepth(parsed.valueFlags.get('--upstream-depth'));
+  if (parsed === undefined || parsed.positionals.length !== 1 || limits === null || upstreamDepth === null) {
     return { standardOutput: '', standardError: `${traceUsage}\n`, exitCode: 64 };
   }
   const contextPath = parsed.positionals[0]!;
@@ -69,7 +74,8 @@ export async function runTraceCommand(arguments_: readonly string[], readTextFil
         readTextFile, budget)).imported);
     }
     const documents = await readBridgeDocuments(context.documents.map(locate), readTextFile, budget.used);
-    const report = createTraceReport({ context, documents, analyses, surfaces });
+    const report = createTraceReport({ context, documents, analyses, surfaces,
+      ...(upstreamDepth === undefined ? {} : { upstreamDepth }) });
     const blocked = parsed.booleanFlags.has('--strict') && hasTraceGaps(report);
     return {
       standardOutput: encodeSortedJson(limits === undefined ? report : limitTraceReport(report, limits),
@@ -145,6 +151,14 @@ function parseLimits(values: ReadonlyMap<string, string>): TraceLimits | undefin
   return { maxChains, maxRows };
 }
 
+/** `--upstream-depth` 값을 읽는다. 없으면 undefined(context 값이나 기본 1), 범위 밖이면 null(사용 오류)이다. */
+function parseUpstreamDepth(value: string | undefined): number | undefined | null {
+  if (value === undefined) return undefined;
+  const depth = Number(value);
+  return /^[0-9]+$/u.test(value) && isTraceUpstreamDepth(depth) ? depth : null;
+}
+
 /** trace 사용법이다. 입력 생성은 생산자 workflow가 맡는다. */
 export const traceUsage = 'Usage: isthmus trace <trace-context.json> [--strict] [--compact] '
-  + `[--max-chains <1..${MAX_TRACE_VIEW_CHAINS}>] [--max-rows <1..${MAX_TRACE_VIEW_ROWS}>]`;
+  + `[--max-chains <1..${MAX_TRACE_VIEW_CHAINS}>] [--max-rows <1..${MAX_TRACE_VIEW_ROWS}>] `
+  + `[--upstream-depth <1..${MAX_TRACE_UPSTREAM_DEPTH}>]`;
