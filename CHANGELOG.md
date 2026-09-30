@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Changed — preflight를 trace 공유 모듈 위로 수렴 (Phase 7d, 내부 리팩터)
+
+- 사용자에게 보이는 변화는 없다. `isthmus preflight`·`isthmus trace`의 입력 계약, JSON 출력 바이트, 종료 코드, stderr 문구가
+  그대로다(녹화한 테스트 입력 12,145건·결정적 변이 합성 입력 32,786건의 함수 결과와 실제 프로세스 preflight 2,624건의
+  stdout·stderr·종료 코드를 리팩터 전과 바이트 단위로 대조).
+- preflight와 trace가 따로 갖던 부분을 공유 모듈로 옮겼다: 옛 역방향 영향 계약과 검증(`exchange/language-impact.ts`, depth
+  128·관계 32 상한 한 곳), 영향·순회 파서의 JSON 검사(`exchange/json-guards.ts`), Kotlin·순회 부분 위치 규칙, 역방향
+  continuation의 최단 경로 탐색(`breadth-first.ts`, kartograph 어댑터와 preflight 보고서), gap·limitation 신원과 결정적 나열
+  (`report/sorted-json.ts`), context 파일 읽기(`cli/command-support.ts`). 기존 import 경로(`dist/exchange/preflight-context.js`의
+  `PreflightValidationError`·`validateLanguageImpact`·`MAX_PREFLIGHT_*`)는 다시 내보내 유지한다.
+
 ### Added — capture 설정의 surface member와 library (`scripts/capture-trace.mjs`)
 
 - **surface 가져오기**([TRACE capture](docs/TRACE.md#capture의-surface-member와-library)): member `{name, surface: {path, sha256}}`.

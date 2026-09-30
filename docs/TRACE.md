@@ -753,6 +753,8 @@ providerAnalyses, delivered?, undelivered?, missingMapEntries?, notes?}]}`다. p
   노출했다([MCP](MCP.md)). 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
   있다(실제 앱 입력으로 쓸 수 없다). 조직 경계 예제는 `fixtures/http-surface/client/`(가져온 surface)와
   `fixtures/trace-library/`(surface로 가져온 API, SDK provider, `shared`·`symbol-map` consumer 앱 둘)다.
+- 구현 공유: 옛 역방향 형식 어댑터와 영향 계약(`LanguageImpact`), JSON 검사, 최단 경로 continuation 탐색, gap 신원·나열,
+  context 파일 읽기를 [preflight](PREFLIGHT.md#trace와-공유하는-구현)와 같은 모듈로 쓴다(출력 바이트 변화 없음).
 - 생산자 쪽: TS 생산자의 route-decl·relation-use usr와 `reach`/impact의 language-traversal 출력,
   schemagraph impact의 language-traversal 출력은 각 저장소에서 진행 중이다. 옛 schemagraph-impact v1은
   어댑터로 받는다.

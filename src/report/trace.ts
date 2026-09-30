@@ -26,7 +26,7 @@ import { compareEndpoints, relationDeclKey, type BridgeEndpoint } from '../join/
 import type { RouteDeclarationFact } from '../join/route-join.ts';
 import type { RouteMatchQuality } from '../join/route-index.ts';
 import { createPersistenceMatches, toPairEndpoint, type PairEndpoint, type PersistenceMatch } from './pairs.ts';
-import { encodeSortedJson } from './sorted-json.ts';
+import { canonicalJsonKey, valuesSortedByKey } from './sorted-json.ts';
 import {
   prepareTraceInputs,
   TraceInputError,
@@ -873,8 +873,7 @@ class TraceBuilder {
         addUpstream(found, { platform, usr, depth, fact, declaration: this.endpoint(member, fact.endpoint) });
       }
     }
-    const routes = [...found.entries()].sort(([left], [right]) => compareStrings(left, right))
-      .map(([, entry]) => finishUpstream(entry, this.memberField(member)));
+    const routes = valuesSortedByKey(found).map((entry) => finishUpstream(entry, this.memberField(member)));
     for (const upstream of routes) this.upstreamGaps(selector, member, upstream);
     return routes;
   }
@@ -1369,7 +1368,7 @@ class TraceBuilder {
   /** gap을 신원(직렬화)으로 중복 없이 담는다. 알림 등급 코드는 `notices`에 담는다. */
   private gap(gap: TraceGap): void {
     const cleaned = Object.fromEntries(Object.entries(gap).filter(([, value]) => value !== undefined)) as unknown as TraceGap;
-    const key = encodeSortedJson(cleaned, true);
+    const key = canonicalJsonKey(cleaned);
     const target = TRACE_NOTICE_CODES.has(gap.code) ? this.notices : this.gaps;
     if (!target.has(key)) this.bump(1);
     target.set(key, cleaned);
@@ -1496,7 +1495,7 @@ interface MutableUse {
 
 /** relation-use hop을 사실 신원으로 합치고 핸들러별 가장 가까운 도달만 남긴다. */
 function addUse(uses: Map<string, MutableUse>, record: UseRecord, reach: TraceReach | undefined): void {
-  const key = encodeSortedJson([record.endpoint, record.fact.channel, record.fact.method ?? null], true);
+  const key = canonicalJsonKey([record.endpoint, record.fact.channel, record.fact.method ?? null]);
   const entry = uses.get(key) ?? { record, reach: new Map<string, TraceReach>() };
   if (reach !== undefined) keepNearest(entry.reach, reach.from, reach);
   uses.set(key, entry);
@@ -1523,7 +1522,7 @@ function addUpstream(found: Map<string, MutableUpstream>, item: {
   const entry = found.get(key) ?? { method, template, platform: item.platform, usr: item.usr, depth: item.depth,
     qualifiedName: undefined, declarations: new Map<string, TraceEndpoint>(), scopes: new Set<string>() };
   entry.qualifiedName ??= item.fact.endpoint.symbol?.qualifiedName;
-  entry.declarations.set(encodeSortedJson(item.declaration, true), item.declaration);
+  entry.declarations.set(canonicalJsonKey(item.declaration), item.declaration);
   if (item.scope !== undefined) entry.scopes.add(item.scope);
   found.set(key, entry);
 }
@@ -1568,7 +1567,7 @@ function declGroups(uses: ReadonlyMap<string, MutableUse>): DeclGroup[] {
 
 /** 조립한 relation-use hop을 결정적 순서로 확정한다. */
 function finishUses(uses: ReadonlyMap<string, MutableUse>): TraceRelationUseHop[] {
-  return [...uses.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, { record, reach }]) => {
+  return valuesSortedByKey(uses).map(({ record, reach }) => {
     const match = record.match;
     return {
       use: record.endpoint,
@@ -1585,7 +1584,7 @@ function finishUses(uses: ReadonlyMap<string, MutableUse>): TraceRelationUseHop[
 
 /** 핸들러 hop을 (member, 플랫폼, usr) 순으로 정렬한다. */
 function sortHandlers(handlers: ReadonlyMap<string, TraceHandlerHop>): TraceHandlerHop[] {
-  return [...handlers.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, hop]) => hop);
+  return valuesSortedByKey(handlers);
 }
 
 /** 같은 정점에 여러 도달이 있으면 (depth, analysis) 최솟값 하나만 남긴다. */
@@ -1689,7 +1688,7 @@ function consumerAndClientRows(call: TraceCallHop): TraceAffected[] {
 /** 시작 심볼 중복을 제거하고 정렬한다. */
 function uniqueStarts(starts: readonly StartSymbol[]): StartSymbol[] {
   const unique = new Map(starts.map((start) => [memberSymbolKey(start.member, start.platform, start.usr), start]));
-  return [...unique.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, start]) => start);
+  return valuesSortedByKey(unique);
 }
 
 function routeKey(scope: string, method: RouteMethod, template: string): TraceRouteKey {
@@ -1760,7 +1759,7 @@ function summarizeAnalysis(analysis: TraceAnalysis): TraceAnalysisSummary {
 
 /** 신원 키 순으로 gap을 정렬한다. */
 function sortedGaps(gaps: ReadonlyMap<string, TraceGap>): TraceGap[] {
-  return [...gaps.entries()].sort(([left], [right]) => compareStrings(left, right)).map(([, gap]) => gap);
+  return valuesSortedByKey(gaps);
 }
 
 function summarize(chains: readonly TraceChain[], gaps: number, notices: number): TraceReport['summary'] {

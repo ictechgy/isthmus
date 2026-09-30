@@ -6,7 +6,7 @@ import { createPreflightReport, hasPreflightBlockers, PreflightGraphError } from
 import { attachPreflightRuntime } from '../report/preflight-runtime.ts';
 import { createPreflightExplanation, createPreflightSummary } from '../report/preflight-view.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
-import { inputFailure, inputFailureResult, internalError, isJsonParseFailure, MAX_TOTAL_INPUT_TEXT_LENGTH } from './command-support.ts';
+import { inputFailure, inputFailureResult, internalError, MAX_TOTAL_INPUT_TEXT_LENGTH, readContextInput } from './command-support.ts';
 import type { CommandResult, ReadTextFile } from './command-support.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
 import { RuntimeInputError, RuntimeJsonReader } from './runtime-json-reader.ts';
@@ -27,15 +27,13 @@ export async function runPreflightCommand(arguments_: readonly string[], readTex
     (limitText !== undefined && (!Number.isSafeInteger(limit) || limit! < 1 || limit! > 100))) {
     return { standardOutput: '', standardError: `${preflightUsage}\n`, exitCode: 64 };
   }
-  let text: string;
-  try { text = await readTextFile(parsed.positionals[0]!); }
-  catch { return inputFailure('Unable to read preflight context; check that the file exists and is readable.\n'); }
-  if (text.length > MAX_TOTAL_INPUT_TEXT_LENGTH) return inputFailure('Preflight context exceeds the input size limit.\n');
-  let value: unknown;
-  try { value = JSON.parse(text); }
-  catch (error) {
-    return isJsonParseFailure(error) ? inputFailure('Preflight context is not valid JSON.\n') : internalError();
-  }
+  const input = await readContextInput(parsed.positionals[0]!, readTextFile, MAX_TOTAL_INPUT_TEXT_LENGTH, {
+    unreadable: 'Unable to read preflight context; check that the file exists and is readable.\n',
+    tooLarge: 'Preflight context exceeds the input size limit.\n',
+    invalidJson: 'Preflight context is not valid JSON.\n',
+  });
+  if ('failure' in input) return input.failure;
+  const { text, value } = input;
   try {
     const context = parsePreflightContext(value);
     let report = createPreflightReport(revision === undefined || revision === context.revision ? context : {

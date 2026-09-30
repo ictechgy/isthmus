@@ -1,12 +1,15 @@
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
 import { parseImpactSelection } from './impact-selection.ts';
+import { createJsonGuards } from './json-guards.ts';
 import type { ImpactSelection } from './impact-selection.ts';
 import {
+  MAX_IMPACT_DEPTH,
+  MAX_IMPACT_RELATIONSHIPS,
   validateLanguageImpact,
   PreflightValidationError,
   type ImpactSymbol,
   type LanguageImpact,
-} from './preflight-context.ts';
+} from './language-impact.ts';
 import type { BridgeLocation } from './parse.ts';
 
 /** producer 영향 문서에 주입할 isthmus 실행 문맥이다. */
@@ -45,7 +48,7 @@ export function adaptCartographImpact(raw: unknown, metadata: ProducerImpactMeta
     const relationship = safe(row.relationship, 'Invalid Cartograph relationship.');
     const edges = row.edges === undefined ? [] : rawStrings(row.edges, 'Invalid Cartograph edges.');
     const relationships = [...new Set([relationship, ...edges])];
-    if (relationships.length > 32) fail('Cartograph relationships exceed their limit.');
+    if (relationships.length > MAX_IMPACT_RELATIONSHIPS) fail('Cartograph relationships exceed their limit.');
     return { symbol, via, depth, relationships };
   });
   if (outsideLocations > 0) {
@@ -209,35 +212,30 @@ function truncation(input: unknown): boolean {
 }
 
 function positiveDepth(input: unknown): number {
-  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > 128) fail('Impact depth must be between 1 and 128.');
+  if (!Number.isSafeInteger(input) || (input as number) < 1 || (input as number) > MAX_IMPACT_DEPTH) {
+    fail(`Impact depth must be between 1 and ${MAX_IMPACT_DEPTH}.`);
+  }
   return input as number;
-}
-
-function object(input: unknown, message: string): Record<string, unknown> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) fail(message);
-  return input as Record<string, unknown>;
-}
-
-function rawArray(input: unknown, message: string): unknown[] {
-  if (!Array.isArray(input) || input.length > 50_000) fail(message);
-  return input;
-}
-
-function rawStrings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || input.length > 50_000 || !input.every((item) => isSafeNonEmptyString(item))) fail(message);
-  return [...input] as string[];
-}
-
-function textStrings(input: unknown, message: string): string[] {
-  if (!Array.isArray(input) || input.length > 50_000 || !input.every((item) => typeof item === 'string')) fail(message);
-  return [...input] as string[];
-}
-
-function safe(input: unknown, message: string): string {
-  if (!isSafeNonEmptyString(input)) fail(message);
-  return input;
 }
 
 function fail(message: string): never {
   throw new PreflightValidationError(message);
+}
+
+/** 옛 생산자 영향 문서의 목록 상한이다. */
+const MAX_RAW_ITEMS = 50_000;
+
+const guard = createJsonGuards(fail);
+const { object, safe } = guard;
+
+function rawArray(input: unknown, message: string): unknown[] {
+  return guard.array(input, MAX_RAW_ITEMS, message);
+}
+
+function rawStrings(input: unknown, message: string): string[] {
+  return guard.safeStrings(input, MAX_RAW_ITEMS, message);
+}
+
+function textStrings(input: unknown, message: string): string[] {
+  return guard.textStrings(input, MAX_RAW_ITEMS, message);
 }

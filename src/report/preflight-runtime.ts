@@ -8,6 +8,7 @@ import type { BridgeEndpoint } from '../join/join.ts';
 import { MessageAddressIndex } from '../join/message-address.ts';
 import type { PreflightLimitation, PreflightReport } from './preflight.ts';
 import { verifyRuntimeEvidence } from './runtime.ts';
+import { valuesSortedByKey } from './sorted-json.ts';
 import type { RuntimeVerificationReport } from './runtime.ts';
 
 type NativeLanguage = 'swift' | 'kotlin';
@@ -154,7 +155,7 @@ export function attachPreflightRuntime(
       for (const key of keys) observed.add(pair(key, platform!));
       const candidates = supported && event.transport === 'method-channel' ? handlers.get(route) : undefined;
       if (candidates !== undefined && !candidateGroups.has(route)) {
-        const endpoints = [...candidates.endpoints.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, value]) => value);
+        const endpoints = valuesSortedByKey(candidates.endpoints);
         for (const endpoint of endpoints) {
           if (endpoint.location !== undefined) addedFiles.add(endpoint.location.path);
         }
@@ -167,8 +168,7 @@ export function attachPreflightRuntime(
         if (messageCandidateWork > 1_000_000) throw new RuntimeValidationError('Message runtime candidate budget exceeded.');
         const matches = addressMatches.filter(({ endpoint }) => endpoint.platform === platform);
         if (matches.length > 0) {
-          const unique = [...new Map(matches.map(({ endpoint }) => [JSON.stringify(endpoint), endpoint])).entries()]
-            .sort(([a], [b]) => compareStrings(a, b)).map(([, endpoint]) => endpoint);
+          const unique = valuesSortedByKey(new Map(matches.map(({ endpoint }) => [JSON.stringify(endpoint), endpoint])));
           for (const endpoint of unique) {
             if (endpoint.location !== undefined) addedFiles.add(endpoint.location.path);
           }
@@ -201,9 +201,9 @@ export function attachPreflightRuntime(
       }
     }
   }
-  const routes = [...groups.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, group]): PreflightRuntimeRoute => ({
+  const routes = valuesSortedByKey(groups).map((group): PreflightRuntimeRoute => ({
     ...group.route, observedCalls: group.count, outcomes: group.outcomes,
-    callers: [...group.callers.entries()].sort(([a], [b]) => compareStrings(a, b)).slice(0, 20).map(([, caller]) => caller),
+    callers: valuesSortedByKey(group.callers).slice(0, 20),
     callersOmitted: Math.max(0, group.callers.size - 20), selectionReasons: [...group.reasons].sort(compareStrings),
   }));
   const missingPlatform = (set: Set<string>, key: string): boolean =>
@@ -223,7 +223,7 @@ export function attachPreflightRuntime(
   if (routes.some(({ staticStatus }) => staticStatus !== 'candidates')) gaps.push({ code: 'runtime-static-binding-gap',
     message: 'Some related runtime routes have no supported static handler candidate; observations do not identify native symbols.' });
   const reviewFiles = [...new Set([...report.reviewFiles, ...addedFiles])].sort(compareStrings);
-  const candidates = [...candidateGroups.entries()].sort(([a], [b]) => compareStrings(a, b)).map(([, value]) => value);
+  const candidates = valuesSortedByKey(candidateGroups);
   return { ...report, runtime: { aligned, verification, routes, candidates, unobservedBoundaries, uncoveredBoundaries },
     reviewFiles, limitations: [...report.limitations, ...gaps],
     summary: { ...report.summary, reviewFiles: reviewFiles.length, evidenceGaps: report.summary.evidenceGaps + gaps.length } };

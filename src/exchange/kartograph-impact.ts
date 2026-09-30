@@ -1,6 +1,14 @@
-import { PreflightValidationError, validateLanguageImpact, type LanguageImpact, type ImpactSymbol } from './preflight-context.ts';
+import {
+  MAX_IMPACT_DEPTH,
+  PreflightValidationError,
+  validateLanguageImpact,
+  type ImpactSymbol,
+  type LanguageImpact,
+} from './language-impact.ts';
 import type { ProducerImpactMetadata } from './producer-impact.ts';
+import { createJsonGuards } from './json-guards.ts';
 import { isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
+import { breadthFirstShortestPaths } from '../breadth-first.ts';
 import { compareStrings } from '../compare.ts';
 
 /** Kartograph의 현재 시점 영향 근거를 공통 사전 점검 형식으로 연결한다. */
@@ -63,7 +71,7 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
       const edges = array(path.edges).map(object);
       pathItems += nodes.length + edges.length;
       if (pathItems > 1_000_000) fail('Kartograph impact paths exceed their budget.');
-      if (nodes.length < 2 || nodes.length > 129 || edges.length !== nodes.length - 1 || nodes[0] !== row.usr ||
+      if (nodes.length < 2 || nodes.length > MAX_IMPACT_DEPTH + 1 || edges.length !== nodes.length - 1 || nodes[0] !== row.usr ||
         nodes.at(-1) !== path.changed || new Set(nodes).size !== nodes.length) fail('Invalid Kartograph impact path.');
       const relationships = edges.map((edge, index) => {
         const source = string(edge.source); const target = string(edge.target);
@@ -87,19 +95,12 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
     }
   }
   // 같은 current 그래프의 관찰 간선만 사용한다. 한 정점의 대표 경로는 가장 짧은 경로다.
-  const queue = [...rootIds].sort(compareStrings);
-  const depth = new Map(queue.map((id) => [id, 0]));
   const rows: Array<LanguageImpact['affected'][number]> = [];
-  for (let index = 0; index < queue.length; index++) {
-    const parent = queue[index]!;
-    for (const [id, reasons] of [...(adjacency.get(parent) ?? [])].sort(([a], [b]) => compareStrings(a, b))) {
-      if (depth.has(id)) continue;
-      const distance = depth.get(parent)! + 1;
-      if (distance > 128) { omittedPaths++; continue; }
-      depth.set(id, distance); queue.push(id);
-      rows.push({ symbol: symbols.get(id)!, via: parent, depth: distance, relationships: [...reasons].sort(compareStrings) });
-    }
-  }
+  const depth = breadthFirstShortestPaths(rootIds, (parent) => adjacency.get(parent), (id, parent, distance, reasons) => {
+    if (distance > MAX_IMPACT_DEPTH) { omittedPaths++; return false; }
+    rows.push({ symbol: symbols.get(id)!, via: parent, depth: distance, relationships: [...reasons].sort(compareStrings) });
+    return true;
+  });
   omittedPaths += affected.filter((row) => symbols.has(string(row.usr)) && !depth.has(string(row.usr))).length;
   const unresolved = array(value.unresolved);
   if (unresolved.length > 0) limitations.push(`kartograph-unresolved: ${unresolved.length} requested item(s) require review`);
@@ -112,16 +113,9 @@ export function adaptKartographImpact(raw: unknown, metadata: ProducerImpactMeta
     roots, affected: rows, limitations, truncated });
 }
 
-function object(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('Invalid Kartograph impact object.');
-  return value as Record<string, unknown>;
-}
-function array(value: unknown): unknown[] {
-  if (!Array.isArray(value) || value.length > 50_000) fail('Invalid Kartograph impact array.');
-  return value;
-}
-function string(value: unknown): string {
-  if (!isSafeNonEmptyString(value)) fail('Invalid Kartograph impact string.');
-  return value;
-}
+const guard = createJsonGuards(fail);
+
+function object(value: unknown): Record<string, unknown> { return guard.object(value, 'Invalid Kartograph impact object.'); }
+function array(value: unknown): unknown[] { return guard.array(value, 50_000, 'Invalid Kartograph impact array.'); }
+function string(value: unknown): string { return guard.safe(value, 'Invalid Kartograph impact string.'); }
 function fail(message: string): never { throw new PreflightValidationError(message); }
