@@ -587,6 +587,11 @@ const gapFixtures: Record<string, () => TraceReport> = {
   'analysis-revision-unknown': () => single((value) => { delete value.files['android-reverse.json'].revision; }),
   'non-http-entry': () => workspace(select({ symbols: [{ member: 'server', platform: 'js', usr: 'ts:jobs/purge.run' }] })),
   'unattributed-calls-omitted': () => workspace((value) => { value.context.links[0].match.services = ['other-api']; }),
+  'route-dynamic-decls': () => single((value) => {
+    value.files['server.http.json'].facts.push({ kind: 'route-decl', method: 'ANY', channel: null, dynamic: true, pathAnchor: 'root',
+      location: { path: 'server/admin.ts', line: 1, column: 1 }, dynamicScope: { templatePrefixes: ['/admin'] } });
+    value.context.selection = { routes: [{ method: 'GET', template: '/admin/panel' }] };
+  }),
   'dynamic-route-calls': () => single((value) => {
     value.files['android.http.json'].facts.push({ kind: 'route-call', method: 'GET', channel: 'base + path', dynamic: true,
       pathAnchor: 'root', location: { path: 'android/D.kt', line: 1, column: 1 } });

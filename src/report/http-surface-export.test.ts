@@ -66,7 +66,8 @@ test('dynamic 선언의 원문과 router group 이름을 싣지 않는다', () =
         location: { path: 'shop/urls.py', line: 3, column: 5 }, symbol: { qualifiedName: 'shop.views.item', usr: 'py:shop.views.item' },
         order: { group: 'django:config.urls', index: 2 } },
       { kind: 'route-decl', method: 'ANY', channel: 'settings.ADMIN_URL + "x"', dynamic: true, pathAnchor: 'root',
-        location: { path: 'shop/urls.py', line: 4, column: 5 }, order: { group: 'django:config.urls', index: 3 } },
+        location: { path: 'shop/urls.py', line: 4, column: 5 }, order: { group: 'django:config.urls', index: 3 },
+        dynamicScope: { templatePrefixes: ['/admin'], methods: ['GET'] } },
       { kind: 'route-decl', method: 'ANY', channel: '/health', dynamic: false, pathAnchor: 'root',
         location: { path: 'ops/urls.py', line: 1, column: 1 }, order: { group: 'django:ops.urls', index: 0 } },
     ],
@@ -78,6 +79,10 @@ test('dynamic 선언의 원문과 router group 이름을 싣지 않는다', () =
   assert.deepEqual(surface.documents[0]!.facts.map(({ channel, order }) => [channel, order]),
     [['/items/{}/', { group: 'g1', index: 2 }], [null, { group: 'g1', index: 3 }], ['/health', { group: 'g2', index: 0 }]]);
   assert.deepEqual(surface.documents[0]!.limitations, ['route-dispatch-order-unknown: detail withheld by the http surface publisher']);
+  // dynamic 선언의 증명된 상한은 선언 측 경로라 그대로 싣고, 가져오는 쪽이 같은 판정을 하도록 조인 문서에 남는다.
+  assert.deepEqual(surface.documents[0]!.facts[1]!.dynamicScope, { templatePrefixes: ['/admin'], methods: ['GET'] });
+  assert.deepEqual(importHttpSurface(JSON.parse(text)).documents[0]!.facts[1]!.dynamicScope,
+    { templatePrefixes: ['/admin'], methods: ['GET'] });
 });
 
 test('서버 표면이 아닌 입력은 원인 문구로 거부한다', () => {

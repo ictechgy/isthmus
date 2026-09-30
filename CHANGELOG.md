@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+### Added — dynamic 선언의 스코프 `dynamicScope` (Phase 8)
+
+- **계약**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)): dynamic `route-decl`·`route-contract`가
+  `dynamicScope: {templates?, templatePrefixes?, templateSuffixes?, methods?}`로 받을 수 있는 요청의 증명된 상한을 싣는다. 모양·원소
+  문법·비교는 http limitation 스코프와 같고, `methods`는 `ANY` decl 전용, base 앵커는 `templateSuffixes`·`templatePrefixes: ["/"]`만
+  받는다. 정적 사실·`route-call`·다른 target 사실에 실리면 입력 오류다. 스코프를 실은 선언은 자기 method로도 좁힌다.
+- **소비자**: check error 전제 (d)·`-unverified`, `diff --http` `after-declaration-gap`이 호출마다 겹치는 dynamic 선언만 본다.
+  trace는 선언 없는 route 선택에 겹칠 수 있는 dynamic 선언이 있으면 `route-dynamic-decls` gap을 더한다. `unjoined-dynamic-routes`
+  문구는 스코프를 실은 선언 수를 끝에 더하고(없으면 이전 바이트), surface는 `dynamicScope`를 그대로 싣는다.
+- **하위 호환**: `dynamicScope` 없는 dynamic 선언은 이전처럼 scope 전체의 공백이다.
+- **벡터**: `http-limitation-scope`에 `scope.dynamic-validate` 17건·`scope.dynamic-applies` 14건을 더했다(SHA256SUMS 갱신 —
+  이 파일을 벤더링한 생산자는 다시 벤더링한다).
+
 ### Changed — preflight를 trace 공유 모듈 위로 수렴 (Phase 7d, 내부 리팩터)
 
 - 사용자에게 보이는 변화는 없다. `isthmus preflight`·`isthmus trace`의 입력 계약, JSON 출력 바이트, 종료 코드, stderr 문구가

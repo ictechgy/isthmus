@@ -21,10 +21,15 @@ import type {
   TraceSelection,
   TraceSymbolSelection,
 } from '../exchange/trace-context.ts';
-import type { RouteMethod } from '../exchange/route-template.ts';
+import { parseRouteTemplate, type HttpMethod, type RouteMethod } from '../exchange/route-template.ts';
 import { compareEndpoints, relationDeclKey, type BridgeEndpoint } from '../join/join.ts';
 import type { RouteDeclarationFact } from '../join/route-join.ts';
 import type { RouteMatchQuality } from '../join/route-index.ts';
+import {
+  MAX_ROUTE_SCOPE_COMPARISONS,
+  RouteLimitationScopeIndex,
+  RouteScopeBudgetError,
+} from '../join/route-limitation-scope.ts';
 import { createPersistenceMatches, toPairEndpoint, type PairEndpoint, type PersistenceMatch } from './pairs.ts';
 import { canonicalJsonKey, valuesSortedByKey } from './sorted-json.ts';
 import {
@@ -439,6 +444,8 @@ class TraceBuilder {
    */
   private chainRoutes: ReadonlySet<string> = new Set();
   private outputItems = 0;
+  /** dynamic 선언 스코프 비교의 예산이다. 한 보고서의 모든 route 선택이 공유한다. */
+  private readonly dynamicScopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
 
   private readonly input: TraceInput;
   private readonly prepared: PreparedTrace;
@@ -547,6 +554,7 @@ class TraceBuilder {
    */
   private missingRouteGap(selector: { route: TraceRouteSelection }): void {
     const { method, template, scope } = selector.route;
+    this.dynamicDeclarationGaps(selector);
     const members = scope !== undefined ? [] : [...new Set(this.prepared.unlinkedRoutes
       .filter(({ fact }) => fact.declaration.method === method && fact.declaration.template === template)
       .map(({ member }) => member))].sort(compareStrings);
@@ -559,6 +567,41 @@ class TraceBuilder {
       this.gap({ code: 'route-decl-unlinked', selector, member,
         detail: 'This route is declared only in server-role http documents of this member that no workspace link joins as '
           + 'server, so it has no callers or handler chain in this trace; add a link naming this member as server.' });
+    }
+  }
+
+  /**
+   * 선언 측 키가 없는 route 선택에서, 그 route를 받을 수 있는 dynamic 선언이 있는 scope마다 `route-dynamic-decls`를 남긴다.
+   *
+   * dynamic 선언은 템플릿을 몰라 체인에 싣지 않는다. `dynamicScope`가 없는 dynamic 선언은 어떤 route든 받을 수 있고, 스코프가
+   * 있으면 선택한 (method, 템플릿)과 겹칠 수 있을 때만 센다(check의 error 전제 (d)와 같은 비교). 그래서 스코프가 증명한
+   * 범위 밖의 route 선택은 이 gap 없이 `route-without-decl`만 남는다. 선택의 `ANY`는 모든 method로 비교한다.
+   */
+  private dynamicDeclarationGaps(selector: { route: TraceRouteSelection }): void {
+    const { method, template, scope } = selector.route;
+    const parsed = parseRouteTemplate(template);
+    if (!parsed.ok) return;
+    const probe = { segments: parsed.segments, anchor: 'root' as const, side: 'call' as const,
+      ...(method === 'ANY' ? {} : { method: method as HttpMethod }) };
+    for (const candidate of this.scopes) {
+      if (scope !== undefined && candidate.scope.scope !== scope) continue;
+      const entries = [...candidate.scope.dynamicDeclEntries, ...candidate.scope.dynamicContractEntries];
+      if (entries.length === 0) continue;
+      let overlapping: number;
+      try {
+        // 항목의 문구는 사실 키다 — 한 사실의 스코프 사본 여럿이 겹쳐도 한 번만 센다.
+        overlapping = new Set(new RouteLimitationScopeIndex(entries, this.dynamicScopeBudget).applicable(probe)).size;
+      } catch (error) {
+        if (error instanceof RouteScopeBudgetError) {
+          throw new TraceInputError(`Dynamic declaration scope comparisons exceed ${MAX_ROUTE_SCOPE_COMPARISONS}; `
+            + 'narrow the dynamicScope elements or the selection and retry. No partial trace is emitted.');
+        }
+        throw error;
+      }
+      if (overlapping === 0) continue;
+      this.gap({ code: 'route-dynamic-decls', selector, route: routeKey(candidate.scope.scope, method, template),
+        detail: `${overlapping} dynamic route declaration(s) or contract(s) in this scope may serve this route; their `
+          + 'templates are unknown, so their handlers and callers are not in this trace.' });
     }
   }
 

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseRouteTemplate } from '../src/exchange/route-template.ts';
 import { BridgeFactsValidationError, parseBridgeFactsDocument } from '../src/exchange/parse.ts';
 import { RouteIndex } from '../src/join/route-index.ts';
-import { RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
+import { dynamicDeclarationRange, RouteLimitationScopeIndex } from '../src/join/route-limitation-scope.ts';
 import { findRouteShadows } from '../src/join/route-shadow.ts';
 
 /**
@@ -98,6 +98,8 @@ function runCase(suite, testCase) {
     'framework.spring.path-pattern': runSpringPathPattern,
     'scope.applies': runScopeApplies,
     'scope.validate': runScopeValidate,
+    'scope.dynamic-validate': runDynamicScopeValidate,
+    'scope.dynamic-applies': runDynamicScopeApplies,
     'dispatch.validate': runDispatchValidate,
     'dispatch.match': runDispatchMatch,
     'dispatch.shadow': runDispatchShadow,
@@ -264,6 +266,55 @@ function runScopeValidate({ scope }) {
     if (error instanceof BridgeFactsValidationError) return { valid: false };
     throw error;
   }
+}
+
+/**
+ * dynamic 선언 검증: 선언 조각 하나를 kind에 맞는 합성 http 문서(decl은 서버, contract는 openapi, call은 클라이언트)로
+ * 감싸 제품 파서가 받는지 본다.
+ */
+function runDynamicScopeValidate({ declaration }) {
+  try {
+    parseBridgeFactsDocument(dynamicDocument(declaration));
+    return { valid: true };
+  } catch (error) {
+    if (error instanceof BridgeFactsValidationError) return { valid: false };
+    throw error;
+  }
+}
+
+/**
+ * dynamic 선언 적용: dynamic route-decl 하나를 제품 파서로 검증하고, 조인 층과 같은 상한(`dynamicDeclarationRange`)과
+ * 스코프 색인으로 호출 하나에 그 선언의 공백이 적용되는지 본다.
+ */
+function runDynamicScopeApplies({ declaration, probe }) {
+  const document = parseBridgeFactsDocument(dynamicDocument({ kind: 'route-decl', pathAnchor: 'root', dynamic: true, ...declaration }));
+  const range = dynamicDeclarationRange(document.facts[0]);
+  const parsed = parseRouteTemplate(probe.template);
+  const index = new RouteLimitationScopeIndex([{ message: 'unjoined-dynamic-routes', ...(range === undefined ? {} : { range }) }],
+    { remaining: 1_000_000 });
+  const applicable = index.applicable({
+    segments: parsed.ok ? parsed.segments : [],
+    anchor: probe.pathAnchor ?? 'root',
+    ...(probe.method === undefined ? {} : { method: probe.method }),
+    side: 'call',
+  });
+  return { applies: applicable.length > 0 };
+}
+
+/** 선언 조각 하나를 담은 합성 http 문서다. dynamic 선언의 channel은 적지 않으면 null이다. */
+function dynamicDocument({ kind, channel, ...fact }) {
+  const contract = kind === 'route-contract';
+  const client = kind === 'route-call';
+  return {
+    format: 'bridge-facts', version: 1, tool: { name: 'conformance', version: '0' },
+    generatedAt: '2026-09-30T00:00:00Z', platform: contract ? 'openapi' : 'kotlin', target: 'http', project: '/conformance',
+    roles: [client ? 'client' : 'server'], ...(contract || client ? {} : { dispatch: 'specificity' }), limitations: [],
+    facts: [{
+      kind, channel: channel ?? null, ...fact,
+      location: { path: contract ? 'openapi.yaml' : 'src/Routes.kt', line: 1, column: 1 },
+      symbol: contract ? { qualifiedName: 'operation' } : { qualifiedName: 'handler', usr: 'conformance:handler' },
+    }],
+  };
 }
 
 /** 스코프 하나를 한계 하나에 붙인 합성 http 서버 문서다. */

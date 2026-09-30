@@ -74,10 +74,11 @@ isthmus diff --http --before example-api-2.3.surface.json --after example-api-2.
   `limitationScopes`만. openapi가 아닌 문서는 target `http`와 roles 정확히 `["server"]`다(호출 측을 싣지 않는다). openapi
   문서는 bridge-facts 규칙 그대로다(사실 0건 스펙 문서는 target `null`, roles 없음). `sourceSets`가 있으면 `tests: "excluded"`다.
 - **사실**: 키는 `kind`·`channel`·`method`·`dynamic`·`pathAnchor`·`service`·`trailingSlash`·`caseInsensitive`·`narrowed`·
-  `paramConstraints`·`configDefault`·`catchAllPrefix`·`order`·`operationId`·`handler`·`symbol`만. 위치·`testSource`·
+  `paramConstraints`·`configDefault`·`catchAllPrefix`·`order`·`operationId`·`handler`·`symbol`·`dynamicScope`만. 위치·`testSource`·
   `authority`·`baseRef` 같은 키는 입력 오류다. openapi가 아닌 문서는 `route-decl`만, openapi 문서는 `route-contract`만 담는다.
   - `dynamic: true`면 `channel`은 `null`이다(원문 식은 서버 소스 조각이다). 소비자는 dynamic 선언을 전과 같이
-    `unjoined-dynamic-routes`로 세어 error 전제 (d)를 지킨다.
+    `unjoined-dynamic-routes`로 세어 error 전제 (d)를 지킨다. 서버 문서의 `dynamicScope`(증명된 선언 측 요청 상한)는 그대로
+    싣고 가져오는 쪽이 같은 규칙으로 판정한다([dynamic 선언의 스코프](GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)).
   - `handler`: 같은 핸들러의 decl끼리 같은 불투명 토큰(`h` + 양의 정수)이다. catch-all 접두사 decl과 원본 `{**}` decl을
     짝짓고, 서로 다른 핸들러의 같은 키 decl을 한 증거로 합치지 않기 위해서다. 핸들러 usr가 없던 decl에는 없다. 토큰은
     한 artifact 안에서만 뜻이 있다(릴리스마다 다시 매긴다).

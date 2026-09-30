@@ -44,12 +44,10 @@ export const chainOnlyRouteLimitationPrefixes = [
 const contractAuthoritative = false;
 
 /**
- * scope 하나의 한계 문구와 무관한 공백이다. 한계 접두사 공백은 호출·선언마다 따로 본다(스코프).
+ * scope 하나의 한계 문구와 무관한 호출 측 공백이다. 서버 측 한계 접두사와 dynamic 선언 공백은 호출마다 따로 본다
+ * (limitation 스코프와 `dynamicScope`), 호출 측 한계 접두사는 선언마다 따로 본다.
  */
 interface ScopeGaps {
-  /** dynamic decl(`unjoined-dynamic-routes`)이 있다 — 스코프로 좁히지 않는다. */
-  readonly dynamicDecls: boolean;
-  readonly dynamicContracts: boolean;
   /** dynamic 호출·미귀속 호출·닿을 수 있는 client 문서 없음 중 하나다. */
   readonly client: boolean;
 }
@@ -66,8 +64,8 @@ export function createRouteIssues(routes: RouteJoinResult): CheckIssue[] {
   for (const scope of routes.scopes) {
     const gaps = scopeGaps(scope);
     for (const call of scope.calls) {
-      if (call.decl !== undefined) addDeclOutcome(issues, scope, gaps, call, call.decl);
-      if (call.contract !== undefined) addContractOutcome(issues, scope, gaps, call, call.contract);
+      if (call.decl !== undefined) addDeclOutcome(issues, scope, call, call.decl);
+      if (call.contract !== undefined) addContractOutcome(issues, scope, call, call.contract);
     }
     if (!routes.driftOnly) {
       addWithoutCall(issues, scope, scope.decls, gaps, 'route-decl-without-call');
@@ -98,17 +96,13 @@ export function countMatchedRoutes(routes: RouteJoinResult): number {
 }
 
 /**
- * scope의 한계 문구와 무관한 공백을 계산한다.
+ * scope의 한계 문구와 무관한 호출 측 공백을 계산한다.
  *
- * dynamic decl·dynamic contract는 템플릿을 몰라 스코프로 좁히지 않는다. 호출 측 공백 중 dynamic 호출, 이 scope를
- * 불렀을 수 있는 귀속되지 않은 호출, 귀속될 수 있는 client 문서 없음도 선언과 무관하게 적용된다.
+ * dynamic 호출, 이 scope를 불렀을 수 있는 귀속되지 않은 호출, 귀속될 수 있는 client 문서 없음은 선언과 무관하게
+ * 적용된다. dynamic decl·contract 공백은 조인 층이 호출마다 계산해 둔다(`dynamicScope`가 없으면 모든 호출에 적용).
  */
 function scopeGaps(scope: RouteScope): ScopeGaps {
-  return {
-    dynamicDecls: scope.dynamicDecls > 0,
-    dynamicContracts: scope.dynamicContracts > 0,
-    client: scope.dynamicCalls > 0 || scope.unboundCalls > 0 || scope.clientDocuments === 0,
-  };
+  return { client: scope.dynamicCalls > 0 || scope.unboundCalls > 0 || scope.clientDocuments === 0 };
 }
 
 /** 한계 문구 중 하나라도 주어진 공백 접두사로 시작하는지다. */
@@ -117,13 +111,13 @@ function hasGapPrefix(messages: readonly string[], prefixes: readonly string[]):
 }
 
 /** 호출 하나에 서버 측 공백이 있는지다: 이 호출에 적용되는 서버 접두사 한계나 dynamic decl. */
-function callServerGap(gaps: ScopeGaps, call: RouteCallResult): boolean {
-  return gaps.dynamicDecls || hasGapPrefix(call.serverLimitations, serverRouteGapPrefixes);
+function callServerGap(call: RouteCallResult): boolean {
+  return call.dynamicDeclGap || hasGapPrefix(call.serverLimitations, serverRouteGapPrefixes);
 }
 
 /** 호출 하나에 계약 측 공백이 있는지다: 이 호출에 적용되는 계약 접두사 한계나 dynamic contract. */
-function callContractGap(gaps: ScopeGaps, call: RouteCallResult): boolean {
-  return gaps.dynamicContracts || hasGapPrefix(call.serverLimitations, contractRouteGapPrefixes);
+function callContractGap(call: RouteCallResult): boolean {
+  return call.dynamicContractGap || hasGapPrefix(call.serverLimitations, contractRouteGapPrefixes);
 }
 
 /** 선언 하나에 호출 측 공백이 있는지다: 이 선언에 적용되는 호출 측 접두사 한계나 scope 전체 공백. */
@@ -135,17 +129,17 @@ function declarationClientGap(gaps: ScopeGaps, fact: RouteDeclarationFact): bool
  * 호출 하나의 decl 쪽 결과를 진단으로 옮긴다.
  *
  * error 전제: (b) root 앵커, (c) 이 호출에 적용되는 서버 공백 없음(스코프 있는 한계는 스코프가 호출과 겹칠
- * 때만, 스코프 없는 한계는 항상), (d) dynamic decl 없음, (e) 테스트 소스 아님. 마스킹된 호출과 동사가
+ * 때만, 스코프 없는 한계는 항상), (d) 이 호출에 적용되는 dynamic decl 없음(`dynamicScope`가 있으면 스코프가 호출과
+ * 겹칠 때만, 없으면 항상), (e) 테스트 소스 아님. 마스킹된 호출과 동사가
  * 동적인 호출도 error 근거가 아니다. method 불일치는 모든 경로 후보가 증명 가능할 때만이다.
  */
 function addDeclOutcome(
   issues: Map<string, MutableIssue>,
   scope: RouteScope,
-  gaps: ScopeGaps,
   call: RouteCallResult,
   outcome: RouteSideOutcome,
 ): void {
-  const eligible = call.anchor === 'root' && !callServerGap(gaps, call) && !call.testSource && !call.masked;
+  const eligible = call.anchor === 'root' && !callServerGap(call) && !call.testSource && !call.masked;
   if (outcome.status === 'missing') {
     const error = eligible && call.method !== undefined;
     addIssue(issues, scope, call, error ? 'route-call-without-decl' : 'route-call-without-decl-unverified', error, []);
@@ -166,12 +160,11 @@ function addDeclOutcome(
 function addContractOutcome(
   issues: Map<string, MutableIssue>,
   scope: RouteScope,
-  gaps: ScopeGaps,
   call: RouteCallResult,
   outcome: RouteSideOutcome,
 ): void {
   if (outcome.status === 'missing' || outcome.status === 'method-mismatch') {
-    const error = contractAuthoritative && call.anchor === 'root' && !callContractGap(gaps, call) && !call.testSource;
+    const error = contractAuthoritative && call.anchor === 'root' && !callContractGap(call) && !call.testSource;
     addIssue(issues, scope, call, error ? 'route-call-without-contract' : 'route-call-without-contract-unverified',
       error, outcome.status === 'method-mismatch' ? targetsEvidence(scope.contracts, outcome.candidates) : []);
     return;

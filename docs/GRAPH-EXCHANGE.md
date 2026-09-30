@@ -602,6 +602,7 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | check 진단, 진단 신원 `scope`, `--pairs` http 매치, `query route:` | 구현 | — |
 | `dispatch: "registration-order"`, `order`, `route-decl-shadowed`·`route-decl-path-shadowed`([디스패치 모델](#디스패치-모델)) — check·query·trace·`diff --http` | 구현(Phase 6 소비자) | — |
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`·`methods`, [http limitation 스코프](#http-limitation-스코프)) — check·query·trace·`diff --http` | 구현(Phase 4) | — |
+| dynamic 선언의 `dynamicScope`([dynamic 선언의 스코프](#dynamic-선언의-스코프-dynamicscope)) — check·query·trace·`diff --http`·surface | 구현(Phase 8) | 이전 isthmus는 정의되지 않은 필드로 버려 scope 전체의 공백으로 읽는다(넓은 쪽이라 거짓 error 없음) |
 | `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | `diff --http`: 맨 매니페스트를 trace와 같은 member·link 파서로 받고 `contract.authoritative`를 contract 측 깨짐의 error 전제로 쓴다. trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`(target `null`·`persistence`·`http`, http는 `route-decl`만) | 구현(Phase 6 소비자) | — |
 | platform `go`·`rust`의 http(`route-decl`만, [go·rust http](#gorust의-http-v1-확장)) | 구현(Phase 7 소비자) | — |
@@ -714,6 +715,8 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
   `channelPrefix`(dynamic 호출에서 증명된 리터럴 접두사 템플릿. `{**}` 없는 정규 템플릿. 후보
   표시용이며 판정에 쓰지 않음), `maskedSegments`(마스킹한 세그먼트 수. 양의 정수이며 정적
   템플릿이면 `{}` 세그먼트 수를 넘지 않음), `methodDynamic: true`, `authority`, `baseRef`.
+- dynamic `route-decl`·`route-contract` 전용: `dynamicScope: {templates?, templatePrefixes?, templateSuffixes?, methods?}`
+  (그 선언이 받을 수 있는 요청의 증명된 상한, 아래 [dynamic 선언의 스코프](#dynamic-선언의-스코프-dynamicscope)).
 - `route-contract`와 생성 클라이언트의 `route-call`은 증거로 `operationId`를 실을 수 있다.
   `--include-tests`로 낸 사실(`route-decl`·`route-call`)에는 `testSource: true`를 단다. 이 표식은
   `sourceSets.tests`가 `"included"`인 문서에만 올 수 있다. 존재 자체가 증거인 표식(`caseInsensitive`·
@@ -884,7 +887,8 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   선언된 baseRef의 호출뿐이다.
 - dynamic이거나 `channel`이 null인 사실은 조인하지 않고 소비자가 `unjoined-dynamic-routes`·
   `unjoined-dynamic-route-calls`로 센다. `channelPrefix`는 query에 `prefix-candidate`로만
-  보인다(trace는 개수만 `dynamic-route-calls` gap으로 싣는다).
+  보인다(trace는 개수만 `dynamic-route-calls` gap으로 싣는다). dynamic 선언의 `dynamicScope`는 매칭 후보를 만들지 않고
+  그 선언이 공백으로 작용하는 호출만 좁힌다([dynamic 선언의 스코프](#dynamic-선언의-스코프-dynamicscope)).
 - 매칭 품질(`exact`·`suffix`·`declared-base`·`declared-wrapper`·`any-method`·`head-as-get`·
   `options-any`·`catch-all`·`param-to-literal`·`param-to-literal-constrained`·`prefix-candidate`)은
   `check --pairs`와 query에만 싣는다. info 심각도는 새로 만들지 않는다.
@@ -1016,7 +1020,9 @@ error 전제는 다음과 같다. "서버 측"은 link의 server member이고, �
 - (b) `pathAnchor`가 `root`이거나 `declared-base`로 승격됐다.
 - (c) 서버 측에 이 호출에 적용되는 서버 측 limitation이 없다. 스코프가 있는 한계는 스코프가 이 호출과 겹칠 수 있을
   때만, 스코프가 없는 한계는 항상 적용된다([http limitation 스코프](#http-limitation-스코프)).
-- (d) 이 템플릿을 덮는 `unjoined-dynamic-routes`가 0이다.
+- (d) 이 호출에 적용되는 dynamic 선언이 없다. `dynamicScope`가 없는 dynamic decl은 항상, 있는 decl은 스코프가 이 호출과
+  겹칠 수 있을 때만 적용된다([dynamic 선언의 스코프](#dynamic-선언의-스코프-dynamicscope)). contract 측은 dynamic contract가 같은
+  방식으로 `route-call-without-contract`의 전제가 된다.
 - (e) 테스트 소스 사실(`testSource`)이 아니다. 마스킹된 호출(`maskedSegments`)과 동사가 동적인
   호출(`methodDynamic`)도 error 근거가 아니다. method 불일치는 모든 경로 후보가 증명 가능하고
   suffix 후보가 아닐 때만 error다.
@@ -1051,7 +1057,7 @@ http 문서의 측은 platform이 아니라 **접두사**로 정한다. 한 문�
 | 계약 | `unresolved-contract-servers:`, `contract-coverage:` | `route-call-without-contract` |
 | 호출 측 | `route-call-coverage:`, `unresolved-base-url:`, `url-rewrite-interceptors:`, `ambiguous-base-join:`, `http-wrapper-undeclared:`, `http-wrapper-unresolved:`, `generated-client-unscanned:`, `unbound-route-calls-omitted:` | `route-decl-without-call`, `route-contract-without-call` |
 | 체인 전용 | `missing-route-usrs:`, `missing-relation-usrs:`, `framework-dispatch-unmodeled:` | check 심각도에 영향 없음. trace는 한계로 그대로 싣고, usr가 빠진 hop은 `*-without-symbol` gap으로 드러난다 |
-| 소비자 계수(`origin: "consumer"`) | `unjoined-dynamic-routes`, `unjoined-dynamic-route-calls`, `unjoined-unbound-route-calls` | 앞의 둘은 각각 서버 측·호출 측 공백. 셋째는 개수 공개용 |
+| 소비자 계수(`origin: "consumer"`) | `unjoined-dynamic-routes`, `unjoined-dynamic-route-calls`, `unjoined-unbound-route-calls` | 앞의 둘은 각각 서버 측·호출 측 공백. 셋째는 개수 공개용. `unjoined-dynamic-routes`의 선언별 적용 범위는 `dynamicScope`가 정한다 |
 
 - `framework-provided-routes:`는 프로젝트 코드에 선언이 없는 경로(Spring Security의
   `/login`·`/logout`, actuator, springdoc, `/error`, Spring Data REST, 정적 리소스, Next
@@ -1105,7 +1111,8 @@ http 문서의 `channels`, 다른 target 문서의 경로 필드·`methods`, 경
   있을 때만 `route-decl-without-call`·`route-contract-without-call`을 `-unverified`로 내린다.
 - 한 호출·선언에 스코프 없는 공백 한계가 하나라도 적용되면 그것이 우선한다(문서 전체 효과). 스코프는 신고한 문서의
   그 한계에만 붙고, 같은 접두사의 다른 항목이나 다른 문서의 한계를 좁히지 않는다.
-- dynamic decl·contract(`unjoined-dynamic-routes`)는 템플릿을 몰라 스코프로 좁히지 않는다. dynamic 호출·미귀속
+- dynamic decl·contract(`unjoined-dynamic-routes`)는 limitation 스코프로 좁히지 않는다 — 한계가 아니라 사실이라 사실 자신의
+  `dynamicScope`가 좁힌다([아래](#dynamic-선언의-스코프-dynamicscope)). dynamic 호출·미귀속
   호출·client 문서 없음도 선언과 무관한 호출 측 공백이다. 체인 전용·모르는 접두사의 스코프는 판정에 쓰이지 않는다.
 
 **비교(보수적 근사).** "스코프 안일 수 있다"는 두 경로 집합의 교집합이 비어 있지 않을 수 있다는 뜻이다. 겹친다고
@@ -1166,6 +1173,70 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 `methods: ["GET","HEAD"]`, 빌드 자산은 `templatePrefixes: ["/_next"]`, `next.config`의 `rewrites`·`redirects`는
 `source`가 리터럴 경로면 그 템플릿(파라미터는 `{}`, `:path*`는 접두사), middleware는 `config.matcher`가 리터럴
 경로 목록이면 그 접두사·템플릿이다. 그 밖(동적 matcher, 조건부 rewrite 등)은 스코프를 생략한다.
+
+### dynamic 선언의 스코프 (`dynamicScope`)
+
+> **구현(Phase 8).** 템플릿을 정규화하지 못한 dynamic 선언은 그동안 scope 전체의 서버 측 공백이었다. 생산자가 그 선언이 받을 수
+> 있는 요청의 상한(정적 접두사, 알려진 method 집합 등)을 증명하면 `dynamicScope`로 적고, 소비자는 그 상한과 겹칠 수 있는 호출에만
+> 공백을 적용한다. `dynamicScope`가 없는 dynamic 선언은 이전처럼 scope 전체의 공백이다(하위 호환).
+
+```json
+{ "kind": "route-decl", "method": "ANY", "channel": null, "dynamic": true, "pathAnchor": "root",
+  "location": { "path": "shop/urls.py", "line": 12, "column": 5 },
+  "dynamicScope": { "templatePrefixes": ["/admin"], "methods": ["GET", "POST"] } }
+```
+
+**형태.** `{templates?, templatePrefixes?, templateSuffixes?, methods?}`. 경로 필드 셋 중 하나 이상이 있어야 한다. 각 필드의 뜻·
+원소 문법·접두사/접미사 제한은 [http limitation 스코프](#http-limitation-스코프)의 같은 이름 필드와 같다(원소는 요청 경로 기준 정규
+템플릿이고, 서버 템플릿과 같은 접두사 규칙 — context-path·mount·prefix — 을 적용한 값이다). `limitationIndex`는 없다.
+
+**검증(입력 오류, 종료 코드 2).** 좁히는 선언이 틀리면 거짓 error가 되므로 다음을 모두 거부한다.
+
+- `dynamicScope`는 `dynamic: true`인 `route-decl`·`route-contract`에만 온다. 정적 사실(템플릿이 이미 상한), `route-call`(호출은
+  `channelPrefix`를 쓴다), 다른 target 문서의 사실에 실리면 입력 오류다.
+- 객체가 아님, 모르는 키(`limitationIndex`·`channels` 포함), 경로 필드 없음(`methods`만 있는 항목·빈 객체 포함), 빈 배열, 문자열이
+  아닌 원소, 정규 문법 위반 원소(거부 사유 코드를 문구에 싣는다), 끝이 `/`인 루트 아닌 접두사, `{**}`가 든 접두사·접미사, 접미사
+  `/`, 잘못된 `methods`(중복·`ANY`·모르는 동사), 원소 1,000개 초과.
+- `methods`는 method가 `ANY`인 `route-decl`에만 쓴다. 다른 method의 decl은 그 method가 이미 상한이라 적으면 중복이고 다르면
+  모순이다. contract는 method가 항상 확정이라 쓰지 않는다.
+- `pathAnchor: "base"` 사실은 알 수 없는 base 뒤의 요청이라 root 기준 원소를 증명할 수 없다. `templateSuffixes`와
+  `templatePrefixes: ["/"]`만 받는다(`templates`나 `/`가 아닌 접두사는 입력 오류).
+- isthmus는 원소를 중복 제거하고 문자열 순으로 정규화해 보존한다(surface 내보내기에도 그대로 싣는다).
+
+**선언의 상한.** 스코프가 있으면 선언의 요청 상한은 (경로 필드의 합집합) × (method)다. method는 `ANY` decl이면 `methods`(없으면
+모든 method), 그 밖에는 선언 자신의 method다 — 이 method 경계는 스코프를 실은 선언에만 쓴다(옛 문서의 dynamic 선언을 method로
+좁히면 하위 호환이 깨진다). 비교는 limitation 스코프와 같은 보수적 근사다: 대소문자·끝 슬래시 하나를 무시하고, `{}`·부분 세그먼트는
+빈 값도 받으며, base 앵커 호출은 알 수 없는 앞부분 뒤로 본다. method는 호출 동사가 같거나, 동적 동사 호출이거나, HEAD 호출과 GET
+상한이거나, OPTIONS 호출이면 적용된다. 같은 위치의 같은 사실 사본이 여럿이면 스코프 없는 사본이 하나라도 있을 때 스코프 없는
+선언 하나로 합치고, 아니면 서로 다른 스코프를 모두 공백으로 본다. 비교 예산은 limitation 스코프와 같은 조인당 5,000,000칸을 함께
+쓰며 넘으면 부분 결과 대신 입력 오류다.
+
+**소비자 사용.**
+
+| 사용처 | 규칙 |
+|---|---|
+| check error 전제 (d) | 호출마다 본다. 스코프 없는 dynamic decl이 scope에 하나라도 있거나 스코프가 호출과 겹치는 dynamic decl이 있으면 (d)가 거짓이다. 스코프 밖 호출은 다른 전제가 모두 증명되면 `route-call-without-decl`·`route-method-mismatch` error다 |
+| `-unverified` | (d)가 거짓인 호출만 `route-call-without-decl-unverified`·`route-method-mismatch-unverified`다. contract 측은 dynamic contract로 같은 판정을 `route-call-without-contract`에 적용한다. `route-decl-without-call`·`route-contract-without-call`에는 영향이 없다(서버 측 공백은 선언에 적용되지 않는다) |
+| `diff --http` `after-declaration-gap` | head에서 귀속된 호출은 그 호출에 적용되는 head의 dynamic 선언만 본다. head에서 귀속되지 않은 호출은 이전처럼 그 측의 모든 dynamic 선언을 본다. `declarations-dynamic` 개수 finding은 그대로다 |
+| trace | dynamic 선언은 템플릿을 몰라 체인에 싣지 않는다. 선언 측 키가 없는 route 선택(`route-without-decl`)에서, 그 (method, 템플릿)과 겹칠 수 있는 dynamic 선언이 있는 scope마다 `route-dynamic-decls` gap을 더한다(스코프 없는 dynamic 선언은 항상 겹친다) |
+| 조인 한계 | `unjoined-dynamic-routes` 문구 끝에 스코프를 실은 선언 수를 `; M of them declare a dynamicScope and only affect calls inside it`로 더한다(0이면 이전 문구와 바이트가 같다) |
+| surface | `isthmus-http-surface` 사실에 `dynamicScope`를 그대로 싣고 가져오는 쪽이 같은 규칙으로 판정한다 |
+
+**생산자 의무.** 스코프는 그 선언이 받을 수 있는 **모든** 요청을 포함해야 한다. 예:
+
+- pythograph: 설정(프로필)에서만 정해지는 플레이스홀더 route는 플레이스홀더 앞 정적 접두사를 `templatePrefixes`로(`include()`
+  접두사 포함), 옮기지 못한 `re_path` 정규식은 `^`로 고정된 리터럴 앞부분이 세그먼트 경계로 끝날 때만 그 접두사로. 정규식
+  대안(`|`)·선택 그룹이 앞부분에 걸리면 생략한다.
+- kartograph: 알려진 prefix 아래 functional router(`RouterFunctions.nest(path("/api"), …)`)의 내부 route를 옮기지 못하면
+  `templatePrefixes: ["/api"]`, 플레이스홀더 매핑은 플레이스홀더 앞 정적 부분.
+- tsograph: `next.config`의 rewrites 중 `source`가 리터럴 접두사로 시작하는 것은 그 접두사(`:path*` 앞까지).
+
+접두사가 세그먼트 경계에서 끝나지 않으면(`/api/v1-` + 동적) 경계까지 잘라 적는다(`/api`). 증명하지 못하면 필드를 생략한다(scope
+전체의 공백). 정규 템플릿 문법으로 쓸 수 없는 원소는 싣지 않는다 — 소비자는 다시 정규화하지 않고 거부한다. 선언과 함께 같은 원인의
+서버 측 한계(`route-coverage:` 등)를 내면 그 한계도 [limitation 스코프](#http-limitation-스코프)로 같은 상한을 적어야 한다. 스코프
+없는 한계는 여전히 그 문서의 모든 호출을 막는다.
+
+규칙 벡터는 [`http-limitation-scope`](#공유-적합성-벡터)의 `scope.dynamic-validate`·`scope.dynamic-applies`다.
 
 ### 테스트 소스 정책
 
@@ -1315,7 +1386,8 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 - `http-template`: 정규 문법(`template.grammar`), 생산자 정규화(`template.normalize`), 프레임워크
   변환(`framework.*`), 소비자 매칭(`match.*`). `url-compose`: 호출 조립·base 결합·제거·마스킹·래퍼
   인자 바인딩([HTTP-WRAPPERS](HTTP-WRAPPERS.md)). `http-limitation-scope`: 스코프 적용(`scope.applies`, 호출·선언
-  하나에 한계가 적용되는지)과 스코프 항목 검증(`scope.validate`)을 제품 조인 층·파서로 실행한다. `http-dispatch`:
+  하나에 한계가 적용되는지)과 스코프 항목 검증(`scope.validate`), dynamic 선언의 `dynamicScope` 검증(`scope.dynamic-validate`)·
+  적용(`scope.dynamic-applies`)을 제품 조인 층·파서로 실행한다. `http-dispatch`:
   `order` 검증(`dispatch.validate`, 생산자도 적용), 등록 순서·dispatch 단위를 넘는 match(`dispatch.match`), 건전한
   가림 판정(`dispatch.shadow`)을 제품 파서·매처·가림 판정기로 실행한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
@@ -1363,7 +1435,7 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 - 스코프 없는 한계는 문서 전체 효과를 유지한다. 채널 형태 스코프를 http 문서에 쓰면 입력 오류다.
 - 호출 측·모르는 접두사 한계의 스코프 원소는 출력에 싣지 않는다(귀속되지 않은 호출 경로 비노출 규칙).
 - `unjoined-dynamic-routes`를 dynamic decl의 증명된 접두사로 좁히는 초안 문장은 보류한다. decl에는 `channelPrefix`
-  필드가 없다.
+  필드가 없다(Phase 8에서 `dynamicScope`로 해소).
 - Spring의 빈 값 매칭(끝 `*`, 부분 세그먼트)은 소비자 매칭 규칙을 바꾸지 않고 생산자의 빈 값 변형 decl로 처리한다.
 
 ### Phase 6 결정 (platform python과 registration-order)
@@ -1419,6 +1491,18 @@ pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안
   [TRACE](TRACE.md#root-not-found는-root-단위)에 적었다. 교환 형식은 바뀌지 않고 LANGUAGE-TRAVERSAL에 root-not-found가
   요청 root만의 사유라는 생산자 보장을 명시했다.
 
+### Phase 8 결정 (dynamic 선언 스코프)
+
+- **스코프는 한계가 아니라 사실에 싣는다.** `unjoined-dynamic-routes`는 소비자가 사실에서 센 값이라 생산자 한계의 스코프로는
+  좁힐 수 없다(소비자 계수는 문구가 아니라 사실로 판정한다). 그래서 dynamic decl·contract에 `dynamicScope`를 두고, 같은 원인의
+  생산자 한계는 기존 `limitationScopes`로 따로 좁힌다. 한쪽만 좁히면 다른 쪽이 여전히 문서 전체의 공백이다.
+- **limitation 스코프와 같은 모양·비교를 쓴다.** 새 비교 규칙을 만들면 생산자마다 해석이 갈린다. 다른 점은 사실과의 관계
+  규칙 둘(`methods`는 `ANY` decl 전용, base 앵커는 root 기준 원소 금지)과, 스코프를 실은 선언은 자기 method로도 좁힌다는 것이다.
+- **스코프 없는 dynamic 선언은 그대로 scope 전체의 공백이다.** 옛 생산자 문서의 판정이 바뀌지 않는다. 이전 isthmus는
+  정의되지 않은 route 필드를 버리므로 새 문서의 dynamic 선언을 스코프 없는 공백으로 읽는다 — 좁히지 못할 뿐 거짓 error는 없다.
+- **trace는 선언 없는 route 선택에만 쓴다.** 정적으로 match된 호출에 dynamic 선언이 겹쳐도 그 호출이 선택한 route를 부른다는
+  근거는 그대로라 체인을 바꾸지 않고, 선언이 없어 체인을 만들지 못한 선택에서만 "dynamic 선언이 받을 수 있음"을 gap으로 밝힌다.
+
 ### 미결 항목
 
 - `authority`의 기본 포트 정규화.
@@ -1426,6 +1510,5 @@ pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안
 - 경로 우선·method 우선 등록 순서를 문서가 선언하는 필드(있으면 `route-decl-path-shadowed`를 확정 가림으로 올리고
   Django의 405 호출을 method 불일치로 판정할 수 있다).
 - Python·Go·Rust 클라이언트(requests·httpx, net/http·resty, reqwest)의 `route-call`과 그 url-compose 벡터.
-- dynamic decl 공백(`unjoined-dynamic-routes`)의 스코프 표현.
 - 빈 값 변형 decl을 미호출·드리프트 진단에서 원본과 묶는 표식(catch-all 접두사 decl의 `catchAllPrefix`와 같은 역할).
 - `docs/limitation-prefixes.json` 추출.

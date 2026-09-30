@@ -113,7 +113,7 @@ const surfaceKeys = new Set(['format', 'version', 'name', 'revision', 'exporter'
 const documentKeys = new Set(['platform', 'target', 'tool', 'generatedAt', 'roles', 'dispatch', 'sourceSets', 'service',
   'facts', 'limitations', 'limitationScopes']);
 const factKeys = new Set(['kind', 'channel', 'method', 'dynamic', 'pathAnchor', 'service', 'trailingSlash', 'caseInsensitive',
-  'narrowed', 'paramConstraints', 'configDefault', 'catchAllPrefix', 'order', 'operationId', 'handler', 'symbol']);
+  'narrowed', 'paramConstraints', 'configDefault', 'catchAllPrefix', 'order', 'operationId', 'handler', 'symbol', 'dynamicScope']);
 const tokenPattern = /^[1-9][0-9]{0,8}$/u;
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 

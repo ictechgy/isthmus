@@ -6,9 +6,12 @@ import {
   type RouteSegment,
 } from './route-template.ts';
 import {
+  dynamicScopeProblem,
+  normalizeRouteRange,
   normalizeRouteScope,
   routeScopeElementCount,
   routeScopeEntryProblem,
+  type RouteLimitationRange,
   type RouteLimitationScope,
 } from './route-limitation-scope.ts';
 
@@ -210,6 +213,12 @@ export interface BridgeFact {
   readonly queryTailStripped?: true;
   /** dynamic route-call 전용: 증명된 리터럴 접두사 템플릿이다. 판정에 쓰지 않는다. */
   readonly channelPrefix?: string;
+  /**
+   * dynamic route-decl·route-contract 전용: 이 선언이 받을 수 있는 요청(경로·method)의 증명된 상한이다.
+   * 있으면 이 선언의 공백(`unjoined-dynamic-routes`)이 스코프와 겹칠 수 있는 호출에만 적용되고, 없으면 이전처럼
+   * scope의 모든 호출에 적용된다(하위 호환). 형태는 http limitation 스코프의 경로 필드·`methods`와 같다.
+   */
+  readonly dynamicScope?: RouteLimitationRange;
   /** route-call 전용: 마스킹한 세그먼트 수다. 마스킹된 호출은 error 근거가 아니다. */
   readonly maskedSegments?: number;
   /** route-contract·route-call 증거: 스펙 operationId다. */
@@ -352,6 +361,7 @@ function normalizeRouteFields(fact: BridgeFact): Partial<BridgeFact> {
     if (fact[field] !== undefined) copy[field] = fact[field];
   }
   if (fact.order !== undefined) copy.order = { group: fact.order.group, index: fact.order.index };
+  if (fact.dynamicScope !== undefined) copy.dynamicScope = normalizeRouteRange(fact.dynamicScope);
   if (fact.paramConstraints !== undefined) {
     copy.paramConstraints = fact.paramConstraints
       .map((constraint) => ({
@@ -824,6 +834,7 @@ function validateRouteEvidence(
   if (value.order !== undefined) validateRouteOrder(value.order, document.dispatch, index);
   validateMaskedSegments(value.maskedSegments, segments, index);
   validateChannelPrefix(value, index);
+  validateDynamicScope(value, index);
   if (value.paramConstraints !== undefined) validateParamConstraints(value.paramConstraints, segments, index);
   if (value.testSource === true && (!isJsonObject(document.sourceSets) || document.sourceSets.tests !== 'included')) {
     fail(`Test source route facts require sourceSets {"tests": "included"} at index ${index}.`);
@@ -874,6 +885,23 @@ function validateChannelPrefix(value: Record<string, unknown>, index: number): v
   if (value.dynamic !== true || parsed === undefined || !parsed.ok ||
     parsed.segments.some((segment) => segment.kind === 'catch-all')) {
     fail(`A route channelPrefix must be a canonical template on a dynamic call at index ${index}.`);
+  }
+}
+
+/** `dynamicScope` 하나가 실을 수 있는 경로 원소 수의 상한이다. 스코프 비교 예산과 별도로 입력 크기를 묶는다. */
+const MAX_DYNAMIC_SCOPE_ELEMENTS = 1_000;
+
+/**
+ * `dynamicScope`는 dynamic 선언(route-decl·route-contract)에만 온다. 정적 사실에 실으면 템플릿과 스코프 중 무엇이
+ * 상한인지 모호하므로 거부한다. 형태·앵커·method 규칙은 스코프 검증기가 본다.
+ */
+function validateDynamicScope(value: Record<string, unknown>, index: number): void {
+  if (value.dynamicScope === undefined) return;
+  if (value.dynamic !== true) fail(`A route dynamicScope is only valid on a dynamic declaration at index ${index}.`);
+  const problem = dynamicScopeProblem(value.dynamicScope, value);
+  if (problem !== undefined) fail(`${problem} (fact index ${index})`);
+  if (routeScopeElementCount(value.dynamicScope as Record<string, unknown>) > MAX_DYNAMIC_SCOPE_ELEMENTS) {
+    fail(`A route dynamicScope carries more than ${MAX_DYNAMIC_SCOPE_ELEMENTS} path templates at index ${index}.`);
   }
 }
 
@@ -1225,6 +1253,7 @@ const routeFieldKinds: ReadonlyArray<readonly [string, ReadonlySet<RouteFactKind
   ['configDefault', new Set(['route-decl'])],
   ['catchAllPrefix', new Set(['route-decl'])],
   ['order', new Set(['route-decl'])],
+  ['dynamicScope', new Set(['route-decl', 'route-contract'])],
   ['operationId', new Set(['route-contract', 'route-call'])],
   ['testSource', new Set(['route-decl', 'route-call'])],
 ];

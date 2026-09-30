@@ -408,6 +408,7 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 | `upstream-route-callers-not-followed` | upstream route를 link가 server로 잇지만 v1은 한 단계만 올라가 그 route의 호출자를 따라가지 않았다. `route`의 scope 키로 선택하면 이어 간다(`member`·`symbol`) |
 | `unattributed-calls-omitted` | 이 scope를 불렀을 수 있는 귀속되지 않은 호출 수. 경로·host는 싣지 않는다 |
 | `dynamic-route-calls` | 이 scope에 귀속됐지만 템플릿이 리터럴이 아니라 매칭하지 못한 호출 수 |
+| `route-dynamic-decls` | 선언 측 키가 없는 route 선택(`route-without-decl`)에서, 이 scope의 dynamic 선언 중 선택한 (method, 템플릿)을 받을 수 있는 것의 수. `dynamicScope`가 없는 dynamic 선언은 항상 센다([dynamic 선언의 스코프](GRAPH-EXCHANGE.md#dynamic-선언의-스코프-dynamicscope)) |
 | `ambiguous-route-call` | 이 route와 다른 선언 사이에서 모호한 귀속 호출(따라가지 않음) |
 | `test-source-omitted` | 체인에서 뺀 테스트 소스 route 사실 수 |
 | `http-clients-unscanned` | 이 scope에 닿을 수 있는 client roles 문서가 없다 |
