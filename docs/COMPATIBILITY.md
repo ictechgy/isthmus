@@ -29,7 +29,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
 | isthmus-cli | **0.10.0** | `npm install --global isthmus-cli@0.10.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`, GitHub Action `ictechgy/isthmus@v0.10.0` |
-| cartograph | **0.23.0** | `brew install ictechgy/tap/cartograph` (formula가 GitHub Release 아카이브 `cartograph-0.23.0-macos-universal.tar.gz`를 설치) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
+| cartograph | **0.23.0** | GitHub Release 아카이브(`cartograph-0.23.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
 | kartograph | **0.18.0** | GitHub Release 아카이브(`kartograph-0.18.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
 | dartograph | **0.16.0** | `dart pub global activate dartograph 0.16.0` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |
 | schemagraph | **0.7.0** | GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
@@ -182,7 +182,8 @@ node scripts/verify-installed-compatibility.mjs \
 cartograph는 Homebrew formula 대신 같은 GitHub Release 아카이브를 manifest 버전으로 받는다. tap에는
 최신 formula 하나만 있어 `brew install`로는 버전을 고정할 수 없다 — 그래서 cartograph를 새로 발행할 때마다
 manifest를 올리기 전까지 cold-cache가 실패했다. formula의 `url`이 바로 이 아카이브이므로 설치되는 실행 파일은
-같다. formula 자체(`brew test`)는 producer 릴리스 절차가 확인한다.
+같다. cartograph 릴리스에는 checksum 파일이 없어 workflow는 GitHub가 기록한 release asset digest(sha256)와
+대조한다. formula 자체(`brew test`)는 producer 릴리스 절차가 확인한다.
 
 두 번째 명령은 `fixtures/bridge-app`을 세 producer가 각각 스캔한다 —
 Swift는 `swift build`로 실제 컴파일러 인덱스를 만들고, Kotlin은 스냅샷 없는
@@ -296,7 +297,7 @@ jobs:
       - uses: subosito/flutter-action@<pin-sha>
         with:
           channel: stable
-      - run: brew install ictechgy/tap/cartograph
+      - run: brew install ictechgy/tap/cartograph   # tap 최신판 — 고정하려면 위 cold-cache 절처럼 릴리스 아카이브
       - run: dart pub global activate dartograph 0.16.0
       - run: npm install --global isthmus-cli@0.10.0
       - run: flutter pub get

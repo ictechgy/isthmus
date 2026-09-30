@@ -17,16 +17,19 @@ OpenAPI) 도메인을 받고, route·테이블에서 핸들러·DB 의존자·�
 ### 동작 변경 — 업그레이드 전에 확인할 것
 
 0.9.0은 target `http`·`persistence`와 platform `go`·`rust`·`python`·`sql`·`openapi` 문서를 모두
-`Unsupported bridge target.`/`Unsupported bridge platform.`(종료 코드 2)으로 거부했다. 0.10.0은 이 문서를
-`check`·`query`·`trace`·`diff --http`·`surface export`에서 받고, 받지 않는 명령은 원인을 밝혀 거부한다. bridge 문서만
-넣는 기존 입력의 대표 명령 출력과 종료 코드는 바이트 단위로 고정해 두었다(#115).
+`Unsupported bridge target.`/`Unsupported bridge platform.`(종료 코드 2)으로 거부했다. 0.10.0은 http 문서를
+`check`·`query`·`trace`·`diff --http`·`surface export`에서, persistence 문서를 `check`·`query`·`trace`·`impact`에서 받고,
+받지 않는 명령은 원인을 밝혀 거부한다. bridge 문서만 넣는 기존 입력의 대표 명령 출력과 종료 코드는 바이트 단위로
+고정해 두었다(#115). 0.9.0에서도 코드 2였던 입력은 대개 거부 문구만 원인을 밝히게 바뀐다. 결과나 종료 코드가 새로
+달라질 수 있는 곳은 persistence를 받는 `impact`의 `--strict`·`--runtime`과 `query`의 `relation:`·`route:` 이름이다.
 
-- **http 문서는 `graph`·`diff`·`impact`·`retentions`·preflight context에서 종료 코드 2**: target `http` 또는 platform
-  `openapi` 문서를 빈 정상 결과로 읽지 않고 원인 문구와 함께 거부한다. bridge `diff`는 `isthmus diff --http`를 안내한다.
-  http 비교는 `diff --http`, 영향 추적은 `trace`를 쓴다(#118, #122).
-- **persistence 입력**(#109–#116):
-  - `retentions --for kartograph|cartograph`: 같은 플랫폼의 persistence 문서만 수신 측으로 들어오면 빈 목록·종료 코드 0
-    대신 종료 코드 2와 원인 문구다.
+- **http 문서는 `graph`·`diff`·`impact`·`retentions`·preflight context에서 계속 종료 코드 2**: 0.9.0의
+  `Unsupported bridge target.` 대신 그 명령이 http 문서를 받지 않는다는 원인 문구로 거부한다(개발 빌드 한때의 빈 정상
+  결과는 발행되지 않았다). bridge `diff`는 `isthmus diff --http`를 안내한다. http 비교는 `diff --http`, 영향 추적은
+  `trace`를 쓴다(#118, #122).
+- **persistence 입력**(#109–#116, 0.9.0은 모두 코드 2였다):
+  - `retentions --for kartograph|cartograph`: 같은 플랫폼의 persistence 문서만 수신 측으로 들어오면 원인 문구와 종료
+    코드 2다(개발 빌드의 빈 목록·0을 고쳤다).
   - `diff`: persistence·sql 문서를 "persistence 비교를 아직 지원하지 않는다"는 원인 문구로 거부한다(2). preflight
     context도 persistence 문서를 원인 문구로 거부한다.
   - `impact`: 비한정 사용(`users`)이 닿는 한정 선언(`public.users`)의 `column-use-without-decl`을 조인과 같은 규칙으로
@@ -75,10 +78,11 @@ OpenAPI) 도메인을 받고, route·테이블에서 핸들러·DB 의존자·�
   pythograph 행은 발행 뒤 저장소 manifest만 바꾸는 후속으로 더한다.
 - cold-cache workflow가 cartograph를 `brew install` 대신 manifest 버전의 GitHub Release 아카이브로 받는다. tap에는 최신
   formula 하나뿐이라 버전을 고정할 수 없어 cartograph를 발행할 때마다 이 job이 깨졌다(2026-09-28부터 실패). formula의
-  `url`이 같은 아카이브라 설치되는 실행 파일은 같다.
+  `url`이 같은 아카이브라 설치되는 실행 파일은 같고, 무결성은 GitHub release asset digest(sha256)로 대조한다.
 - cold-cache에 `api-producers` job을 더했다: schemagraph·gartograph·rustograph 발행 아카이브를 manifest 버전으로 받아
   발행 checksum과 `--version`을 대조한다(설치·버전만 — trace e2e는 아니다).
 
+### Added — PR마다 HTTP route 영향을 보고하는 GitHub Action (Phase 3 CI)
 
 - **위치**([CI](docs/CI.md)): 저장소 루트 composite Action `action.yml`(`uses: ictechgy/isthmus@<tag>`). Action과 CLI가 같은
   태그·버전으로 나가고, `isthmus-version` 기본값이 Action ref의 버전이다(npm 설치는 정확한 버전·`--ignore-scripts`,
