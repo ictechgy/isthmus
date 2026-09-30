@@ -166,9 +166,9 @@ trace는 새 형식을 우선하고, 이미 배포된 형식은 어댑터로 같
 | 형식 | 역할 | 투영 |
 |---|---|---|
 | `schemagraph-impact` v1 | `db-dependents`(sql) | `subject.id`가 root, `impacted[].{id, via, distance, edges}`가 도달 정점·via·depth·관계. subject 자신으로 돌아온 항목(순환)은 뺀다. 선택 키(`complete`·`visited` 등)는 무시한다. `via`가 없는 옛 보고서는 거부한다 |
-| `kartograph-impact` v1 | `reverse`(kotlin) | preflight의 kartograph 어댑터를 공유한다(current 경로만) |
-| `change-impact` v1 | `reverse`(swift) | preflight의 cartograph 어댑터를 공유한다 |
-| dartograph impact v1 | `reverse`(dart) | preflight의 dartograph 어댑터를 공유한다 |
+| `kartograph-impact` v1 | `reverse`(kotlin) | preflight와 공유하는 kartograph 어댑터(`LanguageImpact` 계약)를 쓴다(current 경로만) |
+| `change-impact` v1 | `reverse`(swift) | preflight와 공유하는 cartograph 어댑터를 쓴다 |
+| dartograph impact v1 | `reverse`(dart) | preflight와 공유하는 dartograph 어댑터를 쓴다 |
 
 옛 형식에는 근거 등급과 잇지 못한 호출이 없다. 어댑터는 둘 다 "미신고"로 표시한다 — `schemagraph-impact`의
 sql 간선은 `direct`, 옛 언어 역방향 형식은 `unassessed`로 읽힌다.

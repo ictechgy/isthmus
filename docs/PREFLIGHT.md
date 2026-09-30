@@ -270,6 +270,14 @@ Basic 수집은 설정에 `"messages": true`를 추가한다. 같은 producer에
 명령을 지정한다. 생략한 쪽은 기본 producer를 사용한다. override 실행 파일과 관련 구현도
 `toolInputs`에 넣어야 하며 feature 설정·명령·override 버전은 캐시 키에 포함된다.
 
+## trace와 공유하는 구현
+
+preflight는 [trace](TRACE.md)와 같은 입력 해석 모듈 위에 있다. 옛 역방향 영향 형식(`LanguageImpact`)의 계약·검증과
+kartograph·cartograph·dartograph 어댑터, 영향·순회 파서의 JSON 검사, 역방향 continuation의 최단 경로 탐색(root 정렬, 키 순
+자식, 처음 닿은 부모가 `via`), limitation·gap 신원(정렬 JSON 한 줄로 중복 제거 후 신원 순 나열), context 파일 읽기를 trace와
+공유한다. Flutter 브리지 경계 연결(MethodChannel·Basic·Event 경계, 호출자 binding, 분기 근거), runtime 대조, `--summary`·
+`--explain` view는 preflight 고유다. 입력·출력 계약과 종료 코드·오류 문구는 공유 전과 같다.
+
 ## 실행 근거
 
 당시 개발 producer가 있던 환경에서 다음 검증을 실행했다. 필요한 producer 명령은

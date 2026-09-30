@@ -98,8 +98,10 @@ schemagraph facts ───────── relation-decl ───┘        
   보존한다. hop은 언어 내부(A), persistence 경계(B), http 경계(C) 셋이고 체인 키는
   `[member, platform, id]`다. 끊긴 곳은 `gaps[]`(예: `handler-without-symbol`,
   `non-http-entry`, `stale-graph`)로 보고한다. 기존 역방향 형식(kartograph-impact, cartograph
-  change-impact, dartograph impact)은 어댑터로 받는다. preflight의 Flutter 계약은 바꾸지 않고
-  파서·어댑터를 공유한다.
+  change-impact, dartograph impact)은 어댑터로 받는다. preflight는 Flutter 브리지 계약을 그대로 두고,
+  파서·어댑터·continuation 모듈을 trace와 공유한다 — 옛 역방향 영향 계약(`exchange/language-impact.ts`)과
+  세 어댑터, JSON 검사 도우미, 최단 경로 continuation 탐색(`breadth-first.ts`), gap·limitation 신원
+  (`sorted-json.ts`), context 파일 읽기다. bridge 경계 연결·runtime 대조·요약 view만 preflight 고유다.
 - **공유 규칙**: isthmus `conformance/`에 여러 생산자가 공유하는 suite(http-template,
   url-compose, sql-relations, location-column)와 파일별 sha256 목록을 둔다. 생산자는
   `conformance.lock`으로 벤더링한다. 닫힌 limitation 접두사 목록은 Phase 0에서
@@ -321,6 +323,17 @@ relation-use symbol, preflight를 trace 코어 위의 얇은 래퍼로 수렴.
   ([TRACE](TRACE.md#library-공유-sdk-저장소)) — SDK 호출부의 역방향 영향에서 consumer 앱의 역방향 분석으로 이어 가되, id는
   `shared`·`symbol-map` 선언으로만 맞추고 어긋나면 `library-continuation-unrooted`·`library-ids-unmatched` gap이다. 서버 측
   명령형 클라이언트·relation-use symbol·preflight 수렴은 남았다.
+- 진행(2026-09-30, Phase 7d): preflight 수렴. preflight의 Flutter 브리지 계약(입력 `isthmus-preflight-context` v1, 출력
+  `isthmus-preflight` v1, 종료 코드·오류 문구)은 그대로 두고, trace와 겹치던 부분을 공유 모듈로 옮겼다 — 옛 역방향 영향
+  계약과 검증(`language-impact`, depth 128·관계 32 상한 한 곳), 영향·순회 파서의 JSON 검사(`json-guards`), Kotlin·순회 부분
+  위치 규칙, 역방향 continuation의 최단 경로 탐색(kartograph 어댑터와 preflight 보고서), gap·limitation 신원과 결정적 나열,
+  context 파일 읽기. 녹화한 테스트 입력 12,145건과 결정적 변이 합성 입력 32,786건의 함수 결과, 실제 프로세스 preflight 실행
+  2,624건의 stdout·stderr·종료 코드가 리팩터 전과 바이트 단위로 같다. bridge 경계 연결·runtime 대조·view는 preflight 고유라
+  남겼다.
+- **상태(2026-09-30): Phase 7 완료.** 조직 경계(7a: surface export/import·`libraries`, capture 지원), 서버 측 명령형 클라이언트의
+  base 결합(Spring `DefaultUriBuilderFactory`·`RestTemplateBuilder.rootUri`·`@HttpExchange`, url-compose 벡터)과 go·rust http,
+  gartograph·rustograph의 relation-use usr([GRAPH-EXCHANGE](GRAPH-EXCHANGE.md)), preflight 수렴(7d)이 들어갔다. 남은 확장
+  (upstream route 전이 추적, surface continuation, 여러 단계 SDK 사슬)은 [TRACE](TRACE.md#현재-범위와-남은-일)에 둔다.
 
 ## 미결 결정
 
