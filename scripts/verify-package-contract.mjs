@@ -44,6 +44,7 @@ for (const requiredPath of [
   'dist/exchange/language-traversal.js',
   'scripts/capture-preflight.mjs',
   'scripts/capture-trace.mjs',
+  'scripts/render-pr-comment.mjs',
   'dist/report/trace-capture.js',
   'scripts/run-child.mjs',
   'scripts/build-preflight-toolchain.mjs',
