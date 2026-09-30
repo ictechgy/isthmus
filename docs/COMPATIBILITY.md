@@ -32,7 +32,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 | cartograph | **0.23.0** | GitHub Release 아카이브(`cartograph-0.23.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
 | kartograph | **0.18.0** | GitHub Release 아카이브(`kartograph-0.18.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
 | dartograph | **0.16.0** | `dart pub global activate dartograph 0.16.0` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |
-| schemagraph | **0.7.0** | GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
+| schemagraph | **0.7.0** | `cargo install schemagraph-cli --version 0.7.0 --locked` 또는 GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
 | gartograph | **0.9.0** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.0` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
 | rustograph | **0.4.0** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.0` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
 
@@ -60,17 +60,19 @@ kartograph 0.10.1부터 발행됐고, 중첩 제네릭·완전 정규화·`this.
 
 isthmus 0.10.0은 http 도메인(check·query·`diff --http`·trace·surface)과 persistence·language-traversal 입력을
 받는다. 이 세트의 producer는 그 문서를 생산하는 첫 발행본이다 — cartograph 0.23.0(Homebrew·GitHub Release),
-kartograph 0.18.0(GitHub Release·Gradle Plugin Portal), dartograph 0.16.0(pub.dev), schemagraph 0.7.0(GitHub
-Release 아카이브), gartograph 0.9.0·rustograph 0.4.0(GitHub Release·Homebrew). 새로 더한 schemagraph·gartograph·
-rustograph 행은 cold-cache CI가 발행 아카이브의 checksum과 `--version`을 manifest와 대조한다. 2026-09-30 기준
-crates.io `schemagraph-cli`는 0.6.0까지만 게시돼 있어 schemagraph 설치 경로에는 GitHub Release 아카이브만 적었다.
+kartograph 0.18.0(GitHub Release·Gradle Plugin Portal), dartograph 0.16.0(pub.dev), schemagraph 0.7.0(crates.io
+`schemagraph-cli`·GitHub Release 아카이브), gartograph 0.9.0·rustograph 0.4.0(GitHub Release·Homebrew). 새로 더한
+schemagraph·gartograph·rustograph 행은 cold-cache CI가 발행 아카이브의 checksum과 `--version`을 manifest와 대조한다.
+cold-cache는 빌드 시간이 없는 schemagraph 릴리스 아카이브를 쓰고, crates.io 설치 경로는 아래 발행 전 확인에서 따로
+확인했다.
 
 발행 전 확인(2026-09-30, macOS arm64): 위 여섯 producer의 발행 아카이브(cartograph는 formula·릴리스 노트의
 sha256, kartograph TAR·gartograph·rustograph·schemagraph는 발행 checksum 파일과 일치)와 격리한 pub cache의
 dartograph 0.16.0, 릴리스 브랜치에서 `npm pack`한 isthmus-cli 0.10.0 후보 tarball의 격리 설치본이
 `scripts/verify-installed-compatibility.mjs`를 통과했다. 같은 후보와 cartograph·dartograph·kartograph 발행본으로
 `scripts/verify-cold-cache.mjs`의 고정 문서 조인·retention·preflight와 `fixtures/bridge-app` 3방향 MethodChannel
-조인도 통과했다. npm 0.10.0 설치본의 대조는 발행 뒤 cold-cache workflow로 확인한다.
+조인도 통과했다. crates.io에서 격리 root로 `cargo install schemagraph-cli --version 0.7.0 --locked`한 설치본도
+`verify-installed-compatibility`를 통과했다. npm 0.10.0 설치본의 대조는 발행 뒤 cold-cache workflow로 확인한다.
 
 이 확인은 설치·버전·기존 bridge 조인 경로다. 이 세트 producer의 http·persistence·language-traversal 문서를
 발행본으로 만들어 trace까지 잇는 e2e는 각 producer 저장소의 개발 검증(isthmus 76b6141·3a45450 벡터 lock)에 있고,
