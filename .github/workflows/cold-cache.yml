@@ -62,12 +62,26 @@ jobs:
           echo "dartograph=$(node -p "require('./compatibility.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
           echo "kartograph=$(node -p "require('./compatibility.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
       - name: Install cartograph release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARTOGRAPH_VERSION: ${{ steps.compatibility.outputs.cartograph }}
         run: |
+          set -euo pipefail
+          archive="cartograph-$CARTOGRAPH_VERSION-macos-universal.tar.gz"
           curl -fsSL --retry 3 \
-            https://github.com/ictechgy/cartograph/releases/download/${{ steps.compatibility.outputs.cartograph }}/cartograph-${{ steps.compatibility.outputs.cartograph }}-macos-universal.tar.gz \
-            -o "$RUNNER_TEMP/cartograph.tar.gz"
+            "https://github.com/ictechgy/cartograph/releases/download/$CARTOGRAPH_VERSION/$archive" \
+            -o "$RUNNER_TEMP/$archive"
+          # cartograph 릴리스에는 checksum 파일이 없다. brew formula가 하던 무결성 검사를
+          # GitHub가 기록한 release asset digest(sha256) 대조로 유지한다.
+          digest="$(gh api "repos/ictechgy/cartograph/releases/tags/$CARTOGRAPH_VERSION" \
+            --jq ".assets[] | select(.name == \"$archive\") | .digest")"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "cartograph $CARTOGRAPH_VERSION: release asset $archive has no sha256 digest; check the release assets." >&2; exit 1 ;;
+          esac
+          echo "${digest#sha256:}  $RUNNER_TEMP/$archive" | shasum -a 256 --check
           mkdir -p "$RUNNER_TEMP/cartograph"
-          tar -xzf "$RUNNER_TEMP/cartograph.tar.gz" -C "$RUNNER_TEMP/cartograph"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/cartograph"
       - run: dart pub global activate dartograph ${{ steps.compatibility.outputs.dartograph }}
       - name: Install kartograph release
         run: |
