@@ -119,6 +119,7 @@ measured.
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace` (in development): route → handler → tables → DB dependents, and route → call sites → affected client code, joined by exact producer ids with explicit gaps |
 | [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http` (in development): base vs head route surface of one server/spec or a workspace, calls that bound at base and no longer bind at head, `--fail-on` exit codes, and a base..head CI example |
+| [`docs/HTTP-SURFACE.md`](docs/HTTP-SURFACE.md) | `isthmus-http-surface` v1 and `surface export` (in development): a server's route declarations published across an organization boundary without handler paths, names or internals, imported by `trace` and `diff --http` as a sha256-pinned surface member |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | `language-traversal` v1, the shared forward/reverse traversal format producers emit for `trace` |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Temporary Dart/Swift extractors, pinned JSON, hand-join verification |

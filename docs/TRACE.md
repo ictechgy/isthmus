@@ -158,6 +158,60 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
   밝혀야 한다. 단일 project context는 member를 받지 않는다.
 - bridge-facts 문서에는 revision 필드가 없어 문서의 신선도는 검사하지 못한다. link 조인의 문서 `generatedAt`이
   하루 넘게 벌어지면 조인 한계 `input-freshness`(link 출처)로만 보인다.
+- **surface member**(`{name, surface: {path, sha256}}`): 다른 조직이 게시한 [`isthmus-http-surface`](HTTP-SURFACE.md)
+  artifact를 link의 server·contract로 가져온다. CLI가 파일 sha256을 대조하고(다르면 2) digest·계약을 검증한다. 그 route는
+  핸들러·DB hop이 게시되지 않아 `server-surface-opaque` gap에서 멈춘다([HTTP-SURFACE](HTTP-SURFACE.md#trace)). surface
+  member에는 project·revision·문서·분석이 없고, 선택·`fileSymbols`·library가 가리킬 수 없다.
+- **`libraries`**(선택): 공유 SDK 저장소(provider member)를 쓰는 앱(consumer member)의 선언이다([아래](#library-공유-sdk-저장소)).
+  consumer member는 bridge-facts 문서 없이 역방향 분석만 가질 수 있다(`documents: []`는 library consumer에만 허용).
+
+### library (공유 SDK 저장소)
+
+여러 앱이 쓰는 사내 API 클라이언트 라이브러리(Kotlin·Swift·TS SDK)는 route-call을 **SDK 저장소**에 담는다. 그 SDK member는
+여느 client member처럼 link에 귀속되고, trace는 SDK 호출부의 역방향 영향(SDK 심볼)에서 **앱 저장소의 역방향 분석**으로 이어
+간다 — "이 API를 바꾸면 SDK의 이 호출부, 그리고 그 SDK 함수를 부르는 앱 A·B의 코드가 영향받는다".
+
+```jsonc
+"libraries": [
+  { "name": "app-a<-sdk", "consumer": "app-a", "provider": "sdk", "ids": "shared",
+    "publicSymbols": ["kt:com.example.sdk.OrdersSdk#order(String)", "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"] },
+  { "name": "app-b<-sdk", "consumer": "app-b", "provider": "sdk", "ids": "symbol-map",
+    "symbolMap": [{ "provider": "kt:com.example.sdk.OrdersSdk#order(String)", "consumer": "kt:shaded.orders.OrdersSdk#order(String)" }] }
+]
+```
+
+**id 연속성.** 앱 분석이 SDK 심볼에 주는 id(외부 의존성 심볼의 id)와 SDK member 분석이 자기 심볼에 주는 id가 같다는 보장은
+없다. Swift USR·JVM 기술자처럼 모듈과 시그니처로 정해지는 id는 같을 수 있지만, 파일 경로 기반 id(`node_modules/…` 대
+`src/…`)나 재배치·난독화된 패키지는 다르다. 그래서 isthmus는 id를 **추측해 맞추지 않고** 선언을 요구한다.
+
+- `ids: "shared"`: 사용자가 "같은 생산자가 두 저장소에서 SDK 심볼에 같은 id를 준다"고 선언한다. 문자열이 정확히 같을 때만
+  잇는다. 선택 `publicSymbols`는 앱이 부를 수 있는 SDK 공개 API id다 — 있으면 그 id에서만 잇고, 없으면 호출에서 닿은 모든 SDK
+  id(호출을 감싼 심볼 포함)를 후보로 본다. SDK 내부 심볼은 앱 분석의 root가 아니므로, 공개 API를 밝히지 않으면 아래
+  `library-continuation-unrooted`가 나기 쉽다.
+- `ids: "symbol-map"`: id가 다를 때 사용자가 준 대응표다. 표에 있는 provider id만 잇는다(표가 공개 API다). provider id는
+  한 번만 나올 수 있다.
+- 생략하거나 다른 값이면 입력 오류다. consumer·provider는 서로 다른 문서 member여야 하고, 한 member가 provider이면서 consumer일
+  수 없다 — v1은 library 사슬(SDK가 쓰는 core SDK)을 따라가지 않는다. library는 64개, `symbolMap`·`publicSymbols` 항목은 합계
+  100,000개까지다.
+
+**잇는 규칙.** route → 귀속된 SDK 호출 → SDK 역방향 영향(`affected`)은 전과 같다. 호출 member가 provider인 library마다:
+
+1. 후보 = 호출을 감싼 SDK 심볼 + SDK 역방향 영향 심볼. 선언대로 consumer id로 옮긴다(공개 API 밖이면 `notPublic`으로 센다).
+2. consumer member의 같은 platform 역방향 분석이 그 id를 root로 받아 **심볼로 찾았으면** 잇는다(`entries`, 앱 영향은 그 root에서
+   닿은 정점).
+3. root로 받았지만 생산자가 앱 그래프에서 찾지 못했으면(root-not-found — symbol 없는 root) 생산자가 밝힌 "그 노드 없음"이라
+   잇지 않고 `notInConsumerGraph`로 센다. 그 분석은 잘림으로 표시되므로 쓰는 hop마다 `analysis-truncated`가 남는다(기존 규칙).
+4. 어느 분석도 root로 받지 않았으면 앱이 그 SDK 심볼을 부르는지 모르는 곳이라 `library-continuation-unrooted` gap이다.
+5. library 전체에서 provider가 아는 SDK id(provider 분석의 root·도달 정점과 route-call usr)를 옮긴 것 중 consumer 분석이 심볼로
+   찾은 root가 하나도 없으면 `library-ids-unmatched` gap이다 — `shared` 선언이 틀렸거나 consumer 분석을 SDK id로 root하지 않은
+   것이라, 어느 쪽이든 앱 영향이 조용히 빈다. 선택과 무관하게 선언마다 한 번 판정한다.
+
+**선언의 책임.** `shared`는 사용자 선언이다. id가 **전부** 어긋나면 5가 잡지만, 일부만 어긋나면(같은 생산자의 id가 제네릭·
+확장 등 일부 심볼에서만 다름) 어긋난 id는 consumer 그래프에 없다고 신고되어(3) 개수로만 남는다 — isthmus는 "앱이 부르지
+않음"과 "id가 다름"을 구분할 수 없다. 생산자가 id 안정성을 보장하지 않으면 `symbol-map`을 쓴다.
+
+capture는 아직 library를 모른다. consumer 분석은 SDK 공개 API id(또는 대응표의 consumer id)를 root로 넘겨 만든다. 반대 방향
+(앱 심볼 → SDK → route) 선택은 v1에 없다 — 앱 심볼의 심볼 선택은 앱 member 안에서 route 핸들러에 닿지 않아 `non-http-entry`다.
 
 ### 사전 계산 분석
 
@@ -242,6 +296,14 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 }
 ```
 
+- **library 연속(`calls[].consumers`)**: 호출 member가 library provider일 때만 호출 hop에 consumer 앱마다
+  `{library, member, ids, entries: [{provider, consumer}], notInConsumerGraph, notPublic?, affected}`를 싣는다. `entries`는 실제로
+  이어 간 (SDK id, 앱 root id) 쌍이고, `affected`는 앱 member 분석의 도달 정점이다(경로는 앱 root id부터). `notPublic`은 공개
+  API를 선언한 library(`publicSymbols`·`symbolMap`)에만 있다. consumer 영향은 `summary.clientSymbols`·`summary.evidence`에 함께
+  세고, candidate 근거는 `library`를 밝힌 `candidate-dispatch` gap을 남긴다. workspace 요약에는 선언이 있을 때만
+  `libraries: [{name, consumer, provider, ids, publicSymbols?, symbolMapEntries?}]`(목록은 개수만)가 실린다.
+- **surface member 끝점**: 가져온 선언 끝점은 `location`이 없고, 게시자가 usr를 공개했을 때만 `symbol`(`qualifiedName`도 usr
+  값)을 싣는다. workspace 요약의 surface member는 `{name, surface: {name, revision, sha256, privacy}}`다.
 - 끝점(`declarations`·`calls[].call`·`use`·`decls`)은 `check --pairs`와 같은 투영(platform·
   location·symbol·route)이다. 모든 id는 생산자가 준 문자열이다. 체인 키는 `[platform, id]`이며
   다른 생산자의 id를 섞지 않는다.
@@ -286,7 +348,7 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   넘으면 부분 결과 없이 종료 코드 2다.
 - **출력 상한(`--max-chains`·`--max-rows`)**: 주면 `chains`를 앞에서 N개, 그 밖의 행 목록(최상위 `gaps`·`notices`·
   `limitations`·`analysisLimitations`·`analyses`, chain의 `routes`·`handlers`·`relationUses`·`database`, route의
-  `declarations`·`contracts`·`calls`, 호출의 `affected`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
+  `declarations`·`contracts`·`calls`, 호출의 `affected`·`consumers`, consumer hop의 `entries`·`affected`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
   `reachedFrom`, DB 정점의 `dependents`)을 **목록마다** M개로 자른다. 하나만 주면 다른 하나는 범위 상한이다. 출력에
   `truncation: {maxChains, maxRows, truncated, omittedLists, omitted: [{path, total, shown}]}`(자른 목록의 JSON 경로,
   최대 1,000개 — 넘으면 `omittedLists`로 전체 수만)를 더한다. hop 증거인 `path`·`relationships`와 `selection`은 자르지
@@ -332,6 +394,9 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 | `file-without-symbols` | 선택한 파일에 놓인 분석 심볼·사실이 없다(없다는 증거가 아님). 체인을 만들지 않는다 |
 | `link-service-ambiguous` | link의 선언 측이 여러 서비스를 내는데 `match.services`가 좁히지 않아 선언을 하나도 잇지 않았거나, 좁혔지만 service 없는 선언이 섞여 그 선언을 뺐거나, 좁힌 범위 밖 서비스가 있어 service 없는 호출을 귀속하지 않았다(`link`·`member`) |
 | `http-member-unlinked` | workspace member의 http 문서가 어느 link에도 그 역할(client, 또는 server 선언·link가 고른 contract 문서)로 들지 않아 잇지 않았다. 문서 단위로 세므로 link가 contract 문서를 골라 쓸 때 빠진 같은 member의 다른 openapi 문서도 드러난다 |
+| `server-surface-opaque` | route의 선언 측이 가져온 http surface(surface member)라 핸들러·정방향 도달·DB hop이 게시되지 않았다. 체인은 route 선언에서 멈춘다. 게시자가 핸들러 usr를 공개했으면 `symbol`에 싣는다(`member`·`route`) |
+| `library-continuation-unrooted` | library provider(SDK)의 호출에서 닿은 SDK id 중 consumer로 옮길 수 있는 id를 consumer의 역방향 분석이 root로 받지 않아, 그 SDK 심볼을 부르는 앱 코드를 따라가지 못했다(개수·예시 id, `library`·`member`) |
+| `library-ids-unmatched` | provider가 아는 SDK id를 library 선언(`ids`)대로 옮긴 것 중 consumer 역방향 분석이 심볼로 찾은 root가 하나도 없다 — id 체계가 두 저장소에서 다르거나(`symbol-map`을 쓴다) consumer 분석을 SDK id로 root하지 않았다(`library`·`member`) |
 
 ### gap과 알림
 
@@ -352,7 +417,8 @@ gap은 `selector`(체인)·`member`(workspace)·`route`·`symbol`·`analysis`·`
 - `--strict` 없이는 gap이 있어도 0이다. gap은 보고서의 `gaps`로만 읽는다.
 - 알림(`notices`)만 있으면 `--strict`에서도 0이다. 예: 분석이 파일의 심볼을 모두 위치시키는 파일 선택.
 - 사전 계산 artifact의 sha256 불일치, 증언과 다른 문서 revision, member project와 다른 문서·분석, 구현하지 않은
-  link match 필드는 gap이 아니라 2다(입력이 선언과 다르다).
+  link match 필드, surface 파일의 sha256 불일치·digest 불일치·계약 위반, 계약 문서가 없는 surface를 계약으로 쓴 link는 gap이
+  아니라 2다(입력이 선언과 다르다).
 - 이 의미는 `src/cli/trace-command.test.ts`가 실제 CLI 프로세스로 고정한다.
 
 ## capture로 한 번에 수집하기
@@ -552,16 +618,20 @@ impact)로만 쓴다. `--roots-from`이 없는 cartograph는 `arguments`/`separa
 
 ## 현재 범위와 남은 일
 
-- 구현: 단일 project, workspace(member·link·catalog·사전 계산 분석), routes·relations·symbols·files 선택.
+- 구현: 단일 project, workspace(member·link·catalog·사전 계산 분석), routes·relations·symbols·files 선택, 조직 경계
+  (surface member — [HTTP-SURFACE](HTTP-SURFACE.md), 공유 SDK `libraries` 한 단계 연속).
 - **형제 전파 opt-in은 보류**한다. 계획은 이름만 적고(`형제 전파 opt-in`) 무엇을 형제로 볼지(같은 핸들러의 다른
   route, 같은 테이블의 다른 컬럼, 같은 인터페이스의 다른 구현 등)와 전파 범위를 정의하지 않는다. 정의 없이 넣으면
   과대 근사의 크기를 소비자가 가늠할 수 없으므로 계획이 정의할 때까지 넣지 않는다.
 - 남은 일: link match의 `interfaces`와 `baseRefs[].pathPrefix`
   (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류).
   http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
+- 조직 경계의 남은 일: surface의 사전 계산 continuation(게시자 정방향·DB 분석), library 사슬(여러 단계 SDK), 앱 심볼 → SDK →
+  route 방향 선택, capture 설정의 surface member·library 지원.
 - 입력 수집은 [`scripts/capture-trace.mjs`](#capture로-한-번에-수집하기)가 맡는다. MCP `trace` 도구는 출력 상한과 함께
   노출했다([MCP](MCP.md)). 합성 예제는 `fixtures/trace/`(단일 project)와 `fixtures/trace-workspace/`(분리된 두 저장소)에
-  있다(실제 앱 입력으로 쓸 수 없다).
+  있다(실제 앱 입력으로 쓸 수 없다). 조직 경계 예제는 `fixtures/http-surface/client/`(가져온 surface)와
+  `fixtures/trace-library/`(surface로 가져온 API, SDK provider, `shared`·`symbol-map` consumer 앱 둘)다.
 - 생산자 쪽: TS 생산자의 route-decl·relation-use usr와 `reach`/impact의 language-traversal 출력,
   schemagraph impact의 language-traversal 출력은 각 저장소에서 진행 중이다. 옛 schemagraph-impact v1은
   어댑터로 받는다.

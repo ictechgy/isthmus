@@ -314,6 +314,14 @@ http-surface export/import(매니페스트로 묶을 수 없는 조직), 공유 
 서버 측 명령형 클라이언트(RestTemplate·WebClient·RestClient), gartograph·rustograph의
 relation-use symbol, preflight를 trace 코어 위의 얇은 래퍼로 수렴.
 
+- 진행(2026-09-30, Phase 7a): 조직 경계. [`isthmus-http-surface` v1](HTTP-SURFACE.md) — `isthmus surface export`가 서버
+  선언 측 문서에서 위치·핸들러 이름·호출·테스트 소스·한계 원문을 뺀 artifact(내용 digest, 선택적 핸들러 usr)를 만들고, 클라이언트
+  조직이 파일 sha256을 고정한 surface member로 trace·`diff --http`(매니페스트, 또는 artifact 두 개)에 가져온다. trace는 surface
+  route에서 `server-surface-opaque`로 멈춘다(continuation은 v1에서 불투명). 공유 SDK용 workspace `libraries`
+  ([TRACE](TRACE.md#library-공유-sdk-저장소)) — SDK 호출부의 역방향 영향에서 consumer 앱의 역방향 분석으로 이어 가되, id는
+  `shared`·`symbol-map` 선언으로만 맞추고 어긋나면 `library-continuation-unrooted`·`library-ids-unmatched` gap이다. 서버 측
+  명령형 클라이언트·relation-use symbol·preflight 수렴은 남았다.
+
 ## 미결 결정
 
 | 결정 | 현재 권고 | 정할 때 |

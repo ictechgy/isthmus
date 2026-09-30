@@ -3,7 +3,8 @@
 isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.md),
 [언어 간 전이 분석과 수집](PREFLIGHT.md),
 [런타임 통신 검증](RUNTIME.md), 생산자 순회 결과인 [`language-traversal` v1](LANGUAGE-TRAVERSAL.md)과
-그것을 소비하는 [route 단위 영향 추적(`trace`)](TRACE.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
+그것을 소비하는 [route 단위 영향 추적(`trace`)](TRACE.md), 조직 경계로 건네는 서버 선언 측 표면
+[`isthmus-http-surface` v1](HTTP-SURFACE.md)에 있다. 이들은 기존 bridge-facts v1 생산자 필드를
 변경하지 않는다. 런타임에서 지원하는 transport를 정적 producer 지원으로 해석하지 않는다.
 
 개발 중인 [BasicMessageChannel v2](BRIDGE-MESSAGES.md)와
@@ -592,6 +593,7 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | python `route-call`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
 | `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
 | `diff --http`(surface·workspace·base..head CI, [HTTP-DIFF](HTTP-DIFF.md)) — 같은 조인·귀속 규칙으로 같은 호출 집합을 base·head 선언 측에 교차 평가 | 구현(Phase 3 소비자) | — |
+| 조직 경계: `isthmus-http-surface` v1(`surface export`, surface member로 trace·`diff --http`에 가져오기, [HTTP-SURFACE](HTTP-SURFACE.md))와 workspace `libraries`(공유 SDK, trace의 consumer 연속) | 구현(Phase 7a 소비자) | — |
 | graph route 간선, impact의 http blocker, preflight | 초안 | 각 명령이 http 문서를 원인 문구로 거부(bridge `diff`도 `--http` 없이는 거부) |
 | `docs/limitation-prefixes.json` 추출 | 초안 | 닫힌 목록은 이 절과 `src/report/route-issues.ts`가 정본 |
 
@@ -1193,7 +1195,8 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
 > 안에서 받는다(member별 `analyses`를 더하고, `match.interfaces`·`baseRefs[].pathPrefix`는 거부한다). trace의
 > link 조인에서 link 이름이 scope다. `match.services`가 있으면 그 서비스의 선언만 잇고 다른 서비스로 확정된 호출은
 > 귀속하지 않으며, 좁히지 않은 link의 선언 측이 여러 서비스면 선언을 잇지 않고 gap으로 밝힌다. revision 검사·사전 계산 분석·
-> 카탈로그 기록의 trace 규칙은 TRACE에 있다.
+> 카탈로그 기록의 trace 규칙은 TRACE에 있다. surface member와 `libraries`는 trace·`diff --http` 모두 같은 파서로 받는다
+> ([HTTP-SURFACE](HTTP-SURFACE.md), [TRACE library](TRACE.md#library-공유-sdk-저장소)).
 
 기존 "한 조인의 모든 문서는 정확히 같은 `project`" 규칙은 **문서·member 단위로 유지**한다.
 예외는 하나다. `isthmus-workspace` 매니페스트가 선언한 link에 한해 http 도메인만 member 사이
@@ -1231,7 +1234,16 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   잇지 않는다.
 - `contract.authoritative`는 "이 클라이언트는 이 스펙에 있는 것만 부른다"는 사용자 선언이며,
   증거에는 선언 출처(workspace)를 표시한다.
-- `libraries[{consumer, provider}]`는 공유 SDK 저장소용으로 이름만 예약한다.
+- **surface member** `{name, surface: {path, sha256}}`는 다른 조직이 게시한 [`isthmus-http-surface`](HTTP-SURFACE.md) artifact다.
+  문서 member 자리(link `server`, `contract.member`)에 쓸 수 있고, project·revision·문서는 artifact가 대신한다. 이 경우 각 문서의
+  project 규칙은 적용하지 않는다 — artifact에는 project가 없고, 파일 sha256 고정과 내용 digest가 신원을 대신한다.
+  `contract.member`가 surface면 `documents`를 쓰지 않고 surface의 openapi 문서 전체가 계약이다.
+- **`libraries[{name, consumer, provider, ids, publicSymbols?, symbolMap?}]`**는 공유 SDK 저장소(provider — route-call을 담은
+  client member)와 그것을 쓰는 앱(consumer)의 선언이다. provider의 호출은 link에 여느 호출처럼 귀속되고, trace가 SDK 역방향
+  영향에서 consumer 역방향 분석으로 이어 간다. 두 저장소의 생산자 id가 어떻게 맞는지를 `ids`(`shared` — 같은 문자열,
+  `symbol-map` — 대응표)로 반드시 선언하고, 맞지 않으면 gap으로 밝힌다([TRACE](TRACE.md#library-공유-sdk-저장소)). consumer
+  member는 bridge-facts 문서 없이 분석만 가질 수 있다. `diff --http`는 선언을 검증만 하고 쓰지 않는다(깨짐은 SDK 호출부에서
+  보고한다).
 - 상세 규칙(revision 검사, 사전 계산 분석, 카탈로그 기록)의 trace 쪽은 [TRACE](TRACE.md)로 옮겼다. 카탈로그
   재발행과 check 쪽 규칙은 check가 매니페스트를 받을 때 정한다.
 
@@ -1363,6 +1375,19 @@ pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안
 - **`diff --http`**: `order` 값은 비교하지 않는다(앞에 등록 하나를 더하면 뒤 index가 모두 바뀐다). 순서 변화는 같은
   호출의 결합 변화(`rebound-route-calls`·`changed-bound-route*`)와 새 surface finding `route-shadowing-changed`로 본다.
   두 시점의 dispatch가 다르면 인벤토리 불일치로 입력 오류다([HTTP-DIFF](HTTP-DIFF.md#등록-순서-registration-order)).
+
+### Phase 7a 결정 (조직 경계)
+
+- **surface는 선언 측 bridge-facts의 부분집합이다.** 새 매칭 규칙을 만들지 않으려고 문서 모양을 거의 그대로 두고, 가져오는 쪽이
+  같은 파서로 검증한다. 위치·핸들러 이름·호출·테스트 소스·dynamic 원문·group 이름은 빼고, 핸들러는 불투명 토큰으로 묶는다
+  (catch-all 접두사 짝짓기와 핸들러 구분). usr는 게시자가 골랐을 때만 싣는다.
+- **한계는 서버·계약 측 공백 접두사만 싣고 기본은 원문을 가린다.** 판정은 닫힌 접두사로만 하므로 원문이 없어도 error 전제는
+  같다. 호출 측·체인 전용·모르는 접두사의 한계는 소비자 link 조인에서 서버 문서의 것이 판정에 쓰이지 않으므로 싣지 않는다.
+- **continuation은 v1에서 불투명이다.** 게시자의 정방향·DB 분석을 실으면 비공개 원칙이 무너지고 소비자가 그 revision 일치를
+  증명할 수 없다. trace는 `server-surface-opaque`로 멈춘다.
+- **서명 없는 무결성**: 내용 digest(정규 JSON SHA-256)와 소비자가 고정한 파일 sha256. 진위는 배포 채널이 맡는다.
+- **library id는 선언으로만 맞춘다**(`shared`·`symbol-map`). 선언이 틀려 하나도 맞지 않으면 `library-ids-unmatched`, root로 받지
+  않은 id는 `library-continuation-unrooted`다. root-not-found는 생산자가 밝힌 "노드 없음"이라 개수만 싣는다. v1은 한 단계만 잇는다.
 
 ### 미결 항목
 
