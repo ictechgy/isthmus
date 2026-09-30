@@ -1,0 +1,109 @@
+{
+  "format": "isthmus-trace-context",
+  "libraries": [
+    {
+      "consumer": "app-a",
+      "ids": "shared",
+      "name": "app-a<-sdk",
+      "provider": "sdk",
+      "publicSymbols": [
+        "kt:com.example.sdk.OrdersSdk#order(String)",
+        "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"
+      ]
+    },
+    {
+      "consumer": "app-b",
+      "ids": "symbol-map",
+      "name": "app-b<-sdk",
+      "provider": "sdk",
+      "symbolMap": [
+        {
+          "consumer": "kt:shaded.orders.OrdersSdk#order(String)",
+          "provider": "kt:com.example.sdk.OrdersSdk#order(String)"
+        },
+        {
+          "consumer": "kt:shaded.orders.OrdersSdk#placeOrder(Order)",
+          "provider": "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "client": "sdk",
+      "match": {
+        "hosts": [
+          "api.example.com"
+        ]
+      },
+      "name": "sdk->api",
+      "server": "api"
+    }
+  ],
+  "members": [
+    {
+      "name": "api",
+      "surface": {
+        "path": "../http-surface/surfaces/example-api-2.4.surface.json",
+        "sha256": "6ad0a3bbfc35ef56bccb0b745c9d5e2ea0057a76cb393a2f0ce69060f14ff183"
+      }
+    },
+    {
+      "analyses": [
+        {
+          "id": "sdk-reverse",
+          "path": "sdk/sdk-reverse.json",
+          "platform": "kotlin",
+          "role": "reverse"
+        }
+      ],
+      "documents": [
+        "sdk/sdk.http.json"
+      ],
+      "name": "sdk",
+      "project": "/work/orders-sdk",
+      "revision": "sdk-1.8.0"
+    },
+    {
+      "analyses": [
+        {
+          "id": "app-a-reverse",
+          "path": "app-a/app-a-reverse.json",
+          "platform": "kotlin",
+          "role": "reverse"
+        }
+      ],
+      "documents": [],
+      "name": "app-a",
+      "project": "/work/app-a",
+      "revision": "a-5.0.0"
+    },
+    {
+      "analyses": [
+        {
+          "id": "app-b-reverse",
+          "path": "app-b/app-b-reverse.json",
+          "platform": "kotlin",
+          "role": "reverse"
+        }
+      ],
+      "documents": [],
+      "name": "app-b",
+      "project": "/work/app-b",
+      "revision": "b-2.1.0"
+    }
+  ],
+  "selection": {
+    "routes": [
+      {
+        "method": "GET",
+        "template": "/api/orders/{}"
+      },
+      {
+        "method": "POST",
+        "template": "/api/orders"
+      }
+    ]
+  },
+  "version": 1
+}

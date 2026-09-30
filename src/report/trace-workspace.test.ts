@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { importHttpSurface } from '../exchange/http-surface.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { analysisProject, normalizeTraceAnalysis, parseTraceContext } from '../exchange/trace-context.ts';
 import {
@@ -35,7 +36,7 @@ async function load(root: URL, contextName: string): Promise<Value> {
   const context = await readJson(root, contextName);
   const paths = context.members === undefined
     ? [...context.documents, ...context.analyses.map(({ path }: { path: string }) => path)]
-    : context.members.flatMap((member: any) => [...member.documents, ...(member.analyses ?? []).map(({ path }: any) => path)]);
+    : context.members.flatMap((member: any) => [...(member.documents ?? []), ...(member.analyses ?? []).map(({ path }: any) => path)]);
   const files: Files = {};
   for (const path of paths) files[path] = await readJson(root, path);
   return { context, files };
@@ -67,6 +68,12 @@ function build(base: Value, mutate: (value: Value) => void = () => {}): TraceInp
 }
 
 const workspace = (mutate?: (value: Value) => void) => createTraceReport(build(workspaceFixture, mutate));
+/** 조직 경계 fixture(`fixtures/trace-library` — surface로 가져온 API, SDK provider, 두 consumer 앱)다. */
+const libraryRoot = new URL('../../fixtures/trace-library/', import.meta.url);
+const libraryFixture = await load(libraryRoot, 'context.json');
+const librarySurface = importHttpSurface(await readJson(libraryRoot, '../http-surface/surfaces/example-api-2.4.surface.json'));
+const library = (mutate?: (value: Value) => void) =>
+  createTraceReport({ ...build(libraryFixture, mutate), surfaces: new Map([['api', librarySurface]]) });
 const single = (mutate?: (value: Value) => void) => createTraceReport(build(singleFixture, mutate));
 const codes = (result: TraceReport) => [...new Set(result.gaps.map(({ code }) => code))].sort();
 const member = (value: Value, name: string) => value.context.members.find((entry: any) => entry.name === name);
@@ -517,6 +524,14 @@ const gapFixtures: Record<string, () => TraceReport> = {
   'link-service-ambiguous': () => workspace((value) => {
     twoServices(value);
     delete value.context.links[0].match.services;
+  }),
+  'server-surface-opaque': () => library(),
+  'library-continuation-unrooted': () => library((value) => {
+    value.context.libraries[0].publicSymbols.push('kt:com.example.sdk.internal.OrdersClient#get(String)');
+  }),
+  'library-ids-unmatched': () => library((value) => {
+    value.context.libraries[1] = { ...value.context.libraries[1], ids: 'shared' };
+    delete value.context.libraries[1].symbolMap;
   }),
 };
 

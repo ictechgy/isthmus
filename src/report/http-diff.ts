@@ -1,4 +1,5 @@
 import { compareStrings } from '../compare.ts';
+import type { ImportedHttpSurface } from '../exchange/http-surface.ts';
 import type { BridgeFactsDocument } from '../exchange/parse.ts';
 import type { TraceLink, TraceLinkMatch, TraceMember, TraceWorkspace } from '../exchange/trace-context.ts';
 import {
@@ -20,7 +21,7 @@ import {
   type HttpDiffFinding,
   type HttpDiffScopePair,
 } from './http-diff-findings.ts';
-import { checkMemberDocuments, joinWorkspaceLink, linkServerDocuments } from './trace-inputs.ts';
+import { checkMemberDocuments, joinWorkspaceLink, linkContractDocuments, linkServerDocuments } from './trace-inputs.ts';
 
 /**
  * `diff --http`의 입력 검증·조인·문서 조립이다.
@@ -49,6 +50,8 @@ export interface HttpDiffDocument {
   readonly version: 1;
   readonly mode: 'surface' | 'workspace';
   readonly project?: string;
+  /** surface 모드에서 base·head가 `isthmus-http-surface` artifact면 그 신원이다. */
+  readonly surface?: HttpDiffSurfaceSummary;
   readonly workspace?: HttpDiffWorkspaceSummary;
   readonly scope: { readonly granularity: 'route'; readonly fieldCompatibility: 'not-assessed'; readonly queryAndHeaders: 'not-assessed' };
   readonly findings: readonly HttpDiffFinding[];
@@ -64,12 +67,36 @@ export interface HttpDiffDocument {
 /** 조인 한계다. workspace면 어느 link 조인의 한계인지 `link`를 단다. */
 export type HttpDiffLimitation = JoinLimitation & { readonly link?: string };
 
+/** surface artifact 하나의 신원이다(artifact가 싣는 revision과 CLI가 계산한 파일 sha256). */
+export interface HttpDiffSurfaceIdentity {
+  readonly revision: string;
+  readonly sha256: string;
+}
+
+/** base·head가 같은 이름의 surface artifact인 surface 모드의 신원 요약이다. */
+export interface HttpDiffSurfaceSummary {
+  readonly name: string;
+  readonly before: HttpDiffSurfaceIdentity;
+  readonly after: HttpDiffSurfaceIdentity;
+}
+
+/**
+ * workspace 요약의 member 하나다. surface member는 project·revision 대신 artifact 신원을 싣는다. 읽지 않은 surface(base
+ * 매니페스트에서 link의 server·contract가 아닌 member)는 고정한 sha256만 싣는다.
+ */
+export interface HttpDiffWorkspaceMember {
+  readonly name: string;
+  readonly project?: string;
+  readonly revision?: string;
+  readonly surface?: { readonly name?: string; readonly revision?: string; readonly sha256: string };
+}
+
 /** workspace 출력의 입력 요약이다. 문서 경로는 싣지 않는다. */
 export interface HttpDiffWorkspaceSummary {
   readonly links: ReadonlyArray<{ name: string; client: string; server: string; match: TraceLinkMatch;
     contract?: { member: string; authoritative?: boolean } }>;
-  readonly before: { readonly members: ReadonlyArray<{ name: string; project: string; revision: string }> };
-  readonly after: { readonly members: ReadonlyArray<{ name: string; project: string; revision: string }> };
+  readonly before: { readonly members: readonly HttpDiffWorkspaceMember[] };
+  readonly after: { readonly members: readonly HttpDiffWorkspaceMember[] };
 }
 
 /** 요약이다. `callImpact`는 완전성 주장이 아니다 — `incompleteness`와 함께 읽는다. */
@@ -90,17 +117,31 @@ export interface HttpDiffSummary {
   readonly callImpact: 'breaks-found' | 'no-breaks-observed' | 'not-assessed';
 }
 
-/** surface 모드 입력이다. */
+/**
+ * surface 모드 입력이다. `artifacts`가 있으면 base·head 선언 측이 `isthmus-http-surface` artifact에서 왔다 — 그 문서의
+ * project는 isthmus 내부 값이라 project 일치 대신 artifact 이름 일치를 보고, 호출 측 문서끼리만 project를 맞춘다.
+ */
 export interface HttpSurfaceInputs {
   readonly before: readonly BridgeFactsDocument[];
   readonly after: readonly BridgeFactsDocument[];
   readonly clients: readonly BridgeFactsDocument[];
+  readonly artifacts?: Readonly<{ before: HttpSurfaceArtifact; after: HttpSurfaceArtifact }>;
 }
 
-/** workspace 모드의 한 시점이다. `documents`는 읽은 문서만 담은 경로 → 문서 대응이다. */
+/** surface 모드에 준 artifact 하나다. */
+export interface HttpSurfaceArtifact {
+  readonly imported: ImportedHttpSurface;
+  readonly sha256: string;
+}
+
+/**
+ * workspace 모드의 한 시점이다. `documents`는 읽은 문서만 담은 경로 → 문서 대응이고, `surfaces`는 surface member
+ * 이름 → 가져온 artifact다(CLI가 매니페스트의 sha256과 대조했다).
+ */
 export interface HttpWorkspaceSnapshot {
   readonly workspace: TraceWorkspace;
   readonly documents: ReadonlyMap<string, BridgeFactsDocument>;
+  readonly surfaces?: ReadonlyMap<string, ImportedHttpSurface>;
 }
 
 /** 두 시점 조인 한 쌍과 그 scope 쌍이다. */
@@ -119,8 +160,13 @@ interface JoinedPairs {
 export function createHttpSurfaceDiff(inputs: HttpSurfaceInputs): HttpDiffDocument {
   validateSurface(inputs);
   const clients = inputs.clients.map(asClientDocument);
-  const beforeJoin = joinHttp([...inputs.before.map(asDeclarationDocument), ...clients]);
-  const afterJoin = joinHttp([...inputs.after.map(asDeclarationDocument), ...clients]);
+  // artifact 문서의 project는 isthmus 내부 값이다. 매니페스트 없는 조인은 한 project를 요구하므로 호출 측 project로 맞춘다
+  // (호출 측이 없으면 그대로 둔다 — 두 시점 모두 같은 surface 이름이라 내부 값도 같다).
+  const project = inputs.artifacts === undefined ? undefined : inputs.clients[0]?.project;
+  const declarations = (documents: readonly BridgeFactsDocument[]) => documents.map((document) =>
+    asDeclarationDocument(project === undefined ? document : { ...document, project }));
+  const beforeJoin = joinHttp([...declarations(inputs.before), ...clients]);
+  const afterJoin = joinHttp([...declarations(inputs.after), ...clients]);
   const joined: JoinedPairs = {
     pairs: pairScopes(beforeJoin.routes?.scopes ?? [], afterJoin.routes?.scopes ?? []),
     before: [...beforeJoin.limitations],
@@ -128,7 +174,18 @@ export function createHttpSurfaceDiff(inputs: HttpSurfaceInputs): HttpDiffDocume
   };
   return assemble('surface', joined, [], {
     before: producerVersions(inputs.before), after: producerVersions(inputs.after), clients: producerVersions(inputs.clients),
-  }, { project: inputs.before[0]!.project }, inputs.clients.length > 0);
+  }, surfaceIdentity(inputs), inputs.clients.length > 0);
+}
+
+/** surface 모드 출력의 신원이다. artifact 비교면 artifact 신원과(호출 측이 있으면) 호출 측 project를 싣는다. */
+function surfaceIdentity(inputs: HttpSurfaceInputs): { project?: string; surface?: HttpDiffSurfaceSummary } {
+  const { artifacts } = inputs;
+  if (artifacts === undefined) return { project: inputs.before[0]!.project };
+  const identity = ({ imported, sha256 }: HttpSurfaceArtifact) => ({ revision: imported.surface.revision, sha256 });
+  return {
+    ...(inputs.clients.length === 0 ? {} : { project: inputs.clients[0]!.project }),
+    surface: { name: artifacts.before.imported.surface.name, before: identity(artifacts.before), after: identity(artifacts.after) },
+  };
 }
 
 /** surface 입력 구성을 검사한다. 어긋나면 관찰 차이가 아니라 입력 구성 차이다. */
@@ -141,9 +198,18 @@ function validateSurface(inputs: HttpSurfaceInputs): void {
     throw new HttpDiffInputError('diff --http reads only http-target and openapi documents; remove bridge, persistence '
       + 'and sql documents from the inputs.');
   }
-  if (new Set(all.map(({ project }) => project)).size !== 1) {
-    throw new HttpDiffInputError('diff --http surface inputs must describe one project; produce the before, after and '
-      + 'client documents from the same checkout path, or compare separate repositories with workspace manifests.');
+  const { artifacts } = inputs;
+  if (artifacts !== undefined && artifacts.before.imported.surface.name !== artifacts.after.imported.surface.name) {
+    throw new HttpDiffInputError('diff --http compares two releases of one http surface; the before and after surfaces '
+      + 'have different names.');
+  }
+  const projects = artifacts === undefined ? all : inputs.clients;
+  if (new Set(projects.map(({ project }) => project)).size > 1) {
+    throw new HttpDiffInputError(artifacts === undefined
+      ? 'diff --http surface inputs must describe one project; produce the before, after and client documents from the '
+        + 'same checkout path, or compare separate repositories with workspace manifests.'
+      : 'diff --http --clients documents must describe one client project; compare other client repositories separately '
+        + 'or with workspace manifests.');
   }
   for (const snapshot of [inputs.before, inputs.after]) validateDeclarationSnapshot(snapshot);
   if (inventory(inputs.before) !== inventory(inputs.after)) {
@@ -231,14 +297,14 @@ function optional<K extends string, V>(key: K, value: V | undefined): Partial<Re
  * head의 server·contract 문서와 같은 client 문서를 조인해 비교한다.
  */
 export function createHttpWorkspaceDiff(before: HttpWorkspaceSnapshot, after: HttpWorkspaceSnapshot): HttpDiffDocument {
-  validateLinks(before.workspace, after.workspace);
+  validateLinks(before, after);
   const used = { before: new Set<BridgeFactsDocument>(), after: new Set<BridgeFactsDocument>(), clients: new Set<BridgeFactsDocument>() };
   const joined: JoinedPairs = { pairs: [], before: [], after: [] };
   for (const link of after.workspace.links) joinWorkspacePair(link, before, after, joined, used);
   const extra = unlinkedClientFindings(after);
   return assemble('workspace', joined, extra, {
     before: producerVersions([...used.before]), after: producerVersions([...used.after]), clients: producerVersions([...used.clients]),
-  }, { workspace: workspaceSummary(before.workspace, after.workspace) }, used.clients.size > 0);
+  }, { workspace: workspaceSummary(before, after) }, used.clients.size > 0);
 }
 
 /** link 하나를 두 시점으로 조인해 scope 쌍과 한계를 더한다. */
@@ -272,13 +338,18 @@ function linkDeclarations(snapshot: HttpWorkspaceSnapshot, link: TraceLink): {
   servers: BridgeFactsDocument[]; contracts: BridgeFactsDocument[];
 } {
   const contractLink = snapshot.workspace.links.find(({ name }) => name === link.name)!.contract;
-  const contracts = (contractLink?.documents ?? []).map((path) => readDocument(snapshot, path));
+  const contracts = linkContractDocuments(contractLink, (name) => memberDocuments(snapshot, name),
+    (path) => readDocument(snapshot, path));
   return { servers: linkServerDocuments(link, memberDocuments(snapshot, link.server)), contracts };
 }
 
-/** member의 문서를 검사해 돌려준다. persistence·sql 문서는 받되 http 비교에 쓰지 않는다(호출자가 거른다). */
+/**
+ * member의 문서를 검사해 돌려준다. persistence·sql 문서는 받되 http 비교에 쓰지 않는다(호출자가 거른다). surface member는
+ * 가져온 artifact의 선언 측 문서다.
+ */
 function memberDocuments(snapshot: HttpWorkspaceSnapshot, name: string): BridgeFactsDocument[] {
   const member = findMember(snapshot.workspace, name);
+  if (member.surface !== undefined) return [...surfaceOf(snapshot, name).documents];
   const documents = member.documents.map((path) => readDocument(snapshot, path));
   checkMemberDocuments(member, documents);
   return documents;
@@ -291,6 +362,13 @@ function findMember(workspace: TraceWorkspace, name: string): TraceMember {
   return member;
 }
 
+/** surface member의 가져온 artifact다. CLI가 이 모드의 surface를 모두 읽었으므로 없으면 내부 불변 위반이다. */
+function surfaceOf(snapshot: HttpWorkspaceSnapshot, name: string): ImportedHttpSurface {
+  const surface = snapshot.surfaces?.get(name);
+  if (surface === undefined) throw new Error('Workspace surface was not read.');
+  return surface;
+}
+
 /** 읽은 문서를 경로로 찾는다. CLI가 이 모드에 필요한 문서를 모두 읽었으므로 없으면 내부 불변 위반이다. */
 function readDocument(snapshot: HttpWorkspaceSnapshot, path: string): BridgeFactsDocument {
   const document = snapshot.documents.get(path);
@@ -300,21 +378,30 @@ function readDocument(snapshot: HttpWorkspaceSnapshot, path: string): BridgeFact
 
 /**
  * 두 매니페스트의 link 정의가 같은지 검사한다. link를 바꾸면 귀속이 바뀌어 선언 측 변화와 섞인다. link의
- * server·contract member는 두 시점 모두 같은 project여야 한다 — revision과 문서 목록만 달라도 된다.
+ * server·contract member는 두 시점 모두 같은 project여야 한다 — revision과 문서 목록만 달라도 된다. surface member는
+ * 두 시점 모두 surface여야 하고 artifact 이름이 같아야 한다(같은 서버의 두 릴리스를 비교한다).
  */
-function validateLinks(before: TraceWorkspace, after: TraceWorkspace): void {
-  if (linkDefinitions(before) !== linkDefinitions(after)) {
+function validateLinks(before: HttpWorkspaceSnapshot, after: HttpWorkspaceSnapshot): void {
+  if (linkDefinitions(before.workspace) !== linkDefinitions(after.workspace)) {
     throw new HttpDiffInputError('The before and after workspace manifests must declare the same links (name, client, '
       + 'server, match, contract member and authoritative flag); change links in a separate comparison.');
   }
-  for (const link of after.links) {
+  for (const link of after.workspace.links) {
     for (const name of [link.server, ...(link.contract === undefined ? [] : [link.contract.member])]) {
-      if (findMember(before, name).project !== findMember(after, name).project) {
-        throw new HttpDiffInputError('A workspace link server or contract member must keep its project across the before and '
-          + 'after manifests; produce both snapshots from the same checkout path.');
+      if (memberIdentity(before, name) !== memberIdentity(after, name)) {
+        throw new HttpDiffInputError('A workspace link server or contract member must keep its project (or, for a surface '
+          + 'member, its surface name) across the before and after manifests; produce both snapshots from the same '
+          + 'checkout path or compare two releases of the same http surface.');
       }
     }
   }
+}
+
+/** 두 시점에서 같아야 하는 member 신원이다: 문서 member는 project, surface member는 artifact 이름이다. */
+function memberIdentity(snapshot: HttpWorkspaceSnapshot, name: string): string {
+  const member = findMember(snapshot.workspace, name);
+  return JSON.stringify(member.surface === undefined ? ['project', member.project]
+    : ['surface', surfaceOf(snapshot, name).surface.name]);
 }
 
 /** link 정의(계약 문서 경로 제외)의 결정적 직렬화다. */
@@ -353,12 +440,19 @@ function unlinkedClientFindings(after: HttpWorkspaceSnapshot): HttpDiffFinding[]
 }
 
 /** workspace 출력의 입력 요약이다. */
-function workspaceSummary(before: TraceWorkspace, after: TraceWorkspace): HttpDiffWorkspaceSummary {
-  const members = (workspace: TraceWorkspace) => workspace.members
-    .map(({ name, project, revision }) => ({ name, project, revision }))
+function workspaceSummary(before: HttpWorkspaceSnapshot, after: HttpWorkspaceSnapshot): HttpDiffWorkspaceSummary {
+  const members = (snapshot: HttpWorkspaceSnapshot): HttpDiffWorkspaceMember[] => snapshot.workspace.members
+    .map(({ name, project, revision, surface }) => {
+      // base 매니페스트는 link의 server·contract surface만 읽는다. 읽지 않은 surface는 고정한 sha256만 싣는다.
+      if (surface !== undefined) {
+        const loaded = snapshot.surfaces?.get(name)?.surface;
+        return { name, surface: { ...optional('name', loaded?.name), ...optional('revision', loaded?.revision), sha256: surface.sha256 } };
+      }
+      return { name, ...optional('project', project), ...optional('revision', revision) };
+    })
     .sort((left, right) => compareStrings(left.name, right.name));
   return {
-    links: after.links.map(linkIdentity).sort((left, right) => compareStrings(left.name, right.name)),
+    links: after.workspace.links.map(linkIdentity).sort((left, right) => compareStrings(left.name, right.name)),
     before: { members: members(before) },
     after: { members: members(after) },
   };
@@ -368,7 +462,8 @@ function workspaceSummary(before: TraceWorkspace, after: TraceWorkspace): HttpDi
 
 /** finding·한계·생산자 버전을 문서로 조립한다. */
 function assemble(mode: 'surface' | 'workspace', joined: JoinedPairs, extra: readonly HttpDiffFinding[],
-  producers: HttpDiffDocument['producers'], identity: { project?: string; workspace?: HttpDiffWorkspaceSummary },
+  producers: HttpDiffDocument['producers'],
+  identity: { project?: string; surface?: HttpDiffSurfaceSummary; workspace?: HttpDiffWorkspaceSummary },
   hasClients: boolean): HttpDiffDocument {
   const findings = [...createHttpDiffFindings(joined.pairs), ...extra].sort(compareFindings);
   if (findings.reduce((total, { calls }) => total + (calls?.length ?? 0), 0) > MAX_HTTP_DIFF_CALLS) {

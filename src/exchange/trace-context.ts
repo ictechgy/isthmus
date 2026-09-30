@@ -114,13 +114,33 @@ export interface TraceCatalog {
   readonly source?: string;
 }
 
-/** workspace member 하나다. 문서·분석 경로는 context 전체에서 유일하다. */
+/**
+ * 조직 경계 밖에서 받은 `isthmus-http-surface` artifact의 참조다(docs/HTTP-SURFACE.md).
+ *
+ * `sha256`은 artifact 파일 바이트의 소문자 hex SHA-256이다. CLI가 읽은 내용과 대조하고 다르면 입력 오류다 —
+ * 사전 계산 분석과 같은 규칙이다. sha256 없는 참조는 파일과 묶이지 않으므로 받지 않는다.
+ */
+export interface TraceSurfaceReference {
+  readonly path: string;
+  readonly sha256: string;
+}
+
+/**
+ * workspace member 하나다. 문서·분석 경로는 context 전체에서 유일하다.
+ *
+ * 두 모양이 있다. 문서 member는 `project`·`revision`·`documents`를 갖는다. surface member는 `surface`만 갖고
+ * (`project`·`revision`은 없고 `documents`는 빈 목록) link의 server·contract로만 쓰인다 — 그 선언 측 문서는 CLI가
+ * artifact를 읽어 만든다. revision은 artifact가 싣는다.
+ */
 export interface TraceMember {
   readonly name: string;
-  readonly project: string;
-  readonly revision: string;
+  /** 문서 member의 project다. surface member에는 없다. */
+  readonly project?: string;
+  /** 문서 member의 revision이다. surface member에는 없다(artifact의 `revision`을 쓴다). */
+  readonly revision?: string;
   readonly documents: readonly string[];
   readonly catalog?: TraceCatalog;
+  readonly surface?: TraceSurfaceReference;
 }
 
 /** link `match`의 baseRef 항목이다. `pathPrefix`(declared-base 승격)는 아직 받지 않는다. */
@@ -135,10 +155,13 @@ export interface TraceLinkMatch {
   readonly baseRefs?: readonly TraceBaseRef[];
 }
 
-/** link의 계약 측이다. `documents`는 `member`의 문서 중 openapi 문서다. */
+/**
+ * link의 계약 측이다. `documents`는 `member`의 문서 중 openapi 문서다. `member`가 surface member면 `documents`는
+ * 없고 그 surface의 openapi 문서 전체가 계약이다.
+ */
 export interface TraceLinkContract {
   readonly member: string;
-  readonly documents: readonly string[];
+  readonly documents?: readonly string[];
   readonly authoritative?: boolean;
 }
 
@@ -151,10 +174,39 @@ export interface TraceLink {
   readonly contract?: TraceLinkContract;
 }
 
+/** library의 id 대응 항목 하나다. provider(SDK) 생산자 id를 consumer(앱) 생산자 id로 옮긴다. */
+export interface TraceLibrarySymbol {
+  readonly provider: string;
+  readonly consumer: string;
+}
+
+/**
+ * 공유 SDK 저장소(provider member)를 쓰는 앱(consumer member)의 선언이다(`libraries`).
+ *
+ * provider의 route-call은 여느 client member처럼 link에 귀속된다. trace는 그 호출의 provider 역방향 영향(SDK 심볼)에서
+ * consumer의 역방향 분석으로 이어 간다 — 이때 두 저장소의 생산자 id가 어떻게 맞는지를 `ids`로 선언해야 한다.
+ *
+ * - `shared`: 같은 생산자가 두 저장소에서 SDK 심볼에 같은 id를 준다(Swift USR·JVM 기술자처럼 모듈·시그니처로 정해지는
+ *   id)는 사용자 선언이다. 문자열이 정확히 같을 때만 잇는다. 선택 `publicSymbols`는 앱이 부를 수 있는 SDK 공개 API id
+ *   목록이다 — 있으면 그 id에서만 잇고, 없으면 호출에서 닿은 모든 SDK id를 후보로 본다.
+ * - `symbol-map`: id가 다를 때(파일 경로 기반 id 등) 사용자가 준 대응표다. 표에 있는 provider id만 잇는다(표가 공개 API다).
+ *
+ * 어느 쪽이든 consumer 분석이 그 id를 root로 받은 경우에만 잇고, 어긋나면 gap으로 밝힌다(추측으로 잇지 않는다).
+ */
+export interface TraceLibrary {
+  readonly name: string;
+  readonly consumer: string;
+  readonly provider: string;
+  readonly ids: 'shared' | 'symbol-map';
+  readonly publicSymbols?: readonly string[];
+  readonly symbolMap?: readonly TraceLibrarySymbol[];
+}
+
 /** workspace 입력이다. */
 export interface TraceWorkspace {
   readonly members: readonly TraceMember[];
   readonly links: readonly TraceLink[];
+  readonly libraries: readonly TraceLibrary[];
 }
 
 /**
@@ -216,11 +268,15 @@ export const MAX_LINK_MATCH_ITEMS = 1_000;
 export const MAX_FILE_SYMBOL_USRS = 10_000;
 /** `fileSymbols` 전체의 usr 상한이다. 파일 선택 1,000개가 저마다 큰 목록을 실어도 입력이 끝없이 커지지 않게 한다. */
 export const MAX_FILE_SYMBOL_TOTAL = 100_000;
+/** workspace library 선언 수 상한이다. */
+export const MAX_TRACE_LIBRARIES = 64;
+/** 모든 library `symbolMap` 항목 합계 상한이다. */
+export const MAX_LIBRARY_SYMBOL_MAP_ENTRIES = 100_000;
 
 const roles = new Set<string>(['forward', 'reverse', 'db-dependents']);
 const routeMethods = new Set<string>([...httpMethods, 'ANY']);
 const singleKeys = new Set(['format', 'version', 'project', 'revision', 'documents', 'analyses', 'selection', 'fileSymbols']);
-const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'selection', 'fileSymbols']);
+const workspaceKeys = new Set(['format', 'version', 'members', 'links', 'libraries', 'selection', 'fileSymbols']);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 
 /** 신뢰하지 않는 JSON을 검증된 trace context로 바꾼다. */
@@ -256,66 +312,85 @@ function parseSingleContext(input: Record<string, unknown>): TraceContext {
  */
 function parseWorkspaceContext(input: Record<string, unknown>): TraceContext {
   if (Object.keys(input).some((key) => !workspaceKeys.has(key))) {
-    fail('A workspace trace context takes members, links and selection; move project, revision, documents and '
+    fail('A workspace trace context takes members, links, libraries and selection; move project, revision, documents and '
       + 'analyses into members.');
   }
-  if (!Array.isArray(input.members) || input.members.length === 0 || input.members.length > MAX_TRACE_MEMBERS) {
-    fail(`Workspace members must be a list of 1 to ${MAX_TRACE_MEMBERS} entries.`);
-  }
   const analysisIds = new Set<string>();
-  const parsed = input.members.map((member) => parseMember(member, analysisIds));
-  const members = parsed.map(({ member }) => member);
-  const names = new Set(members.map(({ name }) => name));
-  if (names.size !== members.length) fail('Workspace member names must be unique.');
-  const documents = members.flatMap((member) => member.documents);
-  if (documents.length > MAX_TRACE_DOCUMENTS || new Set(documents).size !== documents.length) {
-    fail(`Workspace documents must be unique across members and at most ${MAX_TRACE_DOCUMENTS} in total.`);
-  }
+  const parsed = memberList(input.members).map((member) => parseMember(member, analysisIds));
+  const { members, links, libraries, documents } = workspaceShape(parsed.map(({ member }) => member), input.links, input.libraries);
   const analyses = parsed.flatMap(({ analyses: entries }) => entries);
   if (analyses.length > MAX_TRACE_ANALYSES || new Set(analyses.map(({ path }) => path)).size !== analyses.length) {
     fail(`Workspace analyses must have unique paths and be at most ${MAX_TRACE_ANALYSES} in total.`);
   }
-  const links = parseLinks(input.links, members);
-  const selection = parseSelection(input.selection, names);
-  const fileSymbols = parseFileSymbols(input.fileSymbols, selection, names);
+  if (analyses.some(({ path }) => documents.includes(path) || members.some(({ surface }) => surface?.path === path))) {
+    fail('A workspace path must name one input: a document, an analysis or a surface, not several.');
+  }
+  const selectable = selectableMembers(members);
+  const selection = parseSelection(input.selection, selectable);
+  const fileSymbols = parseFileSymbols(input.fileSymbols, selection, selectable);
   return {
-    format: 'isthmus-trace-context', version: 1, workspace: { members, links }, documents, analyses,
+    format: 'isthmus-trace-context', version: 1, workspace: { members, links, libraries }, documents, analyses,
     selection, ...(fileSymbols === undefined ? {} : { fileSymbols }),
   };
 }
 
 /** `isthmus-workspace` 매니페스트의 최상위 키다. */
-const manifestKeys = new Set(['format', 'version', 'members', 'links']);
+const manifestKeys = new Set(['format', 'version', 'members', 'links', 'libraries']);
 
 /**
  * 맨 `isthmus-workspace` v1 매니페스트(GRAPH-EXCHANGE)를 검증한다. `diff --http`의 workspace 모드가 쓴다.
  *
- * member·link 규칙은 trace workspace context와 **같은 코드**다(member `revision` 필수, 구현하지 않은 match 필드 거부,
- * 계약 문서 소속 검사). 매니페스트에는 순회가 없으므로 member `analyses`는 받지 않는다 — 받으면 읽지 않는 필드를
- * 조용히 버리게 된다. 반환 모양은 trace의 `TraceWorkspace`이고 문서 경로는 member 순서대로 이어 붙인다.
+ * member·link·library 규칙은 trace workspace context와 **같은 코드**다(member `revision` 필수, surface member, 구현하지
+ * 않은 match 필드 거부, 계약 문서 소속 검사). 매니페스트에는 순회가 없으므로 member `analyses`는 받지 않는다 — 받으면
+ * 읽지 않는 필드를 조용히 버리게 된다. 반환 모양은 trace의 `TraceWorkspace`이고 문서 경로는 member 순서대로 이어 붙인다.
  */
 export function parseWorkspaceManifest(input: unknown): TraceWorkspace & { readonly documents: readonly string[] } {
   if (!isJsonObject(input) || input.format !== 'isthmus-workspace' || input.version !== 1) {
     fail('Expected an isthmus-workspace version 1 manifest.');
   }
   if (Object.keys(input).some((key) => !manifestKeys.has(key))) fail('Workspace manifest has an unknown field.');
-  if (!Array.isArray(input.members) || input.members.length === 0 || input.members.length > MAX_TRACE_MEMBERS) {
-    fail(`Workspace members must be a list of 1 to ${MAX_TRACE_MEMBERS} entries.`);
-  }
-  if (input.members.some((member) => isJsonObject(member) && member.analyses !== undefined)) {
+  const entries = memberList(input.members);
+  if (entries.some((member) => isJsonObject(member) && member.analyses !== undefined)) {
     fail('Workspace manifest members do not take analyses; analyses belong to a trace context.');
   }
-  const members = input.members.map((member) => parseMember(member, new Set()).member);
+  return workspaceShape(entries.map((member) => parseMember(member, new Set()).member), input.links, input.libraries);
+}
+
+/** member 목록의 모양(1~64개 배열)을 확인한다. */
+function memberList(input: unknown): unknown[] {
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_TRACE_MEMBERS) {
+    fail(`Workspace members must be a list of 1 to ${MAX_TRACE_MEMBERS} entries.`);
+  }
+  return input;
+}
+
+/**
+ * member·link·library의 교차 규칙이다(trace context와 매니페스트가 공유한다): 이름 유일, 문서·surface 경로 유일, 문서가
+ * 없는 문서 member는 library consumer만 허용.
+ */
+function workspaceShape(members: readonly TraceMember[], linksInput: unknown, librariesInput: unknown):
+  TraceWorkspace & { readonly documents: readonly string[] } {
   if (new Set(members.map(({ name }) => name)).size !== members.length) fail('Workspace member names must be unique.');
   const documents = members.flatMap((member) => member.documents);
   if (documents.length > MAX_TRACE_DOCUMENTS || new Set(documents).size !== documents.length) {
     fail(`Workspace documents must be unique across members and at most ${MAX_TRACE_DOCUMENTS} in total.`);
   }
-  return { members, links: parseLinks(input.links, members), documents };
+  const surfaces = members.flatMap(({ surface }) => surface === undefined ? [] : [surface.path]);
+  if (new Set(surfaces).size !== surfaces.length || surfaces.some((path) => documents.includes(path))) {
+    fail('Each http surface path must be listed once and must not also be a member document.');
+  }
+  const links = parseLinks(linksInput, members);
+  const libraries = parseLibraries(librariesInput, members);
+  const consumers = new Set(libraries.map(({ consumer }) => consumer));
+  if (members.some((member) => member.surface === undefined && member.documents.length === 0 && !consumers.has(member.name))) {
+    fail('Every workspace member needs at least one bridge-facts document (only library consumers may have none).');
+  }
+  return { members, links, libraries, documents };
 }
 
-/** member 하나와 그 분석 참조를 검증한다. */
+/** member 하나와 그 분석 참조를 검증한다. `surface`가 있으면 surface member다. */
 function parseMember(input: unknown, analysisIds: Set<string>): { member: TraceMember; analyses: TraceAnalysisReference[] } {
+  if (isJsonObject(input) && input.surface !== undefined) return { member: parseSurfaceMember(input), analyses: [] };
   const keys = ['name', 'project', 'revision', 'documents', 'analyses', 'catalog'];
   if (!isJsonObject(input) || Object.keys(input).some((key) => !keys.includes(key))) fail('Invalid workspace member entry.');
   const name = safe(input.name, 'Invalid workspace member name.');
@@ -323,10 +398,44 @@ function parseMember(input: unknown, analysisIds: Set<string>): { member: TraceM
   // member 사이에는 context revision이 없다. 분석 신선도를 member마다 검사하려면 revision이 반드시 있어야 한다.
   const revision = safe(input.revision, 'Every workspace member needs a revision (for example its git commit sha).');
   const documents = uniquePaths(input.documents, MAX_TRACE_DOCUMENTS, 'Invalid workspace member documents.');
-  if (documents.length === 0) fail('Every workspace member needs at least one bridge-facts document.');
   const catalog = input.catalog === undefined ? undefined : parseCatalog(input.catalog);
   const analyses = parseAnalysisReferences(input.analyses ?? [], name, analysisIds);
   return { member: { name, project, revision, documents, ...(catalog === undefined ? {} : { catalog }) }, analyses };
+}
+
+/**
+ * surface member다. `{name, surface: {path, sha256}}`만 받는다 — project·revision·문서·분석·카탈로그는 artifact를 낸
+ * 조직의 것이라 이쪽에서 선언할 수 없다(revision은 artifact가 싣는다).
+ */
+function parseSurfaceMember(input: Record<string, unknown>): TraceMember {
+  if (Object.keys(input).some((key) => key !== 'name' && key !== 'surface')) {
+    fail('A surface member takes only name and surface {path, sha256}; project, revision, documents and analyses come '
+      + 'from the http surface artifact.');
+  }
+  const name = safe(input.name, 'Invalid workspace member name.');
+  const surface = input.surface;
+  if (!isJsonObject(surface) || Object.keys(surface).some((key) => key !== 'path' && key !== 'sha256')) {
+    fail('Invalid surface member reference; use {path, sha256}.');
+  }
+  const path = safe(surface.path, 'Invalid surface member path.');
+  if (typeof surface.sha256 !== 'string' || !sha256Pattern.test(surface.sha256)) {
+    fail('Surface members need the lowercase hex sha256 of the http surface file.');
+  }
+  return { name, documents: [], surface: { path, sha256: surface.sha256 } };
+}
+
+/** 이름으로 고를 수 있는 member(선택·fileSymbols 대상)다. surface member는 내부가 공개되지 않아 고를 수 없다. */
+interface SelectableMembers {
+  readonly names: ReadonlySet<string>;
+  readonly surfaces: ReadonlySet<string>;
+}
+
+/** member 목록에서 선택 가능한 이름과 surface 이름을 나눈다. */
+function selectableMembers(members: readonly TraceMember[]): SelectableMembers {
+  return {
+    names: new Set(members.filter(({ surface }) => surface === undefined).map(({ name }) => name)),
+    surfaces: new Set(members.filter(({ surface }) => surface !== undefined).map(({ name }) => name)),
+  };
 }
 
 /** member의 DB 카탈로그 기록을 검증한다. 비어 있는 기록은 아무것도 말하지 않으므로 거부한다. */
@@ -359,6 +468,8 @@ function parseLink(input: unknown, members: ReadonlyMap<string, TraceMember>): T
   const client = safe(input.client, 'Invalid workspace link client.');
   const server = safe(input.server, 'Invalid workspace link server.');
   if (!members.has(client) || !members.has(server)) fail('Workspace link client and server must name members.');
+  // surface는 서버 선언 측만 싣는다 — 호출 측으로 쓰면 호출이 0건인 client가 되어 "호출 없음"처럼 읽힌다.
+  if (members.get(client)!.surface !== undefined) fail('A workspace link client cannot be a surface member; surfaces carry no calls.');
   const contract = input.contract === undefined ? undefined : parseLinkContract(input.contract, members);
   return { name, client, server, match: parseLinkMatch(input.match), ...(contract === undefined ? {} : { contract }) };
 }
@@ -405,26 +516,114 @@ function matchList<T>(input: unknown, parse: (value: unknown) => T): T[] {
   return values;
 }
 
-/** link 계약 측을 검증한다. 계약 문서는 계약 member가 가진 문서여야 한다. */
+/**
+ * link 계약 측을 검증한다. 문서 member의 계약 문서는 그 member가 가진 문서여야 한다. surface member는 문서 경로가
+ * 없으므로 `documents`를 받지 않고 그 surface의 openapi 문서 전체를 계약으로 쓴다.
+ */
 function parseLinkContract(input: unknown, members: ReadonlyMap<string, TraceMember>): TraceLinkContract {
   if (!isJsonObject(input) || Object.keys(input).some((key) => !['member', 'documents', 'authoritative'].includes(key))) {
     fail('Invalid workspace link contract.');
   }
   const member = members.get(safe(input.member, 'Invalid workspace link contract member.'));
   if (member === undefined) fail('Workspace link contract member must name a member.');
+  if (input.authoritative !== undefined && typeof input.authoritative !== 'boolean') fail('Invalid workspace link contract authoritative flag.');
+  const authoritative = input.authoritative === undefined ? {} : { authoritative: input.authoritative };
+  if (member.surface !== undefined) {
+    if (input.documents !== undefined) {
+      fail('A link contract on a surface member takes no documents; the surface openapi documents are the contract.');
+    }
+    return { member: member.name, ...authoritative };
+  }
   const documents = uniquePaths(input.documents, MAX_TRACE_DOCUMENTS, 'Invalid workspace link contract documents.');
   if (documents.length === 0 || documents.some((path) => !member.documents.includes(path))) {
     fail('Workspace link contract documents must be non-empty and listed in the contract member documents.');
   }
-  if (input.authoritative !== undefined && typeof input.authoritative !== 'boolean') fail('Invalid workspace link contract authoritative flag.');
-  return { member: member.name, documents,
-    ...(input.authoritative === undefined ? {} : { authoritative: input.authoritative }) };
+  return { member: member.name, documents, ...authoritative };
 }
 
-/** 분석 참조의 project다. 단일 project면 context project, workspace면 그 member의 project다. */
+/**
+ * library 선언 목록을 검증한다. consumer·provider는 서로 다른 문서 member이고, 한 member가 provider이면서 consumer일 수
+ * 없다(v1은 library 사슬을 따라가지 않는다 — 한 단계만 잇는다고 선언을 통해 드러낸다).
+ */
+function parseLibraries(input: unknown, members: readonly TraceMember[]): TraceLibrary[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > MAX_TRACE_LIBRARIES) {
+    fail(`Workspace libraries must be a list of at most ${MAX_TRACE_LIBRARIES} entries.`);
+  }
+  const documentMembers = new Set(members.filter(({ surface }) => surface === undefined).map(({ name }) => name));
+  const libraries = input.map((item) => parseLibrary(item, documentMembers));
+  if (new Set(libraries.map(({ name }) => name)).size !== libraries.length) fail('Workspace library names must be unique.');
+  if (new Set(libraries.map(({ consumer, provider }) => JSON.stringify([consumer, provider]))).size !== libraries.length) {
+    fail('Declare each library consumer and provider pair once.');
+  }
+  const providers = new Set(libraries.map(({ provider }) => provider));
+  if (libraries.some(({ consumer }) => providers.has(consumer))) {
+    fail('A library provider cannot also be a library consumer; library chains are not followed in this version.');
+  }
+  if (libraries.reduce((total, { symbolMap, publicSymbols }) => total + (symbolMap?.length ?? 0) + (publicSymbols?.length ?? 0), 0) >
+    MAX_LIBRARY_SYMBOL_MAP_ENTRIES) {
+    fail(`Library symbol maps and public symbol lists may hold at most ${MAX_LIBRARY_SYMBOL_MAP_ENTRIES} entries in total.`);
+  }
+  return libraries;
+}
+
+/** library 하나를 검증한다. `ids`가 id 대응 방식을 명시해야 한다 — 생략하면 추측해 잇게 되므로 받지 않는다. */
+function parseLibrary(input: unknown, documentMembers: ReadonlySet<string>): TraceLibrary {
+  if (!isJsonObject(input) ||
+    Object.keys(input).some((key) => !['name', 'consumer', 'provider', 'ids', 'publicSymbols', 'symbolMap'].includes(key))) {
+    fail('Invalid workspace library entry; use name, consumer, provider, ids, and publicSymbols (ids "shared") or symbolMap '
+      + '(ids "symbol-map").');
+  }
+  const name = safe(input.name, 'Invalid workspace library name.');
+  const consumer = safe(input.consumer, 'Invalid workspace library consumer.');
+  const provider = safe(input.provider, 'Invalid workspace library provider.');
+  if (!documentMembers.has(consumer) || !documentMembers.has(provider) || consumer === provider) {
+    fail('Workspace library consumer and provider must name two different document members (not surfaces).');
+  }
+  if (input.ids === 'shared') {
+    if (input.symbolMap !== undefined) fail('A library with ids "shared" takes no symbolMap.');
+    return { name, consumer, provider, ids: 'shared',
+      ...(input.publicSymbols === undefined ? {} : { publicSymbols: parsePublicSymbols(input.publicSymbols) }) };
+  }
+  if (input.ids !== 'symbol-map') {
+    fail('Every workspace library needs ids "shared" (the producers give library symbols the same ids in both repositories) '
+      + 'or "symbol-map" (with a symbolMap); ids are never lined up by guesswork.');
+  }
+  if (input.publicSymbols !== undefined) fail('A library with ids "symbol-map" takes no publicSymbols; the symbolMap lists the public API.');
+  return { name, consumer, provider, ids: 'symbol-map', symbolMap: parseSymbolMap(input.symbolMap) };
+}
+
+/** 공개 API id 목록을 검증한다. 비어 있지 않고 중복 없는 안전한 문자열이어야 한다. */
+function parsePublicSymbols(input: unknown): string[] {
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_LIBRARY_SYMBOL_MAP_ENTRIES ||
+    !input.every(isSafeNonEmptyString) || new Set(input).size !== input.length) {
+    fail('Library publicSymbols must be a non-empty list of distinct ids without control characters.');
+  }
+  return [...(input as string[])].sort(compareStrings);
+}
+
+/** id 대응표를 검증한다. provider id는 한 번만 나올 수 있다(한 SDK 심볼이 두 앱 심볼로 갈라지면 어느 쪽인지 모른다). */
+function parseSymbolMap(input: unknown): TraceLibrarySymbol[] {
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_LIBRARY_SYMBOL_MAP_ENTRIES) {
+    fail('A library with ids "symbol-map" needs a non-empty symbolMap of {provider, consumer} entries.');
+  }
+  const entries = input.map((item): TraceLibrarySymbol => {
+    if (!isJsonObject(item) || Object.keys(item).length !== 2 || !isSafeNonEmptyString(item.provider) ||
+      !isSafeNonEmptyString(item.consumer)) {
+      fail('Library symbolMap entries must be {provider, consumer} strings without control characters.');
+    }
+    return { provider: item.provider, consumer: item.consumer };
+  });
+  if (new Set(entries.map(({ provider }) => provider)).size !== entries.length) {
+    fail('Library symbolMap provider ids must be unique.');
+  }
+  return entries.sort((left, right) => compareStrings(left.provider, right.provider));
+}
+
+/** 분석 참조의 project다. 단일 project면 context project, workspace면 그 member의 project다(분석은 문서 member에만 있다). */
 export function analysisProject(context: TraceContext, reference: TraceAnalysisReference): string {
   if (context.workspace === undefined) return context.project!;
-  return context.workspace.members.find(({ name }) => name === reference.member)!.project;
+  return context.workspace.members.find(({ name }) => name === reference.member)!.project!;
 }
 
 /**
@@ -529,7 +728,7 @@ function parsePrecomputed(input: unknown): TracePrecomputed {
  * 선택을 검증한다. 정확히 한 종류, 비어 있지 않고 중복 없는 목록이어야 한다.
  * `members`가 있으면(workspace) relation·symbol·file 선택은 member를 밝혀야 한다.
  */
-function parseSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceSelection {
+function parseSelection(input: unknown, members: SelectableMembers | undefined): TraceSelection {
   if (!isJsonObject(input)) fail('Trace selection must be a JSON object.');
   const keys = Object.keys(input);
   if (keys.length !== 1 || !['routes', 'relations', 'symbols', 'files'].includes(keys[0]!)) {
@@ -557,18 +756,21 @@ function selectionKey(value: string | TraceMemberRelationSelection | TraceMember
 }
 
 /** workspace 선택의 member를 검증한다. 단일 project에서는 member를 받지 않는다. */
-function selectionMember(input: Record<string, unknown>, members: ReadonlySet<string> | undefined): { member?: string } {
+function selectionMember(input: Record<string, unknown>, members: SelectableMembers | undefined): { member?: string } {
   if (members === undefined) {
     if (input.member !== undefined) fail('Only workspace trace contexts accept a selection member.');
     return {};
   }
   const member = safe(input.member, 'Workspace selections of relations, symbols and files need a member.');
-  if (!members.has(member)) fail('Selection member must name a workspace member.');
+  if (members.surfaces.has(member)) {
+    fail('Selection member names an imported http surface; its internals are not published, so select a document member.');
+  }
+  if (!members.names.has(member)) fail('Selection member must name a workspace member.');
   return { member };
 }
 
 /** relation 선택 하나다. 단일 project는 이름 문자열, workspace는 `{member, name}`이다. */
-function parseRelationSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceRelationSelection {
+function parseRelationSelection(input: unknown, members: SelectableMembers | undefined): TraceRelationSelection {
   if (members === undefined) return safe(input, 'Invalid relation selection.');
   if (!isJsonObject(input) || Object.keys(input).some((key) => key !== 'member' && key !== 'name')) {
     fail('Workspace relation selections must be {member, name} objects.');
@@ -577,7 +779,7 @@ function parseRelationSelection(input: unknown, members: ReadonlySet<string> | u
 }
 
 /** 파일 선택 하나다. 경로는 사실 위치와 같은 project 상대 경로여야 한다. */
-function parseFileSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceFileSelection {
+function parseFileSelection(input: unknown, members: SelectableMembers | undefined): TraceFileSelection {
   const path = (value: unknown) => {
     if (!isProjectRelativePath(value)) fail('File selections must be project-relative paths without "..".');
     return value;
@@ -603,7 +805,7 @@ function parseRouteSelection(input: unknown): TraceRouteSelection {
 }
 
 /** 심볼 선택 하나를 검증한다. sql 정점은 relations 선택으로 묻는다. */
-function parseSymbolSelection(input: unknown, members: ReadonlySet<string> | undefined): TraceSymbolSelection {
+function parseSymbolSelection(input: unknown, members: SelectableMembers | undefined): TraceSymbolSelection {
   if (!isJsonObject(input) || Object.keys(input).some((key) => !['platform', 'usr', 'member'].includes(key))) {
     fail('Invalid symbol selection.');
   }
@@ -617,7 +819,7 @@ function parseSymbolSelection(input: unknown, members: ReadonlySet<string> | und
  * (member, path, platform)은 유일하고, usr는 항목 안에서 중복 없이 1~{@link MAX_FILE_SYMBOL_USRS}개다.
  */
 function parseFileSymbols(input: unknown, selection: TraceSelection,
-  members: ReadonlySet<string> | undefined): TraceFileSymbols[] | undefined {
+  members: SelectableMembers | undefined): TraceFileSymbols[] | undefined {
   if (input === undefined) return undefined;
   if (!('files' in selection)) fail('fileSymbols is accepted only with a files selection.');
   if (!Array.isArray(input) || input.length === 0 || input.length > MAX_TRACE_SELECTIONS * 8) fail('Invalid fileSymbols list.');

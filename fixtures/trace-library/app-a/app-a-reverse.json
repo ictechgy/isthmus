@@ -1,0 +1,76 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/app-a",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.appa.CheckoutScreen#submit",
+        "usr": "kt:com.example.appa.CheckoutScreen#submit()"
+      },
+      "via": "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "location": {
+          "path": "app/src/main/kotlin/com/example/appa/OrderScreen.kt"
+        },
+        "qualifiedName": "com.example.appa.OrderScreen#load",
+        "usr": "kt:com.example.appa.OrderScreen#load()"
+      },
+      "via": "kt:com.example.sdk.OrdersSdk#order(String)"
+    },
+    {
+      "depth": 2,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.appa.OrderActivity#onResume",
+        "usr": "kt:com.example.appa.OrderActivity#onResume()"
+      },
+      "via": "kt:com.example.appa.OrderScreen#load()"
+    }
+  ],
+  "revision": "a-5.0.0",
+  "roots": [
+    {
+      "id": "kt:com.example.sdk.OrdersSdk#order(String)",
+      "symbol": {
+        "usr": "kt:com.example.sdk.OrdersSdk#order(String)"
+      }
+    },
+    {
+      "id": "kt:com.example.sdk.OrdersSdk#placeOrder(Order)",
+      "symbol": {
+        "usr": "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-library",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

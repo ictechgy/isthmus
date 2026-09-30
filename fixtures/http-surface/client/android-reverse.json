@@ -1,0 +1,79 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-client",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "CheckoutViewModel.submit",
+        "usr": "kt:CheckoutViewModel.submit"
+      },
+      "via": "kt:OrdersApi.create"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "qualifiedName": "OrderDetailViewModel.cancel",
+        "usr": "kt:OrderDetailViewModel.cancel"
+      },
+      "via": "kt:OrdersApi.cancel"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        2
+      ],
+      "symbol": {
+        "qualifiedName": "OrderDetailViewModel.refresh",
+        "usr": "kt:OrderDetailViewModel.refresh"
+      },
+      "via": "kt:OrdersApi.get"
+    }
+  ],
+  "revision": "cli-3.2.0",
+  "roots": [
+    {
+      "id": "kt:OrdersApi.cancel",
+      "symbol": {
+        "usr": "kt:OrdersApi.cancel"
+      }
+    },
+    {
+      "id": "kt:OrdersApi.create",
+      "symbol": {
+        "usr": "kt:OrdersApi.create"
+      }
+    },
+    {
+      "id": "kt:OrdersApi.get",
+      "symbol": {
+        "usr": "kt:OrdersApi.get"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-surface-client",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

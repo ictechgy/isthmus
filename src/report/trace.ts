@@ -9,10 +9,12 @@ import {
   type TraversalPlatform,
   type TraversalReached,
 } from '../exchange/language-traversal.ts';
+import type { HttpSurfacePrivacy, ImportedHttpSurface } from '../exchange/http-surface.ts';
 import type {
   TraceAnalysis,
   TraceAnalysisRole,
   TraceContext,
+  TraceLibrary,
   TraceLinkMatch,
   TracePrecomputed,
   TraceRouteSelection,
@@ -32,6 +34,7 @@ import {
   type TraceLimitation,
   type TraceLinkedScope,
   type TraceMemberInput,
+  type TraceSurfaces,
 } from './trace-inputs.ts';
 
 export { TraceInputError };
@@ -63,6 +66,8 @@ export interface TraceInput {
   readonly context: TraceContext;
   readonly documents: readonly BridgeFactsDocument[];
   readonly analyses: readonly TraceAnalysis[];
+  /** workspace surface member 이름 → 가져온 `isthmus-http-surface`다(CLI가 sha256 대조·검증 후 넘긴다). */
+  readonly surfaces?: TraceSurfaces;
 }
 
 /** 체인의 시작 선택 하나다. workspace면 relation·파일 선택에 `member`가 붙는다. */
@@ -123,12 +128,33 @@ export interface TraceReach {
   readonly witnessPartial?: true;
 }
 
+/**
+ * 공유 SDK(library provider member)의 호출에서 그 SDK를 쓰는 앱(consumer member)으로 이어 간 영향이다.
+ *
+ * `entries`는 실제로 이어 간 (provider id, consumer root id) 쌍이다 — 호출을 감싼 SDK 심볼과 그 SDK 안의 역방향 영향
+ * 심볼 중 library 선언(`ids`)으로 consumer id를 정할 수 있고 consumer 역방향 분석이 그 id를 root로 받아 심볼로 찾은
+ * 것만이다. `notInConsumerGraph`는 consumer 분석이 root로 받았지만 생산자가 앱 그래프에서 찾지 못한(root-not-found)
+ * id 수, `notPublic`은 선언한 공개 API(`publicSymbols` 또는 `symbolMap`) 밖이라 잇지 않은 SDK id 수다(공개 API를 선언한
+ * library에만 있다).
+ */
+export interface TraceLibraryHop {
+  readonly library: string;
+  readonly member: string;
+  readonly ids: TraceLibrary['ids'];
+  readonly entries: ReadonlyArray<Readonly<{ provider: string; consumer: string }>>;
+  readonly notInConsumerGraph: number;
+  readonly notPublic?: number;
+  readonly affected: readonly TraceAffected[];
+}
+
 /** route에 match된 귀속 호출 하나와 그 호출을 감싼 심볼의 클라이언트 영향이다. */
 export interface TraceCallHop {
   readonly call: TraceEndpoint;
   readonly side: 'decl' | 'contract';
   readonly quality: RouteMatchQuality;
   readonly affected: readonly TraceAffected[];
+  /** 호출 member가 library provider일 때만 있다 — consumer 앱마다 하나다. */
+  readonly consumers?: readonly TraceLibraryHop[];
 }
 
 /** route 하나의 선언 측 증거와 클라이언트 hop이다. */
@@ -187,6 +213,8 @@ export interface TraceGap {
   readonly member?: string;
   /** workspace link 수준 공백이면 그 link 이름이다. */
   readonly link?: string;
+  /** workspace library 수준 공백이면 그 library 이름이다. */
+  readonly library?: string;
   readonly route?: TraceRouteKey;
   readonly symbol?: Readonly<{ platform: string; usr: string }>;
   readonly analysis?: string;
@@ -222,14 +250,21 @@ export interface TraceAnalysisSummary {
 /** 등급별 도달 근거 수다. */
 export type TraceEvidenceCounts = Readonly<Record<TraceEvidence, number>>;
 
-/** workspace 출력의 입력 요약이다. 문서 경로는 싣지 않는다. */
+/**
+ * workspace 출력의 입력 요약이다. 문서 경로는 싣지 않는다. surface member는 project·revision 대신 artifact의 신원
+ * (`surface`: 이름·revision·파일 sha256·공개 수준)을 싣는다. `libraries`는 선언이 있을 때만 싣는다.
+ */
 export interface TraceWorkspaceSummary {
   readonly members: ReadonlyArray<Readonly<{
-    name: string; project: string; revision: string; catalog?: Readonly<{ graphSha?: string; source?: string }>;
+    name: string; project?: string; revision?: string; catalog?: Readonly<{ graphSha?: string; source?: string }>;
+    surface?: Readonly<{ name: string; revision: string; sha256: string; privacy: HttpSurfacePrivacy }>;
   }>>;
   readonly links: ReadonlyArray<Readonly<{
     name: string; client: string; server: string; match: TraceLinkMatch;
     contract?: Readonly<{ member: string; authoritative?: boolean }>;
+  }>>;
+  readonly libraries?: ReadonlyArray<Readonly<{
+    name: string; consumer: string; provider: string; ids: TraceLibrary['ids']; symbolMapEntries?: number; publicSymbols?: number;
   }>>;
 }
 
@@ -273,7 +308,7 @@ export const MAX_GAP_EXAMPLES = 5;
 /** trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다. */
 export function createTraceReport(input: TraceInput): TraceReport {
   validateAnalysisMembers(input);
-  const prepared = prepareTraceInputs(input.context, input.documents);
+  const prepared = prepareTraceInputs(input.context, input.documents, input.surfaces);
   const builder = new TraceBuilder(input, prepared);
   const chains = builder.buildChains();
   const gaps = builder.finishGaps();
@@ -284,7 +319,7 @@ export function createTraceReport(input: TraceInput): TraceReport {
     format: 'isthmus-trace', version: 1,
     ...(context.project === undefined ? {} : { project: context.project }),
     ...(context.revision === undefined ? {} : { revision: context.revision }),
-    ...(context.workspace === undefined ? {} : { workspace: summarizeWorkspace(context) }),
+    ...(context.workspace === undefined ? {} : { workspace: summarizeWorkspace(context, prepared) }),
     complete: false,
     scope: { granularity: 'route', fieldCompatibility: 'not-assessed', queryAndHeaders: 'not-assessed' },
     selection: context.selection,
@@ -359,6 +394,10 @@ class TraceBuilder {
   private readonly scopes: readonly TraceLinkedScope[];
   private readonly declsByHandler = new Map<string, Array<{ scope: TraceLinkedScope; fact: RouteDeclarationFact }>>();
   private readonly roots = new Map<string, RootHit[]>();
+  /** 분석이 root로 받았지만 생산자가 그래프에서 찾지 못한(symbol 없는) root id다. 키는 `roots`와 같다. */
+  private readonly missingRoots = new Set<string>();
+  private readonly surfaces = new Map<string, ImportedHttpSurface>();
+  private readonly librariesByProvider = new Map<string, TraceLibrary[]>();
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
   private readonly workspace: boolean;
   private outputItems = 0;
@@ -372,6 +411,10 @@ class TraceBuilder {
     this.workspace = prepared.workspace;
     this.members = new Map(prepared.members.map((member) => [member.key, member]));
     this.scopes = prepared.scopes;
+    for (const member of prepared.members) if (member.surface !== undefined) this.surfaces.set(member.key, member.surface);
+    for (const library of input.context.workspace?.libraries ?? []) {
+      this.librariesByProvider.set(library.provider, [...(this.librariesByProvider.get(library.provider) ?? []), library]);
+    }
     for (const member of prepared.members) this.indexRelations(member);
     this.indexHandlers();
     this.indexAnalyses();
@@ -421,8 +464,14 @@ class TraceBuilder {
     const uses = new Map<string, MutableUse>();
     for (const { linked, declFacts } of found) {
       const key = routeKey(linked.scope.scope, method, template);
+      const surface = this.surfaces.get(linked.server);
       for (const fact of declFacts) {
         const usr = fact.endpoint.symbol?.usr;
+        if (surface !== undefined) {
+          this.surfaceGap(selector, key, linked.server, surface, fact);
+          if (usr !== undefined) this.addHandler(handlers, linked.server, fact.endpoint.platform, usr, undefined, key, undefined);
+          continue;
+        }
         if (usr === undefined) {
           this.gap({ code: 'handler-without-symbol', selector, route: key, evidence: this.endpoint(linked.server, fact.endpoint),
             detail: 'The route declaration carries no symbol.usr, so its handler cannot be followed into the language graph.' });
@@ -669,7 +718,7 @@ class TraceBuilder {
       }
       calls.push({
         call: this.endpoint(linked.client, call.endpoint), side: matched.side, quality: matched.quality,
-        affected: this.callAffected(selector, key, linked.client, call.endpoint),
+        ...this.callImpact(selector, key, linked.client, call.endpoint),
       });
     }
     this.routeScopeGaps(selector, key, linked, testSources);
@@ -705,15 +754,76 @@ class TraceBuilder {
     }
   }
 
-  /** 호출을 감싼 심볼의 클라이언트 역방향 영향이다. client member의 분석만 쓴다. */
-  private callAffected(selector: TraceSelector, route: TraceRouteKey, member: string, endpoint: BridgeEndpoint): TraceAffected[] {
+  /**
+   * 호출을 감싼 심볼의 클라이언트 역방향 영향이다. client member의 분석만 쓴다. 호출 member가 library provider면
+   * consumer 앱마다 이어 간 영향(`consumers`)을 더한다.
+   */
+  private callImpact(selector: TraceSelector, route: TraceRouteKey, member: string, endpoint: BridgeEndpoint):
+    Pick<TraceCallHop, 'affected' | 'consumers'> {
     const usr = endpoint.symbol?.usr;
     if (usr === undefined) {
       this.gap({ code: 'call-without-symbol', selector, route, evidence: this.endpoint(member, endpoint),
         detail: 'The route call carries no symbol.usr, so affected client code cannot be followed.' });
-      return [];
+      return { affected: [] };
     }
-    return affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
+    const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
+    const libraries = this.librariesByProvider.get(member);
+    if (libraries === undefined) return { affected };
+    const provided = [usr, ...affected.map((row) => row.usr)];
+    return { affected, consumers: libraries.map((library) =>
+      this.libraryHop(selector, route, library, endpoint.platform, usr, provided)) };
+  }
+
+  /**
+   * library provider의 SDK 심볼에서 consumer 앱의 역방향 분석으로 이어 간다.
+   *
+   * id는 library 선언대로만 옮긴다(`shared`: 같은 문자열, `symbol-map`: 표에 있는 것만). consumer 분석이 그 id를 root로
+   * 받아 심볼로 찾은 경우만 잇는다. root로 받지 않은 id는 앱이 그 SDK 심볼을 부르는지 모르는 곳이라
+   * `library-continuation-unrooted` gap이다. 생산자가 앱 그래프에서 찾지 못한 id(root-not-found)는 생산자가 밝힌
+   * "그 노드 없음"이라 개수만 싣는다.
+   */
+  private libraryHop(selector: TraceSelector, route: TraceRouteKey, library: TraceLibrary, platform: BridgePlatform,
+    callUsr: string, provided: readonly string[]): TraceLibraryHop {
+    const translate = libraryTranslation(library);
+    const entries: Array<{ provider: string; consumer: string }> = [];
+    const unrooted: string[] = [];
+    let notInConsumerGraph = 0;
+    let notPublic = 0;
+    for (const provider of [...new Set(provided)].sort(compareStrings)) {
+      const consumer = translate(provider);
+      if (consumer === undefined) {
+        notPublic += 1;
+        continue;
+      }
+      const key = JSON.stringify([library.consumer, 'reverse', platform, consumer]);
+      if (this.roots.has(key)) entries.push({ provider, consumer });
+      else if (this.missingRoots.has(key)) notInConsumerGraph += 1;
+      else unrooted.push(consumer);
+    }
+    if (unrooted.length > 0) {
+      this.gap({ code: 'library-continuation-unrooted', selector, route, library: library.name, member: library.consumer,
+        symbol: { platform, usr: callUsr },
+        detail: `${unrooted.length} library symbol id(s) affected by this call are not roots of any reverse ${platform} `
+          + `analysis of the consumer, so app code that may call them was not followed (e.g. ${examples(unrooted)}).` });
+    }
+    const hits = entries.flatMap(({ consumer }) => this.rootedRows(selector, library.consumer, 'reverse', platform, consumer));
+    const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
+    return { library: library.name, member: library.consumer, ids: library.ids, entries, notInConsumerGraph,
+      ...(declaresApi ? { notPublic } : {}), affected: affectedRows(hits) };
+  }
+
+  /**
+   * surface member가 선언한 route의 공백이다. 핸들러·정방향 도달·DB hop은 게시되지 않으므로 체인은 route 선언에서
+   * 멈춘다. 게시자가 핸들러 usr를 공개했으면 `symbol`에 싣는다(그 조직이 자기 trace로 이어 갈 수 있게).
+   */
+  private surfaceGap(selector: TraceSelector, route: TraceRouteKey, member: string, surface: ImportedHttpSurface,
+    fact: RouteDeclarationFact): void {
+    const usr = fact.endpoint.symbol?.usr;
+    this.gap({ code: 'server-surface-opaque', selector, route, member,
+      ...(usr === undefined ? {} : { symbol: { platform: fact.endpoint.platform, usr } }),
+      detail: `The server side of this route comes from the imported http surface ${surface.surface.name} at revision `
+        + `${surface.surface.revision}; its handlers, forward reach and database hops are not published, so the chain `
+        + 'stops at the route declaration.' });
   }
 
   /** 핸들러에서 정방향으로 닿은 relation-use를 모은다. 핸들러 자신의 사실도 포함한다. */
@@ -838,7 +948,8 @@ class TraceBuilder {
       this.revisionGroupGaps({ member: '', analyses, ...(context.revision === undefined ? {} : { expected: context.revision }) });
       return;
     }
-    for (const { name, revision, catalog } of context.workspace.members) {
+    for (const { name, revision, catalog, surface } of context.workspace.members) {
+      if (surface !== undefined || revision === undefined) continue;
       const graphSha = catalog?.graphSha;
       this.revisionGroupGaps({ member: name, expected: revision, analyses: analyses.filter((analysis) => analysis.member === name),
         ...(graphSha === undefined ? {} : { graphSha }) });
@@ -921,6 +1032,41 @@ class TraceBuilder {
     for (const { link, server, detail } of this.prepared.linkServiceIssues) {
       this.gap({ code: 'link-service-ambiguous', link, member: server, detail });
     }
+    for (const library of this.input.context.workspace?.libraries ?? []) this.libraryAlignmentGap(library);
+  }
+
+  /**
+   * library의 id가 두 저장소 사이에서 하나라도 맞는지 본다. provider가 아는 SDK id(분석의 root·도달 정점과 route-call
+   * usr)를 선언대로 옮긴 것 중 consumer 역방향 분석이 심볼로 찾은 root가 하나도 없으면 `library-ids-unmatched`다 —
+   * `shared` 선언이 틀렸거나(생산자마다 id 체계가 다름) consumer 분석을 SDK id로 root하지 않은 것이라, 어느 쪽이든
+   * 앱 영향은 조용히 빈다.
+   */
+  private libraryAlignmentGap(library: TraceLibrary): void {
+    const translate = libraryTranslation(library);
+    const known = new Set<string>();
+    for (const analysis of this.input.analyses) {
+      if (analysis.member !== library.provider) continue;
+      for (const { symbol } of analysis.graph.roots) if (symbol !== undefined) known.add(JSON.stringify([analysis.platform, symbol.usr]));
+      for (const { symbol } of analysis.graph.reached) known.add(JSON.stringify([analysis.platform, symbol.usr]));
+    }
+    for (const document of this.members.get(library.provider)!.documents) {
+      for (const fact of document.facts) {
+        if (fact.kind === 'route-call' && fact.symbol?.usr !== undefined) known.add(JSON.stringify([document.platform, fact.symbol.usr]));
+      }
+    }
+    const aligned = [...known].some((entry) => {
+      const [platform, provider] = JSON.parse(entry) as [string, string];
+      const consumer = translate(provider);
+      return consumer !== undefined && this.roots.has(JSON.stringify([library.consumer, 'reverse', platform, consumer]));
+    });
+    if (aligned) return;
+    this.gap({ code: 'library-ids-unmatched', library: library.name, member: library.consumer,
+      detail: `No library symbol id known to the provider${library.ids === 'symbol-map' ? ' (through the symbolMap)'
+        : library.publicSymbols === undefined ? '' : ' (among its publicSymbols)'} is a `
+        + 'resolved root of a reverse analysis of the consumer (roots the producer reported as not found count as '
+        + 'unresolved), so no app code can be followed from library calls. Either the ids do not line up across the two '
+        + 'repositories (use ids "symbol-map"), the consumer analyses were not rooted at the library symbols, or the app '
+        + 'does not reference the library at all.' });
   }
 
   /** route 선택에서 usr 없는 relation-use를 member·플랫폼별 개수로 남긴다. */
@@ -945,8 +1091,9 @@ class TraceBuilder {
   private persistenceMembers(): TraceMemberInput[] {
     if (!this.workspace) return [...this.members.values()];
     const servers = new Set(this.input.context.workspace!.links.map(({ server }) => server));
-    return [...this.members.values()].filter((member) => servers.has(member.key) ||
-      member.documents.some(({ target }) => target === 'persistence'));
+    // surface member의 DB hop은 게시되지 않는다 — route마다 `server-surface-opaque`가 밝히므로 persistence 공백을 더하지 않는다.
+    return [...this.members.values()].filter((member) => member.surface === undefined && (servers.has(member.key) ||
+      member.documents.some(({ target }) => target === 'persistence')));
   }
 
   /** workspace에서 어떤 link에도 그 역할로 들지 않은 http 문서를 member·측별 개수로 밝힌다. */
@@ -1008,6 +1155,7 @@ class TraceBuilder {
   /** route-decl 핸들러 (server member, usr)별 선언 사실 색인이다. 테스트 소스 decl은 역방향 체인에서 뺀다. */
   private indexHandlers(): void {
     for (const linked of this.scopes) {
+      if (this.surfaces.has(linked.server)) continue;
       for (const fact of linked.scope.decls) {
         const usr = fact.endpoint.symbol?.usr;
         if (usr === undefined || fact.testSource) continue;
@@ -1026,9 +1174,13 @@ class TraceBuilder {
       }
       this.rowsByRoot.set(analysis, byRoot);
       analysis.graph.roots.forEach(({ id, symbol }, rootIndex) => {
-        // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다.
-        if (symbol === undefined) return;
         const key = JSON.stringify([analysis.member ?? '', analysis.role, analysis.platform, id]);
+        // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다. library 연속만 "생산자가
+        // 그 노드를 찾지 못했다"는 신고로 따로 기억한다.
+        if (symbol === undefined) {
+          this.missingRoots.add(key);
+          return;
+        }
         this.roots.set(key, [...(this.roots.get(key) ?? []), { analysis, rootIndex }]);
       });
     }
@@ -1077,7 +1229,9 @@ class TraceBuilder {
     this.candidateGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
-      route.calls.length + affected(route.calls), 0) + chain.handlers.length + chain.relationUses.length +
+      route.calls.length + affected(route.calls) + route.calls.reduce((total, call) => total +
+        affected(call.consumers ?? []) + (call.consumers ?? []).reduce((count, hop) => count + hop.entries.length, 0), 0), 0) +
+      chain.handlers.length + chain.relationUses.length +
       chain.database.reduce((sum, hop) => sum + 1 + hop.dependents.length, 0));
     return chain;
   }
@@ -1089,7 +1243,7 @@ class TraceBuilder {
       ...optionalMember(member), symbol: { platform, usr },
       detail: 'The producer witness for this root entry leads back to the root itself (a cycle); the depth is authoritative '
         + 'but the path from the other root is unknown and not reconstructed.' });
-    const affected = [...chain.routes.flatMap(({ calls }) => calls.flatMap((call) => call.affected)),
+    const affected = [...chain.routes.flatMap(({ calls }) => calls.flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents)];
     for (const row of affected) if (row.witnessPartial) partial(row.analysis, row.member, row.platform, row.usr);
     for (const handler of chain.handlers) {
@@ -1138,6 +1292,11 @@ class TraceBuilder {
         this.candidateListGaps(call.affected, (analysis, detail) => this.gap({ code: 'candidate-dispatch', selector,
           route: key, analysis, ...optionalMember(call.call.member), symbol: { platform: call.call.platform, usr },
           evidence: call.call, detail }), 'client');
+        for (const hop of call.consumers ?? []) {
+          this.candidateListGaps(hop.affected, (analysis, detail) => this.gap({ code: 'candidate-dispatch', selector,
+            route: key, analysis, library: hop.library, member: hop.member, symbol: { platform: call.call.platform, usr },
+            evidence: call.call, detail }), 'client');
+        }
       }
     }
     for (const hop of chain.database) {
@@ -1296,6 +1455,25 @@ function affectedRows(hits: ReadonlyArray<{ analysis: TraceAnalysis; root: strin
   return [...best.values()].sort((left, right) => left.depth - right.depth || compareStrings(left.usr, right.usr));
 }
 
+/**
+ * library 선언의 id 옮김이다. provider id를 consumer id로 바꾸고, 선언한 공개 API 밖이면 undefined다.
+ * `shared`는 같은 문자열(publicSymbols가 있으면 그 목록 안만), `symbol-map`은 표에 있는 것만이다.
+ */
+function libraryTranslation(library: TraceLibrary): (provider: string) => string | undefined {
+  if (library.ids === 'symbol-map') {
+    const map = new Map((library.symbolMap ?? []).map(({ provider, consumer }) => [provider, consumer]));
+    return (provider) => map.get(provider);
+  }
+  if (library.publicSymbols === undefined) return (provider) => provider;
+  const exported = new Set(library.publicSymbols);
+  return (provider) => (exported.has(provider) ? provider : undefined);
+}
+
+/** 호출 하나의 클라이언트 영향과 library consumer 영향 행 전부다. */
+function consumerAndClientRows(call: TraceCallHop): TraceAffected[] {
+  return [...call.affected, ...(call.consumers ?? []).flatMap(({ affected }) => affected)];
+}
+
 /** 시작 심볼 중복을 제거하고 정렬한다. */
 function uniqueStarts(starts: readonly StartSymbol[]): StartSymbol[] {
   const unique = new Map(starts.map((start) => [memberSymbolKey(start.member, start.platform, start.usr), start]));
@@ -1324,12 +1502,23 @@ function memberKey(member: string, key: string): string {
   return JSON.stringify([member, key]);
 }
 
-/** workspace 입력 요약이다. 경로는 싣지 않고 member·link 신원과 귀속 선언만 되싣는다. */
-function summarizeWorkspace(context: TraceContext): TraceWorkspaceSummary {
-  const { members, links } = context.workspace!;
+/** workspace 입력 요약이다. 경로는 싣지 않고 member·link·library 신원과 귀속 선언만 되싣는다. */
+function summarizeWorkspace(context: TraceContext, prepared: PreparedTrace): TraceWorkspaceSummary {
+  const { members, links, libraries } = context.workspace!;
+  const imported = new Map(prepared.members.flatMap(({ key, surface }) => surface === undefined ? [] : [[key, surface] as const]));
   return {
-    members: members.map(({ name, project, revision, catalog }) => ({ name, project, revision,
-      ...(catalog === undefined ? {} : { catalog }) })),
+    members: members.map(({ name, project, revision, catalog, surface }) => {
+      const loaded = imported.get(name);
+      if (surface !== undefined && loaded !== undefined) {
+        return { name, surface: { name: loaded.surface.name, revision: loaded.surface.revision, sha256: surface.sha256,
+          privacy: loaded.surface.privacy } };
+      }
+      return { name, ...(project === undefined ? {} : { project }), ...(revision === undefined ? {} : { revision }),
+        ...(catalog === undefined ? {} : { catalog }) };
+    }),
+    ...(libraries.length === 0 ? {} : { libraries: libraries.map(({ name, consumer, provider, ids, symbolMap, publicSymbols }) => ({
+      name, consumer, provider, ids, ...(symbolMap === undefined ? {} : { symbolMapEntries: symbolMap.length }),
+      ...(publicSymbols === undefined ? {} : { publicSymbols: publicSymbols.length }) })) }),
     links: links.map(({ name, client, server, match, contract }) => ({ name, client, server, match,
       ...(contract === undefined ? {} : { contract: { member: contract.member,
         ...(contract.authoritative === undefined ? {} : { authoritative: contract.authoritative }) } }) })),
@@ -1368,7 +1557,7 @@ function summarize(chains: readonly TraceChain[], gaps: number, notices: number)
     databaseDependents: sum(({ database }) => database.reduce((total, hop) => total + hop.dependents.length, 0)),
     calls: sum(({ routes }) => routes.reduce((total, route) => total + route.calls.length, 0)),
     clientSymbols: sum(({ routes }) => routes.reduce((total, route) =>
-      total + route.calls.reduce((count, call) => count + call.affected.length, 0), 0)),
+      total + route.calls.reduce((count, call) => count + consumerAndClientRows(call).length, 0), 0)),
     gaps,
     notices,
     evidence: countEvidence(chains),
@@ -1382,7 +1571,7 @@ function countEvidence(chains: readonly TraceChain[]): TraceEvidenceCounts {
     const reaches: ReadonlyArray<{ evidence: TraceEvidence }> = [
       ...chain.relationUses.flatMap(({ reachedFrom }) => reachedFrom),
       ...chain.handlers.flatMap(({ reachedFrom }) => reachedFrom),
-      ...chain.routes.flatMap(({ calls }) => calls.flatMap(({ affected }) => affected)),
+      ...chain.routes.flatMap(({ calls }) => calls.flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents),
     ];
     for (const { evidence } of reaches) counts[evidence] += 1;

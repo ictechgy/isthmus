@@ -1,0 +1,156 @@
+{
+  "dispatch": "specificity",
+  "facts": [
+    {
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 12,
+        "path": "src/routes/orders.ts"
+      },
+      "method": "GET",
+      "paramConstraints": [
+        {
+          "kind": "int",
+          "segment": 2
+        }
+      ],
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "orders.get",
+        "usr": "ts:api/orders.get"
+      }
+    },
+    {
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 24,
+        "path": "src/routes/orders.ts"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "orders.create",
+        "usr": "ts:api/orders.create"
+      }
+    },
+    {
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 36,
+        "path": "src/routes/orders.ts"
+      },
+      "method": "DELETE",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "orders.cancel",
+        "usr": "ts:api/orders.cancel"
+      }
+    },
+    {
+      "channel": "/files/{**}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 8,
+        "path": "src/routes/files.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "files.serve",
+        "usr": "ts:api/files.serve"
+      }
+    },
+    {
+      "catchAllPrefix": true,
+      "channel": "/files",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 3,
+        "line": 8,
+        "path": "src/routes/files.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "files.serve",
+        "usr": "ts:api/files.serve"
+      }
+    },
+    {
+      "channel": "/internal/health",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 4,
+        "path": "test/health.test.ts"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "healthProbe",
+        "usr": "ts:test/health.probe"
+      },
+      "testSource": true
+    },
+    {
+      "authority": "billing.internal",
+      "channel": "/v1/charges",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 9,
+        "line": 17,
+        "path": "src/clients/billing.ts"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "billing.charge",
+        "usr": "ts:clients/billing.charge"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "limitationScopes": [
+    {
+      "limitationIndex": 0,
+      "templatePrefixes": [
+        "/admin"
+      ]
+    }
+  ],
+  "limitations": [
+    "route-coverage: src/routes/admin.ts registers /admin routes through a plugin loader",
+    "route-call-coverage: src/clients/billing.ts builds charge URLs at runtime"
+  ],
+  "platform": "js",
+  "project": "/work/example-server",
+  "roles": [
+    "server",
+    "client"
+  ],
+  "service": "example-api",
+  "sourceSets": {
+    "tests": "included"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-surface",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

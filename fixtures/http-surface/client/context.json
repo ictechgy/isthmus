@@ -1,0 +1,53 @@
+{
+  "format": "isthmus-trace-context",
+  "links": [
+    {
+      "client": "client",
+      "contract": {
+        "authoritative": true,
+        "member": "api"
+      },
+      "match": {
+        "hosts": [
+          "api.example.com"
+        ]
+      },
+      "name": "mobile->api",
+      "server": "api"
+    }
+  ],
+  "members": [
+    {
+      "name": "api",
+      "surface": {
+        "path": "../surfaces/example-api-2.4.surface.json",
+        "sha256": "6ad0a3bbfc35ef56bccb0b745c9d5e2ea0057a76cb393a2f0ce69060f14ff183"
+      }
+    },
+    {
+      "analyses": [
+        {
+          "id": "android-reverse",
+          "path": "android-reverse.json",
+          "platform": "kotlin",
+          "role": "reverse"
+        }
+      ],
+      "documents": [
+        "android.http.json"
+      ],
+      "name": "client",
+      "project": "/work/example-client",
+      "revision": "cli-3.2.0"
+    }
+  ],
+  "selection": {
+    "routes": [
+      {
+        "method": "GET",
+        "template": "/api/orders/{}"
+      }
+    ]
+  },
+  "version": 1
+}

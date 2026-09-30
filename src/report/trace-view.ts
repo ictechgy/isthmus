@@ -41,7 +41,8 @@ export type LimitedTraceReport = TraceReport & {
  * 보고서의 목록을 상한으로 자른다. 순서는 보고서의 결정적 순서를 그대로 따른다.
  *
  * 자르는 목록: `chains`(maxChains), 최상위 `gaps`·`notices`·`limitations`·`analysisLimitations`·`analyses`, chain의
- * `routes`·`handlers`·`relationUses`·`database`, route의 `declarations`·`contracts`·`calls`, 호출의 `affected`, 핸들러의
+ * `routes`·`handlers`·`relationUses`·`database`, route의 `declarations`·`contracts`·`calls`, 호출의 `affected`·`consumers`와
+ * consumer hop의 `entries`·`affected`, 핸들러의
  * `routes`·`reachedFrom`, relation 사용의 `decls`·`reachedFrom`, DB 정점의 `dependents`(각 maxRows). hop 하나의 증거인
  * `path`·`relationships`와 `selection`은 자르지 않는다 — 잘린 경로는 틀린 증거가 되기 때문이다.
  */
@@ -65,9 +66,19 @@ export function limitTraceReport(report: TraceReport, limits: TraceLimits): Limi
           ...route,
           declarations: rows(route.declarations, `${routeAt}.declarations`),
           contracts: rows(route.contracts, `${routeAt}.contracts`),
-          calls: rows(route.calls, `${routeAt}.calls`).map((call, callIndex) => ({
-            ...call, affected: rows(call.affected, `${routeAt}.calls[${callIndex}].affected`),
-          })),
+          calls: rows(route.calls, `${routeAt}.calls`).map((call, callIndex) => {
+            const callAt = `${routeAt}.calls[${callIndex}]`;
+            return {
+              ...call, affected: rows(call.affected, `${callAt}.affected`),
+              ...(call.consumers === undefined ? {} : {
+                consumers: rows(call.consumers, `${callAt}.consumers`).map((hop, hopIndex) => ({
+                  ...hop,
+                  entries: rows(hop.entries, `${callAt}.consumers[${hopIndex}].entries`),
+                  affected: rows(hop.affected, `${callAt}.consumers[${hopIndex}].affected`),
+                })),
+              }),
+            };
+          }),
         };
       }),
       handlers: rows(chain.handlers, `${at}.handlers`).map((handler, handlerIndex) => ({

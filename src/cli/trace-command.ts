@@ -25,6 +25,8 @@ import {
 } from './command-support.ts';
 import type { CommandResult, ReadTextFile } from './command-support.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
+import { HttpSurfaceInputError, readHttpSurface } from './surface-input.ts';
+import type { ImportedHttpSurface } from '../exchange/http-surface.ts';
 
 /**
  * `isthmus trace <trace-context.json>` — route 단위 영향 후보를 생산자 id 정확 일치로 잇는다.
@@ -64,8 +66,15 @@ export async function runTraceCommand(arguments_: readonly string[], readTextFil
       const raw = await readAnalysis(locate(reference.path), index + 1, reference, readTextFile, budget);
       analyses.push(normalizeTraceAnalysis(raw, reference, analysisProject(context, reference)));
     }
+    const surfaces = new Map<string, ImportedHttpSurface>();
+    const surfaceMembers = (context.workspace?.members ?? []).filter(({ surface }) => surface !== undefined);
+    for (const [index, member] of surfaceMembers.entries()) {
+      const { path, sha256 } = member.surface!;
+      surfaces.set(member.name, (await readHttpSurface(locate(path), `trace http surface ${index + 1}`, sha256,
+        readTextFile, budget)).imported);
+    }
     const documents = await readBridgeDocuments(context.documents.map(locate), readTextFile, budget.used);
-    const report = createTraceReport({ context, documents, analyses });
+    const report = createTraceReport({ context, documents, analyses, surfaces });
     const blocked = parsed.booleanFlags.has('--strict') && hasTraceGaps(report);
     return {
       standardOutput: encodeSortedJson(limits === undefined ? report : limitTraceReport(report, limits),
@@ -78,7 +87,7 @@ export async function runTraceCommand(arguments_: readonly string[], readTextFil
       error instanceof TraceInputError) {
       return inputFailure(`Trace input violates its contract: ${error.message}\n`);
     }
-    if (error instanceof AnalysisReadError) return inputFailure(`${error.message}\n`);
+    if (error instanceof AnalysisReadError || error instanceof HttpSurfaceInputError) return inputFailure(`${error.message}\n`);
     if (error instanceof PersistencePairsLimitError || error instanceof HttpPairsLimitError) {
       return inputFailure(`${error.message}\n`);
     }

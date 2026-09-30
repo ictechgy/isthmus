@@ -1,0 +1,37 @@
+{
+  "format": "isthmus-workspace",
+  "links": [
+    {
+      "client": "client",
+      "contract": {
+        "authoritative": true,
+        "member": "api"
+      },
+      "match": {
+        "hosts": [
+          "api.example.com"
+        ]
+      },
+      "name": "mobile->api",
+      "server": "api"
+    }
+  ],
+  "members": [
+    {
+      "name": "api",
+      "surface": {
+        "path": "../surfaces/example-api-2.3.surface.json",
+        "sha256": "d2967f66defc70d10831ef1f8ab2b7d05c06c7eeebadd041625fde9f9c55a546"
+      }
+    },
+    {
+      "documents": [
+        "android.http.json"
+      ],
+      "name": "client",
+      "project": "/work/example-client",
+      "revision": "cli-3.2.0"
+    }
+  ],
+  "version": 1
+}

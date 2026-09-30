@@ -1,0 +1,59 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/orders-sdk",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.sdk.OrdersSdk#order",
+        "usr": "kt:com.example.sdk.OrdersSdk#order(String)"
+      },
+      "via": "kt:com.example.sdk.internal.OrdersClient#get(String)"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.sdk.OrdersSdk#placeOrder",
+        "usr": "kt:com.example.sdk.OrdersSdk#placeOrder(Order)"
+      },
+      "via": "kt:com.example.sdk.internal.OrdersClient#create(Order)"
+    }
+  ],
+  "revision": "sdk-1.8.0",
+  "roots": [
+    {
+      "id": "kt:com.example.sdk.internal.OrdersClient#create(Order)",
+      "symbol": {
+        "usr": "kt:com.example.sdk.internal.OrdersClient#create(Order)"
+      }
+    },
+    {
+      "id": "kt:com.example.sdk.internal.OrdersClient#get(String)",
+      "symbol": {
+        "usr": "kt:com.example.sdk.internal.OrdersClient#get(String)"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-library",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

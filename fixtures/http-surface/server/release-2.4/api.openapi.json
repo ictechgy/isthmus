@@ -1,0 +1,67 @@
+{
+  "facts": [
+    {
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 7,
+        "line": 10,
+        "path": "openapi.yaml"
+      },
+      "method": "GET",
+      "operationId": "getOrder",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "getOrder"
+      }
+    },
+    {
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 7,
+        "line": 22,
+        "path": "openapi.yaml"
+      },
+      "method": "POST",
+      "operationId": "createOrder",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "createOrder"
+      }
+    },
+    {
+      "channel": "/api/orders/{}/items",
+      "dynamic": false,
+      "kind": "route-contract",
+      "location": {
+        "column": 7,
+        "line": 46,
+        "path": "openapi.yaml"
+      },
+      "method": "GET",
+      "operationId": "listOrderItems",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "listOrderItems"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "openapi",
+  "project": "/work/example-server",
+  "roles": [
+    "server"
+  ],
+  "service": "example-api",
+  "target": "http",
+  "tool": {
+    "name": "synthetic-surface-openapi",
+    "version": "0.0.0"
+  },
+  "version": 1
+}
