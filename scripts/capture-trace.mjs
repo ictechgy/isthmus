@@ -911,8 +911,8 @@ async function runTraversal(session, member, analysis, id, roots, provisional, o
  * 생산자가 root-not-found로 돌려준 root를 manifest 단계 항목(`rootsNotFound`)과 `warnings`에 남긴다.
  *
  * 순회 문서는 그대로 싣는다 — 다른 root의 도달은 온전하고, trace가 문서의 `root-not-found:` limitation을
- * `analysisLimitations`로, 잘림을 `analysis-truncated` gap으로, 그 root를 따라가야 하는 hop을 `analysis-missing`으로
- * 드러낸다. `accepted`는 설정의 acceptExitCodes 밖의 64를 이 규칙으로 받았다는 표시다.
+ * `analysisLimitations`로 싣고, 그 root를 따라가야 하는 hop만 `analysis-root-not-found` gap으로 드러낸다(찾은 root의 hop에는
+ * 잘림 gap이 붙지 않는다 — root 단위 판정). `accepted`는 설정의 acceptExitCodes 밖의 64를 이 규칙으로 받았다는 표시다.
  */
 function recordRootsNotFound(session, entry, step, { roots, unrequested }, accepted) {
   if (roots.length > 0) entry.rootsNotFound = roots;

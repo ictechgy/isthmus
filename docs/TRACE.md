@@ -20,7 +20,8 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 - **route 선택**: route-decl → 핸들러 usr → 정방향 순회(`forward`)의 도달 집합과 핸들러 자신 →
   그 usr를 `symbol.usr`로 가진 relation-use → persistence 조인 → relation-decl VertexId →
   schemagraph 의존자(`db-dependents`). 그리고 route → 귀속된 route-call → 호출을 감싼 심볼의
-  클라이언트 역방향 순회(`reverse`).
+  클라이언트 역방향 순회(`reverse`) → 그 도달이 호출 member 자신의 route 핸들러에 닿으면 그 route
+  ([upstream route](#upstream-route-호출-member-자신의-route), 한 단계).
 - **relation·심볼 선택**: relation-use를 감싼 심볼(또는 선택한 심볼) → 역방향 순회 → route-decl
   핸들러 → route → 클라이언트. relation 선택은 그 relation의 VertexId 의존자도 싣는다.
 - **파일 선택**: 파일에 놓인 심볼(분석 위치, 없으면 사실 위치) → 심볼 선택과 같은 역방향 체인. 파일에 놓인
@@ -200,7 +201,8 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 2. consumer member의 같은 platform 역방향 분석이 그 id를 root로 받아 **심볼로 찾았으면** 잇는다(`entries`, 앱 영향은 그 root에서
    닿은 정점).
 3. root로 받았지만 생산자가 앱 그래프에서 찾지 못했으면(root-not-found — symbol 없는 root) 생산자가 밝힌 "그 노드 없음"이라
-   잇지 않고 `notInConsumerGraph`로 센다. 그 분석은 잘림으로 표시되므로 쓰는 hop마다 `analysis-truncated`가 남는다(기존 규칙).
+   잇지 않고 `notInConsumerGraph`로 센다. gap은 남기지 않는다. root-not-found는 그 root만의 사유라 같은 분석의 찾은 root hop에도
+   `analysis-truncated`가 남지 않는다(다른 잘림 사유가 함께 있을 때만 남는다, [root-not-found는 root 단위](#root-not-found는-root-단위)).
 4. 어느 분석도 root로 받지 않았으면 앱이 그 SDK 심볼을 부르는지 모르는 곳이라 `library-continuation-unrooted` gap이다.
 5. library 전체에서 provider가 아는 SDK id(provider 분석의 root·도달 정점과 route-call usr)를 옮긴 것 중 consumer 분석이 심볼로
    찾은 root가 하나도 없으면 `library-ids-unmatched` gap이다 — `shared` 선언이 틀렸거나 consumer 분석을 SDK id로 root하지 않은
@@ -248,8 +250,32 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 - 분석도 `fileSymbols`도 이 파일에 심볼을 하나도 두지 않아 사실 위치로만 대신했으면 gap `file-selection-fact-fallback`을 남긴다.
   이쪽은 사실 없는 심볼이 빠져 **영향을 숨길 수 있으므로** 알림이 아니라 gap이다. 아무것도 찾지 못하면 체인 없이
   gap `file-without-symbols`다.
-- 클라이언트 파일을 고르면 그 심볼에서 서버 핸들러에 닿지 않으므로 `non-http-entry`가 남는다. 파일 선택은 서버
-  변경 영향용이며, 클라이언트 내부 영향은 호출부의 `affected`로 본다.
+- 클라이언트 파일을 고르면 그 심볼에서 서버 핸들러에 닿지 않으므로 `non-http-entry`가 남는다(클라이언트 member가 자기 route도
+  선언했고 그 핸들러에 닿으면 `route-decl-unlinked` — 아래 upstream route 절). 파일 선택은 서버 변경 영향용이며, 클라이언트
+  내부 영향은 호출부의 `affected`로 본다.
+
+### upstream route (호출 member 자신의 route)
+
+서비스 A가 B를 부르면서 자기 route도 가질 때(A는 B link의 client이자 자기 route의 server), B route에서 시작한 체인은 A의 호출
+지점과 그 역방향 도달(`affected`)까지 간다. 그 도달 심볼이 **A 자신의 route-decl 핸들러 usr와 정확히 같으면** 그 route를 호출
+hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드러나는지다(예: B `GET /api/users/{}` → A `UserGateway.fetchUser` →
+`OrderService.describe` → `OrdersController.order`가 A `GET /orders/{}`의 핸들러).
+
+- **보수적 일치**: 같은 member·같은 platform 안의 정확한 usr 일치만 쓴다. 호출을 감싼 심볼 자신(depth 0)과 그 역방향 도달 정점이
+  후보다. 이름·경로로 추측하지 않고 다른 member의 핸들러와는 잇지 않는다. library consumer hop도 같은 규칙으로 consumer member의
+  route를 싣는다(consumer root는 SDK 심볼 id라 도달 정점만 본다).
+- **모양**: `{method, template, member?, handler: {platform, usr, qualifiedName?}, depth, declarations, scopes}`. 도달 근거(path·
+  등급·목격)는 같은 hop `affected`의 그 핸들러 행이다. `scopes`는 이 route를 server 선언으로 잇는 link 이름(단일 project면 service
+  scope)이고, 선언은 link가 잇는 decl과 link 없는 자기 decl 모두에서 모은다. `summary.upstreamRoutes`가 hop별 수를 센다.
+- **한 단계(v1)**: upstream route의 호출자로는 올라가지 않는다. 전이 추적은 member 사이 순환(A→B→A)과 hop마다 커지는 출력을
+  다뤄야 하는데, 한 단계면 출력이 호출 hop의 `affected` 이하로 묶이고 요약·상한·근거 수 규칙이 그대로다. 대신 멈춘 곳을
+  gap으로 밝힌다: `scopes`가 있으면 scope마다 `upstream-route-callers-not-followed`(`route`에 그 scope 키 — 그 route를 선택하면
+  이어 간다), 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모르므로 `route-decl-unlinked`다. 이 체인이 이미
+  싣는 route(재귀 호출 — 선택한 route의 다른 scope 포함)가 upstream이면 그 호출자가 이미 체인에 있어 gap을 만들지 않는다.
+- **link 없는 자기 route**: 어떤 link도 server로 잇지 않은 member의 선언 문서에서 핸들러 usr가 있는 정적 route-decl을 이 판정에
+  쓴다. 역방향 선택(relation·심볼·파일)이 그런 핸들러에 닿으면 `non-http-entry` 대신 `route-decl-unlinked`, route 선택(scope
+  미지정)이 그런 route와 정확히 같으면 `route-without-decl` 대신 member마다 `route-decl-unlinked`다. 그래서 member 단위
+  `http-member-unlinked`(server 측)는 체인이 따라갈 수 없는 선언(contract, usr 없는·dynamic route-decl)을 담은 문서에만 남는다.
 
 ## 출력: `isthmus-trace` v1
 
@@ -292,7 +318,7 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
                  "truncated": false, "rootsTruncated": false, "rootProvenance": "complete",
                  "evidenceReported": false, "unresolvedCallsReported": false, "roots": 2, "reached": 2 }],
   "summary": { "chains": 1, "routes": 1, "handlers": 1, "relationUses": 2, "databaseVertices": 2,
-               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "gaps": 0, "notices": 0,
+               "databaseDependents": 3, "calls": 1, "clientSymbols": 2, "upstreamRoutes": 0, "gaps": 0, "notices": 0,
                "evidence": { "direct": 3, "bound": 2, "candidate": 0, "unassessed": 2 } }
 }
 ```
@@ -349,7 +375,8 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
   넘으면 부분 결과 없이 종료 코드 2다.
 - **출력 상한(`--max-chains`·`--max-rows`)**: 주면 `chains`를 앞에서 N개, 그 밖의 행 목록(최상위 `gaps`·`notices`·
   `limitations`·`analysisLimitations`·`analyses`, chain의 `routes`·`handlers`·`relationUses`·`database`, route의
-  `declarations`·`contracts`·`calls`, 호출의 `affected`·`consumers`, consumer hop의 `entries`·`affected`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
+  `declarations`·`contracts`·`calls`, 호출의 `affected`·`upstreamRoutes`·`consumers`, consumer hop의 `entries`·`affected`·
+  `upstreamRoutes`, upstream route의 `declarations`, 핸들러의 `routes`·`reachedFrom`, relation 사용의 `decls`·
   `reachedFrom`, DB 정점의 `dependents`)을 **목록마다** M개로 자른다. 하나만 주면 다른 하나는 범위 상한이다. 출력에
   `truncation: {maxChains, maxRows, truncated, omittedLists, omitted: [{path, total, shown}]}`(자른 목록의 JSON 경로,
   최대 1,000개 — 넘으면 `omittedLists`로 전체 수만)를 더한다. hop 증거인 `path`·`relationships`와 `selection`은 자르지
@@ -360,14 +387,15 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 
 | 코드 | 뜻 |
 |---|---|
-| `route-without-decl` | 선택한 (method, template)과 정확히 같은 route-decl·route-contract가 선택 scope에 없다 |
+| `route-without-decl` | 선택한 (method, template)과 정확히 같은 route-decl·route-contract가 선택 scope에 없다(link 없는 자기 route가 같으면 대신 `route-decl-unlinked`) |
 | `handler-without-symbol` | route-decl에 `symbol.usr`가 없다 |
 | `route-contract-only` | route가 contract로만 선언돼 따라갈 핸들러가 없다 |
 | `relation-use-without-symbol` | relation-use에 `symbol.usr`가 없다(route 선택은 플랫폼별 개수, relation 선택은 사실별 증거) |
 | `relation-decl-without-symbol` | relation-decl에 VertexId(`symbol.usr`)가 없다 |
 | `call-without-symbol` | 귀속된 route-call에 `symbol.usr`가 없다 |
 | `analysis-missing` | 필요한 역할·플랫폼·root id의 분석이 없다(`symbol`에 찾은 id) |
-| `analysis-truncated` | 분석이 잘렸거나(`truncationReasons` 포함), root 귀속 64개 상한 때문에 이 root의 도달이 빠졌을 수 있다 |
+| `analysis-root-not-found` | 분석이 이 id를 root로 받았지만 생산자가 그래프에서 찾지 못했다고 신고했다(root-not-found, `symbol` 없는 root). 그 root를 따라가야 하는 hop만 받는다(`analysis`·`symbol`) |
+| `analysis-truncated` | 분석이 잘렸거나(`truncationReasons` 포함 — 사유가 `root-not-found`뿐이면 제외), root 귀속 64개 상한 때문에 이 root의 도달이 빠졌을 수 있다 |
 | `witness-partial` | root 항목의 via 목격이 그 root로 돌아와(순환) 다른 root에서의 경로를 알 수 없다. depth는 유효하다 |
 | `roots-provenance-partial` | 옛 형식의 다중 root 분석이라 root 출처를 대표 root 하나로만 안다 |
 | `candidate-dispatch` | hop이 가능성만 있는 구현 간선(`candidate`)으로만 뒷받침된다. hop은 그대로 싣는다. relation-use(`evidence`에 사용 사실, `symbol`에 핸들러)·핸들러 도달은 hop마다, 클라이언트·DB 영향 목록은 시작 심볼·분석별 개수와 예시 5개로 묶는다 |
@@ -375,7 +403,9 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 | `reach-completeness-unknown` | 핸들러의 정방향 분석이 잇지 못한 호출을 신고하지 않아 도달이 끊겼는지 알 수 없다(분석·체인별 하나) |
 | `stale-analysis` | 분석 revision이 context(workspace면 member)나 다른 분석과 다르거나, 같은 플랫폼(workspace면 같은 member·플랫폼) 분석의 graphRevision이 다르거나, sql 분석 graphRevision이 member `catalog.graphSha`와 다르다 |
 | `analysis-revision-unknown` | context(workspace면 member)가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다. member `catalog.graphSha`가 있는데 sql 분석에 graphRevision이 없어도 같다 |
-| `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전) |
+| `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전). link 없는 자기 route 핸들러에 닿았으면 대신 `route-decl-unlinked`다 |
+| `route-decl-unlinked` | 체인이 어떤 link도 server로 잇지 않은 member 자신의 route-decl에 닿았다 — upstream route(호출자를 모름), 역방향 선택이 닿은 핸들러, 또는 scope 없이 선택한 route. 그 route의 호출자·핸들러 체인은 따라가지 않았다(`member`, 핸들러면 `symbol`) |
+| `upstream-route-callers-not-followed` | upstream route를 link가 server로 잇지만 v1은 한 단계만 올라가 그 route의 호출자를 따라가지 않았다. `route`의 scope 키로 선택하면 이어 간다(`member`·`symbol`) |
 | `unattributed-calls-omitted` | 이 scope를 불렀을 수 있는 귀속되지 않은 호출 수. 경로·host는 싣지 않는다 |
 | `dynamic-route-calls` | 이 scope에 귀속됐지만 템플릿이 리터럴이 아니라 매칭하지 못한 호출 수 |
 | `ambiguous-route-call` | 이 route와 다른 선언 사이에서 모호한 귀속 호출(따라가지 않음) |
@@ -394,7 +424,7 @@ CI)에서 미리 계산해 내려받은 artifact를 받는다. 단일 project·w
 | `file-selection-fact-fallback` | 분석이 선택한 파일에 심볼을 두지 않아 사실 위치로만 대신했다. 사실 없는 심볼은 빠졌을 수 있다 |
 | `file-without-symbols` | 선택한 파일에 놓인 분석 심볼·사실이 없다(없다는 증거가 아님). 체인을 만들지 않는다 |
 | `link-service-ambiguous` | link의 선언 측이 여러 서비스를 내는데 `match.services`가 좁히지 않아 선언을 하나도 잇지 않았거나, 좁혔지만 service 없는 선언이 섞여 그 선언을 뺐거나, 좁힌 범위 밖 서비스가 있어 service 없는 호출을 귀속하지 않았다(`link`·`member`) |
-| `http-member-unlinked` | workspace member의 http 문서가 어느 link에도 그 역할(client, 또는 server 선언·link가 고른 contract 문서)로 들지 않아 잇지 않았다. 문서 단위로 세므로 link가 contract 문서를 골라 쓸 때 빠진 같은 member의 다른 openapi 문서도 드러난다 |
+| `http-member-unlinked` | workspace member의 http 문서가 어느 link에도 그 역할(client, 또는 server 선언·link가 고른 contract 문서)로 들지 않아 잇지 않았다. 문서 단위로 세므로 link가 contract 문서를 골라 쓸 때 빠진 같은 member의 다른 openapi 문서도 드러난다. server 측은 체인이 따라갈 수 없는 선언(contract, usr 없는·dynamic route-decl)을 담은 문서만 센다 — 핸들러 usr가 있는 정적 route-decl은 체인이 닿는 곳마다 `route-decl-unlinked`로 밝힌다(surface member는 모든 선언 문서) |
 | `server-surface-opaque` | route의 선언 측이 가져온 http surface(surface member)라 핸들러·정방향 도달·DB hop이 게시되지 않았다. 체인은 route 선언에서 멈춘다. 게시자가 핸들러 usr를 공개했으면 `symbol`에 싣는다(`member`·`route`) |
 | `library-continuation-unrooted` | library provider(SDK)의 호출에서 닿은 SDK id 중 consumer로 옮길 수 있는 id를 consumer의 역방향 분석이 root로 받지 않아, 그 SDK 심볼을 부르는 앱 코드를 따라가지 못했다(개수·예시 id, `library`·`member`) |
 | `library-ids-unmatched` | provider가 아는 SDK id를 library 선언(`ids`)대로 옮긴 것 중 consumer 역방향 분석이 심볼로 찾은 root가 하나도 없다 — id 체계가 두 저장소에서 다르거나(`symbol-map`을 쓴다) consumer 분석을 SDK id로 root하지 않았다(`library`·`member`) |
@@ -565,8 +595,25 @@ README대로 모르는 root가 섞여도 나머지 root로 순회한 문서를 �
 경우에도 문서가 기록한 root-not-found는 같은 방식으로 싣고 경고한다. 그때 넘기지 않은 id를 못 찾았다는 항목이 있으면
 문서는 받되 `rootsNotFoundUnrequested`에 싣고 경고 문구에 계약 위반으로 적는다. 경고는 capture 결과 JSON의 `warnings`와 stderr
 (`Capture warning (<단계>, <코드>): …`)에도 나오며 종료 코드는 0이다. trace는 문서의 `root-not-found:` limitation을
-`analysisLimitations`로, 잘림을 그 분석을 쓰는 hop의 `analysis-truncated` gap으로, 못 찾은 root를 따라가야 하는 hop을
-`analysis-missing` gap으로 드러낸다.
+`analysisLimitations`로, 못 찾은 root를 따라가야 하는 hop을 `analysis-root-not-found` gap으로 드러낸다. 찾은 root의 hop은
+root-not-found 때문에 잘린 것으로 보지 않는다(아래).
+
+#### root-not-found는 root 단위
+
+trace는 사유가 `root-not-found`뿐인 잘림을 분석 전체의 잘림으로 보지 않는다. 근거는 [LANGUAGE-TRAVERSAL](LANGUAGE-TRAVERSAL.md#필드-의미)
+계약이다: 해석하지 못한 요청은 원문 id의 `symbol` 없는 root로 남고, trace는 `symbol`이 있는 root만 잇는다. 그 요청에는 순회할
+노드가 없으므로 다른 root의 도달은 생산자가 그 요청 없이 계산한 것과 같다 — root-not-found는 순회를 자른 것이 아니라 요청
+하나를 거절한 것이다(다른 이유로 잘렸으면 생산자가 그 사유를 함께 싣는다). 그래서:
+
+- 찾은 root에서 시작한 hop은 다른 사유(`depth`·`output` 등)가 없으면 gap이 없다. 다른 사유가 있으면 `analysis-truncated`에 그
+  사유만 싣는다.
+- 못 찾은 root를 따라가야 하는 hop만 분석마다 `analysis-root-not-found`를 받는다(이전에는 `analysis-missing`). library 연속의
+  `notInConsumerGraph`는 "앱이 그 SDK 심볼을 부르지 않음"이라 gap이 아니다(위 library 절).
+- 사유 목록 없이 잘렸거나, `symbol` 없는 root 없이 `root-not-found`만 신고한 문서는 계약 밖이라 이전처럼 분석 전체를 잘린 것으로
+  본다.
+
+이 규칙으로 library 공개 API를 root로 넘긴 분석(앱이 쓰지 않는 API가 root-not-found)이 찾은 root의 체인까지 `--strict`에서
+실패시키던 잡음이 사라진다.
 
 기본을 엄격(실패)으로 두지 않은 이유: 다른 root의 도달은 온전한데 문서를 버리면 순회 전체를 잃는다. 그 손실을 피하려고
 설정에 `acceptExitCodes: [0, 64]`를 두게 하면 64의 두 뜻(문서 있는 root-not-found와 문서 없는 사용법 오류)을 가리지 않고
@@ -697,6 +744,9 @@ providerAnalyses, delivered?, undelivered?, missingMapEntries?, notes?}]}`다. p
 - 남은 일: link match의 `interfaces`와 `baseRefs[].pathPrefix`
   (declared-base), check·query의 workspace 매니페스트 수용(지금은 여전히 입력 오류).
   http diff는 [HTTP-DIFF](HTTP-DIFF.md)(`diff --http`)로 들어갔고 workspace member·link 파서와 link 조인을 이 명령과 공유한다.
+- upstream route의 전이 추적(A route → A를 부르는 C → C route …)은 v1에 없다 — 한 단계만 싣고
+  `upstream-route-callers-not-followed`로 멈춘 곳을 밝힌다. 넣을 때는 깊이 상한과 (scope, method, template) 방문 집합으로
+  순환을 끊는다.
 - 조직 경계의 남은 일: surface의 사전 계산 continuation(게시자 정방향·DB 분석), library 사슬(여러 단계 SDK), 앱 심볼 → SDK →
   route 방향 선택. capture 설정은 surface member(가져오기·내보내기)와 library를 지원한다([위](#capture의-surface-member와-library)).
 - 입력 수집은 [`scripts/capture-trace.mjs`](#capture로-한-번에-수집하기)가 맡는다. MCP `trace` 도구는 출력 상한과 함께

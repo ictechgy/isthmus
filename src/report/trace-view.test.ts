@@ -56,3 +56,26 @@ test('상한 안의 보고서는 그대로이고 기록 목록 자체도 상한�
   assert.equal(huge.truncation.omitted.length, MAX_TRACE_OMITTED_ENTRIES);
   assert.ok(huge.truncation.omittedLists > MAX_TRACE_OMITTED_ENTRIES);
 });
+
+test('호출·consumer hop의 upstream route 목록과 그 선언도 상한으로 자르고, 없으면 키를 만들지 않는다', () => {
+  const base = report(3, 1);
+  const upstream = Array.from({ length: 3 }, () => ({ method: 'GET', template: '/u', handler: { platform: 'js', usr: 'h' },
+    depth: 1, scopes: [], declarations: [{}, {}, {}] }));
+  const route = base.chains[0]!.routes[0]!;
+  const withUpstream = { ...base, chains: [{ ...base.chains[0]!, routes: [{ ...route, calls: [
+    { ...route.calls[0]!, upstreamRoutes: upstream, consumers: [{ library: 'l', member: 'm', ids: 'shared', entries: [],
+      notInConsumerGraph: 0, affected: [], upstreamRoutes: upstream }] },
+    route.calls[1]!,
+  ] }] }] } as unknown as TraceReport;
+  const limited = limitTraceReport(withUpstream, { maxChains: 1, maxRows: 2 });
+  const [call, plain] = limited.chains[0]!.routes[0]!.calls;
+  assert.equal(call!.upstreamRoutes!.length, 2);
+  assert.equal(call!.upstreamRoutes![0]!.declarations.length, 2);
+  assert.equal(call!.consumers![0]!.upstreamRoutes!.length, 2);
+  assert.equal('upstreamRoutes' in plain!, false);
+  const paths = limited.truncation.omitted.map(({ path }) => path);
+  for (const path of ['chains[0].routes[0].calls[0].upstreamRoutes', 'chains[0].routes[0].calls[0].upstreamRoutes[1].declarations',
+    'chains[0].routes[0].calls[0].consumers[0].upstreamRoutes']) {
+    assert.ok(paths.includes(path), path);
+  }
+});

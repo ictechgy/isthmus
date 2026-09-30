@@ -1,0 +1,38 @@
+{
+  "dispatch": "specificity",
+  "facts": [
+    {
+      "channel": "/bff/orders/{}",
+      "dynamic": false,
+      "kind": "route-decl",
+      "location": {
+        "column": 5,
+        "line": 12,
+        "path": "bff/src/main/kotlin/example/BffController.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrderDetailViewModel.refresh",
+        "usr": "kt:OrderDetailViewModel.refresh"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-27T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-client",
+  "roles": [
+    "server"
+  ],
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-workspace",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

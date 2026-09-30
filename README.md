@@ -362,7 +362,10 @@ to affected client symbols. Relations and symbols go the other way: reverse trav
 handlers, then routes and clients. Files select every symbol located in them (a file-level
 over-approximation, reported as the `file-selection-coarse` notice, which does not fail `--strict`). In a workspace, persistence and
 language traversals stay inside a member and http joins only along declared links, so a table change
-reaches client code in another repository. Every id in the output comes from a producer, unattributed calls
+reaches client code in another repository. When a calling member also declares its own routes (a service
+that is both client and server), a call whose reverse reach hits one of that member's own route handlers
+(exact usr, same member) lists that route under `upstreamRoutes` — one hop, with a gap where its callers
+were not followed. Every id in the output comes from a producer, unattributed calls
 are only counted, reruns are byte-identical, and the report is always `complete: false` — missing
 symbols, analyses, truncation, stale revisions, and non-http entry points are reported as `gaps`,
 never as "not reached". Each reach carries the producer's evidence tier (`direct`, `bound`, `candidate`,

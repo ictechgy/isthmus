@@ -145,6 +145,30 @@ export interface TraceLibraryHop {
   readonly notInConsumerGraph: number;
   readonly notPublic?: number;
   readonly affected: readonly TraceAffected[];
+  /** consumer member 자신의 route 중 핸들러가 `affected`에 든 것이다(호출 hop과 같은 규칙). 있을 때만 싣는다. */
+  readonly upstreamRoutes?: readonly TraceUpstreamRoute[];
+}
+
+/**
+ * 호출 member 자신의 route 하나다 — 호출을 감싼 심볼의 역방향 도달(또는 그 심볼 자신)이 그 member가 선언한 route-decl의
+ * 핸들러 usr와 정확히 같았다. 서비스 A가 B를 부르면서 자기 route도 가질 때(B route → A 호출 → A 핸들러) 체인의 위쪽
+ * 진입 route다.
+ *
+ * 같은 member 안의 정확한 usr 일치로만 잇는다(platform 포함). 도달 근거(depth·path·등급)는 같은 hop `affected`의 그 핸들러
+ * 행이고, `depth` 0은 호출을 감싼 심볼이 곧 핸들러라는 뜻이다. `scopes`는 이 route를 server 선언으로 잇는 link(단일
+ * project면 service scope) 이름이다 — 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모른다
+ * (`route-decl-unlinked`). v1은 한 단계만 올라간다: scope가 있어도 그 route의 호출자는 따라가지 않고
+ * `upstream-route-callers-not-followed`로 남긴다(그 route를 선택해 이어 간다).
+ */
+export interface TraceUpstreamRoute {
+  readonly method: RouteMethod;
+  readonly template: string;
+  /** workspace면 route를 선언한 member(= 호출 member)다. */
+  readonly member?: string;
+  readonly handler: Readonly<{ platform: BridgePlatform; usr: string; qualifiedName?: string }>;
+  readonly depth: number;
+  readonly declarations: readonly TraceEndpoint[];
+  readonly scopes: readonly string[];
 }
 
 /** route에 match된 귀속 호출 하나와 그 호출을 감싼 심볼의 클라이언트 영향이다. */
@@ -153,6 +177,8 @@ export interface TraceCallHop {
   readonly side: 'decl' | 'contract';
   readonly quality: RouteMatchQuality;
   readonly affected: readonly TraceAffected[];
+  /** 호출 member 자신의 route 중 핸들러가 이 호출에서 역방향으로 닿은 것이다. 있을 때만 싣는다. */
+  readonly upstreamRoutes?: readonly TraceUpstreamRoute[];
   /** 호출 member가 library provider일 때만 있다 — consumer 앱마다 하나다. */
   readonly consumers?: readonly TraceLibraryHop[];
 }
@@ -287,7 +313,10 @@ export interface TraceReport {
   readonly analyses: readonly TraceAnalysisSummary[];
   readonly summary: Readonly<{
     chains: number; routes: number; handlers: number; relationUses: number; databaseVertices: number;
-    databaseDependents: number; calls: number; clientSymbols: number; gaps: number; notices: number;
+    databaseDependents: number; calls: number; clientSymbols: number;
+    /** 호출·consumer hop의 upstream route 수다(같은 route가 여러 hop에 실리면 hop마다 센다). */
+    upstreamRoutes: number;
+    gaps: number; notices: number;
     /** 보고서의 모든 도달 근거(relation-use·핸들러 reachedFrom, 클라이언트 affected, DB dependents)의 등급별 수다. */
     evidence: TraceEvidenceCounts;
   }>;
@@ -393,13 +422,22 @@ class TraceBuilder {
   private readonly members: ReadonlyMap<string, TraceMemberInput>;
   private readonly scopes: readonly TraceLinkedScope[];
   private readonly declsByHandler = new Map<string, Array<{ scope: TraceLinkedScope; fact: RouteDeclarationFact }>>();
+  /** link가 server로 잇지 않은 member 자신의 route-decl을 (member, platform, 핸들러 usr)로 색인한다. */
+  private readonly unlinkedByHandler = new Map<string, RouteDeclarationFact[]>();
   private readonly roots = new Map<string, RootHit[]>();
-  /** 분석이 root로 받았지만 생산자가 그래프에서 찾지 못한(symbol 없는) root id다. 키는 `roots`와 같다. */
-  private readonly missingRoots = new Set<string>();
+  /**
+   * 분석이 root로 받았지만 생산자가 그래프에서 찾지 못한(symbol 없는) root id → 그렇게 신고한 분석 id다. 키는 `roots`와 같다.
+   */
+  private readonly missingRoots = new Map<string, string[]>();
   private readonly surfaces = new Map<string, ImportedHttpSurface>();
   private readonly librariesByProvider = new Map<string, TraceLibrary[]>();
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
   private readonly workspace: boolean;
+  /**
+   * 지금 만드는 체인이 싣는 route 키(scope, method, template)다. upstream route가 이 중 하나면 그 호출자가 이미 체인에 있으므로
+   * `upstream-route-callers-not-followed`를 만들지 않는다. route hop을 만들기 전에 체인마다 정한다.
+   */
+  private chainRoutes: ReadonlySet<string> = new Set();
   private outputItems = 0;
 
   private readonly input: TraceInput;
@@ -417,6 +455,10 @@ class TraceBuilder {
     }
     for (const member of prepared.members) this.indexRelations(member);
     this.indexHandlers();
+    for (const { member, fact } of prepared.unlinkedRoutes) {
+      const key = memberSymbolKey(member, fact.endpoint.platform, fact.endpoint.symbol!.usr!);
+      this.unlinkedByHandler.set(key, [...(this.unlinkedByHandler.get(key) ?? []), fact]);
+    }
     this.indexAnalyses();
   }
 
@@ -451,13 +493,15 @@ class TraceBuilder {
   private routeChain(selector: { route: TraceRouteSelection }): TraceChain[] {
     const { method, template, scope } = selector.route;
     const scopes = this.scopes.filter((candidate) => scope === undefined || candidate.scope.scope === scope);
+    this.chainRoutes = new Set(scopes.filter(({ scope: { decls, contracts } }) => [...decls, ...contracts].some(({ declaration }) =>
+      declaration.method === method && declaration.template === template))
+      .map((candidate) => routeKeyString(routeKey(candidate.scope.scope, method, template))));
     const found = scopes.flatMap((candidate) => {
       const hop = this.routeHop(selector, candidate, method, template);
       return hop === undefined ? [] : [{ linked: candidate, ...hop }];
     });
     if (found.length === 0) {
-      this.gap({ code: 'route-without-decl', selector,
-        detail: 'No route-decl or route-contract fact has exactly this method and template in the selected scope.' });
+      this.missingRouteGap(selector);
       return [];
     }
     const handlers = new Map<string, TraceHandlerHop>();
@@ -495,6 +539,27 @@ class TraceBuilder {
       relationUses,
       database: this.database(selector, declGroups(uses)),
     })];
+  }
+
+  /**
+   * 선택한 route의 선언 측 키가 어느 scope에도 없을 때의 공백이다. scope를 지정하지 않았고 link 없는 member 자신의
+   * route-decl이 정확히 같은 키면 선언이 없는 것이 아니라 link가 잇지 않은 것이므로 member마다 `route-decl-unlinked`다.
+   */
+  private missingRouteGap(selector: { route: TraceRouteSelection }): void {
+    const { method, template, scope } = selector.route;
+    const members = scope !== undefined ? [] : [...new Set(this.prepared.unlinkedRoutes
+      .filter(({ fact }) => fact.declaration.method === method && fact.declaration.template === template)
+      .map(({ member }) => member))].sort(compareStrings);
+    if (members.length === 0) {
+      this.gap({ code: 'route-without-decl', selector,
+        detail: 'No route-decl or route-contract fact has exactly this method and template in the selected scope.' });
+      return;
+    }
+    for (const member of members) {
+      this.gap({ code: 'route-decl-unlinked', selector, member,
+        detail: 'This route is declared only in server-role http documents of this member that no workspace link joins as '
+          + 'server, so it has no callers or handler chain in this trace; add a link naming this member as server.' });
+    }
   }
 
   /** relation 선택 하나의 체인이다. persistence는 member 밖으로 나가지 않으므로 그 member 안에서만 찾는다. */
@@ -655,11 +720,21 @@ class TraceBuilder {
       }
       let found = false;
       for (const [usr, via] of [...reach.entries()].sort(([left], [right]) => compareStrings(left, right))) {
-        for (const { scope, fact } of this.declsByHandler.get(memberSymbolKey(start.member, start.platform, usr)) ?? []) {
+        const handlerKey = memberSymbolKey(start.member, start.platform, usr);
+        for (const { scope, fact } of this.declsByHandler.get(handlerKey) ?? []) {
           found = true;
           const key = routeKey(scope.scope.scope, fact.declaration.method, fact.declaration.template);
           routes.set(JSON.stringify([key.scope, key.template, key.method]), key);
           this.addHandler(handlers, start.member, start.platform, usr, fact.endpoint.symbol?.qualifiedName, key, via);
+        }
+        // link 없는 자기 route의 핸들러에 닿았으면 비 http 진입점이 아니다 — route 단위로 link 공백을 밝힌다.
+        for (const fact of this.unlinkedByHandler.get(handlerKey) ?? []) {
+          found = true;
+          this.gap({ code: 'route-decl-unlinked', selector, ...this.memberField(start.member),
+            symbol: { platform: start.platform, usr },
+            detail: `The handler of ${fact.declaration.method} ${fact.declaration.template} is reached from this selection, `
+              + 'but no workspace link names this member as the server of that route, so the route and its callers are '
+              + 'not in this chain.' });
         }
       }
       if (!found) {
@@ -668,6 +743,7 @@ class TraceBuilder {
             + '(scheduled jobs, queues, CLIs) or the reverse traversal is incomplete.' });
       }
     }
+    this.chainRoutes = new Set([...routes.values()].map(routeKeyString));
     const hops = [...routes.values()].sort(compareRouteKeys).flatMap((key) => {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
@@ -767,11 +843,64 @@ class TraceBuilder {
       return { affected: [] };
     }
     const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
+    const upstream = this.upstreamRoutes(selector, member, endpoint.platform,
+      [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))]);
+    const hop = { affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
     const libraries = this.librariesByProvider.get(member);
-    if (libraries === undefined) return { affected };
+    if (libraries === undefined) return hop;
     const provided = [usr, ...affected.map((row) => row.usr)];
-    return { affected, consumers: libraries.map((library) =>
+    return { ...hop, consumers: libraries.map((library) =>
       this.libraryHop(selector, route, library, endpoint.platform, usr, provided)) };
+  }
+
+  /**
+   * member 자신의 route 중 핸들러 usr가 `reached`(역방향으로 닿은 심볼과 depth, 시작 심볼은 0)에 든 것을 모은다.
+   *
+   * 같은 member·platform 안의 정확한 usr 일치만 쓴다(link가 server로 잇는 선언과 link 없는 자기 선언 모두). 이름·경로로
+   * 추측하지 않는다. 한 단계만 올라가며, 찾은 route마다 호출자를 따라가지 않은 이유를 gap으로 남긴다.
+   */
+  private upstreamRoutes(selector: TraceSelector, member: string, platform: BridgePlatform,
+    reached: ReadonlyArray<{ usr: string; depth: number }>): TraceUpstreamRoute[] {
+    const depths = new Map<string, number>();
+    for (const { usr, depth } of reached) depths.set(usr, Math.min(depth, depths.get(usr) ?? depth));
+    const found = new Map<string, MutableUpstream>();
+    for (const [usr, depth] of depths) {
+      const key = memberSymbolKey(member, platform, usr);
+      for (const { scope, fact } of this.declsByHandler.get(key) ?? []) {
+        addUpstream(found, { platform, usr, depth, fact, declaration: this.endpoint(member, fact.endpoint), scope: scope.scope.scope });
+      }
+      for (const fact of this.unlinkedByHandler.get(key) ?? []) {
+        addUpstream(found, { platform, usr, depth, fact, declaration: this.endpoint(member, fact.endpoint) });
+      }
+    }
+    const routes = [...found.entries()].sort(([left], [right]) => compareStrings(left, right))
+      .map(([, entry]) => finishUpstream(entry, this.memberField(member)));
+    for (const upstream of routes) this.upstreamGaps(selector, member, upstream);
+    return routes;
+  }
+
+  /**
+   * upstream route의 호출자를 따라가지 않은 곳을 밝힌다. link가 이 route를 server로 잇지 않으면 호출자를 알 수 없고
+   * (`route-decl-unlinked`), 잇는 scope가 있으면 v1이 한 단계만 올라가서 그 scope의 호출자를 싣지 않았다
+   * (`upstream-route-callers-not-followed`). 이 체인이 이미 싣는 route(재귀 호출 — 다른 scope의 같은 route 포함)는 그 호출자가
+   * 체인에 있으므로 뺀다.
+   */
+  private upstreamGaps(selector: TraceSelector, member: string, upstream: TraceUpstreamRoute): void {
+    const { method, template, handler } = upstream;
+    const symbol = { platform: handler.platform, usr: handler.usr };
+    if (upstream.scopes.length === 0) {
+      this.gap({ code: 'route-decl-unlinked', selector, ...this.memberField(member), symbol,
+        detail: `The handler of ${method} ${template} is reached upstream of a traced route call, but no workspace link names `
+          + 'this member as the server of that route, so its callers were not followed.' });
+      return;
+    }
+    for (const scope of upstream.scopes) {
+      if (this.chainRoutes.has(routeKeyString(routeKey(scope, method, template)))) continue;
+      this.gap({ code: 'upstream-route-callers-not-followed', selector, route: routeKey(scope, method, template),
+        ...this.memberField(member), symbol,
+        detail: 'This route of the calling member is reached upstream of a traced route call; trace follows one upstream '
+          + 'hop, so the callers of this route were not followed (select this route to continue the chain).' });
+    }
   }
 
   /**
@@ -808,8 +937,12 @@ class TraceBuilder {
     }
     const hits = entries.flatMap(({ consumer }) => this.rootedRows(selector, library.consumer, 'reverse', platform, consumer));
     const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
+    const affected = affectedRows(hits);
+    // consumer root는 SDK 심볼 id(앱 코드가 아니다)라 도달 행만 본다.
+    const upstream = this.upstreamRoutes(selector, library.consumer, platform,
+      affected.map((row) => ({ usr: row.usr, depth: row.depth })));
     return { library: library.name, member: library.consumer, ids: library.ids, entries, notInConsumerGraph,
-      ...(declaresApi ? { notPublic } : {}), affected: affectedRows(hits) };
+      ...(declaresApi ? { notPublic } : {}), affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
   }
 
   /**
@@ -910,18 +1043,16 @@ class TraceBuilder {
    */
   private rootedRows(selector: TraceSelector, member: string, role: TraceAnalysisRole, platform: BridgePlatform | 'sql',
     id: string): Array<{ analysis: TraceAnalysis; root: string; rootIndex: number; rows: TraversalReached[] }> {
-    const hits = this.roots.get(JSON.stringify([member, role, platform, id])) ?? [];
-    if (hits.length === 0) {
-      this.gap({ code: 'analysis-missing', selector, ...this.memberField(member), symbol: { platform, usr: id },
-        detail: `No ${role} analysis is rooted at this ${platform} id${this.workspace ? ' in this member' : ''}, `
-          + 'so this hop cannot be followed.' });
-    }
+    const key = JSON.stringify([member, role, platform, id]);
+    const hits = this.roots.get(key) ?? [];
+    if (hits.length === 0) this.unrootedGap(selector, member, role, platform, id, this.missingRoots.get(key) ?? []);
     return hits.map(({ analysis, rootIndex }) => {
       const { graph } = analysis;
-      if (graph.truncated) {
+      const reasons = traversalTruncationReasons(graph);
+      if (reasons !== undefined) {
         this.gap({ code: 'analysis-truncated', selector, analysis: analysis.id,
-          detail: `The producer truncated this traversal${graph.truncationReasons.length === 0 ? ''
-            : ` (${graph.truncationReasons.join(', ')})`}; reached symbols may be missing.` });
+          detail: `The producer truncated this traversal${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}; `
+            + 'reached symbols may be missing.' });
       }
       // 잘린 목록은 가장 작은 인덱스 64개를 싣는다. 마지막 인덱스보다 큰 root만 빠졌을 수 있다.
       if (graph.rootsTruncated && graph.reached.some(({ roots }) =>
@@ -936,6 +1067,27 @@ class TraceBuilder {
       }
       return { analysis, root: id, rootIndex, rows: this.rowsByRoot.get(analysis)!.get(rootIndex) ?? [] };
     });
+  }
+
+  /**
+   * hop이 따라갈 root를 가진 분석이 없을 때의 공백이다. 분석이 그 id를 root로 받았지만 생산자가 그래프에서 찾지 못했다고
+   * 신고했으면(root-not-found, `symbol` 없는 root) 분석마다 `analysis-root-not-found`, 아무 분석도 받지 않았으면
+   * `analysis-missing`이다.
+   */
+  private unrootedGap(selector: TraceSelector, member: string, role: TraceAnalysisRole, platform: BridgePlatform | 'sql',
+    id: string, reporters: readonly string[]): void {
+    const symbol = { platform, usr: id };
+    if (reporters.length === 0) {
+      this.gap({ code: 'analysis-missing', selector, ...this.memberField(member), symbol,
+        detail: `No ${role} analysis is rooted at this ${platform} id${this.workspace ? ' in this member' : ''}, `
+          + 'so this hop cannot be followed.' });
+      return;
+    }
+    for (const analysis of reporters) {
+      this.gap({ code: 'analysis-root-not-found', selector, analysis, ...this.memberField(member), symbol,
+        detail: `This ${role} analysis was given this id as a root, but the producer reported it as not found in its graph `
+          + '(root-not-found), so this hop cannot be followed; regenerate the analysis or its graph at the traced revision.' });
+    }
   }
 
   /**
@@ -1178,7 +1330,7 @@ class TraceBuilder {
         // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다. library 연속만 "생산자가
         // 그 노드를 찾지 못했다"는 신고로 따로 기억한다.
         if (symbol === undefined) {
-          this.missingRoots.add(key);
+          this.missingRoots.set(key, [...(this.missingRoots.get(key) ?? []), analysis.id]);
           return;
         }
         this.roots.set(key, [...(this.roots.get(key) ?? []), { analysis, rootIndex }]);
@@ -1230,7 +1382,8 @@ class TraceBuilder {
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
       route.calls.length + affected(route.calls) + route.calls.reduce((total, call) => total +
-        affected(call.consumers ?? []) + (call.consumers ?? []).reduce((count, hop) => count + hop.entries.length, 0), 0), 0) +
+        affected(call.consumers ?? []) + (call.consumers ?? []).reduce((count, hop) => count + hop.entries.length, 0) +
+        upstreamRows(call).reduce((count, upstream) => count + 1 + upstream.declarations.length, 0), 0), 0) +
       chain.handlers.length + chain.relationUses.length +
       chain.database.reduce((sum, hop) => sum + 1 + hop.dependents.length, 0));
     return chain;
@@ -1347,6 +1500,65 @@ function addUse(uses: Map<string, MutableUse>, record: UseRecord, reach: TraceRe
   const entry = uses.get(key) ?? { record, reach: new Map<string, TraceReach>() };
   if (reach !== undefined) keepNearest(entry.reach, reach.from, reach);
   uses.set(key, entry);
+}
+
+/** 조립 중인 upstream route다. 핸들러·route 키별로 선언 끝점과 link scope를 모은다. */
+interface MutableUpstream {
+  readonly method: RouteMethod;
+  readonly template: string;
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  readonly depth: number;
+  qualifiedName: string | undefined;
+  readonly declarations: Map<string, TraceEndpoint>;
+  readonly scopes: Set<string>;
+}
+
+/** upstream route 후보 하나(선언 사실 하나)를 핸들러·route 키로 합친다. `scope`가 없으면 link 없는 선언이다. */
+function addUpstream(found: Map<string, MutableUpstream>, item: {
+  platform: BridgePlatform; usr: string; depth: number; fact: RouteDeclarationFact; declaration: TraceEndpoint; scope?: string;
+}): void {
+  const { method, template } = item.fact.declaration;
+  const key = JSON.stringify([template, method, item.platform, item.usr]);
+  const entry = found.get(key) ?? { method, template, platform: item.platform, usr: item.usr, depth: item.depth,
+    qualifiedName: undefined, declarations: new Map<string, TraceEndpoint>(), scopes: new Set<string>() };
+  entry.qualifiedName ??= item.fact.endpoint.symbol?.qualifiedName;
+  entry.declarations.set(encodeSortedJson(item.declaration, true), item.declaration);
+  if (item.scope !== undefined) entry.scopes.add(item.scope);
+  found.set(key, entry);
+}
+
+/** 조립한 upstream route를 결정적 순서로 확정한다. */
+function finishUpstream(entry: MutableUpstream, member: { member?: string }): TraceUpstreamRoute {
+  return {
+    method: entry.method, template: entry.template, ...member,
+    handler: { platform: entry.platform, usr: entry.usr, ...(entry.qualifiedName === undefined ? {} : { qualifiedName: entry.qualifiedName }) },
+    depth: entry.depth,
+    declarations: [...entry.declarations.values()].sort(compareEndpoints),
+    scopes: [...entry.scopes].sort(compareStrings),
+  };
+}
+
+/** 호출 hop과 그 consumer hop의 upstream route 전부다. */
+function upstreamRows(call: TraceCallHop): TraceUpstreamRoute[] {
+  return [...(call.upstreamRoutes ?? []), ...(call.consumers ?? []).flatMap(({ upstreamRoutes }) => upstreamRoutes ?? [])];
+}
+
+/**
+ * 순회 문서가 도달을 잘랐다고 볼 사유다. 잘리지 않았으면 undefined, 잘렸으면 사유 목록(모르면 빈 목록)이다.
+ *
+ * `root-not-found`는 요청 root 하나를 생산자가 찾지 못했다는 신고이지 찾은 root의 순회를 자른 것이 아니다 —
+ * LANGUAGE-TRAVERSAL 계약상 그 요청은 `symbol` 없는 root로 남고 trace는 `symbol` 있는 root만 잇는다. 그래서 사유가
+ * `root-not-found`뿐이고 문서에 실제로 `symbol` 없는 root가 있으면 찾은 root의 hop은 잘리지 않은 것으로 본다(못 찾은 root를
+ * 따라가야 하는 hop은 `analysis-root-not-found`). 다른 사유(depth·output 등)가 함께 있으면 그 사유만 싣는다. 사유 없이
+ * 잘렸거나, `symbol` 없는 root 없이 root-not-found만 신고한 문서는 계약 밖이라 보수적으로 잘린 것으로 본다.
+ */
+function traversalTruncationReasons(graph: TraceAnalysis['graph']): readonly string[] | undefined {
+  if (!graph.truncated) return undefined;
+  const reasons = graph.truncationReasons.filter((reason) => reason !== 'root-not-found');
+  const rootOnly = reasons.length === 0 && graph.truncationReasons.length > 0 &&
+    graph.roots.some(({ symbol }) => symbol === undefined);
+  return rootOnly ? undefined : reasons.length === 0 ? graph.truncationReasons : reasons;
 }
 
 /** 조립한 relation-use hop의 선언 끝점을 member별로 돌려준다(DB hop 입력). */
@@ -1484,6 +1696,11 @@ function routeKey(scope: string, method: RouteMethod, template: string): TraceRo
   return { scope, method, template };
 }
 
+/** route 키의 직렬화다(체인 route 집합 비교용). */
+function routeKeyString(key: TraceRouteKey): string {
+  return JSON.stringify([key.scope, key.method, key.template]);
+}
+
 function compareRouteKeys(left: TraceRouteKey, right: TraceRouteKey): number {
   return compareStrings(left.scope, right.scope) || compareStrings(left.template, right.template) ||
     compareStrings(left.method, right.method);
@@ -1558,6 +1775,8 @@ function summarize(chains: readonly TraceChain[], gaps: number, notices: number)
     calls: sum(({ routes }) => routes.reduce((total, route) => total + route.calls.length, 0)),
     clientSymbols: sum(({ routes }) => routes.reduce((total, route) =>
       total + route.calls.reduce((count, call) => count + consumerAndClientRows(call).length, 0), 0)),
+    upstreamRoutes: sum(({ routes }) => routes.reduce((total, route) =>
+      total + route.calls.reduce((count, call) => count + upstreamRows(call).length, 0), 0)),
     gaps,
     notices,
     evidence: countEvidence(chains),

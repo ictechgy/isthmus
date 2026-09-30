@@ -224,8 +224,8 @@ FFI·JNI 등 채널 계약 밖의 네이티브 interop은 fact로 만들지 않�
 Go는 cgo(`import "C"`·`//export`)와 gomobile처럼 심볼 이름 경계의 interop을 쓴다 —
 채널·이름 리터럴 계약의 호출/수신 fact 종류로 귀속할 수 없다. 그래서 bridge
 target에서는 go 문서가 `facts`를 비워 두고 `unscanned-ffi-interop:` limitation만
-실는다. 예외는 `target: "persistence"`뿐이다 — 그 도메인에서 go는 호출 측
-생산자다(아래 persistence 절).
+실는다. 예외는 `target: "persistence"`와 `target: "http"`다 — persistence에서 go는 호출 측
+생산자이고(아래 persistence 절), http에서는 서버 `route-decl`만 낸다(아래 [go·rust http](#gorust의-http-v1-확장)).
 
 - bridge target 관점에서 go는 호출 측도 수신 측도 아니다 — bridge target 문서에
   go bridge kind 사실이 있으면 입력 오류로 거부한다.
@@ -236,7 +236,7 @@ target에서는 go 문서가 `facts`를 비워 두고 `unscanned-ffi-interop:` l
   완화는 swift·kotlin 문서의 한계에만 적용된다. persistence 도메인에서는
   go 문서가 호출 측이라 그 문서의 한계도 호출 측 한계다.
 - bridge 도메인에서 go 문서는 사실이 없으므로 `target`은 `null`이다.
-  `persistence` 외의 비null target은 입력 오류다.
+  `persistence`·`http` 외의 비null target은 입력 오류다.
 - gomobile bind 경계는 소스 표식이 없어 정적으로 관측되지 않는다 — 생산자가
   추측해 신고하지 않는다.
 
@@ -251,9 +251,23 @@ Rust의 비Rust 경계는 PyO3·cbindgen·UniFFI·wasm-bindgen 같은 FFI 계열
 - bridge 도메인 입력의 호출·수신 측 최소 요건을 rust 문서는 어느 쪽으로도
   채우지 않는다.
 - bridge 도메인에서 rust 문서는 사실이 없으므로 `target`은 `null`이다.
-  `persistence` 외의 비null target은 입력 오류다.
-- 예외는 `target: "persistence"`뿐이다 — 그 도메인에서 rust는 호출 측
-  생산자다(아래 persistence 절).
+  `persistence`·`http` 외의 비null target은 입력 오류다.
+- 예외는 `target: "persistence"`와 `target: "http"`다 — persistence에서 rust는 호출 측
+  생산자이고(아래 persistence 절), http에서는 서버 `route-decl`만 낸다.
+
+### go·rust의 http (v1 확장)
+
+gartograph(go)·rustograph(rust)는 relation-use usr와 `language-traversal` 순회를 이미 낸다(gartograph #34, rustograph #22).
+서버 route 생산자가 생기면 route 선택 trace가 핸들러 → 테이블까지 이어지도록 http target을 연다.
+
+- `http`: `route-decl`만 받는다(net/http `ServeMux`·chi·gin·echo, axum·actix-web 등 서버). `dispatch`는 `specificity`와
+  `registration-order`를 모두 받는다 — 먼저 등록한 경로가 받는 라우터(actix-web, gorilla/mux 등)는 registration-order와
+  `order`로 낸다([디스패치 모델](#디스패치-모델)). 핸들러 `symbol.usr`는 그 생산자 순회의 id와 같은 문자열이어야 한다.
+- `route-call`은 받지 않는다. Go·Rust 클라이언트(net/http·resty, reqwest 등)의 base 결합·보간 규칙을 url-compose 벡터로
+  고정하고 생산자가 그 벡터를 통과할 때 더한다 — 검증되지 않은 호출 사실이 check error의 근거가 되지 않게 하기 위해서다.
+  client roles 문서는 사실 0건만 낼 수 있다.
+- `language-traversal`의 go·rust platform과 trace capture의 go·rust 분석은 이미 받는다. 호환 버전 세트에는 발행본이 생길 때
+  행을 더한다.
 
 ### `platform: "python"` (v1 확장)
 
@@ -590,7 +604,8 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 | http `limitationScopes`(`templates`·`templatePrefixes`·`templateSuffixes`·`methods`, [http limitation 스코프](#http-limitation-스코프)) — check·query·trace·`diff --http` | 구현(Phase 4) | — |
 | `isthmus-workspace` 매니페스트(link·`match`·`contract.authoritative`·`declared-base`) | `diff --http`: 맨 매니페스트를 trace와 같은 member·link 파서로 받고 `contract.authoritative`를 contract 측 깨짐의 error 전제로 쓴다. trace: member·link·`match`(`hosts`·`services`·`baseRefs[].ref`)·`contract`·`catalog.graphSha` 구현([workspace trace context](TRACE.md#입력-workspace-저장소가-나뉜-서버클라이언트)). `match.interfaces`·`baseRefs[].pathPrefix`(`declared-base`)와 check·query의 매니페스트는 초안 | check·query는 매니페스트 파일을, trace는 구현하지 않은 match 필드를 입력 오류로 거부. `route-call-without-contract`는 항상 `-unverified` |
 | platform `python`(target `null`·`persistence`·`http`, http는 `route-decl`만) | 구현(Phase 6 소비자) | — |
-| python `route-call`, swift `route-decl`, go·rust·sql의 http 사실 | 초안 | 입력 오류 |
+| platform `go`·`rust`의 http(`route-decl`만, [go·rust http](#gorust의-http-v1-확장)) | 구현(Phase 7 소비자) | — |
+| python·go·rust `route-call`, swift `route-decl`, sql의 http 사실 | 초안 | 입력 오류 |
 | `trace`(단일 project와 workspace, [TRACE](TRACE.md)) — 같은 조인·귀속 규칙, 한쪽 측만 있어도 조인하고 빠진 측은 gap | 구현(Phase 3 소비자) | — |
 | `diff --http`(surface·workspace·base..head CI, [HTTP-DIFF](HTTP-DIFF.md)) — 같은 조인·귀속 규칙으로 같은 호출 집합을 base·head 선언 측에 교차 평가 | 구현(Phase 3 소비자) | — |
 | 조직 경계: `isthmus-http-surface` v1(`surface export`, surface member로 trace·`diff --http`에 가져오기, [HTTP-SURFACE](HTTP-SURFACE.md))와 workspace `libraries`(공유 SDK, trace의 consumer 연속) | 구현(Phase 7a 소비자) | — |
@@ -601,21 +616,21 @@ REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스�
 
 | kind | 역할 | 내는 플랫폼 | 뜻 |
 |---|---|---|---|
-| `route-decl` | 서버(선언 측) | `kotlin`(JVM, Java 포함), `js`, `python` | 서버가 라우트를 선언하고 핸들러에 묶었다 |
+| `route-decl` | 서버(선언 측) | `kotlin`(JVM, Java 포함), `js`, `python`, `go`, `rust` | 서버가 라우트를 선언하고 핸들러에 묶었다 |
 | `route-call` | 클라이언트(호출 측) | `kotlin`, `swift`, `dart`, `js` | 클라이언트 코드가 HTTP 요청을 만든다 |
 | `route-contract` | 계약(선언 측) | `openapi` | 스펙 문서의 operation |
 
 - 역할은 platform이 아니라 **kind**로 정한다. kotlin·js 문서는 서버와 클라이언트를 겸할 수
   있다. 그래서 "Dart/JS는 호출 측 종류만, Swift/Kotlin은 수신 측 종류만" 검증은 이 target에
   적용하지 않고, 위 표의 (kind, platform) 조합만 허용한다.
-- swift의 `route-decl`(Vapor 등), python의 `route-call`, go·rust·sql의 http 사실은 생산자가 생길 때 합의한다.
+- swift의 `route-decl`(Vapor 등), python·go·rust의 `route-call`, sql의 http 사실은 생산자가 생길 때 합의한다.
   그 전까지는 입력 오류다.
 - bridge kind(`method-invoke`/`method-handle` 등)를 route에 재사용하지 않는다. 재사용하면 bridge
   조인·retentions·preflight 경계로 사실이 새어 들어간다.
 - 새 platform `openapi`는 target이 `null` 또는 `http`이고 `route-contract`만 낸다. `symbol`에는
   `usr` 없이 `qualifiedName` = operationId를 정보용으로 싣는다. `location`은 스펙 파일 기준의
-  줄과 UTF-8 바이트 열이다. `python`은 target이 `null`·`persistence`·`http`이고 http에서는 `route-decl`만
-  낸다([`platform: "python"`](#platform-python-v1-확장)).
+  줄과 UTF-8 바이트 열이다. `python`·`go`·`rust`는 target이 `null`·`persistence`·`http`이고 http에서는 `route-decl`만
+  낸다([`platform: "python"`](#platform-python-v1-확장), [go·rust http](#gorust의-http-v1-확장)).
 - 옛 소비자는 모르는 target·platform 문서를 거부하므로, 배포 순서와 무관하게 조용한 오독이 없다.
 
 ### 문서 필드와 사실 0건 문서
@@ -785,13 +800,16 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   `pathAnchor: "base"`와 `unresolved-route-prefix:`로 낸다. 저장소 안 어느 프로필에서도
   재정의하지 않은 `${key:default}`의 기본값은 `configDefault: true` 증거와 함께 쓸 수 있다.
   환경 변수 재정의는 모델링하지 않는다.
-- 클라이언트 base + path 결합은 라이브러리별 네 갈래를 생산자가 적용한다. RFC 3986 방식
+- 클라이언트 base + path 결합은 라이브러리별 다섯 갈래를 생산자가 적용한다. RFC 3986 방식
   (Retrofit·Ktor·`URL(relativeTo:)`)은 `/x`를 root, `x`를 base로 본다. 슬래시 결합 방식
   (axios·chopper·Moya·openapi-fetch)은 base다. dio 단순 연결(`baseUrl + path` 문자열 연결 뒤
   `//`→`/`·점 세그먼트 제거, 슬래시를 넣지 않음)은 base가 리터럴이면 실제 결과를 쓰고, 미상이면
   `/`로 시작할 때만 base, 아니면 dynamic과 `ambiguous-base-join:`이다. retrofit.dart는 두 방식을
   겹친다: `@RestApi(baseUrl)`을 dio base에 RFC 3986으로 해석한 결과에 메서드 경로를 dio 단순
-  연결로 붙인다(`…/rv1` + `@GET('/users/{id}')` → `/rv1/users/{}`). base 없는 API는 전체 URL의
+  연결로 붙인다(`…/rv1` + `@GET('/users/{id}')` → `/rv1/users/{}`). Spring
+  `DefaultUriBuilderFactory`(RestClient·WebClient `baseUrl`, `@HttpExchange` 어댑터)는 슬래시 없는 문자열 연결 뒤 경로 전체의
+  `//`를 `/`로 줄이되 점 세그먼트는 지우지 않고, Spring Boot `RestTemplateBuilder.rootUri`는 `/`로 시작하는 템플릿에만
+  root를 붙인다. `@HttpExchange`의 타입·메서드 url은 경계 슬래시가 없을 때만 `/`를 넣어 잇는다. base 없는 API는 전체 URL의
   host 뒤 경로를 쓰고, host가 동적이면 base다. 세부 규칙은
   [HTTP-WRAPPERS](HTTP-WRAPPERS.md#base-결합)에 있다.
 - 문자열 보간은 모든 생산자가 같은 규칙을 쓴다. 보간이 세그먼트 전체를 덮으면 `{}`다. 끝
@@ -1389,13 +1407,25 @@ pythograph(`bc87783`)가 Django 문서를 registration-order로 내면서 초안
 - **library id는 선언으로만 맞춘다**(`shared`·`symbol-map`). 선언이 틀려 하나도 맞지 않으면 `library-ids-unmatched`, root로 받지
   않은 id는 `library-continuation-unrooted`다. root-not-found는 생산자가 밝힌 "노드 없음"이라 개수만 싣는다. v1은 한 단계만 잇는다.
 
+### Phase 7 결정 (upstream route, root-not-found, go·rust http, Spring 결합)
+
+- **go·rust http는 `route-decl`만.** 서버 route 생산자(gartograph·rustograph)를 받기 위해 target `http`와 `route-decl`을
+  열었다. `route-call`은 python과 같은 이유로 보류한다 — 두 생산자 모두 클라이언트 호출을 내지 않고, 그 결합 규칙의
+  url-compose 벡터도 없다.
+- **Spring 결합은 다섯 번째 갈래다.** kartograph가 Spring Framework 6.2.19·Boot 3.5.16 소스와 합성 앱 오라클(32개 호출 일치)로
+  확인한 `DefaultUriBuilderFactory`·`rootUri`·`@HttpExchange` 결합을 [HTTP-WRAPPERS](HTTP-WRAPPERS.md#base-결합)에 적고
+  url-compose 벡터(`producer:kartograph`)로 고정했다. 다른 JVM 생산자가 같은 라이브러리를 읽을 때 해석이 갈리지 않게 한다.
+- **trace의 upstream route와 root 단위 root-not-found**는 [TRACE](TRACE.md#upstream-route-호출-member-자신의-route)·
+  [TRACE](TRACE.md#root-not-found는-root-단위)에 적었다. 교환 형식은 바뀌지 않고 LANGUAGE-TRAVERSAL에 root-not-found가
+  요청 root만의 사유라는 생산자 보장을 명시했다.
+
 ### 미결 항목
 
 - `authority`의 기본 포트 정규화.
 - workspace 매니페스트(check·query)의 구현 시점 세부 규칙.
 - 경로 우선·method 우선 등록 순서를 문서가 선언하는 필드(있으면 `route-decl-path-shadowed`를 확정 가림으로 올리고
   Django의 405 호출을 method 불일치로 판정할 수 있다).
-- Python 클라이언트(requests·httpx)의 `route-call`과 그 url-compose 벡터.
+- Python·Go·Rust 클라이언트(requests·httpx, net/http·resty, reqwest)의 `route-call`과 그 url-compose 벡터.
 - dynamic decl 공백(`unjoined-dynamic-routes`)의 스코프 표현.
 - 빈 값 변형 decl을 미호출·드리프트 진단에서 원본과 묶는 표식(catch-all 접두사 decl의 `catchAllPrefix`와 같은 역할).
 - `docs/limitation-prefixes.json` 추출.

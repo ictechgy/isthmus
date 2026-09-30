@@ -668,9 +668,11 @@ test('종료 코드 64: root-not-found를 기록한 순회 문서는 부분 성�
   assert.deepEqual(result.warnings, manifest.warnings);
   const trace = JSON.parse(await readFile(join(work, 'out/trace.json'), 'utf8'));
   assert.ok(trace.analysisLimitations.some(({ analysis, message }) => analysis === 'server-reverse' && /^root-not-found:/u.test(message)));
-  // 못 찾은 root는 trace에서 그 심볼의 analysis-missing gap으로 보인다(trace는 symbol 있는 root만 잇는다).
-  assert.ok(trace.gaps.some(({ code, symbol }) => code === 'analysis-missing' && symbol?.usr === 'ts:ghost/symbol'));
-  assert.equal(result.trace.gapCodes['analysis-missing'], 1);
+  // 못 찾은 root는 trace에서 그 심볼의 analysis-root-not-found gap으로 보인다(trace는 symbol 있는 root만 잇는다).
+  assert.ok(trace.gaps.some(({ code, symbol }) => code === 'analysis-root-not-found' && symbol?.usr === 'ts:ghost/symbol'));
+  assert.equal(result.trace.gapCodes['analysis-root-not-found'], 1);
+  // 찾은 root의 hop은 root-not-found 때문에 잘린 것으로 보지 않는다.
+  assert.equal(result.trace.gapCodes['analysis-truncated'], undefined);
 
   // CLI는 같은 경고를 stderr에 한 줄로 알리고 성공(0)으로 끝난다.
   config.output = { root: 'work', path: 'out-cli' };

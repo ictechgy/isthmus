@@ -75,7 +75,7 @@ test('route 선택은 핸들러→정방향→relation-use→VertexId→DB 의�
   // relation-use 도달 2건(dispatch 선언 문서)과 DB 의존자 3건(sql)은 direct, 등급을 분류하지 않는 kotlin 역방향
   // 문서의 클라이언트 영향 2건은 unassessed다.
   assert.deepEqual(result.summary, { chains: 1, routes: 1, handlers: 1, relationUses: 2, databaseVertices: 2,
-    databaseDependents: 3, calls: 1, clientSymbols: 2, gaps: 0, notices: 0,
+    databaseDependents: 3, calls: 1, clientSymbols: 2, upstreamRoutes: 0, gaps: 0, notices: 0,
     evidence: { direct: 5, bound: 0, candidate: 0, unassessed: 2 } });
   assert.deepEqual(chain?.relationUses.map(({ reachedFrom }) => reachedFrom[0]?.evidence), ['direct', 'direct']);
   assert.deepEqual(route?.calls[0]?.affected.map(({ evidence }) => evidence), ['unassessed', 'unassessed']);
@@ -274,7 +274,9 @@ test('분석이 없거나 잘렸거나 root 귀속이 부분적이면 gap이다'
     forward.truncated = true;
     forward.truncationReasons = ['root-not-found'];
   });
-  assert.deepEqual(codes(unresolved), ['analysis-missing']);
+  // 생산자가 root-not-found로 신고한 root를 따라가야 하는 hop은 analysis-missing이 아니라 root별 gap이다.
+  assert.deepEqual(unresolved.gaps.map(({ code, analysis, symbol }) => [code, analysis, symbol?.usr]),
+    [['analysis-root-not-found', 'server-forward', 'ts:api/users.get']]);
   const legacy = traversalGraphFromImpact({ id: 'android-legacy', platform: 'kotlin', tool: { name: 'kartograph', version: '1' },
     requested: { files: [], symbols: ['x'] },
     roots: [{ id: 'kt:UsersApi.create', qualifiedName: 'create' }, { id: 'kt:UsersApi.get', qualifiedName: 'get' }],
@@ -284,6 +286,38 @@ test('분석이 없거나 잘렸거나 root 귀속이 부분적이면 gap이다'
     [{ id: 'android-legacy', platform: 'kotlin', role: 'reverse', graph: legacy }]);
   assert.deepEqual(codes(witness), ['analysis-revision-unknown', 'roots-provenance-partial']);
   assert.equal(witness.analyses.find(({ id }) => id === 'android-legacy')?.tool, undefined);
+});
+
+test('root-not-found는 못 찾은 root를 쓰는 hop에만 gap이고 찾은 root의 hop은 잘리지 않은 것으로 본다', () => {
+  /** Android 역방향 분석이 POST 호출 root(kt:UsersApi.create)를 찾지 못했다고 신고하게 한다. */
+  const notFound = (reasons: string[], symbolless = true) => (value: Fixture) => {
+    const android = value.analyses['android-reverse'];
+    if (symbolless) android.roots[0] = { id: 'kt:UsersApi.create' };
+    android.reached = android.reached.filter((row: any) => row.roots[0] !== 0);
+    Object.assign(android, { truncated: true, truncationReasons: reasons, limitations: ['root-not-found: kt:UsersApi.create'] });
+  };
+  // GET 호출(찾은 root)만 쓰는 체인은 온전하다 — --strict가 실패하지 않는다.
+  const found = report(notFound(['root-not-found']));
+  assert.deepEqual(found.gaps, []);
+  assert.equal(hasTraceGaps(found), false);
+  assert.deepEqual(found.chains[0]?.routes[0]?.calls[0]?.affected.map(({ usr }) => usr),
+    ['kt:UsersRepository.load', 'kt:ProfileViewModel.refresh']);
+  assert.deepEqual(found.analysisLimitations, [{ analysis: 'android-reverse', message: 'root-not-found: kt:UsersApi.create' }]);
+  // 못 찾은 root를 따라가야 하는 POST 체인만 root별 gap을 받는다.
+  const post = report((value) => {
+    notFound(['root-not-found'])(value);
+    value.context.selection = { routes: [{ method: 'POST', template: '/api/users' }] };
+  });
+  // (fixture의 DB 의존자 순회가 main.audit_log를 root로 받지 않아 남는 analysis-missing은 이 변경과 무관하다.)
+  assert.deepEqual(post.gaps.filter(({ symbol }) => symbol?.platform === 'kotlin').map(({ code, analysis, symbol }) =>
+    [code, analysis, symbol?.usr]), [['analysis-root-not-found', 'android-reverse', 'kt:UsersApi.create']]);
+  assert.ok(!post.gaps.some(({ code }) => code === 'analysis-truncated'));
+  // 다른 사유가 함께 있으면 찾은 root의 hop도 그 사유로 잘렸다.
+  const depth = report(notFound(['depth', 'root-not-found']));
+  assert.deepEqual(depth.gaps.map(({ code, detail }) => [code, /\(depth\)/.test(detail)]), [['analysis-truncated', true]]);
+  // symbol 없는 root 없이 root-not-found만 신고한 문서는 계약 밖이라 보수적으로 잘린 것으로 본다.
+  const orphan = report(notFound(['root-not-found'], false));
+  assert.deepEqual(orphan.gaps.map(({ code, detail }) => [code, /\(root-not-found\)/.test(detail)]), [['analysis-truncated', true]]);
 });
 
 test('revision이 context나 서로와 다르면 stale-analysis다', () => {
@@ -649,4 +683,46 @@ test('platform python 서버 문서와 python forward·reverse 순회도 같은 
   assert.deepEqual(chain?.relationUses.map(({ relation, column }) => [relation, column]),
     baseline.chains[0]!.relationUses.map(({ relation, column }) => [relation, column]));
   assert.deepEqual(python.summary, baseline.summary);
+});
+
+test('platform go·rust 서버 문서와 그 forward·reverse 순회도 같은 route→핸들러→relation-use 체인을 만든다', () => {
+  const baseline = report();
+  for (const platform of ['go', 'rust']) {
+    const result = report((value) => {
+      for (const name of ['server', 'persistence']) value.docs[name].platform = platform;
+      for (const id of ['server-forward', 'server-reverse']) value.analyses[id].platform = platform;
+      value.context.analyses = value.context.analyses.map((entry: { id: string; platform: string }) =>
+        (entry.id.startsWith('server-') ? { ...entry, platform } : entry));
+    });
+    assert.deepEqual(result.gaps, [], platform);
+    assert.deepEqual(result.chains[0]?.handlers.map(({ usr, platform: value }) => [usr, value]), [['ts:api/users.get', platform]]);
+    assert.deepEqual(result.summary, baseline.summary, platform);
+  }
+});
+
+test('단일 project의 upstream route는 service scope를 싣고, 체인이 이미 싣는 route(재귀 호출)에는 따라가지 않음 gap을 만들지 않는다', () => {
+  /** Android 문서가 자기 route GET /api/admin/{}도 선언하고, 그 핸들러(kt:UsersApi.get)가 그 route를 다시 부른다. */
+  const selfCalling = (template: string) => (value: Fixture) => {
+    const android = value.docs.android;
+    Object.assign(android, { roles: ['server', 'client'], dispatch: 'specificity' });
+    android.facts.push(
+      { kind: 'route-decl', method: 'GET', channel: '/api/admin/{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'android/app/src/main/java/example/AdminRoutes.kt', line: 4, column: 5 },
+        symbol: { qualifiedName: 'UsersApi.get', usr: 'kt:UsersApi.get' } },
+      { kind: 'route-call', method: 'GET', channel: '/api/admin/{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'android/app/src/main/java/example/UsersApi.kt', line: 13, column: 5 },
+        symbol: { qualifiedName: 'UsersApi.get', usr: 'kt:UsersApi.get' } });
+    value.context.selection = { routes: [{ method: 'GET', template }] };
+  };
+  // 사용자 route를 따라가면 호출 심볼 자신(depth 0)이 admin route의 핸들러다 — 체인 밖 route라 호출자를 따라가지 않았다고 밝힌다.
+  const users = report(selfCalling('/api/users/{}'));
+  const call = users.chains[0]!.routes[0]!.calls.find(({ call: endpoint }) => endpoint.route?.template === '/api/users/{}')!;
+  assert.deepEqual(call.upstreamRoutes?.map(({ template, depth, scopes, member }) => [template, depth, scopes, member]),
+    [['/api/admin/{}', 0, ['default'], undefined]]);
+  assert.deepEqual(users.gaps.map(({ code, route }) => [code, route?.template]),
+    [['upstream-route-callers-not-followed', '/api/admin/{}']]);
+  // admin route 자신을 따라가면 upstream이 같은 route라 그 호출자는 이미 이 체인에 있다.
+  const admin = report(selfCalling('/api/admin/{}'));
+  assert.deepEqual(admin.chains[0]!.routes[0]!.calls[0]!.upstreamRoutes?.map(({ template }) => template), ['/api/admin/{}']);
+  assert.ok(!admin.gaps.some(({ code }) => code === 'upstream-route-callers-not-followed'));
 });

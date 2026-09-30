@@ -427,14 +427,62 @@ function runCompose({ parts }) {
   return { template: normalizeLiteral(text, true), ...(queryTailStripped ? { queryTailStripped } : {}) };
 }
 
-/** base + path 결합의 네 갈래(RFC 3986, 슬래시 결합, dio 단순 연결)다. */
-function runBaseJoin({ join, base, path }) {
+/**
+ * base + path 결합의 다섯 갈래(RFC 3986, 슬래시 결합, dio 단순 연결, Spring 연결 + `//` 축약)다. Spring은
+ * `DefaultUriBuilderFactory`(`spring-uri-builder`), Boot `RestTemplateBuilder.rootUri`(`spring-root-uri`), `@HttpExchange`
+ * 타입·메서드 url 결합 뒤 `DefaultUriBuilderFactory`(`spring-http-exchange`)다.
+ */
+function runBaseJoin({ join, base, path, typeUrl }) {
+  if (join === 'spring-uri-builder') return springUriBuilder(base, path);
+  if (join === 'spring-http-exchange') return springUriBuilder(base, httpExchangeUrl(typeUrl, path));
+  if (join === 'spring-root-uri') return springRootUri(base, path);
   const rooted = path.startsWith('/');
   const relativeTemplate = normalizeLiteral(`/${path.replace(/^\/+/u, '')}`);
   if (join === 'rfc3986') return rooted ? { template: normalizeLiteral(path), pathAnchor: 'root' } : { template: relativeTemplate, pathAnchor: 'base' };
   if (join === 'slash-join') return { template: relativeTemplate, pathAnchor: 'base' };
   if (base !== null) return { template: runStrip({ url: `${base}${path}` }).template, pathAnchor: 'root' };
   return rooted ? { template: normalizeLiteral(path), pathAnchor: 'base' } : { dynamic: true, limitation: 'ambiguous-base-join:' };
+}
+
+/**
+ * Spring `DefaultUriBuilderFactory` 결합이다. base 경로에 템플릿 경로를 슬래시 없이 잇고(`FullPathComponentBuilder.append`),
+ * 경로 전체의 `//`를 `/`로 줄인다(`getSanitizedPath`). 점 세그먼트는 지우지 않는다. 경로가 `/`로 시작하지 않으면 URI 문자열이
+ * host 뒤에 `/`를 넣는다. base를 모르면 `/`로 시작할 때만 base 앵커, 아니면 dynamic이다.
+ */
+function springUriBuilder(base, path) {
+  if (base === null) {
+    return path.startsWith('/') ? { template: normalizeLiteral(collapseSlashes(path)), pathAnchor: 'base' }
+      : { dynamic: true, limitation: 'ambiguous-base-join:' };
+  }
+  const parsed = parseBase(base);
+  const joined = collapseSlashes(`${parsed.path}${path}`);
+  return { template: normalizeLiteral(joined.startsWith('/') ? joined : `/${joined}`), pathAnchor: 'root', authority: parsed.authority };
+}
+
+/** Spring Boot `RootUriTemplateHandler.apply`: `/`로 시작하는 템플릿에만 root를 앞에 붙이고, 결과를 base 없이 파싱한다. */
+function springRootUri(base, path) {
+  if (!path.startsWith('/')) return { dynamic: true };
+  if (base === null) return { template: normalizeLiteral(collapseSlashes(path)), pathAnchor: 'base' };
+  const parsed = parseBase(`${base}${path}`);
+  return { template: normalizeLiteral(collapseSlashes(parsed.path)), pathAnchor: 'root', authority: parsed.authority };
+}
+
+/** `HttpServiceMethod.initUrl`: 둘 다 있으면 경계 슬래시가 모두 없을 때만 `/`를 넣어 잇고, 하나만 있으면 그것이다. */
+function httpExchangeUrl(typeUrl, methodUrl) {
+  if (!typeUrl) return methodUrl;
+  if (!methodUrl) return typeUrl;
+  return `${typeUrl}${!typeUrl.endsWith('/') && !methodUrl.startsWith('/') ? '/' : ''}${methodUrl}`;
+}
+
+/** 경로의 연속 슬래시를 하나로 줄인다(Spring `getSanitizedPath`). */
+function collapseSlashes(path) {
+  return path.replace(/\/{2,}/gu, '/');
+}
+
+/** 절대 URL base의 소문자 authority와 경로(없으면 빈 문자열)다. */
+function parseBase(url) {
+  const match = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/?#]*@)?([^/?#]*)([^?#]*)/u.exec(url);
+  return { authority: match[1].toLowerCase(), path: match[2] };
 }
 
 /** 전체 URL에서 userinfo·query·fragment를 떼고 소문자 authority와 경로를 얻는다. */

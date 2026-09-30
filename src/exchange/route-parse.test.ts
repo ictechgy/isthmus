@@ -101,9 +101,8 @@ test('openapi 문서는 null 또는 http target이고 route-contract만, roles�
   assert.throws(() => parseBridgeFactsDocument(httpDocument({
     platform: 'openapi', roles: ['server'], facts: [{ ...contract, method: 'ANY' }],
   })), /Invalid route method/);
-  for (const platform of ['go', 'rust', 'sql']) {
-    assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform, facts: [] })), /may only carry|accepts only/);
-  }
+  // sql은 http 문서를 낼 수 없다(go·rust는 route-decl을 낸다 — 아래 platform go·rust 테스트).
+  assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform: 'sql', facts: [] })), /may only carry|accepts only/);
 });
 
 test('정적 route channel은 정규 템플릿이어야 하고 dynamic은 원문을 길이 상한 안에서만 받는다', () => {
@@ -338,6 +337,23 @@ test('platform python은 null·persistence·http target이고 http에서는 rout
     platform: 'python', target: 'persistence', roles: undefined,
     facts: [{ kind: 'relation-decl', channel: 'public.shop_item', dynamic: false, symbol: { qualifiedName: 'public.shop_item' } }],
   })), /not valid for platform/);
+});
+
+test('platform go·rust는 http에서 서버 route-decl만 내고 두 dispatch를 모두 받는다', () => {
+  for (const platform of ['go', 'rust']) {
+    const decl = route('route-decl', 'GET', '/items/{}', { location: { path: 'internal/api/items.go', line: 3, column: 2 },
+      symbol: { qualifiedName: 'api.GetItem', usr: `${platform}:api.GetItem` } });
+    const parsed = parseBridgeFactsDocument(serverDocument([decl], { platform }));
+    assert.equal(parsed.platform, platform);
+    assert.equal(parsed.facts[0]!.kind, 'route-decl');
+    // actix-web·gorilla/mux처럼 먼저 등록한 경로가 받는 라우터는 registration-order로 낸다.
+    const ordered = parseBridgeFactsDocument(orderedDocument([orderedDecl('GET', '/items/{}', 0)], { platform }));
+    assert.equal(ordered.dispatch, 'registration-order');
+    // 클라이언트 route-call은 생산자와 url-compose 벡터가 생길 때까지 받지 않는다(client roles 문서는 사실 0건만).
+    assert.throws(() => parseBridgeFactsDocument(httpDocument({ platform, facts: [route('route-call', 'GET', '/items/')] })),
+      /not valid for platform/);
+    assert.equal(parseBridgeFactsDocument(httpDocument({ platform })).facts.length, 0);
+  }
 });
 
 test('registration-order 문서는 order를 싣고 정규화하며, order가 없는 decl도 받는다', () => {
