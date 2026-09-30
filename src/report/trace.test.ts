@@ -699,3 +699,30 @@ test('platform go·rust 서버 문서와 그 forward·reverse 순회도 같은 r
     assert.deepEqual(result.summary, baseline.summary, platform);
   }
 });
+
+test('단일 project의 upstream route는 service scope를 싣고, 체인이 이미 싣는 route(재귀 호출)에는 따라가지 않음 gap을 만들지 않는다', () => {
+  /** Android 문서가 자기 route GET /api/admin/{}도 선언하고, 그 핸들러(kt:UsersApi.get)가 그 route를 다시 부른다. */
+  const selfCalling = (template: string) => (value: Fixture) => {
+    const android = value.docs.android;
+    Object.assign(android, { roles: ['server', 'client'], dispatch: 'specificity' });
+    android.facts.push(
+      { kind: 'route-decl', method: 'GET', channel: '/api/admin/{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'android/app/src/main/java/example/AdminRoutes.kt', line: 4, column: 5 },
+        symbol: { qualifiedName: 'UsersApi.get', usr: 'kt:UsersApi.get' } },
+      { kind: 'route-call', method: 'GET', channel: '/api/admin/{}', dynamic: false, pathAnchor: 'root',
+        location: { path: 'android/app/src/main/java/example/UsersApi.kt', line: 13, column: 5 },
+        symbol: { qualifiedName: 'UsersApi.get', usr: 'kt:UsersApi.get' } });
+    value.context.selection = { routes: [{ method: 'GET', template }] };
+  };
+  // 사용자 route를 따라가면 호출 심볼 자신(depth 0)이 admin route의 핸들러다 — 체인 밖 route라 호출자를 따라가지 않았다고 밝힌다.
+  const users = report(selfCalling('/api/users/{}'));
+  const call = users.chains[0]!.routes[0]!.calls.find(({ call: endpoint }) => endpoint.route?.template === '/api/users/{}')!;
+  assert.deepEqual(call.upstreamRoutes?.map(({ template, depth, scopes, member }) => [template, depth, scopes, member]),
+    [['/api/admin/{}', 0, ['default'], undefined]]);
+  assert.deepEqual(users.gaps.map(({ code, route }) => [code, route?.template]),
+    [['upstream-route-callers-not-followed', '/api/admin/{}']]);
+  // admin route 자신을 따라가면 upstream이 같은 route라 그 호출자는 이미 이 체인에 있다.
+  const admin = report(selfCalling('/api/admin/{}'));
+  assert.deepEqual(admin.chains[0]!.routes[0]!.calls[0]!.upstreamRoutes?.map(({ template }) => template), ['/api/admin/{}']);
+  assert.ok(!admin.gaps.some(({ code }) => code === 'upstream-route-callers-not-followed'));
+});

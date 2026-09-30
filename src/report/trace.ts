@@ -433,6 +433,11 @@ class TraceBuilder {
   private readonly librariesByProvider = new Map<string, TraceLibrary[]>();
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
   private readonly workspace: boolean;
+  /**
+   * 지금 만드는 체인이 싣는 route 키(scope, method, template)다. upstream route가 이 중 하나면 그 호출자가 이미 체인에 있으므로
+   * `upstream-route-callers-not-followed`를 만들지 않는다. route hop을 만들기 전에 체인마다 정한다.
+   */
+  private chainRoutes: ReadonlySet<string> = new Set();
   private outputItems = 0;
 
   private readonly input: TraceInput;
@@ -488,6 +493,9 @@ class TraceBuilder {
   private routeChain(selector: { route: TraceRouteSelection }): TraceChain[] {
     const { method, template, scope } = selector.route;
     const scopes = this.scopes.filter((candidate) => scope === undefined || candidate.scope.scope === scope);
+    this.chainRoutes = new Set(scopes.filter(({ scope: { decls, contracts } }) => [...decls, ...contracts].some(({ declaration }) =>
+      declaration.method === method && declaration.template === template))
+      .map((candidate) => routeKeyString(routeKey(candidate.scope.scope, method, template))));
     const found = scopes.flatMap((candidate) => {
       const hop = this.routeHop(selector, candidate, method, template);
       return hop === undefined ? [] : [{ linked: candidate, ...hop }];
@@ -735,6 +743,7 @@ class TraceBuilder {
             + '(scheduled jobs, queues, CLIs) or the reverse traversal is incomplete.' });
       }
     }
+    this.chainRoutes = new Set([...routes.values()].map(routeKeyString));
     const hops = [...routes.values()].sort(compareRouteKeys).flatMap((key) => {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
@@ -834,7 +843,7 @@ class TraceBuilder {
       return { affected: [] };
     }
     const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
-    const upstream = this.upstreamRoutes(selector, route, member, endpoint.platform,
+    const upstream = this.upstreamRoutes(selector, member, endpoint.platform,
       [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))]);
     const hop = { affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
     const libraries = this.librariesByProvider.get(member);
@@ -850,7 +859,7 @@ class TraceBuilder {
    * 같은 member·platform 안의 정확한 usr 일치만 쓴다(link가 server로 잇는 선언과 link 없는 자기 선언 모두). 이름·경로로
    * 추측하지 않는다. 한 단계만 올라가며, 찾은 route마다 호출자를 따라가지 않은 이유를 gap으로 남긴다.
    */
-  private upstreamRoutes(selector: TraceSelector, route: TraceRouteKey, member: string, platform: BridgePlatform,
+  private upstreamRoutes(selector: TraceSelector, member: string, platform: BridgePlatform,
     reached: ReadonlyArray<{ usr: string; depth: number }>): TraceUpstreamRoute[] {
     const depths = new Map<string, number>();
     for (const { usr, depth } of reached) depths.set(usr, Math.min(depth, depths.get(usr) ?? depth));
@@ -866,16 +875,17 @@ class TraceBuilder {
     }
     const routes = [...found.entries()].sort(([left], [right]) => compareStrings(left, right))
       .map(([, entry]) => finishUpstream(entry, this.memberField(member)));
-    for (const upstream of routes) this.upstreamGaps(selector, route, member, upstream);
+    for (const upstream of routes) this.upstreamGaps(selector, member, upstream);
     return routes;
   }
 
   /**
    * upstream route의 호출자를 따라가지 않은 곳을 밝힌다. link가 이 route를 server로 잇지 않으면 호출자를 알 수 없고
    * (`route-decl-unlinked`), 잇는 scope가 있으면 v1이 한 단계만 올라가서 그 scope의 호출자를 싣지 않았다
-   * (`upstream-route-callers-not-followed`). 지금 추적 중인 route 자신(재귀 호출)은 호출자가 이미 이 hop에 있으므로 뺀다.
+   * (`upstream-route-callers-not-followed`). 이 체인이 이미 싣는 route(재귀 호출 — 다른 scope의 같은 route 포함)는 그 호출자가
+   * 체인에 있으므로 뺀다.
    */
-  private upstreamGaps(selector: TraceSelector, route: TraceRouteKey, member: string, upstream: TraceUpstreamRoute): void {
+  private upstreamGaps(selector: TraceSelector, member: string, upstream: TraceUpstreamRoute): void {
     const { method, template, handler } = upstream;
     const symbol = { platform: handler.platform, usr: handler.usr };
     if (upstream.scopes.length === 0) {
@@ -885,7 +895,7 @@ class TraceBuilder {
       return;
     }
     for (const scope of upstream.scopes) {
-      if (scope === route.scope && method === route.method && template === route.template) continue;
+      if (this.chainRoutes.has(routeKeyString(routeKey(scope, method, template)))) continue;
       this.gap({ code: 'upstream-route-callers-not-followed', selector, route: routeKey(scope, method, template),
         ...this.memberField(member), symbol,
         detail: 'This route of the calling member is reached upstream of a traced route call; trace follows one upstream '
@@ -929,7 +939,7 @@ class TraceBuilder {
     const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
     const affected = affectedRows(hits);
     // consumer root는 SDK 심볼 id(앱 코드가 아니다)라 도달 행만 본다.
-    const upstream = this.upstreamRoutes(selector, route, library.consumer, platform,
+    const upstream = this.upstreamRoutes(selector, library.consumer, platform,
       affected.map((row) => ({ usr: row.usr, depth: row.depth })));
     return { library: library.name, member: library.consumer, ids: library.ids, entries, notInConsumerGraph,
       ...(declaresApi ? { notPublic } : {}), affected, ...(upstream.length === 0 ? {} : { upstreamRoutes: upstream }) };
@@ -1684,6 +1694,11 @@ function uniqueStarts(starts: readonly StartSymbol[]): StartSymbol[] {
 
 function routeKey(scope: string, method: RouteMethod, template: string): TraceRouteKey {
   return { scope, method, template };
+}
+
+/** route 키의 직렬화다(체인 route 집합 비교용). */
+function routeKeyString(key: TraceRouteKey): string {
+  return JSON.stringify([key.scope, key.method, key.template]);
 }
 
 function compareRouteKeys(left: TraceRouteKey, right: TraceRouteKey): number {

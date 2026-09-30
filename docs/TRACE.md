@@ -270,8 +270,8 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 - **한 단계(v1)**: upstream route의 호출자로는 올라가지 않는다. 전이 추적은 member 사이 순환(A→B→A)과 hop마다 커지는 출력을
   다뤄야 하는데, 한 단계면 출력이 호출 hop의 `affected` 이하로 묶이고 요약·상한·근거 수 규칙이 그대로다. 대신 멈춘 곳을
   gap으로 밝힌다: `scopes`가 있으면 scope마다 `upstream-route-callers-not-followed`(`route`에 그 scope 키 — 그 route를 선택하면
-  이어 간다), 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모르므로 `route-decl-unlinked`다. 지금 추적 중인
-  route 자신이 upstream이면(재귀 호출) 호출자가 이미 이 hop에 있어 gap을 만들지 않는다.
+  이어 간다), 비었으면 어떤 link도 이 member를 server로 잇지 않아 호출자를 모르므로 `route-decl-unlinked`다. 이 체인이 이미
+  싣는 route(재귀 호출 — 선택한 route의 다른 scope 포함)가 upstream이면 그 호출자가 이미 체인에 있어 gap을 만들지 않는다.
 - **link 없는 자기 route**: 어떤 link도 server로 잇지 않은 member의 선언 문서에서 핸들러 usr가 있는 정적 route-decl을 이 판정에
   쓴다. 역방향 선택(relation·심볼·파일)이 그런 핸들러에 닿으면 `non-http-entry` 대신 `route-decl-unlinked`, route 선택(scope
   미지정)이 그런 route와 정확히 같으면 `route-without-decl` 대신 member마다 `route-decl-unlinked`다. 그래서 member 단위
