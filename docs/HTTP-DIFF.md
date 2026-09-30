@@ -138,6 +138,9 @@ CI 모드는 별도 입력 형식이 아니라 위 두 모드를 base·head 커�
 4. `--fail-on`으로 실패 조건을 정한다. 권장값은 `--fail-on error,incomplete`(증명된 깨짐 또는 판단을 막는 공백)이고,
    증명되지 않은 깨짐까지 막으려면 `removed-bound-route-unverified,changed-bound-route-unverified`를 더한다.
 
+이 절차(같은 checkout에서 base·head 수집, diff, 바뀐 route의 trace, PR 댓글)를 묶은 GitHub Action이 저장소 루트의
+`action.yml`이다 — 사용법·보안 설계는 [CI.md](CI.md). 아래 예시는 Action 없이 직접 구성할 때의 최소 모양이다.
+
 ```yaml
 # .github/workflows/http-diff.yml (예시 — `ci/produce-http-facts.sh`는 저장소가 정하는 생산자 실행 스크립트 자리표시자다)
 name: http-diff

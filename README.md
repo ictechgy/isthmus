@@ -119,6 +119,7 @@ measured.
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace` (in development): route → handler → tables → DB dependents, and route → call sites → affected client code, joined by exact producer ids with explicit gaps |
 | [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http` (in development): base vs head route surface of one server/spec or a workspace, calls that bound at base and no longer bind at head, `--fail-on` exit codes, and a base..head CI example |
+| [`docs/CI.md`](docs/CI.md) | GitHub Action (in development, `action.yml` at the repository root): per pull request, capture base and head, run `diff --http` and `trace` on the changed routes, and post a sticky comment listing broken client calls, affected tables and client code (Korean) |
 | [`docs/HTTP-SURFACE.md`](docs/HTTP-SURFACE.md) | `isthmus-http-surface` v1 and `surface export` (in development): a server's route declarations published across an organization boundary without handler paths, names or internals, imported by `trace` and `diff --http` as a sha256-pinned surface member |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | `language-traversal` v1, the shared forward/reverse traversal format producers emit for `trace` |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | Pinned public-plugin/app precision corpus (TP/FN/FP counts) |
@@ -707,6 +708,12 @@ coverage gaps always produce explicit incompleteness findings, so an empty resul
 client breaks. `--fail-on` takes finding codes, `error`, `warning`, or `incomplete`; unknown tokens are a
 usage error (64). The `--http` flag must directly follow `diff`. See
 [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) for the design, the CI procedure, and a sample workflow.
+
+The repository root is also a composite GitHub Action (in development) that runs this on every pull
+request: it captures base and head in the same checkout with your capture config (producer installation
+stays your workflow's job), runs `diff --http`, traces the routes with non-info findings, and posts the
+broken calls, affected tables and client code as a job summary or a sticky comment, with incompleteness
+stated first. See [`docs/CI.md`](docs/CI.md) (Korean) for single-repository and two-repository setups.
 
 ## Coding-agent skill
 

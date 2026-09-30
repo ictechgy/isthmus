@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+### Added — PR마다 HTTP route 영향을 보고하는 GitHub Action (Phase 3 CI)
+
+- **위치**([CI](docs/CI.md)): 저장소 루트 composite Action `action.yml`(`uses: ictechgy/isthmus@<tag>`). Action과 CLI가 같은
+  태그·버전으로 나가고, `isthmus-version` 기본값이 Action ref의 버전이다(npm 설치는 정확한 버전·`--ignore-scripts`,
+  시험용 `isthmus-path`).
+- **흐름**: capture 설정(`isthmus-trace-capture` v1, head commit에서 읽음)으로 base·head를 **같은 checkout 경로**에서 차례로
+  수집하거나 미리 만든 문서를 받아 `diff --http`(surface·workspace)를 돌리고, non-info finding의 route만 `trace`한다(기본 base
+  capture — 모든 non-info route가 base에 있다). base commit 기본값은 PR 병합 commit의 첫째 부모다. 결과는 job summary·
+  artifact(`diff.json`·`trace.json`·`meta.json`·`comment.md`)와 선택적 스티키 댓글로 남고 `fail-on`으로 job을 실패시킨다.
+- **렌더러** `scripts/render-pr-comment.mjs`(npm 패키지 포함, CLI 하위 명령 아님 — 제품은 JSON만 쓴다): 불완전성 배너를
+  맨 앞에, 끊기는 호출을 client `file:line`·심볼로, 바뀐 route의 핸들러·테이블·DB 의존자·클라이언트 코드를 싣는다. 빈
+  결과를 안전으로 쓰지 않는다. 사실 문자열은 코드 스팬·HTML 엔티티로만 싣고 65,000자로 줄 단위로 자른다. 결정적 출력.
+- **보안**: `pull_request_target` 없음, 분석 job `contents: read`·댓글 job만 `pull-requests: write`, 토큰은 댓글 단계에만,
+  `run`에 식을 끼워 넣지 않음, 생산자 환경에서 `GITHUB_ENV` 등 파일 명령 경로·토큰 제거, 신뢰하지 않는 로그는
+  `::stop-commands::`, `comment` 명령은 artifact JSON을 다시 렌더링(comment.md를 그대로 올리지 않음), artifact에서 온 PR
+  번호는 `expected-head-sha` 대조(workflow_run), 서드파티 Action SHA 고정.
+- **자체 시험** `.github/workflows/action-self-test.yml`: 합성 fixture로 미리 만든 문서(surface·workspace)와 합성 git 저장소의
+  capture 모드를 job summary 모드로 돌린다(댓글은 저장소 변수로 opt-in). 로컬은 `npm run verify`의 세 스크립트 테스트.
+
 ### Fixed — aiohttp base 미상 벡터의 `versionRange`
 
 - url-compose `base-join/aiohttp-unknown-base-relative`에 `>=3.11`(`/` 없는 상대 경로는 3.11부터),

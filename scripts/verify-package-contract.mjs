@@ -57,6 +57,7 @@ for (const requiredPath of [
   'docs/LANGUAGE-TRAVERSAL.md',
   'docs/TRACE.md',
   'docs/HTTP-DIFF.md',
+  'docs/CI.md',
   'dist/cli/http-diff-command.js',
   'dist/cli/surface-command.js',
   'dist/exchange/http-surface.js',

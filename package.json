@@ -42,6 +42,7 @@
     "docs/LANGUAGE-TRAVERSAL.md",
     "docs/TRACE.md",
     "docs/HTTP-DIFF.md",
+    "docs/CI.md",
     "docs/HTTP-SURFACE.md",
     "docs/BRIDGE-MESSAGES.md",
     "docs/BRIDGE-EVENTS.md",
