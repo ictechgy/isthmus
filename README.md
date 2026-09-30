@@ -39,11 +39,12 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The currently verified producer set for **0.9.0** is:
-cartograph **0.20.0**, kartograph **0.14.0**, and dartograph **0.15.0** — see
+The currently verified producer set for **0.10.0** is:
+cartograph **0.23.0**, kartograph **0.18.0**, dartograph **0.16.0**, schemagraph **0.7.0**,
+gartograph **0.9.0**, and rustograph **0.4.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
-fixed end-to-end example, and a CI sketch. The published npm 0.9.0 archive retains
-its original kartograph 0.13.0 manifest. MethodChannel joins and the retention
+fixed end-to-end example, and a CI sketch. Earlier npm archives keep the manifest they
+were published with. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the previous public
 set (cartograph 0.15.1, dartograph 0.10.0, isthmus 0.6.0).

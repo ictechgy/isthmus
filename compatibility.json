@@ -1,10 +1,13 @@
 {
   "format": "isthmus-compatibility",
   "version": 1,
-  "isthmus": "0.9.0",
+  "isthmus": "0.10.0",
   "producers": {
-    "cartograph": "0.20.0",
-    "kartograph": "0.14.0",
-    "dartograph": "0.15.0"
+    "cartograph": "0.23.0",
+    "kartograph": "0.18.0",
+    "dartograph": "0.16.0",
+    "schemagraph": "0.7.0",
+    "gartograph": "0.9.0",
+    "rustograph": "0.4.0"
   }
 }

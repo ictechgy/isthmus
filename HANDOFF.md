@@ -7,10 +7,10 @@ _Last updated: 2026-09-20_
 
 ## 현재 상태
 
-- 현재 소스 버전은 isthmus-cli **0.9.0**이며 호환 세트는 cartograph **0.20.0**, kartograph
-  **0.13.0**, dartograph **0.15.0**이다. [npm 0.9.0](https://www.npmjs.com/package/isthmus-cli/v/0.9.0)과
-  [릴리스](https://github.com/ictechgy/isthmus/releases/tag/v0.9.0)는 발행 후 설치 근거와 함께 확인한다.
-  현재 [compatibility.json](compatibility.json)과 불변 npm 0.8.0의 옛 manifest를 구분한다.
+- 현재 소스 버전은 isthmus-cli **0.10.0**이며 호환 세트는 [compatibility.json](compatibility.json)
+  (cartograph 0.23.0, kartograph 0.18.0, dartograph 0.16.0, schemagraph 0.7.0, gartograph 0.9.0,
+  rustograph 0.4.0)이다. npm 0.10.0 발행·`v0.10.0` 태그·릴리스는 registry와 cold-cache 실행으로 따로
+  확인한다. 이미 발행된 npm 아카이브(0.8.0·0.9.0)는 발행 당시 manifest를 유지한다.
 - JS 이벤트 추출은 안정적인 모듈 범위 let/var와 직접 CommonJS RN namespace를 지원한다.
   초기화 전·재할당·escape·이름 가림·생성자 변경과 const 블록 범위 밖 구독은 확정하지 않는다.
   [공개 RN 두 버전](experiments/real-corpus/results/rn-event-development-results.json)은
