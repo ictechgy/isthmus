@@ -217,6 +217,8 @@ base 경로, v3(rc)는 base 원문 경로라 끝 슬래시가 갈린다 — base
 
 **그 밖**: 벡터가 없는 결합(`urllib.parse.urljoin`, requests-toolbelt `BaseUrlSession`, 사용자 정의 base 헬퍼 등)은 결합 결과를
 주장하지 않는다. base 뒤 경로가 `/`로 시작하는 리터럴이면 base 앵커 꼬리로만, 아니면 dynamic + `ambiguous-base-join:`으로 낸다.
+`urljoin`은 대부분의 입력에서 RFC 3986과 같지만 `rfc3986`으로 묶지 않는다 — 상대 참조를 합칠 때 빈 세그먼트를 지워
+`…/api/` + `a//b`가 `/api/a/b`(RFC 3986은 `/api/a//b`)이고 base 경로의 `//`도 줄인다(CPython 3.14.7 실행 확인).
 새 라이브러리는 공식 소스를 확인해 이 절과 벡터에 결합 방식을 더한 뒤 쓴다.
 
 ### 제거와 마스킹

@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Fixed — aiohttp base 미상 벡터의 `versionRange`
+
+- url-compose `base-join/aiohttp-unknown-base-relative`에 `>=3.11`(`/` 없는 상대 경로는 3.11부터),
+  `base-join/aiohttp-unknown-base-rooted`에 `>=3.8`(`base_url` 도입)을 적었다. 기대값은 그대로이고 SHA256SUMS를 갱신했다.
+- [HTTP-WRAPPERS](docs/HTTP-WRAPPERS.md#go-rust-python-클라이언트)에 `urllib.parse.urljoin`을 `rfc3986`으로 묶지 않는 이유(상대
+  병합에서 빈 세그먼트를 지운다)를 적었다.
+
 ### Added — trace upstream route 전이 추적 `upstreamDepth` (Phase 8)
 
 - **opt-in**([TRACE](docs/TRACE.md#전이-추적-upstreamdepth)): CLI `--upstream-depth <1..8>`, MCP `upstreamDepth`, context
