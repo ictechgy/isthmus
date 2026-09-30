@@ -1,7 +1,7 @@
 import { compareStrings } from '../compare.ts';
 import { createJsonGuards } from './json-guards.ts';
-import { isBridgeTimestamp, isProjectRelativePath, isSafeNonEmptyString } from './parse.ts';
-import { MAX_IMPACT_DEPTH, MAX_IMPACT_RELATIONSHIPS, type LanguageImpact } from './language-impact.ts';
+import { isBridgeTimestamp, isSafeNonEmptyString } from './parse.ts';
+import { MAX_IMPACT_DEPTH, MAX_IMPACT_RELATIONSHIPS, partialSourceLocation, type LanguageImpact } from './language-impact.ts';
 
 /**
  * `language-traversal` v1 — 생산자가 내는 언어 그래프 순회 결과의 공유 형식이다.
@@ -499,12 +499,7 @@ export function parseTraversalSymbol(input: unknown): TraversalSymbol {
 function parseTraversalLocation(input: unknown): TraversalLocation {
   const value = object(input, 'Invalid traversal symbol location.');
   onlyKeys(value, new Set(['path', 'line', 'column']), 'Invalid traversal symbol location.');
-  if (!isProjectRelativePath(value.path) || (value.line !== undefined && !positive(value.line)) ||
-    (value.column !== undefined && (value.line === undefined || !positive(value.column)))) {
-    fail('Invalid traversal symbol location.');
-  }
-  return { path: value.path, ...(value.line === undefined ? {} : { line: value.line as number }),
-    ...(value.column === undefined ? {} : { column: value.column as number }) };
+  return partialSourceLocation(value) ?? fail('Invalid traversal symbol location.');
 }
 
 /** 도달 정점이 (depth, usr) 엄격한 오름차순인지 검사한다. */
@@ -514,10 +509,6 @@ function requireSortedReached(reached: readonly TraversalReached[]): void {
       fail('Traversal reached symbols must be sorted by depth, then usr.');
     }
   }
-}
-
-function positive(value: unknown): boolean {
-  return Number.isSafeInteger(value) && (value as number) >= 1;
 }
 
 function onlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, message: string): void {

@@ -5,6 +5,7 @@ import {
   MAX_IMPACT_DEPTH,
   parseImpactLocation,
   parseImpactSymbol,
+  partialSourceLocation,
   PreflightValidationError,
   validateLanguageImpact,
 } from './language-impact.ts';
@@ -65,4 +66,12 @@ test('Dart·Swift 심볼은 줄·열이 모두 있는 위치만 받고 Kotlin �
 test('language-traversal의 depth·관계 상한은 영향 계약의 값과 같다', () => {
   assert.equal(MAX_TRAVERSAL_DEPTH, 128);
   assert.equal(MAX_TRAVERSAL_RELATIONSHIPS, 32);
+});
+
+test('부분 위치 규칙은 영향과 순회가 공유하며 빠진 좌표를 채우지 않는다', () => {
+  assert.deepEqual(partialSourceLocation({ path: 'A.kt' }), { path: 'A.kt' });
+  assert.deepEqual(partialSourceLocation({ path: 'A.kt', line: 4, column: 2 }), { path: 'A.kt', line: 4, column: 2 });
+  for (const value of [{ path: '/A.kt' }, { path: 'A.kt', line: 0 }, { path: 'A.kt', column: 2 }, { path: 'A.kt', line: 1, column: 1.5 }]) {
+    assert.equal(partialSourceLocation(value), undefined);
+  }
 });

@@ -155,12 +155,19 @@ export function parseImpactSymbol(input: unknown, partialLocation = false): Impa
 
 /** JVM line tables가 제공하지 않은 좌표를 1로 채워 넣지 않는다. */
 function parseKotlinLocation(input: unknown): NonNullable<ImpactSymbol['location']> {
-  const value = object(input, 'Invalid Kotlin symbol location.');
-  if (!isProjectRelativePath(value.path) ||
-    (value.line !== undefined && (!Number.isSafeInteger(value.line) || (value.line as number) < 1)) ||
-    (value.column !== undefined && (value.line === undefined || !Number.isSafeInteger(value.column) || (value.column as number) < 1))) {
-    fail('Invalid Kotlin symbol location.');
-  }
+  return partialSourceLocation(object(input, 'Invalid Kotlin symbol location.')) ?? fail('Invalid Kotlin symbol location.');
+}
+
+/**
+ * 줄·열이 빠질 수 있는 프로젝트 상대 위치를 정규화한다. 규칙에 맞지 않으면 undefined다.
+ *
+ * 줄은 1 이상, 열은 줄이 있을 때만 1 이상이다. Kotlin 영향 심볼과 `language-traversal` 심볼이 같은 규칙을 쓴다 —
+ * 어느 쪽도 빠진 좌표를 1로 채우지 않는다. 오류 종류·문구와 모르는 키 검사는 호출 모듈이 정한다.
+ */
+export function partialSourceLocation(value: Readonly<Record<string, unknown>>): NonNullable<ImpactSymbol['location']> | undefined {
+  const positive = (item: unknown) => Number.isSafeInteger(item) && (item as number) >= 1;
+  if (!isProjectRelativePath(value.path) || (value.line !== undefined && !positive(value.line)) ||
+    (value.column !== undefined && (value.line === undefined || !positive(value.column)))) return undefined;
   return { path: value.path, ...(value.line === undefined ? {} : { line: value.line as number }),
     ...(value.column === undefined ? {} : { column: value.column as number }) };
 }
