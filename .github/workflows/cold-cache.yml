@@ -115,7 +115,8 @@ jobs:
   # tsograph는 아카이브 대신 npm 발행본을 설치해 --version만 대조한다.
   # 이 job은 설치·버전만 확인한다 — 이 도구들의 문서로 trace까지 잇는 e2e는
   # 각 producer 저장소의 검증 범위다. Linux x86_64 아카이브를 쓰며 npm
-  # isthmus 설치가 필요 없어 발행 전에도 실행할 수 있다.
+  # isthmus 설치가 필요 없어 isthmus 발행 전에도 실행할 수 있다(tsograph는
+  # manifest 버전이 npm에 발행돼 있어야 한다).
   api-producers:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -159,7 +160,8 @@ jobs:
           fetch "$base/rustograph/releases/download/v$RUSTOGRAPH_VERSION/checksums.txt" checksums.txt
           sha256sum --check --ignore-missing --strict checksums.txt
           tar -xzf "rustograph-$RUSTOGRAPH_VERSION-linux-amd64.tar.gz"
-      - run: npm install --global tsograph@${{ steps.compatibility.outputs.tsograph }}
+      - name: Install tsograph from npm
+        run: npm install --global tsograph@${{ steps.compatibility.outputs.tsograph }}
       - name: Verify installed versions
         env:
           SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
