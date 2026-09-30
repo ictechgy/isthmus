@@ -276,6 +276,46 @@ export function bridgeJoinDeferredError(
   };
 }
 
+/** context 파일 하나를 읽을 때 원인별로 내보낼 명령 고유 문구다. 경로·본문은 싣지 않는다. */
+export interface ContextInputMessages {
+  readonly unreadable: string;
+  readonly tooLarge: string;
+  readonly invalidJson: string;
+}
+
+/** 읽어 JSON으로 푼 context 파일이거나, 그대로 돌려줄 코드 2 결과다. */
+export type ContextInput =
+  | { readonly text: string; readonly value: unknown }
+  | { readonly failure: CommandResult };
+
+/**
+ * preflight·trace처럼 context JSON 하나로 시작하는 명령의 첫 입력을 읽는다.
+ *
+ * 읽기 실패, 크기 상한 초과, JSON 구문 오류를 명령이 준 문구의 코드 2로 나누고, 구문 오류가 아닌 예외는 입력 탓이
+ * 아니므로 내부 오류로 둔다. 읽은 텍스트 길이는 뒤따르는 입력의 합계 예산에 쓰도록 함께 돌려준다.
+ *
+ * @param maximumLength 이 파일 하나에 허용하는 UTF-16 길이다(명령마다 다르다).
+ */
+export async function readContextInput(
+  path: string,
+  readTextFile: ReadTextFile,
+  maximumLength: number,
+  messages: ContextInputMessages,
+): Promise<ContextInput> {
+  let text: string;
+  try {
+    text = await readTextFile(path);
+  } catch {
+    return { failure: inputFailure(messages.unreadable) };
+  }
+  if (text.length > maximumLength) return { failure: inputFailure(messages.tooLarge) };
+  try {
+    return { text, value: JSON.parse(text) };
+  } catch (error) {
+    return { failure: isJsonParseFailure(error) ? inputFailure(messages.invalidJson) : internalError() };
+  }
+}
+
 /** 내부 결함을 입력 탓으로 돌리지 않는 경로 없는 코드 2 결과다. */
 export function internalError(): CommandResult {
   return {

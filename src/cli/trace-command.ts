@@ -22,6 +22,7 @@ import {
   MAX_INPUT_TEXT_LENGTH,
   MAX_TOTAL_INPUT_TEXT_LENGTH,
   readBridgeDocuments,
+  readContextInput,
 } from './command-support.ts';
 import type { CommandResult, ReadTextFile } from './command-support.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
@@ -43,19 +44,13 @@ export async function runTraceCommand(arguments_: readonly string[], readTextFil
     return { standardOutput: '', standardError: `${traceUsage}\n`, exitCode: 64 };
   }
   const contextPath = parsed.positionals[0]!;
-  let text: string;
-  try {
-    text = await readTextFile(contextPath);
-  } catch {
-    return inputFailure('Unable to read the trace context; check that the file exists and is readable.\n');
-  }
-  if (text.length > MAX_INPUT_TEXT_LENGTH) return inputFailure('Trace context exceeds the input size limit.\n');
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    return isJsonParseFailure(error) ? inputFailure('Trace context is not valid JSON.\n') : internalError();
-  }
+  const input = await readContextInput(contextPath, readTextFile, MAX_INPUT_TEXT_LENGTH, {
+    unreadable: 'Unable to read the trace context; check that the file exists and is readable.\n',
+    tooLarge: 'Trace context exceeds the input size limit.\n',
+    invalidJson: 'Trace context is not valid JSON.\n',
+  });
+  if ('failure' in input) return input.failure;
+  const { text, value } = input;
   try {
     const context = parseTraceContext(value);
     const base = dirname(contextPath);
