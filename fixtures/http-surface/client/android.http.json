@@ -1,0 +1,73 @@
+{
+  "facts": [
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 14,
+        "path": "app/src/main/java/example/orders/OrdersApi.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.get",
+        "usr": "kt:OrdersApi.get"
+      }
+    },
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 20,
+        "path": "app/src/main/java/example/orders/OrdersApi.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.create",
+        "usr": "kt:OrdersApi.create"
+      }
+    },
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 5,
+        "line": 26,
+        "path": "app/src/main/java/example/orders/OrdersApi.kt"
+      },
+      "method": "DELETE",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "OrdersApi.cancel",
+        "usr": "kt:OrdersApi.cancel"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/example-client",
+  "roles": [
+    "client"
+  ],
+  "service": "example-api",
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-surface-client",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

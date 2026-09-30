@@ -1,0 +1,144 @@
+{
+  "continuation": "opaque",
+  "digest": "14550d4dddfde53ec87b64f4e6fd3f651e8189d9d1a2992848fd921e97d71493",
+  "documents": [
+    {
+      "dispatch": "specificity",
+      "facts": [
+        {
+          "channel": "/api/orders/{}",
+          "dynamic": false,
+          "handler": "h4",
+          "kind": "route-decl",
+          "method": "GET",
+          "paramConstraints": [
+            {
+              "kind": "int",
+              "segment": 2
+            }
+          ],
+          "pathAnchor": "root"
+        },
+        {
+          "channel": "/api/orders",
+          "dynamic": false,
+          "handler": "h3",
+          "kind": "route-decl",
+          "method": "POST",
+          "pathAnchor": "root"
+        },
+        {
+          "channel": "/api/orders/{}",
+          "dynamic": false,
+          "handler": "h2",
+          "kind": "route-decl",
+          "method": "DELETE",
+          "pathAnchor": "root"
+        },
+        {
+          "channel": "/files/{**}",
+          "dynamic": false,
+          "handler": "h1",
+          "kind": "route-decl",
+          "method": "GET",
+          "pathAnchor": "root"
+        },
+        {
+          "catchAllPrefix": true,
+          "channel": "/files",
+          "dynamic": false,
+          "handler": "h1",
+          "kind": "route-decl",
+          "method": "GET",
+          "pathAnchor": "root"
+        }
+      ],
+      "generatedAt": "2026-09-28T00:00:00Z",
+      "limitationScopes": [
+        {
+          "limitationIndex": 0,
+          "templatePrefixes": [
+            "/admin"
+          ]
+        }
+      ],
+      "limitations": [
+        "route-coverage: detail withheld by the http surface publisher"
+      ],
+      "platform": "js",
+      "roles": [
+        "server"
+      ],
+      "service": "example-api",
+      "sourceSets": {
+        "tests": "excluded"
+      },
+      "target": "http",
+      "tool": {
+        "name": "synthetic-surface",
+        "version": "0.0.0"
+      }
+    },
+    {
+      "facts": [
+        {
+          "channel": "/api/orders/{}",
+          "dynamic": false,
+          "kind": "route-contract",
+          "method": "GET",
+          "operationId": "getOrder",
+          "pathAnchor": "root",
+          "symbol": {
+            "qualifiedName": "getOrder"
+          }
+        },
+        {
+          "channel": "/api/orders",
+          "dynamic": false,
+          "kind": "route-contract",
+          "method": "POST",
+          "operationId": "createOrder",
+          "pathAnchor": "root",
+          "symbol": {
+            "qualifiedName": "createOrder"
+          }
+        },
+        {
+          "channel": "/api/orders/{}",
+          "dynamic": false,
+          "kind": "route-contract",
+          "method": "DELETE",
+          "operationId": "cancelOrder",
+          "pathAnchor": "root",
+          "symbol": {
+            "qualifiedName": "cancelOrder"
+          }
+        }
+      ],
+      "generatedAt": "2026-09-28T00:00:00Z",
+      "limitations": [],
+      "platform": "openapi",
+      "roles": [
+        "server"
+      ],
+      "service": "example-api",
+      "target": "http",
+      "tool": {
+        "name": "synthetic-surface-openapi",
+        "version": "0.0.0"
+      }
+    }
+  ],
+  "exporter": {
+    "name": "isthmus",
+    "version": "0.9.0"
+  },
+  "format": "isthmus-http-surface",
+  "name": "example-api",
+  "privacy": {
+    "handlers": "opaque",
+    "limitations": "prefix-only"
+  },
+  "revision": "v2.3",
+  "version": 1
+}

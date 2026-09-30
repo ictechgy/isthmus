@@ -10,6 +10,9 @@ isthmus diff --http --before <server/spec.json...> --after <server/spec.json...>
 # workspace 모드: base와 head의 isthmus-workspace 매니페스트
 isthmus diff --http --before base.workspace.json --after head.workspace.json \
   [--fail-on <tokens>] [--strict] [--compact]
+
+# 조직 경계: 다른 조직이 게시한 http surface 두 릴리스(HTTP-SURFACE.md)
+isthmus diff --http --before api-2.3.surface.json --after api-2.4.surface.json [--clients <client.json...>] …
 ```
 
 한 서버(또는 스펙)의 http 표면을 두 시점에서 비교하고, **base에서 결합하던 클라이언트 호출이 head에서
@@ -74,6 +77,10 @@ diff 도구를 함께 쓴다. 조인·귀속·매칭 규칙은 [GRAPH-EXCHANGE�
 - scope는 매니페스트 없는 귀속 규칙 그대로다: 선언 측 service 문자열(없으면 `default`). base와 head의 scope는
   이름으로 짝짓는다. service가 바뀌면 옛 scope의 route는 삭제, 새 scope의 route는 추가로 보이고 옛 scope에
   결합하던 호출은 head에서 귀속되지 않아 `-unverified` 깨짐이 된다.
+- **surface artifact**: `--before`·`--after`에 [`isthmus-http-surface`](HTTP-SURFACE.md) 파일을 하나씩 주면 그 선언 측 문서가
+  base·head다. 두 artifact의 `name`이 같아야 하고, artifact에는 project가 없으므로 project 일치는 `--clients` 문서끼리만
+  본다. 출력은 `project`(호출 측이 있을 때) 옆에 `surface: {name, before: {revision, sha256}, after: {revision, sha256}}`를 싣는다
+  (sha256은 CLI가 읽은 파일로 계산한다). 한쪽만 artifact면 2다.
 
 ### workspace 모드
 
@@ -109,6 +116,11 @@ diff 도구를 함께 쓴다. 조인·귀속·매칭 규칙은 [GRAPH-EXCHANGE�
 - member 문서 중 persistence·sql 문서는 매니페스트를 여러 명령이 같이 쓰므로 받되 이 비교에 쓰지 않는다. bridge
   target 문서는 거부한다. 문서의 `project`는 자기 member의 `project`와 같아야 한다.
 - head 매니페스트에서 어느 link에도 client로 들지 않은 member의 client http 문서는 `http-member-unlinked`다.
+- **surface member**(`{name, surface: {path, sha256}}`, [HTTP-SURFACE](HTTP-SURFACE.md#가져오기)): link의 server·contract
+  member가 surface면 CLI가 고정한 sha256과 파일을 대조하고(다르면 2) 그 선언 측 문서를 쓴다. 두 매니페스트에서 그 member는
+  모두 surface여야 하고 artifact `name`이 같아야 한다(문서 member의 같은 project 규칙에 대응한다). 요약 member는
+  `{name, surface: {name, revision, sha256}}`다. base 매니페스트에서는 link의 server·contract surface만 읽는다.
+- `libraries`는 매니페스트를 trace와 같이 쓰도록 검증만 하고 쓰지 않는다 — 깨짐은 SDK(provider) 호출부에서 보고한다.
 - 입력 오류 문구는 경로 대신 순번을 싣는다. surface는 `--before`·`--after`·`--clients` 순서, workspace는 base 매니페스트의
   server·contract member 문서(member 순서) 다음 head 매니페스트의 모든 member 문서 순서다.
 
@@ -291,7 +303,8 @@ registration-order 문서([GRAPH-EXCHANGE 디스패치 모델](GRAPH-EXCHANGE.md
 ## 범위와 남은 일
 
 - 구현: surface·workspace 모드, 교차 평가, finding 20종, `--fail-on`·`--strict`, registration-order 순서 변화
-  ([위](#등록-순서-registration-order)), 합성 fixture(`fixtures/http-diff/`).
+  ([위](#등록-순서-registration-order)), 조직 경계 surface(artifact 두 개·surface member), 합성 fixture(`fixtures/http-diff/`,
+  `fixtures/http-surface/client/`의 before·after 매니페스트).
 - 판정하지 않는 것: 필드·query·헤더 호환성, narrowed 조건 변화, 핸들러 심볼 교체(같은 키 중복 decl의 순서만 바뀌어
   다른 핸들러가 받는 경우 포함 — route 신원이 같다), dynamic 선언 공백의 스코프(dynamic 선언은 여전히 그 측 전체의 공백이다).
 - MCP에는 노출하지 않는다(MCP `diff`는 bridge 전용 그대로). 노출은 trace·`--pairs`와 함께 출력 상한을 정할 때 결정한다.

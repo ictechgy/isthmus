@@ -24,6 +24,7 @@ import {
   runRetentionsCommand,
 } from './retentions-command.ts';
 import { runServeCommand, serveUsage } from './serve-command.ts';
+import { runSurfaceCommand, surfaceUsage } from './surface-command.ts';
 
 process.stdout.on('error', handleStreamError);
 process.stderr.on('error', handleStreamError);
@@ -36,6 +37,7 @@ const commandUsages = new Map([
   ['impact', impactUsage],
   ['preflight', preflightUsage],
   ['trace', traceUsage],
+  ['surface', surfaceUsage],
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
   ['serve', serveUsage],
@@ -52,6 +54,7 @@ Commands:
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
   trace        Follow a route, relation, symbol, or file to DB and client impact candidates
+  surface      Export a server http surface for clients in another organization
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
   diff         Compare bridge observations (or --http route surfaces) before and after a change
@@ -174,6 +177,8 @@ async function dispatchCommand(
       return runPreflightCommand(commandArguments, readTextFile);
     case 'trace':
       return runTraceCommand(commandArguments, readTextFile);
+    case 'surface':
+      return runSurfaceCommand(commandArguments, readTextFile, await readPackageVersion());
     case 'verify-runtime':
       return runRuntimeCommand(commandArguments, readTextFile);
     case 'extract-js':

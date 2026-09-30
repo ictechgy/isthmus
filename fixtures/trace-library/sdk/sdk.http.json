@@ -1,0 +1,56 @@
+{
+  "facts": [
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders/{}",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 9,
+        "line": 21,
+        "path": "sdk/src/main/kotlin/com/example/sdk/internal/OrdersClient.kt"
+      },
+      "method": "GET",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "com.example.sdk.internal.OrdersClient#get",
+        "usr": "kt:com.example.sdk.internal.OrdersClient#get(String)"
+      }
+    },
+    {
+      "authority": "api.example.com",
+      "channel": "/api/orders",
+      "dynamic": false,
+      "kind": "route-call",
+      "location": {
+        "column": 9,
+        "line": 33,
+        "path": "sdk/src/main/kotlin/com/example/sdk/internal/OrdersClient.kt"
+      },
+      "method": "POST",
+      "pathAnchor": "root",
+      "symbol": {
+        "qualifiedName": "com.example.sdk.internal.OrdersClient#create",
+        "usr": "kt:com.example.sdk.internal.OrdersClient#create(Order)"
+      }
+    }
+  ],
+  "format": "bridge-facts",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/orders-sdk",
+  "roles": [
+    "client"
+  ],
+  "service": "example-api",
+  "sourceSets": {
+    "tests": "excluded"
+  },
+  "target": "http",
+  "tool": {
+    "name": "synthetic-library",
+    "version": "0.0.0"
+  },
+  "version": 1
+}

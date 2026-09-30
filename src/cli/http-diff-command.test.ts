@@ -81,7 +81,7 @@ test('입력 구성 오류는 원인 문구와 코드 2이고 stdout을 비운�
   const cases: Array<[string[], Record<string, string>, RegExp]> = [
     [[...workspace, '--clients', '/fx/surface/clients.json'], {}, /remove --clients/],
     [['diff', '--http', '--before', '/fx/workspace/before.workspace.json', '--after', '/fx/surface/after.server.json'], {},
-      /two workspace manifests or two document lists/],
+      /two workspace manifests, two http surfaces or two document lists/],
     [['diff', '--http', '--before', '/fx/missing.json', '--after', '/fx/surface/after.server.json'], {}, /Unable to read the before input/],
     [['diff', '--http', '--before', '/fx/surface/before.server.json', '--after', '/fx/bad.json'], { 'bad.json': '{' },
       /after input is not valid JSON/],

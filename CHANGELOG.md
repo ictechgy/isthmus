@@ -4,6 +4,38 @@
 
 ## [Unreleased]
 
+### Added — 조직 경계: http surface와 공유 SDK library (Phase 7a)
+
+- **`isthmus-http-surface` v1**([HTTP-SURFACE](docs/HTTP-SURFACE.md)): 한 workspace 매니페스트로 묶을 수 없는 조직(서버·클라이언트
+  저장소 권한이 다름)을 위한 자기 완결 서버 표면이다. 선언 측 bridge-facts의 부분집합이라 새 매칭 규칙이 없고, 가져오는 쪽이 같은
+  파서로 검증한다. 내용 `digest`(digest를 뺀 정규 JSON의 SHA-256, 서명 아님)와 `revision`·`exporter`·`privacy`를 싣는다.
+  `continuation`은 v1에서 `"opaque"`만 받는다(게시자의 정방향·DB 분석은 싣지 않는다).
+- **`isthmus surface export`**: 서버·스펙 문서 목록 또는 `--workspace`·`--member`에서 surface를 만든다. 위치(핸들러 소스 경로)·
+  핸들러 이름·문서 project·route-call(BFF가 부르는 서비스)·테스트 소스·dynamic 원문·router group 이름은 싣지 않는다. 핸들러는
+  불투명 토큰(`h1`…)으로 묶고, `--include-handler-usrs`면 usr만 더한다. 한계는 서버·계약 측 공백 접두사만 싣고 기본은
+  `<접두사> detail withheld by the http surface publisher`(`--include-limitation-text`면 원문)다. 만든 artifact는 가져오는 쪽
+  파서로 다시 검증한다.
+- **surface member**(`{name, surface: {path, sha256}}`): trace context와 `isthmus-workspace` 매니페스트의 link `server`·
+  `contract.member` 자리에 쓸 수 있다. CLI가 파일 sha256을 대조하고(다르면 2) digest·계약을 검증한다. trace는 surface가 선언한
+  route에서 **`server-surface-opaque`** gap으로 멈추고(usr 공개 시 gap `symbol`과 도달 근거 없는 핸들러 hop), 그 member에
+  `handler-without-symbol`·정방향 `analysis-missing`·`persistence-unscanned`를 더하지 않는다. surface member는 선택·`fileSymbols`·
+  library가 가리킬 수 없다.
+- **`diff --http`와 surface**: workspace 모드에서 surface member의 두 릴리스를 비교한다(두 시점 모두 surface이고 artifact 이름이
+  같아야 한다). `--before`·`--after`에 surface artifact를 하나씩 주는 surface 모드도 받는다 — project 일치는 `--clients`끼리만
+  보고 출력에 `surface: {name, before, after}`(revision·sha256)를 싣는다. 두 시점의 입력 종류가 섞이면 2다(이전 문구 "two
+  workspace manifests or two document lists"는 "two workspace manifests, two http surfaces or two document lists"로 바뀌었다).
+- **workspace `libraries`**([TRACE](docs/TRACE.md#library-공유-sdk-저장소)): 공유 SDK 저장소(provider, route-call을 담은 client
+  member)와 그 SDK를 쓰는 앱(consumer)의 선언이다. trace는 SDK 호출의 역방향 영향에서 consumer의 역방향 분석으로 이어 가
+  호출 hop에 `consumers`(`entries`·`affected`·`notInConsumerGraph`·`notPublic`)를 싣는다. id는 `ids: "shared"`(같은 문자열,
+  선택 `publicSymbols`) 또는 `"symbol-map"`(대응표)으로만 맞추고, 생략하면 입력 오류다. consumer 분석이 root로 받지 않은 id는
+  **`library-continuation-unrooted`**, provider가 아는 SDK id가 하나도 consumer 그래프에 없으면 **`library-ids-unmatched`**다.
+  root-not-found는 생산자가 밝힌 "노드 없음"이라 개수만 싣는다. v1은 한 단계만 잇는다(provider이면서 consumer인 member는 입력
+  오류). library consumer는 bridge-facts 문서 없이 분석만 가질 수 있다.
+- **출력 호환**: surface member·library가 없는 입력의 trace·`diff --http` 출력은 바이트 단위로 같다. MCP `trace`는 같은 context를
+  읽는다(새 도구 없음).
+- **합성 fixture**: `fixtures/http-surface/`(서버 조직 문서 두 릴리스, 내보낸 surface, 클라이언트 조직 trace context·diff
+  매니페스트), `fixtures/trace-library/`(surface로 가져온 API, SDK provider, `shared`·`symbol-map` consumer 앱 둘).
+
 ### Added — platform `python`과 `registration-order` 디스패치 (Phase 6 소비자)
 
 - **platform `python`**([GRAPH-EXCHANGE](docs/GRAPH-EXCHANGE.md#platform-python-v1-확장)): pythograph 문서를 받는다. 이전

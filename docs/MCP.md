@@ -67,7 +67,10 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
   기본값(10·25)이나 인자 값으로 넘긴다. 상한은 목록마다 적용되고, 자른 곳은 보고서의 `truncation.omitted`에
   JSON 경로·원래 개수·남긴 개수로 적힌다(앞 1,000개까지, 전체 수는 `omittedLists`). `summary`와 `strict` 판정은 자르기 전 보고서 기준이다. 잘린 응답의
   짧은 목록을 "영향 없음"으로 읽지 않는다 — 더 보려면 selection을 좁힌 context로 다시 부르거나 상한을 올린다.
-  입력 context는 보통 `scripts/capture-trace.mjs`가 만든다(도구는 생산자를 실행하지 않는다).
+  입력 context는 보통 `scripts/capture-trace.mjs`가 만든다(도구는 생산자를 실행하지 않는다). context의 surface member·`libraries`
+  ([HTTP-SURFACE](HTTP-SURFACE.md), [TRACE](TRACE.md#library-공유-sdk-저장소))도 CLI와 같이 읽는다(surface 파일 sha256 대조 포함).
+- `surface export`와 `diff --http`는 도구로 열지 않았다. surface는 게시자가 CI에서 만들어 배포하는 artifact이고, `diff --http`는
+  bridge `diff` 도구와 입력 모양이 달라 출력 상한과 함께 따로 정한다.
 - `check --pairs`는 도구로 열지 않았다. 쌍 목록은 생산자 root를 뽑는 기계용 중간 산출물이고(capture가 쓴다) 전체
   project의 모든 매치를 한 번에 싣는다. 에이전트가 특정 relation·route의 양쪽 끝을 볼 때는 주체 하나로 좁혀지는
   `query relation:<name>`·`query route:…`가 같은 끝점을 준다([결정](API-IMPACT-PLAN.md#미결-결정)).

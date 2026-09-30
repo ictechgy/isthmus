@@ -6,6 +6,7 @@ import {
   analysisProject,
   normalizeTraceAnalysis,
   parseTraceContext,
+  parseWorkspaceManifest,
   TraceContextValidationError,
   type TraceAnalysisReference,
 } from './trace-context.ts';
@@ -274,4 +275,72 @@ test('선택하지 않은 파일·잘못된 플랫폼·중복·다른 선택의 
   const many = paths.map((path, index) => ({ path, platform: 'js',
     usrs: Array.from({ length: 10_000 }, (__, item) => `u${index}-${item}`) }));
   assert.throws(() => parseTraceContext({ ...context, selection: { files: paths }, fileSymbols: many }), /at most 100000 usrs/);
+});
+
+const libraryContext = JSON.parse(await readFile(new URL('../../fixtures/trace-library/context.json', import.meta.url), 'utf8'));
+
+test('surface member와 library 선언을 검증한다(문서 없는 consumer, 문서 없는 surface 계약)', () => {
+  const parsed = parseTraceContext(libraryContext);
+  const api = parsed.workspace!.members[0]!;
+  assert.deepEqual([api.name, api.project, api.revision, api.documents], ['api', undefined, undefined, []]);
+  assert.equal(api.surface?.path, '../http-surface/surfaces/example-api-2.4.surface.json');
+  assert.deepEqual(parsed.documents, ['sdk/sdk.http.json']);
+  assert.deepEqual(parsed.workspace!.libraries.map(({ name, ids, publicSymbols, symbolMap }) =>
+    [name, ids, publicSymbols?.length, symbolMap?.length]), [['app-a<-sdk', 'shared', 2, undefined], ['app-b<-sdk', 'symbol-map', undefined, 2]]);
+  const withContract = structuredClone(libraryContext);
+  withContract.links[0].contract = { member: 'api', authoritative: true };
+  assert.deepEqual(parseTraceContext(withContract).workspace!.links[0]!.contract, { member: 'api', authoritative: true });
+  const noLibraries = structuredClone(libraryContext);
+  delete noLibraries.libraries;
+  noLibraries.members = noLibraries.members.filter(({ name }: any) => name === 'api' || name === 'sdk');
+  assert.deepEqual(parseTraceContext(noLibraries).workspace!.libraries, []);
+});
+
+test('잘못된 surface member·library 선언을 원인과 함께 거부한다', () => {
+  const cases: Array<[(value: any) => void, RegExp]> = [
+    [(value) => { value.members[0].project = '/work/server'; }, /takes only name and surface/],
+    [(value) => { value.members[0].surface = 'x.json'; }, /\{path, sha256\}/],
+    [(value) => { value.members[0].surface.revision = 'v1'; }, /\{path, sha256\}/],
+    [(value) => { value.members[0].surface.sha256 = 'ABC'; }, /lowercase hex sha256/],
+    [(value) => { value.members[0].surface.path = 'sdk/sdk.http.json'; }, /surface path must be listed once/],
+    [(value) => { value.members[1].analyses[0].path = value.members[0].surface.path; }, /document, an analysis or a surface/],
+    [(value) => { value.links[0].contract = { member: 'api', documents: ['x.json'] }; }, /takes no documents/],
+    [(value) => { value.links[0].client = 'api'; }, /cannot be a surface member/],
+    [(value) => { value.selection = { symbols: [{ member: 'api', platform: 'js', usr: 'ts:a' }] }; }, /imported http surface/],
+    [(value) => { value.libraries = {}; }, /libraries must be a list/],
+    [(value) => { value.libraries[0].extra = 1; }, /Invalid workspace library entry/],
+    [(value) => { value.libraries[0].consumer = 'api'; }, /two different document members/],
+    [(value) => { value.libraries[0].consumer = 'sdk'; }, /two different document members/],
+    [(value) => { value.libraries[0].name = ''; }, /library name/],
+    [(value) => { value.libraries[1].name = 'app-a<-sdk'; }, /library names must be unique/],
+    [(value) => { value.libraries[1].consumer = 'app-a'; }, /pair once/],
+    [(value) => { value.libraries.push({ name: 'chain', consumer: 'sdk', provider: 'app-a', ids: 'shared' }); },
+      /library chains are not followed/],
+    [(value) => { delete value.libraries[0].ids; }, /never lined up by guesswork/],
+    [(value) => { value.libraries[0].symbolMap = value.libraries[1].symbolMap; }, /takes no symbolMap/],
+    [(value) => { value.libraries[0].publicSymbols = []; }, /publicSymbols must be a non-empty list/],
+    [(value) => { value.libraries[0].publicSymbols = ['a', 'a']; }, /publicSymbols must be a non-empty list/],
+    [(value) => { value.libraries[1].publicSymbols = ['a']; }, /symbolMap lists the public API/],
+    [(value) => { value.libraries[1].symbolMap = []; }, /non-empty symbolMap/],
+    [(value) => { value.libraries[1].symbolMap = [{ provider: 'a' }]; }, /\{provider, consumer\} strings/],
+    [(value) => { value.libraries[1].symbolMap.push({ ...value.libraries[1].symbolMap[0], consumer: 'other' }); },
+      /provider ids must be unique/],
+    [(value) => { value.libraries = []; }, /only library consumers may have none/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const value = structuredClone(libraryContext);
+    mutate(value);
+    assert.throws(() => parseTraceContext(value), pattern, pattern.source);
+  }
+});
+
+test('매니페스트도 surface member와 library를 같은 코드로 받는다', () => {
+  const manifest = { format: 'isthmus-workspace', version: 1,
+    members: libraryContext.members.map(({ analyses: _analyses, ...member }: any) => member),
+    links: libraryContext.links, libraries: libraryContext.libraries };
+  const parsed = parseWorkspaceManifest(manifest);
+  assert.equal(parsed.libraries.length, 2);
+  assert.deepEqual(parsed.documents, ['sdk/sdk.http.json']);
+  assert.throws(() => parseWorkspaceManifest({ ...manifest, members: [...manifest.members.slice(0, 1),
+    { name: 'api', surface: manifest.members[0].surface }] }), /names must be unique/);
 });

@@ -1,7 +1,8 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeFact, BridgeFactsDocument } from '../exchange/parse.ts';
 import { isBridgeDomainDocument } from '../exchange/parse.ts';
-import type { TraceContext, TraceLink, TraceLinkMatch, TraceMember } from '../exchange/trace-context.ts';
+import type { ImportedHttpSurface } from '../exchange/http-surface.ts';
+import type { TraceContext, TraceLink, TraceLinkContract, TraceLinkMatch, TraceMember } from '../exchange/trace-context.ts';
 import {
   compareLimitations,
   createRelationResolver,
@@ -34,6 +35,8 @@ export class TraceInputError extends Error {
 export interface TraceMemberInput {
   readonly key: string;
   readonly member?: TraceMember;
+  /** surface member면 가져온 artifact다. 그 선언 측 문서가 `documents`다. */
+  readonly surface?: ImportedHttpSurface;
   readonly documents: readonly BridgeFactsDocument[];
   /** 단일 project면 http를 포함한 전체 조인, workspace면 http 문서를 뺀 member 안 조인이다. */
   readonly joined: BridgeJoinResult;
@@ -75,13 +78,19 @@ export interface PreparedTrace {
   readonly unlinkedDocuments: readonly TraceUnlinkedDocuments[];
 }
 
+/** surface member 이름 → 가져온 artifact다. CLI가 파일 sha256을 대조하고 검증해 넘긴다. */
+export type TraceSurfaces = ReadonlyMap<string, ImportedHttpSurface>;
+
 /**
  * context와 읽은 문서로 member·scope·한계를 준비한다.
  *
- * workspace면 `documents`는 context의 member 문서 순서(`context.documents`)를 그대로 따라야 한다.
+ * workspace면 `documents`는 context의 member 문서 순서(`context.documents`)를 그대로 따라야 하고, surface member마다
+ * `surfaces`에 가져온 artifact가 있어야 한다.
  */
-export function prepareTraceInputs(context: TraceContext, documents: readonly BridgeFactsDocument[]): PreparedTrace {
-  return context.workspace === undefined ? prepareSingle(context.project!, documents) : prepareWorkspace(context, documents);
+export function prepareTraceInputs(context: TraceContext, documents: readonly BridgeFactsDocument[],
+  surfaces: TraceSurfaces = new Map()): PreparedTrace {
+  return context.workspace === undefined ? prepareSingle(context.project!, documents)
+    : prepareWorkspace(context, documents, surfaces);
 }
 
 /** 단일 project 입력이다. 기존 출력 바이트를 바꾸지 않도록 조인 하나를 그대로 쓴다. */
@@ -104,13 +113,15 @@ function prepareSingle(project: string, documents: readonly BridgeFactsDocument[
 }
 
 /** workspace 입력이다. member마다 persistence 조인, link마다 http 조인을 한다. */
-function prepareWorkspace(context: TraceContext, documents: readonly BridgeFactsDocument[]): PreparedTrace {
+function prepareWorkspace(context: TraceContext, documents: readonly BridgeFactsDocument[], surfaces: TraceSurfaces): PreparedTrace {
   const { members, links } = context.workspace!;
   if (documents.length !== context.documents.length) {
     throw new TraceInputError('Workspace trace documents must follow the context member document order.');
   }
   const byPath = new Map(context.documents.map((path, index) => [path, documents[index]!]));
-  const states = members.map((member) => memberInput(member, member.documents.map((path) => byPath.get(path)!)));
+  const states = members.map((member) => member.surface === undefined
+    ? memberInput(member, member.documents.map((path) => byPath.get(path)!))
+    : surfaceInput(member, surfaces.get(member.name)));
   const byName = new Map(states.map((state) => [state.key, state]));
   const scopes: TraceLinkedScope[] = [];
   const linkServiceIssues: TraceLinkServiceIssue[] = [];
@@ -147,6 +158,16 @@ function unlinkedDocuments(states: readonly TraceMemberInput[],
 }
 
 /**
+ * surface member의 입력이다. 문서는 artifact가 준 선언 측 http 문서뿐이라 member 안 조인(persistence)은 비어 있다.
+ * artifact 문서의 project는 isthmus가 만든 내부 값이라 member project 검사를 하지 않는다.
+ */
+function surfaceInput(member: TraceMember, surface: ImportedHttpSurface | undefined): TraceMemberInput {
+  if (surface === undefined) throw new TraceInputError('Every surface member needs its imported http surface.');
+  return { key: member.name, member, surface, documents: surface.documents, joined: joinTrace([]),
+    resolver: createRelationResolver([]) };
+}
+
+/**
  * workspace member 문서의 공통 검사다: 문서 project가 member project와 같고 bridge target 문서가 없어야 한다.
  * trace와 `diff --http`의 workspace 모드가 같은 규칙을 쓴다.
  */
@@ -179,7 +200,7 @@ function memberInput(member: TraceMember, documents: readonly BridgeFactsDocumen
 function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput>,
   byPath: ReadonlyMap<string, BridgeFactsDocument>, issues: TraceLinkServiceIssue[],
   covered: { server: Set<BridgeFactsDocument>; client: Set<BridgeFactsDocument> }): BridgeJoinResult {
-  const contracts = (link.contract?.documents ?? []).map((path) => byPath.get(path)!);
+  const contracts = linkContractDocuments(link.contract, (name) => members.get(name)!.documents, (path) => byPath.get(path)!);
   const servers = linkServerDocuments(link, members.get(link.server)!.documents);
   const clients = members.get(link.client)!.documents.filter(({ target }) => target === 'http');
   for (const document of [...servers, ...contracts]) covered.server.add(document);
@@ -196,6 +217,23 @@ function joinLink(link: TraceLink, members: ReadonlyMap<string, TraceMemberInput
 export function linkServerDocuments(link: TraceLink, documents: readonly BridgeFactsDocument[]): BridgeFactsDocument[] {
   return documents.filter((document) =>
     document.target === 'http' && (link.contract === undefined || document.platform !== 'openapi'));
+}
+
+/**
+ * link 계약 측 문서다. 문서 member는 link가 고른 문서 경로, surface member는 그 surface의 openapi 문서 전체다.
+ * surface에 openapi 문서가 없으면 계약을 선언한 link가 빈 계약을 쓰게 되므로 입력 오류다.
+ */
+export function linkContractDocuments(contract: TraceLinkContract | undefined,
+  memberDocuments: (name: string) => readonly BridgeFactsDocument[],
+  documentAt: (path: string) => BridgeFactsDocument): BridgeFactsDocument[] {
+  if (contract === undefined) return [];
+  if (contract.documents !== undefined) return contract.documents.map(documentAt);
+  const documents = memberDocuments(contract.member).filter(({ platform }) => platform === 'openapi');
+  if (documents.length === 0) {
+    throw new TraceInputError('A link contract names a surface member whose http surface carries no openapi document; '
+      + 'remove the contract or ask the publisher to include the spec.');
+  }
+  return documents;
 }
 
 /** link 하나를 조인한 결과와, 서비스 범위를 정하지 못했을 때의 설명이다. */

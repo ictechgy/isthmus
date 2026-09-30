@@ -40,6 +40,7 @@ verifyRuntime();
 verifyPreflight();
 verifyTrace();
 verifyWorkspaceTrace();
+verifyOrgBoundary();
 verifyServe();
 verifyExtractJs();
 verifyDoctorInit();
@@ -128,6 +129,38 @@ function verifyWorkspaceTrace() {
   const filesReport = JSON.parse(files.stdout);
   verify(files.status === 0 && filesReport.gaps.length === 0 && filesReport.notices[0]?.code === 'file-selection-coarse',
     'workspace trace files notice');
+}
+
+/**
+ * 조직 경계가 빌드된 CLI에서 끝까지 이어지는지 확인한다: 서버 문서를 `surface export`로 내보내면 서버 내부(위치·핸들러
+ * usr·호출·한계 원문)가 빠지고, 클라이언트 쪽 trace가 sha256을 고정한 surface를 server로 가져와 route에서 멈추며
+ * (`server-surface-opaque`), SDK library에서 두 consumer 앱으로 이어 가고, `diff --http`가 두 릴리스의 깨진 호출을 낸다.
+ */
+function verifyOrgBoundary() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
+  const server = ['server.http.json', 'api.openapi.json'].map((name) => fixture(`http-surface/server/release-2.4/${name}`));
+  const exported = run(['surface', 'export', '--name', 'example-api', '--revision', 'v2.4', ...server]);
+  verify(exported.status === 0 && exported.stdout === run(['surface', 'export', '--name', 'example-api', '--revision', 'v2.4',
+    ...server]).stdout, 'surface export deterministic success');
+  verify(!['src/routes', 'ts:api', 'billing.internal', '/work/example-server', 'plugin loader'].some((secret) =>
+    exported.stdout.includes(secret)) && JSON.parse(exported.stdout).format === 'isthmus-http-surface', 'surface export privacy');
+  verify(run(['surface', 'export', server[0]]).status === 64, 'surface export usage');
+  verify(run(['help', 'surface']).stdout.startsWith('Usage: isthmus surface export'), 'surface help');
+  const surfaceTrace = run(['trace', fixture('http-surface/client/context.json'), '--compact']);
+  const surfaceReport = JSON.parse(surfaceTrace.stdout);
+  verify(surfaceTrace.status === 0 && surfaceReport.gaps.map(({ code }) => code).join(',') === 'server-surface-opaque' &&
+    surfaceReport.workspace.members[0].surface?.revision === 'v2.4', 'surface trace opaque server');
+  verify(run(['trace', fixture('http-surface/client/context.json'), '--strict']).status === 1, 'surface trace strict');
+  const library = run(['trace', fixture('trace-library/context.json'), '--compact']);
+  const libraryReport = JSON.parse(library.stdout);
+  const consumers = libraryReport.chains.flatMap(({ routes }) => routes).flatMap(({ calls }) => calls)
+    .flatMap(({ consumers: hops }) => hops ?? []);
+  verify(library.status === 0 && consumers.some(({ member, affected }) => member === 'app-a' &&
+    affected.some(({ usr }) => usr === 'kt:com.example.appa.OrderScreen#load()')) && consumers.some(({ member, affected }) =>
+    member === 'app-b' && affected.some(({ usr }) => usr === 'kt:com.example.appb.CheckoutActivity#pay()')), 'library trace consumers');
+  const diff = run(['diff', '--http', '--before', fixture('http-surface/client/before.workspace.json'), '--after',
+    fixture('http-surface/client/after.workspace.json'), '--fail-on', 'error', '--compact']);
+  verify(diff.status === 1 && JSON.parse(diff.stdout).summary.provenBrokenCalls === 1, 'surface diff broken call');
 }
 
 /** 빌드 산출물의 변경 사전 점검이 증거·공백·종료 코드를 보존하는지 확인한다. */

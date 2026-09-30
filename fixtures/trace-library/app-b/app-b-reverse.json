@@ -1,0 +1,59 @@
+{
+  "direction": "dependents",
+  "format": "language-traversal",
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "limitations": [],
+  "platform": "kotlin",
+  "project": "/work/app-b",
+  "reached": [
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        0
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.appb.CartActivity#refresh",
+        "usr": "kt:com.example.appb.CartActivity#refresh()"
+      },
+      "via": "kt:shaded.orders.OrdersSdk#order(String)"
+    },
+    {
+      "depth": 1,
+      "relationships": [
+        "call"
+      ],
+      "roots": [
+        1
+      ],
+      "symbol": {
+        "qualifiedName": "com.example.appb.CheckoutActivity#pay",
+        "usr": "kt:com.example.appb.CheckoutActivity#pay()"
+      },
+      "via": "kt:shaded.orders.OrdersSdk#placeOrder(Order)"
+    }
+  ],
+  "revision": "b-2.1.0",
+  "roots": [
+    {
+      "id": "kt:shaded.orders.OrdersSdk#order(String)",
+      "symbol": {
+        "usr": "kt:shaded.orders.OrdersSdk#order(String)"
+      }
+    },
+    {
+      "id": "kt:shaded.orders.OrdersSdk#placeOrder(Order)",
+      "symbol": {
+        "usr": "kt:shaded.orders.OrdersSdk#placeOrder(Order)"
+      }
+    }
+  ],
+  "tool": {
+    "name": "synthetic-library",
+    "version": "0.0.0"
+  },
+  "truncated": false,
+  "version": 1
+}

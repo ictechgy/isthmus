@@ -14,6 +14,8 @@ import {
 import { HTTP_DIFF_CODES, type HttpDiffCode, type HttpDiffFinding } from '../report/http-diff-findings.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
 import { TraceInputError } from '../report/trace-inputs.ts';
+import { HTTP_SURFACE_FORMAT, type ImportedHttpSurface } from '../exchange/http-surface.ts';
+import { HttpSurfaceInputError, readHttpSurface } from './surface-input.ts';
 import {
   inputFailure,
   inputFailureResult,
@@ -28,8 +30,8 @@ import {
 /**
  * `isthmus diff --http` — 한 서버·스펙의 http route 표면을 두 시점에서 비교한다(docs/HTTP-DIFF.md).
  *
- * `--before`·`--after`가 각각 `isthmus-workspace` 매니페스트 하나면 workspace 모드, 아니면 문서 목록의 surface
- * 모드다. `--fail-on`·`--strict`에 걸린 finding이 있으면 1이다. 오타 난 토큰이 아무것도 막지 않는 CI가 되지 않게
+ * `--before`·`--after`가 각각 `isthmus-workspace` 매니페스트 하나면 workspace 모드, 각각 `isthmus-http-surface`
+ * artifact 하나면 artifact를 선언 측으로 쓰는 surface 모드, 아니면 문서 목록의 surface 모드다. `--fail-on`·`--strict`에 걸린 finding이 있으면 1이다. 오타 난 토큰이 아무것도 막지 않는 CI가 되지 않게
  * 모르는 토큰은 사용 오류 64다.
  */
 export async function runHttpDiffCommand(arguments_: readonly string[], readTextFile: ReadTextFile): Promise<CommandResult> {
@@ -50,8 +52,8 @@ export async function runHttpDiffCommand(arguments_: readonly string[], readText
 
 /** `diff --http`의 사용법이다. */
 export const httpDiffUsage =
-  'Usage: isthmus diff --http --before <server/spec.json...|base.workspace.json> '
-  + '--after <server/spec.json...|head.workspace.json> [--clients <client.json...>] '
+  'Usage: isthmus diff --http --before <server/spec.json...|base.surface.json|base.workspace.json> '
+  + '--after <server/spec.json...|head.surface.json|head.workspace.json> [--clients <client.json...>] '
   + '[--fail-on <code|error|warning|incomplete>[,...]] [--strict] [--compact]';
 
 /** `--fail-on` 토큰이다. finding 코드와 묶음 토큰 셋이다. */
@@ -157,8 +159,8 @@ function matchesFailOn(value: HttpDiffFinding, tokens: ReadonlySet<FailOnToken>)
 
 /** 모드를 가려 입력을 읽고 보고서를 만든다. */
 async function createReport(parsed: HttpDiffArguments, readTextFile: ReadTextFile): Promise<HttpDiffDocument> {
-  const manifests = await readManifests(parsed, readTextFile);
-  if (manifests === undefined) {
+  const kind = await inputKind(parsed, readTextFile);
+  if (kind.mode === 'documents') {
     const clients = parsed.clients ?? [];
     const documents = await readBridgeDocuments([...parsed.before, ...parsed.after, ...clients], readTextFile);
     return createHttpSurfaceDiff({
@@ -167,10 +169,11 @@ async function createReport(parsed: HttpDiffArguments, readTextFile: ReadTextFil
       clients: documents.slice(parsed.before.length + parsed.after.length),
     });
   }
+  if (kind.mode === 'surfaces') return readSurfaceArtifactDiff(parsed, readTextFile);
   if (parsed.clients !== undefined) {
     throw new HttpDiffInputError('Workspace mode takes client documents from the after manifest; remove --clients.');
   }
-  return readWorkspaceDiff(manifests, parsed, readTextFile);
+  return readWorkspaceDiff(kind.manifests, parsed, readTextFile);
 }
 
 /** 읽은 매니페스트 두 개와 그 텍스트 길이다. */
@@ -180,22 +183,43 @@ interface ManifestPair {
   readonly textLength: number;
 }
 
+/** 입력 모양이다: 문서 목록, surface artifact 두 개, workspace 매니페스트 두 개. */
+type InputKind =
+  | { readonly mode: 'documents' }
+  | { readonly mode: 'surfaces' }
+  | { readonly mode: 'workspace'; readonly manifests: ManifestPair };
+
 /**
- * `--before`·`--after`가 각각 경로 하나면 매니페스트인지 본다. 둘 다 매니페스트면 그 쌍을, 둘 다 아니면
- * undefined(surface)를 돌려준다. 한쪽만 매니페스트면 입력 구성 오류다.
+ * `--before`·`--after`가 각각 경로 하나면 매니페스트·surface artifact인지 본다. 둘 다 같은 종류면 그 모드를, 둘 다
+ * 문서면 문서 목록 모드를 돌려준다. 두 시점의 종류가 다르면 입력 구성 오류다.
  */
-async function readManifests(parsed: HttpDiffArguments, readTextFile: ReadTextFile): Promise<ManifestPair | undefined> {
-  if (parsed.before.length !== 1 || parsed.after.length !== 1) return undefined;
+async function inputKind(parsed: HttpDiffArguments, readTextFile: ReadTextFile): Promise<InputKind> {
+  if (parsed.before.length !== 1 || parsed.after.length !== 1) return { mode: 'documents' };
   const before = await readJsonFile(parsed.before[0]!, 'before', readTextFile);
   const after = await readJsonFile(parsed.after[0]!, 'after', readTextFile);
-  const isManifest = (value: unknown) => isJsonObject(value) && value.format === 'isthmus-workspace';
-  if (isManifest(before.value) !== isManifest(after.value)) {
-    throw new HttpDiffInputError('Compare two workspace manifests or two document lists; one side is an '
-      + 'isthmus-workspace manifest and the other is not.');
+  const kindOf = (value: unknown) => !isJsonObject(value) ? 'documents'
+    : value.format === 'isthmus-workspace' ? 'workspace' : value.format === HTTP_SURFACE_FORMAT ? 'surfaces' : 'documents';
+  const mode = kindOf(before.value);
+  if (mode !== kindOf(after.value)) {
+    throw new HttpDiffInputError('Compare two workspace manifests, two http surfaces or two document lists; the before and '
+      + 'after inputs are of different kinds.');
   }
-  if (!isManifest(before.value)) return undefined;
-  return { before: parseManifest(before.value, 'before'), after: parseManifest(after.value, 'after'),
-    textLength: before.length + after.length };
+  if (mode !== 'workspace') return { mode };
+  return { mode, manifests: { before: parseManifest(before.value, 'before'), after: parseManifest(after.value, 'after'),
+    textLength: before.length + after.length } };
+}
+
+/**
+ * base·head가 같은 서버 표면의 두 릴리스 artifact인 surface 모드다. artifact의 선언 측 문서를 `--clients`의 호출과 교차
+ * 평가한다. 파일은 명령줄로 직접 받으므로 고정할 sha256이 없고, 계산한 sha256을 출력 신원에 싣는다.
+ */
+async function readSurfaceArtifactDiff(parsed: HttpDiffArguments, readTextFile: ReadTextFile): Promise<HttpDiffDocument> {
+  const budget = { used: 0 };
+  const before = await readHttpSurface(parsed.before[0]!, 'the before http surface', undefined, readTextFile, budget);
+  const after = await readHttpSurface(parsed.after[0]!, 'the after http surface', undefined, readTextFile, budget);
+  const clients = await readBridgeDocuments(parsed.clients ?? [], readTextFile, budget.used);
+  return createHttpSurfaceDiff({ before: before.imported.documents, after: after.imported.documents, clients,
+    artifacts: { before, after } });
 }
 
 /** 매니페스트 하나를 검증한다. 원문 값 대신 시점 이름과 원인만 싣는다. */
@@ -239,30 +263,52 @@ async function readWorkspaceDiff(manifests: ManifestPair, parsed: HttpDiffArgume
   const beforePaths = declarationPaths(manifests.before);
   const afterPaths = manifests.after.members.flatMap(({ documents }) => documents);
   const locate = (manifest: string) => (path: string) => (isAbsolute(path) ? path : resolve(dirname(manifest), path));
+  const budget = { used: manifests.textLength };
+  const beforeSurfaces = await readSurfaces(manifests.before, declarationMembers(manifests.before), locate(parsed.before[0]!),
+    'before', readTextFile, budget);
+  const afterSurfaces = await readSurfaces(manifests.after, new Set(manifests.after.members.map(({ name }) => name)),
+    locate(parsed.after[0]!), 'after', readTextFile, budget);
   const documents = await readBridgeDocuments([...beforePaths.map(locate(parsed.before[0]!)),
-    ...afterPaths.map(locate(parsed.after[0]!))], readTextFile, manifests.textLength);
+    ...afterPaths.map(locate(parsed.after[0]!))], readTextFile, budget.used);
   return createHttpWorkspaceDiff(
-    snapshot(manifests.before, beforePaths, documents.slice(0, beforePaths.length)),
-    snapshot(manifests.after, afterPaths, documents.slice(beforePaths.length)),
+    snapshot(manifests.before, beforePaths, documents.slice(0, beforePaths.length), beforeSurfaces),
+    snapshot(manifests.after, afterPaths, documents.slice(beforePaths.length), afterSurfaces),
   );
+}
+
+/** link의 server·contract member 이름이다. */
+function declarationMembers(workspace: TraceWorkspace): Set<string> {
+  return new Set(workspace.links.flatMap(({ server, contract }) => [server, ...(contract === undefined ? [] : [contract.member])]));
 }
 
 /** link의 server·contract member가 가진 문서 경로다(member 순서, 중복 없음). */
 function declarationPaths(workspace: TraceWorkspace): string[] {
-  const names = new Set(workspace.links.flatMap(({ server, contract }) =>
-    [server, ...(contract === undefined ? [] : [contract.member])]));
+  const names = declarationMembers(workspace);
   return workspace.members.filter(({ name }) => names.has(name)).flatMap(({ documents }) => documents);
 }
 
+/** 고른 member 중 surface member의 artifact를 매니페스트가 고정한 sha256과 대조해 읽는다. */
+async function readSurfaces(workspace: TraceWorkspace, names: ReadonlySet<string>, locate: (path: string) => string,
+  snapshotName: 'before' | 'after', readTextFile: ReadTextFile, budget: { used: number }): Promise<Map<string, ImportedHttpSurface>> {
+  const surfaces = new Map<string, ImportedHttpSurface>();
+  const members = workspace.members.filter(({ name, surface }) => surface !== undefined && names.has(name));
+  for (const [index, member] of members.entries()) {
+    const loaded = await readHttpSurface(locate(member.surface!.path), `${snapshotName} http surface ${index + 1}`,
+      member.surface!.sha256, readTextFile, budget);
+    surfaces.set(member.name, loaded.imported);
+  }
+  return surfaces;
+}
+
 /** 경로와 읽은 문서를 짝지어 한 시점을 만든다. */
-function snapshot(workspace: TraceWorkspace, paths: readonly string[],
-  documents: readonly BridgeFactsDocument[]): HttpWorkspaceSnapshot {
-  return { workspace, documents: new Map(paths.map((path, index) => [path, documents[index]!])) };
+function snapshot(workspace: TraceWorkspace, paths: readonly string[], documents: readonly BridgeFactsDocument[],
+  surfaces: ReadonlyMap<string, ImportedHttpSurface>): HttpWorkspaceSnapshot {
+  return { workspace, documents: new Map(paths.map((path, index) => [path, documents[index]!])), surfaces };
 }
 
 /** 알려진 입력 실패를 원인 문구의 코드 2로 바꾼다. */
 function httpDiffFailure(error: unknown): CommandResult {
-  if (error instanceof HttpDiffInputError || error instanceof TraceInputError) {
+  if (error instanceof HttpDiffInputError || error instanceof TraceInputError || error instanceof HttpSurfaceInputError) {
     return inputFailure(`Http diff input violates its contract: ${error.message}\n`);
   }
   return inputFailureResult(error) ?? internalError();
