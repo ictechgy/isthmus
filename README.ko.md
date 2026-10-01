@@ -41,7 +41,7 @@ kartograph **0.18.1**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph 
 rustograph **0.4.1**, tsograph **0.2.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. 이전 npm 아카이브는 발행 당시의
 manifest를 유지한다. tsograph는 npm 0.10.0 발행 뒤 저장소 manifest에 더했으므로 그
-tarball에는 없고 0.11.0 후보에는 tsograph 0.2.0이 포함된다. MethodChannel 조인과 보존 근거 왕복은
+tarball에는 없고 0.11.0 tarball에는 tsograph 0.2.0이 포함된다. MethodChannel 조인과 보존 근거 왕복은
 cartograph 0.5.3 이상·dartograph 0.1.1 이상부터 지원하며, 이전 공개 세트
 (cartograph 0.15.1·dartograph 0.10.0·isthmus 0.6.0)로 왕복을 다시 확인했다.
 React Native 모듈·컴포넌트 사실(`module-import`↔`module-export`,

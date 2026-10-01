@@ -18,8 +18,9 @@
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
 세트다. 이후 0.8.0 + kartograph 0.12.0 설치 검증도 보존한다. npm 0.9.0의 원본은
 [v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
-세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표에서 tsograph를
-뺀 세트를 담는다 — tsograph 0.1.0 행은 npm 0.10.0 발행 뒤 저장소 manifest에만 더했고, npm은 재발행하지 않으며
+세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은
+[0.10.0 호환 갱신 절](#0100-호환-갱신-2026-09-30)의 당시 producer 버전 세트(tsograph 제외)를 담는다.
+tsograph 0.1.0 행은 npm 0.10.0 발행 뒤 저장소 manifest에만 더했고, npm은 재발행하지 않으며
 isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
