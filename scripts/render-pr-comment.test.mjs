@@ -20,6 +20,19 @@ const cli = join(root, 'dist', 'cli', 'main.js');
 /** 렌더러 스크립트 경로다. */
 const renderer = join(root, 'scripts', 'render-pr-comment.mjs');
 
+test('파일·진입점 보고는 이름·위치·종류를 안전하게 표시하고 행 상한을 지킨다', () => {
+  const trace = { format: 'isthmus-trace', version: 1, chains: [{ selector: { file: 'src/query.ts', member: 'app' },
+    entryPoints: [0, 1, 2].map((index) => ({ usr: `Page${index}<script>@all`, entries: ['page', 'server-action'],
+      location: { path: 'src/page.tsx' } })) }], gaps: [] };
+  const text = renderPrComment({ diff: syntheticDiff(), trace, meta: { trace: { mode: 'files' } } }, { maxRows: 1 });
+  assert.match(text, /src\/query\.ts/);
+  assert.match(text, /Entry points/);
+  assert.match(text, /src\/page\.tsx/);
+  assert.match(text, /server-action/);
+  assert.match(text, /\+2 more/);
+  assert.match(text, /`Page0<script>@all \[page,server-action\] \(src\/page\.tsx\)`/);
+});
+
 /** CLI로 fixture diff를 만든다. */
 function fixtureDiff(args) {
   const result = runChild(process.execPath, [cli, 'diff', '--http', ...args], { cwd: root });

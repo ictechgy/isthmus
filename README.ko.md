@@ -36,9 +36,9 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-**0.11.0**의 호환 producer 세트는 cartograph **0.23.1**,
+**0.12.0**의 호환 producer 세트는 cartograph **0.23.1**,
 kartograph **0.18.2**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph **0.9.1**,
-rustograph **0.4.1**, tsograph **0.2.0**이다 — 설치 명령·고정 예제·CI 예시는
+rustograph **0.4.1**, tsograph **0.3.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. 이전 npm 아카이브는 발행 당시의
 manifest를 유지한다. tsograph는 npm 0.10.0 발행 뒤 저장소 manifest에 더했으므로 그
 tarball에는 없고 0.11.0 tarball에는 tsograph 0.2.0이 포함된다. MethodChannel 조인과 보존 근거 왕복은
@@ -331,7 +331,7 @@ route-decl 핸들러에서 정방향 순회로 닿은 relation-use, persistence 
 그 DB 의존자까지 잇고, 그 route에 귀속된 호출에서 영향받는 클라이언트 심볼까지 잇는다.
 생산자가 `symbol.entries`를 신고하면(tsograph `impact --entry-points`) relation·심볼·파일 선택은 관찰된 페이지·서버
 액션을 `chains[].entryPoints`에 목격 경로·근거 등급과 함께 싣는다. HTTP route와 별도이며 page 표식이 RSC 렌더링을
-증명하지는 않는다. 이 선택적 확장은 새 소비자 구현이 필요하고 발행된 isthmus-cli 0.11.0은 입력 오류로 거부한다. relation·심볼은
+증명하지는 않는다. 이 선택적 확장은 isthmus-cli 0.12.0 이상이 지원하고 0.11.0은 입력 오류로 거부한다. relation·심볼은
 반대로 역방향 순회로 route 핸들러를 찾고 route와 클라이언트로 이어 간다. 파일은 그 파일에 놓인 모든 심볼을
 고른다(파일 단위 과대 근사, `--strict`를 실패시키지 않는 알림 `file-selection-coarse`). workspace에서는 persistence·언어 순회가 member 안에서만,
 http가 선언한 link에서만 이어지므로 테이블 변경이 다른 저장소의 클라이언트 코드까지 닿는다. 호출 member가 자기 route도

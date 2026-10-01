@@ -163,6 +163,33 @@ test('trace 실패는 meta.errors와 trace 상태에 싣는다', () => withTempo
   assert.equal(result.failed, true);
 }));
 
+test('파일 trace 실패도 파일 선택의 모드와 개수를 정확히 남긴다', () => withTemporaryDirectory((directory) => {
+  const context = join(directory, 'bad-context.json');
+  writeFileSync(context, JSON.stringify({ format: 'isthmus-trace-context', version: 1, project: '/elsewhere', documents: ['missing.json'],
+    selection: { routes: [{ method: 'GET', template: '/' }] } }));
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_TRACE_CONTEXT: context,
+    ISTHMUS_CI_TRACE_FILES: '["src/query.ts"]', ISTHMUS_CI_FAIL_ON: '' });
+  const result = runCiHttpImpact(env, { log: () => {} });
+  assert.equal(result.meta.trace.status, 'error');
+  assert.equal(result.meta.trace.mode, 'files');
+  assert.equal(result.meta.trace.selected, 1);
+  assert.equal(result.meta.trace.omittedRoutes, undefined);
+}));
+
+test('파일 선택은 non-info route가 있어도 우선하며 없는 파일은 공백으로 남긴다', () => withTemporaryDirectory((directory) => {
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_TRACE_CONTEXT: 'fixtures/trace/context.json',
+    ISTHMUS_CI_TRACE_FILES: '["missing.ts"]', ISTHMUS_CI_FAIL_ON: '' });
+  const result = runCiHttpImpact(env, { log: () => {} });
+  assert.equal(result.meta.trace.mode, 'files');
+  assert.equal(result.meta.trace.status, 'ran');
+  const context = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'trace-context.json'), 'utf8'));
+  assert.deepEqual(context.selection, { files: ['missing.ts'] });
+  const trace = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'trace.json'), 'utf8'));
+  assert.ok(trace.gaps.some(({ code }) => code === 'file-without-symbols'));
+}));
+
 test('입력 오류와 비어 있지 않은 출력 디렉터리는 출력 없이 실패한다', () => withTemporaryDirectory((directory) => {
   const lines = [];
   const both = runCiHttpImpact(actionEnvironment(directory, { ISTHMUS_CI_CAPTURE_CONFIG: 'c.json', ISTHMUS_CI_BEFORE: 'b.json' }),
@@ -212,6 +239,111 @@ test('rewriteCaptureConfig: 상대 root·출력·trace·선택을 바꾸고 예�
   assert.throws(() => rewriteCaptureConfig({ ...config, roots: { [OUTPUT_ROOT_NAME]: '/x' } }, options), CiStepError);
   assert.throws(() => rewriteCaptureConfig({ format: 'isthmus-workspace' }, options), CiStepError);
   assert.throws(() => rewriteCaptureConfig({ ...config, roots: [] }, options), CiStepError);
+});
+
+test('파일 영향: JSON 선택을 검증하고 capture의 2단계 root 수집과 fileSymbols를 보존한다', () => {
+  const files = [{ member: 'server', path: 'src/query.ts' }];
+  const env = { ISTHMUS_CI_BEFORE: 'a.json', ISTHMUS_CI_AFTER: 'b.json', ISTHMUS_CI_TRACE_FILES: JSON.stringify(files) };
+  assert.deepEqual(parseInputs(env).traceFiles, files);
+  assert.equal(parseInputs({ ...env, ISTHMUS_CI_TRACE_FILES: '[]' }).traceFiles, undefined);
+  for (const value of ['broken', '{}', '[1]', '["../private.ts"]', '["/outside.ts"]', '["a\\\\b.ts"]',
+    '[{"member":"s","path":"a.ts","extra":true}]', '[{"member":"","path":"a.ts"}]',
+    JSON.stringify(Array(1001).fill('a.ts'))]) {
+    assert.throws(() => parseInputs({ ...env, ISTHMUS_CI_TRACE_FILES: value }), CiStepError);
+  }
+  const config = { format: 'isthmus-trace-capture', roots: { repo: '.' }, members: [] };
+  assert.deepEqual(rewriteCaptureConfig(config, { repositoryPath: '/checkout', outputRoot: '/out', side: 'base', files }).selection,
+    { files });
+  const context = { format: 'isthmus-trace-context', documents: ['schema.json'], analyses: [],
+    fileSymbols: [{ path: 'src/query.ts', platform: 'js', usrs: ['query'] }], selection: { routes: [] } };
+  const retargeted = retargetTraceContext(context, '/ctx', [], files);
+  assert.deepEqual(retargeted.selection, { files });
+  assert.deepEqual(retargeted.fileSymbols, context.fileSymbols);
+  assert.deepEqual(retargeted.documents, ['/ctx/schema.json']);
+});
+
+test('파일 영향: API 표면 변화가 없어도 실제 CLI로 페이지·액션까지 보고한다', () => withTemporaryDirectory((directory) => {
+  const fixture = join(root, 'fixtures/trace');
+  const context = JSON.parse(readFileSync(join(fixture, 'context.json'), 'utf8'));
+  context.documents = context.documents.map((path) => join(fixture, path));
+  context.analyses = context.analyses.map((reference) => ({ ...reference, path: join(fixture, reference.path) }));
+  context.fileSymbols = [{ path: 'server/db/users.ts', platform: 'js', usrs: ['ts:repo/users.findById'] }];
+  const reverse = JSON.parse(readFileSync(join(fixture, 'server-reverse.json'), 'utf8'));
+  reverse.reached = ['page', 'server-action'].map((kind) => ({ symbol: { usr: `ts:entry/${kind}`, entries: [kind] },
+    via: 'ts:repo/users.findById', depth: 1, roots: [1], evidence: 'bound' }));
+  const reversePath = join(directory, 'reverse.json');
+  writeFileSync(reversePath, JSON.stringify(reverse));
+  context.analyses.find(({ id }) => id === 'server-reverse').path = reversePath;
+  const contextPath = join(directory, 'context.json');
+  writeFileSync(contextPath, JSON.stringify(context));
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/before.server.json', ISTHMUS_CI_TRACE_CONTEXT: contextPath,
+    ISTHMUS_CI_TRACE_FILES: '["server/db/users.ts"]', ISTHMUS_CI_FAIL_ON: '' });
+  const result = runCiHttpImpact(env, { log: () => {} });
+  assert.equal(result.failed, false, JSON.stringify(result.meta.errors));
+  assert.equal(result.meta.trace.mode, 'files');
+  const trace = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'trace.json'), 'utf8'));
+  assert.equal(trace.summary.entryPoints, 2);
+  const comment = readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'comment.md'), 'utf8');
+  assert.match(comment, /server\/db\/users\.ts/);
+  assert.match(comment, /Entry points/);
+  assert.match(comment, /server-action/);
+}));
+
+test('capture 파일 모드는 양쪽 HTTP 문서를 보존하고 목록·fileSymbols·진입점까지 연결한다', () => withTemporaryDirectory((directory) => {
+  const demo = makeDemoRepository(join(directory, 'repo'));
+  const configPath = join(demo.path, '.isthmus/capture.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const listing = JSON.parse(readFileSync(join(root, 'scripts/fixtures/capture-trace/listing.tsograph-graph.json'), 'utf8'));
+  listing.project = demo.path;
+  const reversePath = join(demo.path, 'facts/server-reverse.json');
+  const reverse = JSON.parse(readFileSync(reversePath, 'utf8'));
+  reverse.reached.push({ symbol: { usr: 'ts:entry/Profile', entries: ['page'] },
+    via: 'ts:repo/users.findById', depth: 1, roots: [1], evidence: 'bound' });
+  reverse.reached.sort((a, b) => a.depth - b.depth || (a.symbol.usr < b.symbol.usr ? -1 : 1));
+  writeFileSync(reversePath, JSON.stringify(reverse));
+  writeFileSync(join(demo.path, 'facts/listing.json'), JSON.stringify(listing));
+  config.members[0].listings = [{ platform: 'js', precomputed: { root: 'repo', path: 'facts/listing.json' } }];
+  writeFileSync(configPath, JSON.stringify(config));
+  git(demo.path, ['add', 'facts', '.isthmus']); git(demo.path, ['commit', '-qm', 'file capture setup']);
+  const head = git(demo.path, ['rev-parse', 'HEAD']);
+  const env = actionEnvironment(directory, { GITHUB_WORKSPACE: demo.path, ISTHMUS_CI_CAPTURE_CONFIG: '.isthmus/capture.json',
+    ISTHMUS_CI_BASE_SHA: demo.head, ISTHMUS_CI_HEAD_SHA: head,
+    ISTHMUS_CI_TRACE_FILES: '["server/db/users.ts"]', ISTHMUS_CI_FAIL_ON: '' });
+  // 양쪽에 목록·진입점을 준비한 뒤 HTTP 추가만 head에 두어 파일 선택이 HTTP 문서를 줄이지 않는지 검증한다.
+  const serverPath = join(demo.path, 'facts/server.http.json');
+  const server = JSON.parse(readFileSync(serverPath, 'utf8'));
+  server.facts.push({ ...server.facts[0], channel: '/api/additional', symbol: { qualifiedName: 'extra', usr: 'ts:extra' } });
+  writeFileSync(serverPath, JSON.stringify(server));
+  git(demo.path, ['add', 'facts/server.http.json']); git(demo.path, ['commit', '-qm', 'HTTP change']);
+  env.ISTHMUS_CI_BASE_SHA = head; env.ISTHMUS_CI_HEAD_SHA = git(demo.path, ['rev-parse', 'HEAD']);
+  const result = runCiHttpImpact(env, { log: () => {} });
+  assert.deepEqual(result.meta.errors, []);
+  assert.equal(result.meta.trace.mode, 'files');
+  const diff = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'diff.json'), 'utf8'));
+  assert.ok(diff.summary.routesAdded > 0);
+  for (const side of ['base', 'head']) {
+    const capture = join(env.ISTHMUS_CI_OUTPUT_DIR, 'capture', side);
+    const manifest = JSON.parse(readFileSync(join(capture, 'capture-manifest.json'), 'utf8'));
+    assert.ok(manifest.fileSelection.some((entry) => entry.source === 'listing' && entry.symbols > 0));
+    const context = JSON.parse(readFileSync(join(capture, 'trace-context.json'), 'utf8'));
+    assert.ok(context.fileSymbols.some((entry) => entry.path === 'server/db/users.ts'));
+    const source = JSON.parse(git(demo.path, ['show', `${side === 'base' ? head : env.ISTHMUS_CI_HEAD_SHA}:facts/server.http.json`]));
+    const document = context.documents.find((path) => path.endsWith('/server.http.json'));
+    assert.deepEqual(JSON.parse(readFileSync(join(capture, document), 'utf8')).facts, source.facts);
+  }
+  const trace = JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'trace.json'), 'utf8'));
+  assert.equal(trace.chains[0].entryPoints[0].usr, 'ts:entry/Profile');
+}));
+
+test('workspace의 fileSymbols 경로는 context 디렉터리가 아닌 member 프로젝트 상대 신원이다', () => {
+  const files = [{ member: 'server', path: 'src/query.ts' }];
+  const context = { members: [{ name: 'server', documents: ['s/doc.json'], analyses: [{ path: 's/reverse.json' }] }],
+    fileSymbols: [{ member: 'server', platform: 'js', path: 'src/query.ts', usrs: ['query'] }] };
+  const moved = retargetTraceContext(context, '/artifacts', [], files);
+  assert.deepEqual(moved.fileSymbols, context.fileSymbols);
+  assert.equal(moved.members[0].documents[0], '/artifacts/s/doc.json');
+  assert.equal(moved.members[0].analyses[0].path, '/artifacts/s/reverse.json');
 });
 
 test('changedRouteSelection: info를 빼고 중복을 합치며 scope 포함 여부와 상한을 지킨다', () => {

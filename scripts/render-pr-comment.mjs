@@ -454,6 +454,9 @@ function codeList(values, limit) {
 
 /** chain 선택자(route)의 표시 이름이다. */
 function selectorLabel(chain) {
+  if (typeof chain?.selector?.file === 'string') {
+    return `File: ${chain.selector.file}${text(chain.selector.member) === undefined ? '' : ` (${chain.selector.member})`}`;
+  }
   const route = chain?.selector?.route;
   const scope = text(route?.scope);
   return `${text(route?.method) ?? '?'} ${text(route?.template) ?? '?'}${scope === undefined ? '' : ` (${scope})`}`;
@@ -465,11 +468,19 @@ function chainBlock(chain, maxRows) {
   const dependents = chainDependents(chain);
   const handlers = chainHandlers(chain);
   const calls = chainCalls(chain);
+  const entries = list(chain.entryPoints).filter(isObject).map((entry) => {
+    const name = text(entry.qualifiedName) ?? text(entry.usr) ?? '?';
+    const kinds = list(entry.entries).filter((kind) => typeof kind === 'string').join(',');
+    const path = text(entry.location?.path);
+    return `${name} [${kinds}]${path === undefined ? '' : ` (${path})`}`;
+  });
   const summary = `<code>${escapeHtml(selectorLabel(chain))}</code> — ${handlers.length} handler(s), ${tables.length} `
-    + `table/column(s), ${dependents.length} DB dependent(s), ${calls.length} client call(s)`;
+    + `table/column(s), ${dependents.length} DB dependent(s), ${calls.length} client call(s)`
+    + (entries.length === 0 ? '' : `, ${entries.length} entry point(s)`);
   const { shown, note } = capRows(calls, maxRows);
   return ['', `<details><summary>${summary}</summary>`, '',
     `- Handlers: ${handlers.length === 0 ? '—' : codeList(handlers, maxRows)}`,
+    ...(entries.length === 0 ? [] : [`- Entry points: ${codeList(entries, maxRows)}`]),
     `- Tables and columns: ${tables.length === 0 ? '—' : codeList(tables, maxRows)}`,
     `- DB dependents: ${dependents.length === 0 ? '—' : codeList(dependents, maxRows)}`,
     `- Client calls and affected client code:${calls.length === 0 ? ' —' : ''}`,
@@ -516,7 +527,8 @@ function traceSection(trace, meta, maxRows) {
   const omitted = isCount(meta?.trace?.omittedRoutes) && meta.trace.omittedRoutes > 0
     ? [`_${meta.trace.omittedRoutes} changed route(s) exceeded the trace selection limit and were not traced._`] : [];
   return ['', '#### Affected server code, data and clients (trace)', '',
-    `Traced ${list(trace.chains).length} changed route(s)${side === undefined ? '' : ` against the ${side === 'head' ? 'head' : 'base'} capture`}.`,
+    `Traced ${list(trace.chains).length} ${meta?.trace?.mode === 'files' || list(trace.chains).some((chain) => typeof chain?.selector?.file === 'string')
+      ? 'file selection(s)' : 'changed route(s)'}${side === undefined ? '' : ` against the ${side === 'head' ? 'head' : 'base'} capture`}.`,
     ...omitted.flatMap((line) => ['', line]),
     ...traceGapLine(trace), ...list(trace.chains).flatMap((chain) => chainBlock(chain, maxRows)), ...traceTruncationLine(trace)];
 }
