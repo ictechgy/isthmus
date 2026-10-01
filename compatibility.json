@@ -4,7 +4,7 @@
   "isthmus": "0.11.0",
   "producers": {
     "cartograph": "0.23.1",
-    "kartograph": "0.18.1",
+    "kartograph": "0.18.2",
     "dartograph": "0.16.1",
     "schemagraph": "0.7.0",
     "gartograph": "0.9.1",

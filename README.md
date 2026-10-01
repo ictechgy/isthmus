@@ -40,7 +40,7 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
 The compatible producer set for **0.11.0** is:
-cartograph **0.23.1**, kartograph **0.18.1**, dartograph **0.16.1**, schemagraph **0.7.0**,
+cartograph **0.23.1**, kartograph **0.18.2**, dartograph **0.16.1**, schemagraph **0.7.0**,
 gartograph **0.9.1**, rustograph **0.4.1**, and tsograph **0.2.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. Earlier npm archives keep the manifest they

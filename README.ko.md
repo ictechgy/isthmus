@@ -37,7 +37,7 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
 **0.11.0**의 호환 producer 세트는 cartograph **0.23.1**,
-kartograph **0.18.1**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph **0.9.1**,
+kartograph **0.18.2**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph **0.9.1**,
 rustograph **0.4.1**, tsograph **0.2.0**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. 이전 npm 아카이브는 발행 당시의
 manifest를 유지한다. tsograph는 npm 0.10.0 발행 뒤 저장소 manifest에 더했으므로 그
