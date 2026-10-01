@@ -101,6 +101,28 @@ function readFailOn(value) {
   return trimmed;
 }
 
+/** 파일 선택은 JSON으로 받아 공백 있는 이름을 보존하고 셸·절대 경로를 통한 범위 확장을 막는다. */
+function readTraceFiles(value) {
+  if (value === undefined || value === '') return undefined;
+  let files;
+  try { files = JSON.parse(value); }
+  catch { throw new CiStepError('inputs', 'Input trace-files must be a JSON array of relative paths or {member,path} selections.'); }
+  if (!Array.isArray(files) || files.length > MAX_TRACE_ROUTES) {
+    throw new CiStepError('inputs', `Input trace-files must contain at most ${MAX_TRACE_ROUTES} file selections.`);
+  }
+  for (const file of files) {
+    const path = typeof file === 'string' ? file : file?.path;
+    const object = file !== null && typeof file === 'object' && !Array.isArray(file);
+    if (typeof path !== 'string' || path.length === 0 || path.length > 4096 ||
+      (typeof file !== 'string' && (!object || Object.keys(file).some((key) => key !== 'member' && key !== 'path') ||
+        typeof file.member !== 'string' || file.member.length === 0 || file.member.length > 128 || /[\u0000-\u001f]/u.test(file.member)))) {
+      throw new CiStepError('inputs', 'Input trace-files contains an invalid file selection.');
+    }
+    requireRelativePath(path, 'trace-files');
+  }
+  return files.length === 0 ? undefined : files;
+}
+
 /**
  * Action 입력(환경 변수 `ISTHMUS_CI_*`)을 읽고 검증한다. action.yml은 입력을 `run` 스크립트에 끼워 넣지 않고
  * 환경 변수로만 넘긴다(식 주입 방지). 모드는 capture 설정 또는 미리 만든 문서 중 정확히 하나다.
@@ -126,6 +148,7 @@ export function parseInputs(env) {
     workspace, captureConfig, before, after, clients: splitList(env.ISTHMUS_CI_CLIENTS),
     traceContext: env.ISTHMUS_CI_TRACE_CONTEXT || undefined,
     trace: readBoolean(env.ISTHMUS_CI_TRACE, true, 'trace'), traceSide,
+    traceFiles: readTraceFiles(env.ISTHMUS_CI_TRACE_FILES),
     failOn: readFailOn(env.ISTHMUS_CI_FAIL_ON),
     maxRows: readInteger(env.ISTHMUS_CI_MAX_ROWS, 20, 1, 1000, 'max-rows'),
     maxChains: readInteger(env.ISTHMUS_CI_MAX_CHAINS, 50, 1, 1000, 'max-chains'),
@@ -245,7 +268,7 @@ function localIsthmus(root) {
  *   선택은 자리표시자 route다 — route 선택은 순회 root를 바꾸지 않으므로(선택과 무관한 상위 집합) 같은 수집물로
  *   나중에 어떤 route든 trace할 수 있다.
  */
-export function rewriteCaptureConfig(config, { repositoryPath, outputRoot, side }) {
+export function rewriteCaptureConfig(config, { repositoryPath, outputRoot, side, files }) {
   if (config === null || typeof config !== 'object' || Array.isArray(config) || config.format !== 'isthmus-trace-capture') {
     throw new CiStepError('capture-config', 'The capture config is not an isthmus-trace-capture document (docs/TRACE.md).');
   }
@@ -257,7 +280,7 @@ export function rewriteCaptureConfig(config, { repositoryPath, outputRoot, side 
   }
   const roots = Object.fromEntries(Object.entries(config.roots).map(([name, value]) => [name, resolveRoot(value, repositoryPath)]));
   return { ...config, roots: { ...roots, [OUTPUT_ROOT_NAME]: outputRoot }, output: { root: OUTPUT_ROOT_NAME, path: side },
-    trace: false, selection: PLACEHOLDER_SELECTION };
+    trace: false, selection: files === undefined ? PLACEHOLDER_SELECTION : { files } };
 }
 
 /**
@@ -377,7 +400,8 @@ export function captureBothSides(options, isthmus, { execute = defaultExecute, e
     for (const [side, sha] of [['base', baseSha], ['head', headSha]]) {
       git(execute, repositoryPath, ['checkout', '--quiet', '--detach', sha], 'checkout', `Could not check out the ${side} commit.`);
       const configPath = join(options.outputDir, `capture-config.${side}.json`);
-      writeFileSync(configPath, `${JSON.stringify(rewriteCaptureConfig(config, { repositoryPath, outputRoot: captureRoot, side }), null, 2)}\n`);
+      writeFileSync(configPath, `${JSON.stringify(rewriteCaptureConfig(config, { repositoryPath, outputRoot: captureRoot, side,
+        files: options.traceFiles }), null, 2)}\n`);
       runCapture(execute, isthmus, configPath, side, env, log);
     }
   } catch (error) {
@@ -519,9 +543,9 @@ function absoluteMember(member, directory) {
  * trace context를 다른 디렉터리에 쓸 수 있게 모든 상대 경로를 절대 경로로 바꾸고 선택을 바꾼다.
  * `fileSymbols`는 파일 선택 전용이라 route 선택 context에 남기면 입력 오류이므로 뺀다.
  */
-export function retargetTraceContext(context, directory, routes) {
+export function retargetTraceContext(context, directory, routes, files) {
   const { fileSymbols: _fileSymbols, ...rest } = context;
-  const retargeted = { ...rest, selection: { routes } };
+  const retargeted = { ...(files === undefined ? rest : context), selection: files === undefined ? { routes } : { files } };
   if (Array.isArray(context.members)) {
     retargeted.members = context.members.map((member) => absoluteMember(member, directory));
     retargeted.links = Array.isArray(context.links) ? context.links.map((link) => (link?.contract === undefined ? link
@@ -538,17 +562,19 @@ export function runTrace(isthmus, diff, contextPath, options, { execute = defaul
   const context = readJson(contextPath, 'trace');
   const includeScope = (diff.mode === 'workspace') === Array.isArray(context.members);
   const { routes, omitted } = changedRouteSelection(diff, includeScope);
-  if (routes.length === 0) return { status: 'skipped-no-routes' };
+  const files = options.traceFiles;
+  if (routes.length === 0 && files === undefined) return { status: 'skipped-no-routes' };
   const path = join(options.outputDir, 'trace-context.json');
-  writeFileSync(path, `${JSON.stringify(retargetTraceContext(context, dirname(contextPath), routes), null, 2)}\n`);
+  writeFileSync(path, `${JSON.stringify(retargetTraceContext(context, dirname(contextPath), routes, files), null, 2)}\n`);
   const result = execute(process.execPath, [isthmus.cli, 'trace', path, '--max-chains', String(options.maxChains),
     '--max-rows', String(options.maxRows)], { env: childEnvironment(env), timeout: ISTHMUS_TIMEOUT_MS });
   if (result.status !== 0) {
     return { status: 'error', exitCode: result.status, message: firstLine(result.stderr) || `isthmus trace exited with ${describeExit(result)}.`,
-      selected: routes.length, omittedRoutes: omitted };
+      ...(files === undefined ? { selected: routes.length, omittedRoutes: omitted } : { mode: 'files', selected: files.length }) };
   }
   writeFileSync(join(options.outputDir, 'trace.json'), result.stdout);
-  return { status: 'ran', selected: routes.length, omittedRoutes: omitted };
+  return files === undefined ? { status: 'ran', selected: routes.length, omittedRoutes: omitted }
+    : { status: 'ran', mode: 'files', selected: files.length };
 }
 
 // ── 기록 ───────────────────────────────────────────────────────────────────────

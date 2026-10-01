@@ -390,3 +390,20 @@ Action을 합성 fixture에 돌린다. 댓글은 달지 않는다(job summary �
   artifact다 — 전체가 필요하면 artifact의 `trace-context.json`으로 상한 없이 다시 돌린다.
 - 같은 job 안에서 생산자(PR 코드)를 다른 단계와 완전히 격리할 수는 없다. `comment-mode: sticky`(한 job 구성)는 편의용이고,
   같은 저장소 PR 작성자는 이미 쓰기 권한이 있으며 포크 PR 토큰은 읽기 전용이라는 GitHub 모델에 기댄다.
+
+## 변경 파일에서 페이지·서버 액션 추적
+
+Action 0.12.0의 선택적 `trace-files`는 저장소 상대 경로나 `{member,path}` 객체의 JSON 배열이다.
+예: `[{"member":"server","path":"src/lib/query.ts"}]`. 공백 있는 파일 이름도 JSON으로 보존한다.
+최대 1,000개이며 절대 경로·`..`·제어 문자·역슬래시는 거부한다. 빈 입력과 `[]`는 기존 route 선택을 유지한다.
+
+비어 있지 않으면 HTTP diff와 fail-on은 그대로 실행하고 trace 선택만 파일로 바꾼다. 따라서 API 표면이
+같아도 공유 서버 코드 변경에서 페이지·서버 액션 영향을 볼 수 있다. capture 모드는 두 시점에서
+심볼 목록과 2단계 역방향 roots를 수집한다. JS `impact` 명령에 tsograph 0.3.0의 `--entry-points`를
+더하면 PR 댓글에 관찰한 진입점 종류·심볼·위치를 함께 표시한다. 생산자의 부재·candidate·잘림 공백은 유지한다.
+
+`trace-side`는 기존과 같이 base(기본) 또는 head다. 삭제한 파일은 base, 새 파일은 head에만 있을 수
+있으므로 선택한 시점에 없는 파일은 영향 없음 대신 `file-without-symbols` 등 공백으로 남는다.
+precomputed 모드는 해당 파일에 roots를 둔 역방향 분석과 `fileSymbols`를 호출자가 준비해야 한다.
+변경 파일 목록은 Git diff로 분석 job에서 만들고 입력을 환경 변수로 전달한다. PR 파일 이름을 shell
+스크립트에 식으로 끼워 넣지 않으며, 분석 job에 댓글 쓰기 토큰을 주지 않는다.

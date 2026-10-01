@@ -38,6 +38,12 @@ inputs:
   trace-side:
     description: Capture mode. Which capture to trace, `base` (default; removed routes exist only there) or `head`.
     default: base
+  trace-files:
+    description: >-
+      Optional JSON array of changed relative paths or {member,path} selections. When non-empty, capture collects
+      file symbols and trace follows their reverse impact even without HTTP surface changes. Replaces the route
+      trace selection; HTTP diff and fail-on still run unchanged. Empty or [] keeps route tracing.
+    default: ''
   fail-on:
     description: >-
       `isthmus diff --http --fail-on` tokens (finding codes, `error`, `warning`, `incomplete`). Empty or `none`
@@ -151,6 +157,7 @@ runs:
         ISTHMUS_CI_TRACE_CONTEXT: ${{ inputs.trace-context }}
         ISTHMUS_CI_TRACE: ${{ inputs.trace }}
         ISTHMUS_CI_TRACE_SIDE: ${{ inputs.trace-side }}
+        ISTHMUS_CI_TRACE_FILES: ${{ inputs.trace-files }}
         ISTHMUS_CI_FAIL_ON: ${{ inputs.fail-on }}
         ISTHMUS_CI_COMMENT_KEY: ${{ inputs.comment-key }}
         ISTHMUS_CI_MAX_ROWS: ${{ inputs.max-rows }}
