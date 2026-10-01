@@ -14,7 +14,7 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 `target: "http"`는 [HTTP 경계](#개발-중-http-경계-v1-확장) 절의 Phase 1 범위를 `check`(`--pairs`
 포함)와 `query`(`route:` 주체)가 소비하고, `trace`가 같은 조인 결과를 persistence·순회와 잇는다.
 `diff --http`([HTTP-DIFF](HTTP-DIFF.md))가 같은 조인으로 두 시점의 route 표면과 깨진 호출을 비교한다.
-`graph`·`impact`·`retentions`·`preflight`와 `--http` 없는 `diff`는 http 문서를 원인 문구와 종료 코드 2로 거부한다. 그 절은 여전히 개발 중이며, 구현하지 않은
+`graph`·`impact`·`retentions`·`preflight`와 `--http` 없는 `diff`는 http 문서를 원인 문구와 종료 코드 2로 거부한다. HTTP v1 확장은 isthmus-cli 0.10.0에 발행됐다. 구현 상태 표의 초안
 필드는 입력 오류로 거부한다.
 `check`는 v2 문서를 직접 소비해 transport별 진단 코드로 보고한다. `query`는 v2 경계를
 `message`·`stream` kind 주체로, `graph`는 literal v2 경계를 `message`·`stream` 간선으로,
@@ -579,20 +579,23 @@ cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스�
 - **Swift 조건부 컴파일**: Flutter를 import한 파일에 `#if`가 있으면 활성 구성을 추측하지 않고 compiler-indexed 추출이 필요하다고 실패한다
 - **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다
 
-## 개발 중: HTTP 경계 (v1 확장)
+<a id="개발-중-http-경계-v1-확장"></a>
 
-> **개발 중 — Phase 1 소비자 구현.** isthmus는 이 절 중 [아래 구현 상태](#구현-상태-isthmus-phase-1)의
-> "구현" 항목을 `check`(`--pairs` 포함)와 `query`에서 소비한다. "초안" 항목은 아직 합의 초안이며,
-> 그 필드·값을 실은 문서는 조용히 무시하지 않고 원인을 밝힌 입력 오류(종료 코드 2)로 거부한다.
-> 이 절은 [API 변경 영향 계획](API-IMPACT-PLAN.md)의 계약이고, 프레임워크별 값은 착수할 때 공식
-> 소스로 확인해 [적합성 벡터](#공유-적합성-벡터)에 고정한다. 계획대로 Phase 4까지 '개발 중'으로 둔다.
+## HTTP 경계 (v1 확장)
+
+> **발행된 계약 — isthmus-cli 0.10.0(2026-09-30).** 아래 구현 상태 표의 "구현" 항목은
+> `check`(`--pairs` 포함)·`query`·`trace`·`diff --http`·surface에서 각 명령의 범위에 맞게 소비한다.
+> "초안"인 매니페스트 필드는 앞으로의 확장이며 입력 오류로 거부한다. 프레임워크별 의미는
+> 공식 소스·실행 오라클과 공유 적합성 벡터로 고정한다. 기존 앵커는 호환용으로 유지한다.
 
 REST over HTTP 경계다. 서버 라우트 선언, 클라이언트 호출, 스펙 operation을
 (HTTP method, 정규 경로 템플릿)으로 잇는다. host는 조인 키가 아니다. GraphQL·gRPC는 키의
 의미가 달라 이 target에 넣지 않는다. 결과는 route 단위이며, 요청·응답 본문 필드, query
 파라미터, 헤더의 호환성은 판정하지 않는다.
 
-### 구현 상태 (isthmus Phase 1)
+<a id="구현-상태-isthmus-phase-1"></a>
+
+### 구현 상태 (isthmus 0.10.0)
 
 | 항목 | 상태 | 초안 항목을 쓰면 |
 |---|---|---|

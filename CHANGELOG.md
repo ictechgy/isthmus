@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- capture의 사전 계산 심볼 목록에 `artifact: "digest-only"` 옵션을 추가했다. 검증·선택을 유지하면서
+  큰 목록의 사본을 생략하고 SHA-256·바이트 수를 manifest `listingInputs`에 남긴다.
+- JS 생산자 axios·ky 1/2 URL 결합을 공식 소스·오라클로 구분하고 공유 벡터 38개를 추가했다.
+
+### Fixed
+
+- capture가 cartograph graph의 문자열 `tool`·최상위 `version`도 도구 신원으로 기록한다.
+- GRAPH-EXCHANGE의 HTTP v1 상태를 0.10.0 발행 기준으로 확정하고 남은 초안 필드는 구분했다.
+
 ### Changed
 
 - 현재 저장소의 호환 producer 세트에 tsograph 0.1.0(npm)을 더했다. npm 0.10.0 아카이브의 manifest에는

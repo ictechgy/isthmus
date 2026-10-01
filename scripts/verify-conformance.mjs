@@ -485,6 +485,7 @@ function runCompose({ parts }) {
  * (`httpx-base-url`), aiohttp `base_url`(`aiohttp-base-url`)이다.
  */
 function runBaseJoin({ join, base, path, typeUrl }) {
+  if (['axios-base-url', 'ky-prefix-url', 'ky-prefix', 'ky-base-url'].includes(join)) return jsClientJoin(join, base, path);
   if (join === 'spring-uri-builder') return springUriBuilder(base, path);
   if (join === 'spring-http-exchange') return springUriBuilder(base, httpExchangeUrl(typeUrl, path));
   if (join === 'spring-root-uri') return springRootUri(base, path);
@@ -498,6 +499,26 @@ function runBaseJoin({ join, base, path, typeUrl }) {
   if (join === 'slash-join') return { template: relativeTemplate, pathAnchor: 'base' };
   if (base !== null) return { template: runStrip({ url: `${base}${path}` }).template, pathAnchor: 'root' };
   return rooted ? { template: normalizeLiteral(path), pathAnchor: 'base' } : { dynamic: true, limitation: 'ambiguous-base-join:' };
+}
+
+/** JS 라이브러리의 base 결합 참조 구현이다. HTTP URL 파싱 단계의 점 세그먼트 제거도 반영한다. */
+function jsClientJoin(join, base, path) {
+  const absolute = (text) => /^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(text) || text.startsWith('//');
+  if (join === 'axios-base-url' && /^https?:(?!\/\/)/iu.test(path)) return { dynamic: true };
+  let text = path;
+  if (join === 'ky-prefix-url' && base !== '' && path.startsWith('/')) return { dynamic: true };
+  if (base === null && !(join === 'axios-base-url' && absolute(path)) && !(join === 'ky-base-url' && path.startsWith('/'))) {
+    if (path === '' || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(path) || /(?:^|\/)\.{1,2}(?:\/|$)|%2e|\\/iu.test(path)) return { dynamic: true };
+    return { template: normalizeLiteral(`/${path.replace(/^\/+/, '')}`), pathAnchor: 'base' };
+  }
+  if (join === 'axios-base-url' && base && !absolute(path)) text = path === '' ? base : `${base.replace(/\/+$/u, '')}/${path.replace(/^\/+/, '')}`;
+  if (join === 'ky-prefix-url' && base) text = `${base}${base.endsWith('/') ? '' : '/'}${path}`;
+  if (join === 'ky-prefix' && base) text = `${base.replace(/\/+$/u, '')}/${path.replace(/^\/+/, '')}`;
+  const placeholder = 'https://unknown.invalid';
+  const parsed = new URL(text.startsWith('//') ? `https:${text}` : text, join === 'ky-base-url' && base ? base : placeholder);
+  if (!['http:', 'https:'].includes(parsed.protocol)) return { dynamic: true };
+  return { template: normalizeLiteral(parsed.pathname), pathAnchor: 'root',
+    ...(parsed.host === 'unknown.invalid' ? {} : { authority: parsed.host.toLowerCase() }) };
 }
 
 /**

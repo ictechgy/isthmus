@@ -31,6 +31,15 @@ export interface CapturePathRef {
   readonly path?: string;
 }
 
+/** 서로 다른 생산자 문서의 도구 신원을 capture manifest의 공통 모양으로 바꾼다. */
+export function captureDocumentTool(value: unknown): { tool?: { name: string; version: string } } {
+  if (!isJsonObject(value)) return {};
+  const tool = value.tool;
+  if (tool === 'cartograph' && typeof value.version === 'string') return { tool: { name: tool, version: value.version.slice(0, 100) } };
+  return isJsonObject(tool) && typeof tool.name === 'string' && typeof tool.version === 'string'
+    ? { tool: { name: tool.name.slice(0, 100), version: tool.version.slice(0, 100) } } : {};
+}
+
 /** 생산자 인자 하나다. 문자열은 자리표시자를 치환하고, 경로 참조는 root 안의 절대 경로로 바꾼다. */
 export type CaptureArgument = string | CapturePathRef;
 
@@ -81,6 +90,8 @@ export interface CaptureListing {
   readonly platform: TraversalPlatform;
   readonly step?: CaptureCommandStep;
   readonly precomputed?: CapturePathRef;
+  /** 사전 계산 목록을 읽고 검증하되 출력에 복사하지 않고 manifest에 digest만 남긴다. 기본은 copy다. */
+  readonly artifact?: 'copy' | 'digest-only';
 }
 
 /** member revision이다. 문자열은 그대로, `{git: true}`는 project의 `git rev-parse HEAD`다. */
@@ -199,7 +210,7 @@ const memberKeys = new Set(['name', 'project', 'revision', 'catalog', 'documents
 const stepKeys = ['tool', 'args', 'timeoutSeconds', 'acceptExitCodes'];
 const documentKeys = new Set(['name', 'precomputed', ...stepKeys]);
 const analysisKeys = new Set(['id', 'platform', 'role', 'precomputed', 'roots', 'maxRootsPerRun', ...stepKeys]);
-const listingKeys = new Set(['platform', 'precomputed', ...stepKeys]);
+const listingKeys = new Set(['platform', 'precomputed', 'artifact', ...stepKeys]);
 const surfaceExportKeys = new Set(['member', 'name', 'revision', 'includeHandlerUsrs', 'includeLimitationText']);
 const libraryKeys = new Set(['name', 'consumer', 'provider', 'ids', 'publicSymbols', 'symbolMap']);
 const sha256Pattern = /^[0-9a-f]{64}$/u;
@@ -520,6 +531,8 @@ function parseListing(value: unknown, member: number, roots: Record<string, stri
     fail(`A listing of capture member ${member} needs a language platform (sql vertices have no source file).`);
   }
   const platform = value.platform as TraversalPlatform;
+  if (value.artifact !== undefined && value.artifact !== 'copy' && value.artifact !== 'digest-only') fail('A listing artifact must be copy or digest-only.');
+  if (value.artifact === 'digest-only' && value.precomputed === undefined) fail('A digest-only listing needs a precomputed file.');
   if ((value.precomputed === undefined) === (value.tool === undefined)) {
     fail(`The ${platform} listing of capture member ${member} needs exactly one of tool (with args) or precomputed.`);
   }
@@ -527,9 +540,11 @@ function parseListing(value: unknown, member: number, roots: Record<string, stri
     if (['args', 'timeoutSeconds', 'acceptExitCodes'].some((key) => value[key] !== undefined)) {
       fail(`The precomputed ${platform} listing of capture member ${member} takes no command fields.`);
     }
-    return { platform, precomputed: parsePathRef(value.precomputed, roots, 'precomputed listing') };
+    return { platform, precomputed: parsePathRef(value.precomputed, roots, 'precomputed listing'),
+      ...(value.artifact === undefined ? {} : { artifact: value.artifact }) };
   }
-  return { platform, step: parseStep(value, `${platform} listing of capture member ${member}`, roots, tools) };
+  return { platform, step: parseStep(value, `${platform} listing of capture member ${member}`, roots, tools),
+    ...(value.artifact === undefined ? {} : { artifact: value.artifact }) };
 }
 
 /** member revision 선언을 검증한다. */
