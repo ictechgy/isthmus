@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- language-traversal v1의 선택적 `symbol.entries`를 검증하고, DB·공유 서버 코드의 역방향 trace에
+  페이지·서버 액션 등 비HTTP 진입점의 `entryPoints`를 목격 경로·근거 등급과 함께 보고한다.
+  옛 입력 모양과 미확인 순회 공백을 유지하며 새 목록에도 출력 상한을 적용한다.
+
 ## [0.11.0] - 2026-10-01
 
 ### Added

@@ -28,6 +28,8 @@ cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내�
 ## 원칙
 
 - 각 도구는 **자기 언어에서 본 사실만** 낸다. 판정하지 않는다
+- 비HTTP 진입점 분류는 bridge-facts의 가짜 `route-decl`이 아니라 순회 문서의 선택적
+  [`symbol.entries`](LANGUAGE-TRAVERSAL.md#선택적-진입점-표식-symbolentries)로 전달한다.
 - 위치는 항상 파일 · 줄 · 열. isthmus 의 모든 보고가 양쪽 위치를 가리켜야 한다
 - 리터럴이 아닌 이름은 `dynamic: true` 로 표시하고 **버리지 않는다.** 한계를 세는 데 필요하다
 - 키 순서는 정렬, 파일은 diff 가능해야 한다 (cartograph `GraphDocument` 와 같은 이유)

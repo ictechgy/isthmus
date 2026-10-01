@@ -39,6 +39,7 @@ verifyImpact();
 verifyRuntime();
 verifyPreflight();
 verifyTrace();
+verifyTraceEntryPoints();
 verifyWorkspaceTrace();
 verifyOrgBoundary();
 verifyServe();
@@ -106,6 +107,43 @@ function verifyTrace() {
   verify(deeper.status === 0 && JSON.parse(deeper.stdout).upstreamDepth === 8, 'trace upstream depth');
   verify(run([...args, '--upstream-depth', '9']).status === 64, 'trace upstream depth range');
   verify(run(['help', 'trace']).stdout.includes('--upstream-depth <1..8>'), 'trace upstream depth help');
+}
+
+/** 빌드된 CLI가 새 진입점 입력·보고·출력 상한·엄격한 실패를 끝까지 검증한다. */
+function verifyTraceEntryPoints() {
+  const fixture = (name) => fileURLToPath(new URL(`../fixtures/trace/${name}`, import.meta.url));
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-trace-entries-'));
+  try {
+    const context = JSON.parse(readFileSync(fixture('context.json'), 'utf8'));
+    context.documents = context.documents.map(fixture);
+    context.analyses = context.analyses.map((reference) => ({ ...reference, path: fixture(reference.path) }));
+    context.selection = { relations: ['users'] };
+    const reverse = JSON.parse(readFileSync(fixture('server-reverse.json'), 'utf8'));
+    reverse.reached = ['page', 'server-action'].map((kind) => ({
+      symbol: { usr: `ts:entry/${kind}`, entries: [kind], location: { path: 'server/profile.ts', line: 1 } },
+      via: 'ts:repo/users.findById', depth: 1, roots: [1], evidence: 'bound',
+    }));
+    const path = join(directory, 'context.json');
+    const reversePath = join(directory, 'reverse.json');
+    context.analyses.find(({ id }) => id === 'server-reverse').path = reversePath;
+    writeFileSync(reversePath, JSON.stringify(reverse));
+    writeFileSync(path, JSON.stringify(context));
+    const result = run(['trace', path, '--strict', '--compact', '--max-rows', '1']);
+    const report = JSON.parse(result.stdout);
+    verify(result.status === 0 && report.summary.entryPoints === 2 && report.summary.routes === 0
+      && report.chains[0].entryPoints.length === 1 && report.truncation.omitted.some(({ path }) => path === 'chains[0].entryPoints'),
+    'trace non-http entry points and limits');
+    reverse.reached[0].evidence = 'candidate';
+    writeFileSync(reversePath, JSON.stringify(reverse));
+    const candidate = run(['trace', path, '--strict', '--compact']);
+    verify(candidate.status === 1 && JSON.parse(candidate.stdout).gaps.some(({ code }) => code === 'candidate-dispatch'),
+      'trace candidate entry strict failure');
+    reverse.reached[0].symbol.entries = ['unknown'];
+    writeFileSync(reversePath, JSON.stringify(reverse));
+    verify(run(['trace', path]).status === 2, 'trace entry kind validation');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /**

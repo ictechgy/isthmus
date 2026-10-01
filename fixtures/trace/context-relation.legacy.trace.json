@@ -1,0 +1,454 @@
+{
+  "analyses": [
+    {
+      "direction": "dependents",
+      "evidenceReported": false,
+      "id": "android-reverse",
+      "platform": "kotlin",
+      "reached": 3,
+      "revision": "rev-1",
+      "role": "reverse",
+      "rootProvenance": "complete",
+      "roots": 2,
+      "rootsTruncated": false,
+      "source": "language-traversal",
+      "tool": {
+        "name": "synthetic-trace",
+        "version": "0.0.0"
+      },
+      "truncated": false,
+      "unresolvedCallsReported": false
+    },
+    {
+      "direction": "dependents",
+      "evidenceReported": false,
+      "graphRevision": "catalog-1",
+      "id": "db",
+      "platform": "sql",
+      "reached": 2,
+      "revision": "rev-1",
+      "role": "db-dependents",
+      "rootProvenance": "complete",
+      "roots": 2,
+      "rootsTruncated": false,
+      "source": "language-traversal",
+      "tool": {
+        "name": "synthetic-schema",
+        "version": "0.0.0"
+      },
+      "truncated": false,
+      "unresolvedCallsReported": false
+    },
+    {
+      "direction": "dependencies",
+      "dispatch": "direct",
+      "evidenceReported": true,
+      "id": "server-forward",
+      "platform": "js",
+      "reached": 3,
+      "revision": "rev-1",
+      "role": "forward",
+      "rootProvenance": "complete",
+      "roots": 2,
+      "rootsTruncated": false,
+      "source": "language-traversal",
+      "tool": {
+        "name": "synthetic-trace",
+        "version": "0.0.0"
+      },
+      "truncated": false,
+      "unresolvedCallsReported": true
+    },
+    {
+      "direction": "dependents",
+      "dispatch": "direct",
+      "evidenceReported": true,
+      "id": "server-reverse",
+      "platform": "js",
+      "reached": 3,
+      "revision": "rev-1",
+      "role": "reverse",
+      "rootProvenance": "complete",
+      "roots": 2,
+      "rootsTruncated": false,
+      "source": "language-traversal",
+      "tool": {
+        "name": "synthetic-trace",
+        "version": "0.0.0"
+      },
+      "truncated": false,
+      "unresolvedCallsReported": true
+    }
+  ],
+  "analysisLimitations": [],
+  "chains": [
+    {
+      "database": [
+        {
+          "dependents": [
+            {
+              "analysis": "db",
+              "depth": 1,
+              "evidence": "direct",
+              "kind": "view",
+              "path": [
+                "main.users",
+                "main.active_users"
+              ],
+              "platform": "sql",
+              "relationships": [
+                "reads"
+              ],
+              "usr": "main.active_users"
+            },
+            {
+              "analysis": "db",
+              "depth": 1,
+              "evidence": "direct",
+              "kind": "table",
+              "path": [
+                "main.users",
+                "main.orders"
+              ],
+              "platform": "sql",
+              "relationships": [
+                "references"
+              ],
+              "usr": "main.orders"
+            }
+          ],
+          "vertex": "main.users"
+        },
+        {
+          "dependents": [
+            {
+              "analysis": "db",
+              "depth": 1,
+              "evidence": "direct",
+              "kind": "view",
+              "path": [
+                "main.users",
+                "main.active_users"
+              ],
+              "platform": "sql",
+              "relationships": [
+                "reads"
+              ],
+              "usr": "main.active_users",
+              "witnessRoot": "main.users"
+            }
+          ],
+          "vertex": "main.users.email"
+        }
+      ],
+      "handlers": [
+        {
+          "platform": "js",
+          "qualifiedName": "users.create",
+          "reachedFrom": [
+            {
+              "analysis": "server-reverse",
+              "depth": 1,
+              "evidence": "direct",
+              "from": "ts:repo/users.findById",
+              "path": [
+                "ts:repo/audit.write",
+                "ts:api/users.create"
+              ],
+              "witnessRoot": "ts:repo/audit.write"
+            }
+          ],
+          "routes": [
+            {
+              "method": "POST",
+              "scope": "default",
+              "template": "/api/users"
+            }
+          ],
+          "usr": "ts:api/users.create"
+        },
+        {
+          "platform": "js",
+          "qualifiedName": "users.get",
+          "reachedFrom": [
+            {
+              "analysis": "server-reverse",
+              "depth": 2,
+              "evidence": "direct",
+              "from": "ts:repo/users.findById",
+              "path": [
+                "ts:repo/users.findById",
+                "ts:service/users.load",
+                "ts:api/users.get"
+              ]
+            }
+          ],
+          "routes": [
+            {
+              "method": "GET",
+              "scope": "default",
+              "template": "/api/users/{}"
+            }
+          ],
+          "usr": "ts:api/users.get"
+        }
+      ],
+      "relationUses": [
+        {
+          "decls": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "main.users",
+                "usr": "main.users"
+              }
+            }
+          ],
+          "reachedFrom": [],
+          "relation": "users",
+          "resolved": {
+            "relation": "main.users"
+          },
+          "use": {
+            "location": {
+              "column": 10,
+              "line": 5,
+              "path": "server/db/users.ts"
+            },
+            "platform": "js",
+            "symbol": {
+              "qualifiedName": "users.findById",
+              "usr": "ts:repo/users.findById"
+            }
+          }
+        },
+        {
+          "column": "email",
+          "decls": [
+            {
+              "platform": "sql",
+              "symbol": {
+                "qualifiedName": "main.users.email",
+                "usr": "main.users.email"
+              }
+            }
+          ],
+          "reachedFrom": [],
+          "relation": "users",
+          "resolved": {
+            "column": "email",
+            "relation": "main.users"
+          },
+          "use": {
+            "location": {
+              "column": 10,
+              "line": 6,
+              "path": "server/db/users.ts"
+            },
+            "platform": "js",
+            "symbol": {
+              "qualifiedName": "users.findById",
+              "usr": "ts:repo/users.findById"
+            }
+          }
+        }
+      ],
+      "routes": [
+        {
+          "calls": [
+            {
+              "affected": [
+                {
+                  "analysis": "android-reverse",
+                  "depth": 1,
+                  "evidence": "unassessed",
+                  "location": {
+                    "line": 30,
+                    "path": "android/app/src/main/java/example/SignupViewModel.kt"
+                  },
+                  "path": [
+                    "kt:UsersApi.create",
+                    "kt:SignupViewModel.submit"
+                  ],
+                  "platform": "kotlin",
+                  "qualifiedName": "SignupViewModel.submit",
+                  "relationships": [
+                    "call"
+                  ],
+                  "usr": "kt:SignupViewModel.submit"
+                }
+              ],
+              "call": {
+                "location": {
+                  "column": 5,
+                  "line": 16,
+                  "path": "android/app/src/main/java/example/UsersApi.kt"
+                },
+                "platform": "kotlin",
+                "route": {
+                  "kind": "route-call",
+                  "method": "POST",
+                  "pathAnchor": "root",
+                  "template": "/api/users"
+                },
+                "symbol": {
+                  "qualifiedName": "UsersApi.create",
+                  "usr": "kt:UsersApi.create"
+                }
+              },
+              "quality": "exact",
+              "side": "decl"
+            }
+          ],
+          "contracts": [],
+          "declarations": [
+            {
+              "location": {
+                "column": 3,
+                "line": 20,
+                "path": "server/routes/users.ts"
+              },
+              "platform": "js",
+              "route": {
+                "kind": "route-decl",
+                "method": "POST",
+                "pathAnchor": "root",
+                "template": "/api/users"
+              },
+              "symbol": {
+                "qualifiedName": "users.create",
+                "usr": "ts:api/users.create"
+              }
+            }
+          ],
+          "method": "POST",
+          "scope": "default",
+          "template": "/api/users"
+        },
+        {
+          "calls": [
+            {
+              "affected": [
+                {
+                  "analysis": "android-reverse",
+                  "depth": 1,
+                  "evidence": "unassessed",
+                  "path": [
+                    "kt:UsersApi.get",
+                    "kt:UsersRepository.load"
+                  ],
+                  "platform": "kotlin",
+                  "qualifiedName": "UsersRepository.load",
+                  "relationships": [
+                    "call"
+                  ],
+                  "usr": "kt:UsersRepository.load"
+                },
+                {
+                  "analysis": "android-reverse",
+                  "depth": 2,
+                  "evidence": "unassessed",
+                  "path": [
+                    "kt:UsersApi.get",
+                    "kt:UsersRepository.load",
+                    "kt:ProfileViewModel.refresh"
+                  ],
+                  "platform": "kotlin",
+                  "qualifiedName": "ProfileViewModel.refresh",
+                  "relationships": [
+                    "call"
+                  ],
+                  "usr": "kt:ProfileViewModel.refresh"
+                }
+              ],
+              "call": {
+                "location": {
+                  "column": 5,
+                  "line": 12,
+                  "path": "android/app/src/main/java/example/UsersApi.kt"
+                },
+                "platform": "kotlin",
+                "route": {
+                  "kind": "route-call",
+                  "method": "GET",
+                  "pathAnchor": "root",
+                  "template": "/api/users/{}"
+                },
+                "symbol": {
+                  "qualifiedName": "UsersApi.get",
+                  "usr": "kt:UsersApi.get"
+                }
+              },
+              "quality": "exact",
+              "side": "decl"
+            }
+          ],
+          "contracts": [],
+          "declarations": [
+            {
+              "location": {
+                "column": 3,
+                "line": 10,
+                "path": "server/routes/users.ts"
+              },
+              "platform": "js",
+              "route": {
+                "kind": "route-decl",
+                "method": "GET",
+                "pathAnchor": "root",
+                "template": "/api/users/{}"
+              },
+              "symbol": {
+                "qualifiedName": "users.get",
+                "usr": "ts:api/users.get"
+              }
+            }
+          ],
+          "method": "GET",
+          "scope": "default",
+          "template": "/api/users/{}"
+        }
+      ],
+      "selector": {
+        "relation": "users"
+      }
+    }
+  ],
+  "complete": false,
+  "format": "isthmus-trace",
+  "gaps": [],
+  "limitations": [],
+  "notices": [],
+  "project": "/work/trace-example",
+  "revision": "rev-1",
+  "scope": {
+    "fieldCompatibility": "not-assessed",
+    "granularity": "route",
+    "queryAndHeaders": "not-assessed"
+  },
+  "selection": {
+    "relations": [
+      "users"
+    ]
+  },
+  "summary": {
+    "calls": 2,
+    "chains": 1,
+    "clientSymbols": 3,
+    "databaseDependents": 3,
+    "databaseVertices": 2,
+    "evidence": {
+      "bound": 0,
+      "candidate": 0,
+      "direct": 5,
+      "unassessed": 3
+    },
+    "gaps": 0,
+    "handlers": 2,
+    "notices": 0,
+    "relationUses": 2,
+    "routes": 2,
+    "upstreamRoutes": 0
+  },
+  "version": 1
+}

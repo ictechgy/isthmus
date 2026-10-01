@@ -27,6 +27,30 @@ persistence)와 생산자 순회([`language-traversal` v1](LANGUAGE-TRAVERSAL.md
 - **파일 선택**: 파일에 놓인 심볼(분석 위치, 없으면 사실 위치) → 심볼 선택과 같은 역방향 체인. 파일에 놓인
   relation-use는 hop과 DB 의존자로 싣는다([아래](#파일-선택)).
 
+### 페이지·서버 액션의 영향
+
+relation·심볼·파일 선택의 역방향 분석이 [`symbol.entries`](LANGUAGE-TRAVERSAL.md#선택적-진입점-표식-symbolentries)를
+신고하면, 생산자가 표시한 비HTTP 진입점을 `chains[].entryPoints`에 추가한다. 예를 들어 공유 DB 조회 함수를 바꾸면
+API의 `routes`·`handlers`와 함께 페이지·서버 액션의 영향 후보를 볼 수 있다. HTTP route를 합성하거나 렌더링 경로를
+추측하지 않는다. route 선택과 그 HTTP 호출 hop은 기존 규칙을 유지한다.
+
+각 항목은 `{platform, usr, member?, qualifiedName?, location?, entries, reachedFrom}`이다. `entries`에서
+`route-handler`는 제외하며, 같은 member·platform·usr를 합친다. `reachedFrom`은 시작 심볼별 가장 강한 관찰 근거를
+보존한다(depth·목격 경로·analysis·근거 등급·다른 root 목격). 선택한 진입점 자신은 depth 0이다. 여러 분석이 부가
+이름·위치를 달리 신고하면 결정적 순서로 하나를 고르고, revision 공백은 유지한다.
+
+알려진 HTTP 핸들러나 비HTTP 진입점 어느 쪽에도 닿지 않으면 기존 `non-http-entry` gap을 남긴다. 표식이 없는 예전
+순회와 옛 어댑터의 출력·공백은 그대로다. candidate·잘림·stale·분석 없음 공백은 표식이 있어도 유지한다. 빈 목록은
+영향 없음의 증거가 아니다. `page`는 페이지 계열 분류이며 전부 RSC라는 뜻이 아니다.
+
+같은 심볼이 `route-handler`와 `scheduled` 등 다른 역할을 함께 가지면 핸들러와 진입점 양쪽에 표시한다.
+`summary.evidence`는 간선이나 고유 심볼 수가 아니라 출력 hop별 근거 수이므로 양쪽 도달을 각각 센다.
+
+관찰된 항목이 있을 때만 `entryPoints`와 `summary.entryPoints`를 싣는다. 도달 근거는 `summary.evidence`에도 포함하고,
+`--max-rows`는 진입점 목록과 그 `reachedFrom` 목록을 자른 뒤 `truncation.omitted`에 기록한다. 상한 전 요약은 유지한다.
+tsograph 역방향 명령에 `--entry-points`를 더하면 사용할 수 있다. **기존 발행 isthmus-cli 0.11.0은 이 선택적 필드를
+받지 않으므로 새 소비자 구현을 먼저 사용한다.**
+
 ## 입력: `isthmus-trace-context` v1 (단일 project)
 
 ```json
@@ -429,7 +453,7 @@ hop의 `upstreamRoutes`에 싣는다 — B의 변경이 A의 어떤 API로 드�
 | `reach-completeness-unknown` | 핸들러의 정방향 분석이 잇지 못한 호출을 신고하지 않아 도달이 끊겼는지 알 수 없다(분석·체인별 하나) |
 | `stale-analysis` | 분석 revision이 context(workspace면 member)나 다른 분석과 다르거나, 같은 플랫폼(workspace면 같은 member·플랫폼) 분석의 graphRevision이 다르거나, sql 분석 graphRevision이 member `catalog.graphSha`와 다르다 |
 | `analysis-revision-unknown` | context(workspace면 member)가 revision을 선언했는데(또는 context에 없고 다른 분석에는 있는데) 이 분석에 revision이 없다. member `catalog.graphSha`가 있는데 sql 분석에 graphRevision이 없어도 같다 |
-| `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러에도 닿지 않았다(스케줄·큐·CLI 진입점이거나 순회 불완전). link 없는 자기 route 핸들러에 닿았으면 대신 `route-decl-unlinked`다 |
+| `non-http-entry` | 역방향 순회가 어느 route-decl 핸들러나 생산자가 표시한 비HTTP 진입점에도 닿지 않았다(진입점 분류 미신고이거나 순회 불완전). link 없는 자기 route 핸들러에 닿았으면 대신 `route-decl-unlinked`다 |
 | `route-decl-unlinked` | 체인이 어떤 link도 server로 잇지 않은 member 자신의 route-decl에 닿았다 — upstream route(호출자를 모름), 역방향 선택이 닿은 핸들러, 또는 scope 없이 선택한 route. 그 route의 호출자·핸들러 체인은 따라가지 않았다(`member`, 핸들러면 `symbol`) |
 | `upstream-route-callers-not-followed` | upstream route를 link가 server로 잇지만 그 호출자를 따라가지 않았다 — 그 route의 단계가 `upstreamDepth`(기본 1)에 닿았거나 체인의 upstream 행 상한(10,000)을 다 썼다(문구가 어느 쪽인지 밝힌다). `route`의 scope 키로 선택하거나 깊이를 늘리면 이어 간다(`member`·`symbol`) |
 | `upstream-route-cycle` | **알림(notice)**. `upstreamDepth` 2 이상에서 upstream route가 이미 체인에 있는 route(선택한 route나 얕은 단계에서 따라간 route)라 다시 따라가지 않았다. 그 호출자는 체인 앞쪽에 이미 있다(`route`·`member`·`symbol`) |

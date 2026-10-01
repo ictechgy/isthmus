@@ -361,7 +361,11 @@ its own project root, revision, documents, and analyses) joined by `links`. Prod
 holds one selection: routes, relations, symbols, or files. For a route it follows the route-decl handler
 through the forward traversal to the relation uses it reaches, the persistence join to the
 schemagraph vertex ids, and their database dependents; it also follows attributed calls of the route
-to affected client symbols. Relations and symbols go the other way: reverse traversal to route
+to affected client symbols. With a producer that reports `symbol.entries` (tsograph `impact --entry-points`),
+relation, symbol, and file selections also list observed pages and server actions under `chains[].entryPoints`,
+with witness paths and evidence tiers. These remain separate from HTTP routes; page marks do not prove RSC rendering.
+This optional extension requires the new consumer implementation; released isthmus-cli 0.11.0 rejects it.
+Relations and symbols go the other way: reverse traversal to route
 handlers, then routes and clients. Files select every symbol located in them (a file-level
 over-approximation, reported as the `file-selection-coarse` notice, which does not fail `--strict`). In a workspace, persistence and
 language traversals stay inside a member and http joins only along declared links, so a table change
@@ -371,7 +375,7 @@ that is both client and server), a call whose reverse reach hits one of that mem
 its callers were not followed; `--upstream-depth` (context `upstreamDepth`, up to 8) follows those callers
 transitively (cycles become a notice, stops stay gaps). Every id in the output comes from a producer, unattributed calls
 are only counted, reruns are byte-identical, and the report is always `complete: false` — missing
-symbols, analyses, truncation, stale revisions, and non-http entry points are reported as `gaps`,
+symbols, analyses, truncation, stale revisions, and unclassified entry points are reported as `gaps`,
 never as "not reached". Each reach carries the producer's evidence tier (`direct`, `bound`, `candidate`,
 or `unassessed`); hops that rest only on possible-implementation dispatch edges and handlers whose
 forward reach passes unlinked call sites (or whose producer does not report them) are gaps too.

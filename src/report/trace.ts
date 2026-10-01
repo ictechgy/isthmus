@@ -8,6 +8,8 @@ import {
   type TraversalLocation,
   type TraversalPlatform,
   type TraversalReached,
+  type TraversalSymbol,
+  type TraversalEntryKind,
 } from '../exchange/language-traversal.ts';
 import type { HttpSurfacePrivacy, ImportedHttpSurface } from '../exchange/http-surface.ts';
 import {
@@ -224,6 +226,17 @@ export interface TraceHandlerHop {
   readonly reachedFrom: readonly TraceReach[];
 }
 
+/** 역방향 선택에서 닿은 비HTTP 진입점이다. 생산자 표식과 도달 근거만 싣고 route를 합성하지 않는다. */
+export interface TraceEntryPointHop {
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  readonly member?: string;
+  readonly qualifiedName?: string;
+  readonly location?: TraversalLocation;
+  readonly entries: readonly TraversalEntryKind[];
+  readonly reachedFrom: readonly TraceReach[];
+}
+
 /** relation-use 사실 하나와 persistence 조인이 해석한 선언이다. */
 export interface TraceRelationUseHop {
   readonly use: TraceEndpoint;
@@ -249,6 +262,8 @@ export interface TraceChain {
   readonly selector: TraceSelector;
   readonly routes: readonly TraceRouteHop[];
   readonly handlers: readonly TraceHandlerHop[];
+  /** 관찰된 비HTTP 진입점이 있을 때만 싣는다. 없으면 옛 보고서 모양을 유지한다. */
+  readonly entryPoints?: readonly TraceEntryPointHop[];
   readonly relationUses: readonly TraceRelationUseHop[];
   readonly database: readonly TraceDatabaseHop[];
 }
@@ -341,6 +356,8 @@ export interface TraceReport {
     databaseDependents: number; calls: number; clientSymbols: number;
     /** 호출·consumer hop의 upstream route 수다(같은 route가 여러 hop에 실리면 hop마다 센다, 따라간 호출 hop의 것 포함). */
     upstreamRoutes: number;
+    /** 관찰된 비HTTP 진입점 hop 수다. 0이면 생략한다(옛 보고서 모양 유지). */
+    entryPoints?: number;
     gaps: number; notices: number;
     /** 보고서의 모든 도달 근거(relation-use·핸들러 reachedFrom, 클라이언트 affected, DB dependents)의 등급별 수다. */
     evidence: TraceEvidenceCounts;
@@ -790,17 +807,23 @@ class TraceBuilder {
 
   /**
    * 시작 심볼들에서 역방향 순회로 route 핸들러를 찾고 그 route의 클라이언트 hop을 만든다.
-   * 핸들러에 닿지 못한 시작점은 `non-http-entry`로 남긴다. 순회와 핸들러는 시작 심볼의 member 안에서만 찾는다.
+   * 핸들러·표시된 비HTTP 진입점 어느 쪽에도 닿지 못한 시작점은 `non-http-entry`로 남긴다. 시작 심볼의 member 안에서만 찾는다.
    */
-  private reverseRoutes(selector: TraceSelector, starts: readonly StartSymbol[]): Pick<TraceChain, 'routes' | 'handlers'> {
+  private reverseRoutes(selector: TraceSelector, starts: readonly StartSymbol[]): Pick<TraceChain, 'routes' | 'handlers' | 'entryPoints'> {
     const handlers = new Map<string, TraceHandlerHop>();
     const routes = new Map<string, TraceRouteKey>();
+    const entryPoints = new Map<string, TraceEntryPointHop>();
     for (const start of starts) {
       const reach = new Map<string, TraceReach>([[start.usr, selfReach(start.usr)]]);
-      for (const { analysis, rows } of this.rootedRows(selector, start.member, 'reverse', start.platform, start.usr)) {
-        for (const row of rows) keepNearest(reach, row.symbol.usr, reachOf(start.usr, analysis, row));
-      }
       let found = false;
+      for (const { analysis, rootIndex, rows } of this.rootedRows(selector, start.member, 'reverse', start.platform, start.usr)) {
+        found = this.addEntryPoint(entryPoints, start, analysis.graph.roots[rootIndex]!.symbol!, selfReach(start.usr)) || found;
+        for (const row of rows) {
+          const via = reachOf(start.usr, analysis, row);
+          keepNearest(reach, row.symbol.usr, via);
+          found = this.addEntryPoint(entryPoints, start, row.symbol, via) || found;
+        }
+      }
       for (const [usr, via] of [...reach.entries()].sort(([left], [right]) => compareStrings(left, right))) {
         const handlerKey = memberSymbolKey(start.member, start.platform, usr);
         for (const { scope, fact } of this.declsByHandler.get(handlerKey) ?? []) {
@@ -832,7 +855,34 @@ class TraceBuilder {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
     });
-    return { routes: hops, handlers: sortHandlers(handlers) };
+    return { routes: hops, handlers: sortHandlers(handlers),
+      ...(entryPoints.size === 0 ? {} : { entryPoints: valuesSortedByKey(entryPoints) }) };
+  }
+
+  /** 같은 member·platform·usr의 진입점 관찰을 합치고 시작점별 가장 강한 도달 근거를 보존한다. */
+  private addEntryPoint(target: Map<string, TraceEntryPointHop>, start: StartSymbol, symbol: TraversalSymbol,
+    via: TraceReach): boolean {
+    const entries = symbol.entries?.filter((entry) => entry !== 'route-handler') ?? [];
+    if (entries.length === 0) return false;
+    const key = memberSymbolKey(start.member, start.platform, symbol.usr);
+    const current = target.get(key);
+    const reaches = new Map((current?.reachedFrom ?? []).map((reach) => [reach.from, reach]));
+    keepNearest(reaches, via.from, via);
+    const observed = {
+      ...(symbol.qualifiedName === undefined ? {} : { qualifiedName: symbol.qualifiedName }),
+      ...(symbol.location === undefined ? {} : { location: symbol.location }),
+    };
+    const prior = current === undefined ? undefined : {
+      ...(current.qualifiedName === undefined ? {} : { qualifiedName: current.qualifiedName }),
+      ...(current.location === undefined ? {} : { location: current.location }),
+    };
+    // 다른 분석이 같은 id의 부가 정보를 달리 신고해도 입력 순서에 기대지 않는다. freshness 공백은 별도로 유지한다.
+    const metadata = prior === undefined || compareStrings(canonicalJsonKey(observed), canonicalJsonKey(prior)) < 0 ? observed : prior;
+    target.set(key, { platform: start.platform, usr: symbol.usr, ...this.memberField(start.member), ...metadata,
+      entries: [...new Set([...(current?.entries ?? []), ...entries])].sort(compareStrings),
+      reachedFrom: [...reaches.values()].sort((left, right) => compareStrings(left.from, right.from)),
+    });
+    return true;
   }
 
   /**
@@ -1516,6 +1566,7 @@ class TraceBuilder {
     this.bump(chain.routes.reduce((sum, route) => sum + 1 + route.declarations.length + route.contracts.length +
       allCallHops(route.calls).reduce((total, call) => total + callItems(call), 0), 0) +
       chain.handlers.length + chain.relationUses.length +
+      (chain.entryPoints ?? []).reduce((sum, entry) => sum + 1 + entry.reachedFrom.length, 0) +
       chain.database.reduce((sum, hop) => sum + 1 + hop.dependents.length, 0));
     return chain;
   }
@@ -1530,7 +1581,7 @@ class TraceBuilder {
     const affected = [...chain.routes.flatMap(({ calls }) => allCallHops(calls).flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents)];
     for (const row of affected) if (row.witnessPartial) partial(row.analysis, row.member, row.platform, row.usr);
-    for (const handler of chain.handlers) {
+    for (const handler of [...chain.handlers, ...(chain.entryPoints ?? [])]) {
       for (const reach of handler.reachedFrom) {
         if (reach.witnessPartial) partial(reach.analysis, handler.member, handler.platform, handler.usr);
       }
@@ -1550,6 +1601,16 @@ class TraceBuilder {
    */
   private candidateGaps(chain: TraceChain): void {
     const { selector } = chain;
+    for (const entry of chain.entryPoints ?? []) {
+      for (const reach of entry.reachedFrom) {
+        if (reach.evidence === 'candidate') {
+          this.gap({ code: 'candidate-dispatch', selector, ...optionalAnalysis(reach.analysis), ...optionalMember(entry.member),
+            symbol: { platform: entry.platform, usr: entry.usr },
+            detail: 'This entry point is reached only through possible-implementation dispatch edges (candidate evidence); '
+              + 'it may not actually be affected.' });
+        }
+      }
+    }
     for (const use of chain.relationUses) {
       for (const reach of use.reachedFrom) {
         if (reach.evidence !== 'candidate') continue;
@@ -1917,6 +1978,7 @@ function sortedGaps(gaps: ReadonlyMap<string, TraceGap>): TraceGap[] {
 
 function summarize(chains: readonly TraceChain[], gaps: number, notices: number): TraceReport['summary'] {
   const sum = (pick: (chain: TraceChain) => number) => chains.reduce((total, chain) => total + pick(chain), 0);
+  const entryPoints = sum((chain) => chain.entryPoints?.length ?? 0);
   return {
     chains: chains.length,
     routes: sum(({ routes }) => routes.length),
@@ -1929,6 +1991,7 @@ function summarize(chains: readonly TraceChain[], gaps: number, notices: number)
       total + allCallHops(route.calls).reduce((count, call) => count + consumerAndClientRows(call).length, 0), 0)),
     upstreamRoutes: sum(({ routes }) => routes.reduce((total, route) =>
       total + allCallHops(route.calls).reduce((count, call) => count + upstreamRows(call).length, 0), 0)),
+    ...(entryPoints === 0 ? {} : { entryPoints }),
     gaps,
     notices,
     evidence: countEvidence(chains),
@@ -1942,6 +2005,7 @@ function countEvidence(chains: readonly TraceChain[]): TraceEvidenceCounts {
     const reaches: ReadonlyArray<{ evidence: TraceEvidence }> = [
       ...chain.relationUses.flatMap(({ reachedFrom }) => reachedFrom),
       ...chain.handlers.flatMap(({ reachedFrom }) => reachedFrom),
+      ...(chain.entryPoints ?? []).flatMap(({ reachedFrom }) => reachedFrom),
       ...chain.routes.flatMap(({ calls }) => allCallHops(calls).flatMap(consumerAndClientRows)),
       ...chain.database.flatMap(({ dependents }) => dependents),
     ];
