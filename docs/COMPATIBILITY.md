@@ -1,7 +1,8 @@
 # 공개 호환 버전 세트
 
-2026-10-01 갱신한 isthmus 0.11.0의 릴리스 후보 호환 대상 세트다. 새 후보 세트는 현재 로컬 산출물로
-검사 중이며, registry 설치본과 cold-cache CI 검증은 발행 뒤 별도로 기록한다. 이전 발행본의 설치 검증은
+2026-10-01 갱신한 isthmus 0.11.0의 호환 대상 세트다. 이번 산출물 검증은
+[0.11.0 절](#0110-릴리스-검증-2026-10-01)에 기록하고, registry 설치본과 cold-cache CI 검증은
+발행 뒤 별도로 기록한다. 이전 발행본의 설치 검증은
 [0.10.0 절](#0100-호환-갱신-2026-09-30)과 [tsograph 0.1.0 절](#tsograph-010-추가-2026-10-01)에
 보존한다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
@@ -19,11 +20,30 @@
 [v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
 세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표에서 tsograph를
 뺀 세트를 담는다 — tsograph 0.1.0 행은 npm 0.10.0 발행 뒤 저장소 manifest에만 더했고, npm은 재발행하지 않으며
-isthmus 0.11.0 릴리스 후보 tarball은 tsograph 0.2.0 행을 포함한다.
+isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
+
+## 0.11.0 릴리스 검증 (2026-10-01)
+
+아래는 발행 준비 시점에 실행한 검증이다. 로컬 산출물 설치와 registry 발행 상태를 구분한다.
+
+- isthmus-cli 0.11.0·tsograph 0.2.0의 `npm run verify`와 격리 tarball 설치를 통과했다.
+  tsograph 설치본에서 버전·종료 코드 0/2/64·합성 fetch route-call을 확인했다.
+  새 `routes --role client`는 웹/RN fetch·axios·ky를 포함하고 공유 URL 벡터 38개를 더한다.
+- cartograph 0.23.1의 arm64/x86_64 universal 릴리스 바이너리와 dartograph 0.16.1의 컴파일된 CLI,
+  설치한 isthmus-cli 0.11.0 tarball로 retention 왕복·공개 Flutter plugin·limitation 스코프 dogfood를 통과했다.
+  공개 plugin은 `plus_plugins` commit `13e170479b3c66c890fa401f5fdb3af141faf67a`의 macOS 범위를 검증했다.
+- gartograph 0.9.1·rustograph 0.4.1의 공개 GitHub Release 아카이브는 다섯 target의 SHA-256을
+  GitHub asset digest와 대조하고 macOS arm64 다운로드 설치본의 버전을 확인했다.
+  gartograph 0.9.1은 Go proxy 설치본 버전도 확인했다.
+- pythograph 0.2.1은 PyPI Trusted Publishing을 마쳤고 registry wheel·sdist 해시와 설치본 CLI 계약을
+  확인했다. pythograph는 현재 `compatibility.json`의 producer 표에 포함하지 않는 별도 Python 도구다.
+
+이 기록만으로 npm 0.11.0·tsograph 0.2.0의 registry 발행 또는 전체 cold-cache CI 완료를 주장하지 않는다.
+그 검증은 발행된 버전을 실제 설치한 뒤 수행한다. 이전 발행본의 설치 기록은 아래 절에 보존한다.
 
 ## 호환 버전 표
 
