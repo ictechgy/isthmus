@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-01
+
 ### Added
 
 - capture의 사전 계산 심볼 목록에 `artifact: "digest-only"` 옵션을 추가했다. 검증·선택을 유지하면서

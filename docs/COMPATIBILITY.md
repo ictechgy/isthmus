@@ -1,8 +1,9 @@
 # 공개 호환 버전 세트
 
-2026-09-30 갱신한 isthmus 0.10.0의 호환 대상 세트다. 이번 갱신의 설치본 검증은
-[0.10.0 절](#0100-호환-갱신-2026-09-30)에, 이후 더한 tsograph 행은
-[2026-10-01 절](#tsograph-010-추가-2026-10-01)에 구분했다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
+2026-10-01 갱신한 isthmus 0.11.0의 릴리스 후보 호환 대상 세트다. 새 후보 세트는 현재 로컬 산출물로
+검사 중이며, registry 설치본과 cold-cache CI 검증은 발행 뒤 별도로 기록한다. 이전 발행본의 설치 검증은
+[0.10.0 절](#0100-호환-갱신-2026-09-30)과 [tsograph 0.1.0 절](#tsograph-010-추가-2026-10-01)에
+보존한다. 이전 조합의 MethodChannel·BasicMessageChannel 조인,
 변경 사전 점검, retention 왕복, React Native·Expo 모듈 조인은 아래
 [실측으로 확인한 범위](#실측으로-확인한-범위-2026-09-16-2026-09-18-추가)의
 근거가 있다. EventChannel v2 문서는 세 producer 발행본이 생산하지만
@@ -18,7 +19,7 @@
 [v0.9.0 태그](https://github.com/ictechgy/isthmus/blob/v0.9.0/compatibility.json)의 kartograph 0.13.0
 세트이고, 이후 저장소 manifest를 kartograph 0.14.0으로 갱신했다. npm 0.10.0은 아래 표에서 tsograph를
 뺀 세트를 담는다 — tsograph 0.1.0 행은 npm 0.10.0 발행 뒤 저장소 manifest에만 더했고, npm은 재발행하지 않으며
-다음 isthmus 릴리스의 tarball이 포함한다.
+isthmus 0.11.0 릴리스 후보 tarball은 tsograph 0.2.0 행을 포함한다.
 기존 npm 아카이브는 불변이다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
@@ -31,14 +32,14 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.10.0** | `npm install --global isthmus-cli@0.10.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`, GitHub Action `ictechgy/isthmus@v0.10.0` |
-| cartograph | **0.23.0** | GitHub Release 아카이브(`cartograph-0.23.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
-| kartograph | **0.18.0** | GitHub Release 아카이브(`kartograph-0.18.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
-| dartograph | **0.16.0** | `dart pub global activate dartograph 0.16.0` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |
+| isthmus-cli | **0.11.0** | `npm install --global isthmus-cli@0.11.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`, GitHub Action `ictechgy/isthmus@v0.11.0` |
+| cartograph | **0.23.1** | GitHub Release 아카이브(`cartograph-0.23.1-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
+| kartograph | **0.18.1** | GitHub Release 아카이브(`kartograph-0.18.1.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
+| dartograph | **0.16.1** | `dart pub global activate dartograph 0.16.1` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |
 | schemagraph | **0.7.0** | `cargo install schemagraph-cli --version 0.7.0 --locked` 또는 GitHub Release 아카이브(`schemagraph-0.7.0-aarch64-apple-darwin.tar.gz`·`schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz`, `SHA256SUMS`) | `facts`(sql persistence `relation-decl`, `symbol.usr`), `query`·`impact --format language-traversal`(DB 의존자, trace 입력) |
-| gartograph | **0.9.0** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.0` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
-| rustograph | **0.4.0** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.0` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
-| tsograph | **0.1.0** | `npm i -g tsograph@0.1.0` (Node 22.18.0 이상) | `openapi`(OpenAPI 2.0/3.0/3.1 → `route-contract`), `routes --role server`(Next.js App Router·Pages Router API, Hono·Express·Fastify·Koa·NestJS), `schema`(Prisma·SQL 텍스트 persistence `relation-use`), `graph`·`reach`·`impact`(language-traversal v1) |
+| gartograph | **0.9.1** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.1` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
+| rustograph | **0.4.1** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.1` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
+| tsograph | **0.2.0** | `npm i -g tsograph@0.2.0` (Node 22.18.0 이상) | `openapi`(OpenAPI 2.0/3.0/3.1 → `route-contract`), `routes --role server`(Next.js App Router·Pages Router API, Hono·Express·Fastify·Koa·NestJS)·`--role client`(웹/RN fetch·axios·ky), `schema`(Prisma·SQL 텍스트 persistence `relation-use`), `graph`·`reach`·`impact`(language-traversal v1) |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
