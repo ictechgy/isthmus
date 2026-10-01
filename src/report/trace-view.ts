@@ -41,7 +41,7 @@ export type LimitedTraceReport = TraceReport & {
  * 보고서의 목록을 상한으로 자른다. 순서는 보고서의 결정적 순서를 그대로 따른다.
  *
  * 자르는 목록: `chains`(maxChains), 최상위 `gaps`·`notices`·`limitations`·`analysisLimitations`·`analyses`, chain의
- * `routes`·`handlers`·`relationUses`·`database`, route의 `declarations`·`contracts`·`calls`, 호출의 `affected`·`upstreamRoutes`·
+ * `routes`·`handlers`·`entryPoints`·`relationUses`·`database`, 진입점의 `reachedFrom`, route의 `declarations`·`contracts`·`calls`, 호출의 `affected`·`upstreamRoutes`·
  * `consumers`와 consumer hop의 `entries`·`affected`·`upstreamRoutes`, upstream route의 `declarations`·`callers`와 따라간 scope의
  * `calls`(그 호출 hop은 같은 규칙으로 다시 자른다), 핸들러의
  * `routes`·`reachedFrom`, relation 사용의 `decls`·`reachedFrom`, DB 정점의 `dependents`(각 maxRows). hop 하나의 증거인
@@ -106,6 +106,11 @@ export function limitTraceReport(report: TraceReport, limits: TraceLimits): Limi
         routes: rows(handler.routes, `${at}.handlers[${handlerIndex}].routes`),
         reachedFrom: rows(handler.reachedFrom, `${at}.handlers[${handlerIndex}].reachedFrom`),
       })),
+      ...(chain.entryPoints === undefined ? {} : {
+        entryPoints: rows(chain.entryPoints, `${at}.entryPoints`).map((entry, entryIndex) => ({
+          ...entry, reachedFrom: rows(entry.reachedFrom, `${at}.entryPoints[${entryIndex}].reachedFrom`),
+        })),
+      }),
       relationUses: rows(chain.relationUses, `${at}.relationUses`).map((use, useIndex) => ({
         ...use,
         decls: rows(use.decls, `${at}.relationUses[${useIndex}].decls`),

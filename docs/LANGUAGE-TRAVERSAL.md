@@ -158,6 +158,26 @@ isthmus는 아래를 어긴 문서를 고쳐 읽지 않고 입력 오류(종료 
   다른 root에서 닿은 root 항목의 `unresolvedCalls`는 `roots[]` 항목 값과 같다.
 - 상한: root 10,000개, 도달 정점 100,000개, 정점당 root 인덱스 64개, 관계 32개, depth 128.
 
+## 선택적 진입점 표식 (`symbol.entries`)
+
+root와 도달 정점의 `symbol`은 생산자가 실제 관찰한 `entries`를 선택적으로 실을 수 있다. 허용 종류는
+`instrumentation`, `metadata-route`, `middleware`, `page`, `route-handler`, `scheduled`, `server-action`이다.
+목록은 비어 있지 않아야 하고, 문자열 오름차순·중복 없음·최대 7개다. 모르는 종류는 입력 오류다.
+같은 id가 root와 도달 정점에 모두 있으면 두 표식은 같아야 한다(양쪽 생략 포함).
+
+```json
+{"usr": "src/app/profile/page.tsx#ProfilePage", "entries": ["page"],
+ "location": {"path": "src/app/profile/page.tsx", "line": 4, "column": 1}}
+```
+
+표식은 생산자의 분류이며 HTTP route·프레임워크의 실제 실행·완전성을 증명하지 않는다. `page`에는 layout·특수
+파일·클라이언트 컴포넌트도 들 수 있으므로 RSC라고 일괄 추정하지 않는다. 없으면 분류를 신고하지 않은 것이며,
+진입점이 아니거나 영향을 받지 않는다는 뜻이 아니다. 위치·이름으로 종류를 추측하지 않는다.
+
+새 isthmus 소비자는 예전 문서를 그대로 받는다. 기존 isthmus-cli 0.11.0은 이 필드를 입력 오류로 거부한다.
+tsograph는 `reach`·`impact --entry-points`로 확장을 요청할 때만 표식과 표시된 root의 위치를 싣는다. 기본 출력은
+바꾸지 않는다. 소비자 지원을 먼저 배포한 뒤 옵션을 켠다. 이 확장은 bridge-facts와 다른 생산자의 필수 출력을 바꾸지 않는다.
+
 ## 옛 형식 어댑터 (trace)
 
 trace는 새 형식을 우선하고, 이미 배포된 형식은 어댑터로 같은 숲에 투영한다. 어댑터는 새 id를

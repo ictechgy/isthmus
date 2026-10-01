@@ -54,6 +54,25 @@ test('language-traversal v1을 검증하고 root 출처·대표 경로를 보존
   assert.equal(truncated.revision, undefined);
 });
 
+test('선택적 진입점 표식은 root·도달 심볼에서 보존하고 잘못된 분류는 거부한다', () => {
+  const value = document();
+  value.roots[0].symbol.entries = ['page'];
+  value.reached[0].symbol.entries = ['scheduled', 'server-action'];
+  const graph = traversalGraphFromDocument(parseLanguageTraversal(value));
+  assert.deepEqual((graph.roots[0]!.symbol as any).entries, ['page']);
+  assert.deepEqual((graph.reached[0]!.symbol as any).entries, ['scheduled', 'server-action']);
+  for (const entries of [[], ['unknown'], ['page', 'page'], ['server-action', 'page'], 'page', [1],
+    ['instrumentation', 'metadata-route', 'middleware', 'page', 'route-handler', 'scheduled', 'server-action', 'extra']]) {
+    const invalid = document();
+    invalid.reached[0].symbol.entries = entries;
+    assert.throws(() => parseLanguageTraversal(invalid), TraversalValidationError);
+  }
+  const overlap = rootToRoot();
+  overlap.roots[1].symbol.entries = ['page'];
+  overlap.reached[0].symbol.entries = ['server-action'];
+  assert.throws(() => parseLanguageTraversal(overlap), /same entries/);
+});
+
 /** root B가 root A의 의존자이고, C는 B를 거쳐 두 root 모두에서 닿는 순회다. */
 function rootToRoot(): any {
   return {

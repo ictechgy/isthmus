@@ -31,6 +31,13 @@ export type TraversalDirection = 'dependencies' | 'dependents';
  */
 export type TraversalEvidence = 'direct' | 'bound' | 'candidate';
 
+/** 생산자가 관찰한 프레임워크 진입점 종류다. 경로나 HTTP 선언을 추정하는 표식이 아니다. */
+export type TraversalEntryKind =
+  | 'route-handler' | 'scheduled' | 'server-action' | 'page' | 'metadata-route' | 'middleware' | 'instrumentation';
+
+/** 진입점 표식의 닫힌 목록이다. 알 수 없는 종류를 정상 영향으로 읽지 않는다. */
+const entryKinds = new Set<string>(['route-handler', 'scheduled', 'server-action', 'page', 'metadata-route', 'middleware', 'instrumentation']);
+
 /** 생산자가 관찰한 소스 위치다. JVM처럼 줄·열이 없을 수 있어 부분 위치를 허용한다. */
 export interface TraversalLocation {
   readonly path: string;
@@ -44,6 +51,8 @@ export interface TraversalSymbol {
   readonly qualifiedName?: string;
   readonly kind?: string;
   readonly location?: TraversalLocation;
+  /** 정렬된 진입점 표식. 없으면 분류 미신고이며, 진입점이 아니라는 증거가 아니다. */
+  readonly entries?: readonly TraversalEntryKind[];
 }
 
 /**
@@ -171,7 +180,7 @@ const topKeys = new Set(['format', 'version', 'tool', 'generatedAt', 'platform',
 const rootKeys = new Set(['id', 'symbol', 'unresolvedCalls']);
 const reachedKeys = new Set(['symbol', 'via', 'depth', 'roots', 'relationships', 'evidence', 'unresolvedCalls']);
 const evidenceTiers = new Set<string>(['direct', 'bound', 'candidate']);
-const symbolKeys = new Set(['usr', 'qualifiedName', 'kind', 'location']);
+const symbolKeys = new Set(['usr', 'qualifiedName', 'kind', 'location', 'entries']);
 
 /** 값이 순회 플랫폼인지 확인한다. */
 export function isTraversalPlatform(value: unknown): value is TraversalPlatform {
@@ -310,6 +319,9 @@ export function validateTraversalGraph(
     if (own !== undefined && row.roots.includes(own)) fail('A reached root must not list its own root index.');
     if (own !== undefined && row.unresolvedCalls !== roots[own]!.unresolvedCalls) {
       fail('A reached root must report the same unresolvedCalls as its root entry.');
+    }
+    if (own !== undefined && JSON.stringify(row.symbol.entries) !== JSON.stringify(roots[own]!.symbol?.entries)) {
+      fail('A reached root must report the same entries as its root entry.');
     }
     if (row.via === row.symbol.usr) fail('Traversal via must differ from the reached symbol.');
     const viaRoot = rootIndex.get(row.via);
@@ -491,8 +503,16 @@ export function parseTraversalSymbol(input: unknown): TraversalSymbol {
   const qualifiedName = optionalSafe(value.qualifiedName, 'Invalid traversal symbol qualified name.');
   const kind = optionalSafe(value.kind, 'Invalid traversal symbol kind.');
   const location = value.location === undefined ? undefined : parseTraversalLocation(value.location);
+  const entries = value.entries === undefined ? undefined : parseEntryKinds(value.entries);
   return { usr, ...(qualifiedName === undefined ? {} : { qualifiedName }), ...(kind === undefined ? {} : { kind }),
-    ...(location === undefined ? {} : { location }) };
+    ...(location === undefined ? {} : { location }), ...(entries === undefined ? {} : { entries }) };
+}
+
+/** 빈 배열로 분류 여부를 흐리지 않도록 표식은 비어 있지 않은 정렬·고유 목록으로만 받는다. */
+function parseEntryKinds(input: unknown): TraversalEntryKind[] {
+  const entries = sortedUniqueStrings(input, entryKinds.size, 'Invalid traversal entry kinds.');
+  if (entries.length === 0 || entries.some((entry) => !entryKinds.has(entry))) fail('Invalid traversal entry kinds.');
+  return entries as TraversalEntryKind[];
 }
 
 /** 프로젝트 상대 부분 위치를 검증한다. 열은 줄이 있을 때만 올 수 있다. */
