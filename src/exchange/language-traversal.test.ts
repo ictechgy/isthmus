@@ -71,6 +71,11 @@ test('선택적 진입점 표식은 root·도달 심볼에서 보존하고 잘�
   overlap.roots[1].symbol.entries = ['page'];
   overlap.reached[0].symbol.entries = ['server-action'];
   assert.throws(() => parseLanguageTraversal(overlap), /same entries/);
+  delete overlap.reached[0].symbol.entries;
+  assert.throws(() => parseLanguageTraversal(overlap), /same entries/);
+  delete overlap.roots[1].symbol.entries;
+  overlap.reached[0].symbol.entries = ['page'];
+  assert.throws(() => parseLanguageTraversal(overlap), /same entries/);
 });
 
 /** root B가 root A의 의존자이고, C는 B를 거쳐 두 root 모두에서 닿는 순회다. */

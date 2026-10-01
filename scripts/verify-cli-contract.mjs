@@ -133,6 +133,11 @@ function verifyTraceEntryPoints() {
     verify(result.status === 0 && report.summary.entryPoints === 2 && report.summary.routes === 0
       && report.chains[0].entryPoints.length === 1 && report.truncation.omitted.some(({ path }) => path === 'chains[0].entryPoints'),
     'trace non-http entry points and limits');
+    reverse.reached[0].evidence = 'candidate';
+    writeFileSync(reversePath, JSON.stringify(reverse));
+    const candidate = run(['trace', path, '--strict', '--compact']);
+    verify(candidate.status === 1 && JSON.parse(candidate.stdout).gaps.some(({ code }) => code === 'candidate-dispatch'),
+      'trace candidate entry strict failure');
     reverse.reached[0].symbol.entries = ['unknown'];
     writeFileSync(reversePath, JSON.stringify(reverse));
     verify(run(['trace', path]).status === 2, 'trace entry kind validation');

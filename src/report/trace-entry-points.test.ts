@@ -155,3 +155,40 @@ test('workspace의 같은 id는 다른 member에서 가져와 잇지 않는다',
   assert.equal(result.chains[0]!.entryPoints, undefined);
   assert.ok(result.gaps.some(({ code, member }) => code === 'non-http-entry' && member === 'one'));
 });
+
+test('발행된 0.11.0 CLI가 만든 표식 없는 보고서와 바이트 단위로 같다', async () => {
+  const expected = await readFile(new URL('../../fixtures/trace/context-relation.legacy.trace.json', import.meta.url), 'utf8');
+  assert.equal(encodeSortedJson(createTraceReport(build())), expected);
+});
+
+test('순환의 부분 목격도 진입점 경로를 지어내지 않고 공백으로 보존한다', () => {
+  const result = createTraceReport(build((input) => {
+    input.context.selection = { symbols: [{ platform: 'js', usr: 'A' }] };
+    input.reverse.roots = [{ id: 'A', symbol: { usr: 'A' } }, { id: 'R', symbol: { usr: 'R', entries: ['page'] } }];
+    input.reverse.reached = [
+      { symbol: { usr: 'V' }, via: 'R', depth: 1, roots: [0, 1] },
+      { symbol: { usr: 'R', entries: ['page'] }, via: 'V', depth: 2, roots: [0] },
+    ];
+  }));
+  assert.equal(result.chains[0]!.entryPoints![0]!.reachedFrom[0]!.witnessPartial, true);
+  assert.ok(result.gaps.some(({ code }) => code === 'witness-partial'));
+});
+
+test('여러 분석의 표식·부가 정보는 결정적으로 합치고 더 강한 도달 근거를 보존한다', () => {
+  const input = build((value) => {
+    value.reverse.reached = [entryRow(page, ['page'], [1], 'candidate')];
+    delete value.reverse.reached[0].symbol.location;
+  });
+  const reference = { id: 'other-reverse', path: 'other.json', platform: 'js' as const, role: 'reverse' as const };
+  const extra = normalizeTraceAnalysis({ ...fixture.reverse,
+    reached: [{ ...entryRow(page, ['page', 'server-action']), symbol: { usr: page, entries: ['page', 'server-action'],
+      location: { path: 'server/page.ts', line: 1 } } }],
+  }, reference, input.context.project!);
+  const result = createTraceReport({ ...input, analyses: [...input.analyses, extra] });
+  const entry = result.chains[0]!.entryPoints![0]!;
+  assert.deepEqual(entry.entries, ['page', 'server-action']);
+  assert.deepEqual(entry.location, { path: 'server/page.ts', line: 1 });
+  assert.equal(entry.reachedFrom[0]!.evidence, 'bound');
+  assert.ok(!result.gaps.some(({ code }) => code === 'candidate-dispatch'));
+  assert.equal(encodeSortedJson(result), encodeSortedJson(createTraceReport({ ...input, analyses: [extra, ...input.analyses] })));
+});

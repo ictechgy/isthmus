@@ -43,6 +43,9 @@ API의 `routes`·`handlers`와 함께 페이지·서버 액션의 영향 후보�
 순회와 옛 어댑터의 출력·공백은 그대로다. candidate·잘림·stale·분석 없음 공백은 표식이 있어도 유지한다. 빈 목록은
 영향 없음의 증거가 아니다. `page`는 페이지 계열 분류이며 전부 RSC라는 뜻이 아니다.
 
+같은 심볼이 `route-handler`와 `scheduled` 등 다른 역할을 함께 가지면 핸들러와 진입점 양쪽에 표시한다.
+`summary.evidence`는 간선이나 고유 심볼 수가 아니라 출력 hop별 근거 수이므로 양쪽 도달을 각각 센다.
+
 관찰된 항목이 있을 때만 `entryPoints`와 `summary.entryPoints`를 싣는다. 도달 근거는 `summary.evidence`에도 포함하고,
 `--max-rows`는 진입점 목록과 그 `reachedFrom` 목록을 자른 뒤 `truncation.omitted`에 기록한다. 상한 전 요약은 유지한다.
 tsograph 역방향 명령에 `--entry-points`를 더하면 사용할 수 있다. **기존 발행 isthmus-cli 0.11.0은 이 선택적 필드를
