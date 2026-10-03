@@ -1,5 +1,7 @@
 # isthmus
 
+<img src="https://raw.githubusercontent.com/ictechgy/isthmus/main/icon.png" alt="isthmus's heron mascot" width="112" height="112" align="right">
+
 **Cross-language bridge calls in cross-platform apps, joined into one graph.**
 [cartograph](https://github.com/ictechgy/cartograph) (Swift) · [kartograph](https://github.com/ictechgy/kartograph) (Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph) (Dart) each draw their own map; isthmus

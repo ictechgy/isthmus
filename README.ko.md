@@ -1,5 +1,7 @@
 # isthmus
 
+<img src="https://raw.githubusercontent.com/ictechgy/isthmus/main/icon.png" alt="isthmus의 왜가리 마스코트" width="112" height="112" align="right">
+
 크로스플랫폼 앱에서 **언어 경계를 넘는 호출**을 그래프로 잇는 도구.
 [cartograph](https://github.com/ictechgy/cartograph)(Swift) · [kartograph](https://github.com/ictechgy/kartograph)(Kotlin) ·
 [dartograph](https://github.com/ictechgy/dartograph)(Dart)가 각자 그린 지도를 하나로 붙인다.
