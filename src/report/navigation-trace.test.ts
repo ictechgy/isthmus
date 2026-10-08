@@ -128,3 +128,31 @@ test('multiple matching server declarations retain canonical routes under docume
   assert.deepEqual(createNavigationTrace(navigation, [client, server, other], [traversal]),
     createNavigationTrace(navigation, [other, client, server], [traversal]));
 });
+
+test('same unjoined occurrence with different names and test flags has a deterministic conservative representative', () => {
+  const alias = { ...client, facts: [{ ...client.facts[0]!, testSource: true as const,
+    symbol: { usr: 'src/api.ts#read', qualifiedName: 'readAlias' } }] };
+  const forward = createNavigationTrace(navigation, [client, alias], [traversal]);
+  const reverse = createNavigationTrace(navigation, [alias, client], [traversal]);
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward.chains[0]?.calls.length, 1);
+  assert.equal(forward.chains[0]?.calls[0]?.route?.testSource, true);
+});
+
+test('declared forward-analysis limitations become a gap only for their matching screen roots', () => {
+  const limited = { ...traversal, limitations: ['graph-coverage: incomplete source discovery'] };
+  const selected = createNavigationTrace(navigation, [client, server], [limited]);
+  assert.ok(selected.gaps.some((gap) => gap.code === 'screen-analysis-limitations' && gap.screen === 'src/screen.ts#Catalog'));
+  const unrelated = { ...limited, roots: [{ id: 'Other', symbol: { usr: 'Other' } }], reached: [] };
+  assert.ok(!createNavigationTrace(navigation, [client, server], [traversal, unrelated]).gaps.some((gap) => gap.code === 'screen-analysis-limitations'));
+});
+
+test('three metadata variants choose the same representative under every input permutation', () => {
+  const variants = ['zeta', 'alpha', 'middle'].map((name, index) => ({ ...client, facts: [{ ...client.facts[0]!,
+    ...(index === 0 ? { testSource: true as const } : {}), symbol: { usr: 'src/api.ts#read', qualifiedName: name } }] }));
+  const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  const reports = orders.map((order) => createNavigationTrace(navigation, order.map((index) => variants[index]!), [traversal]));
+  for (const report of reports) assert.deepEqual(report, reports[0]);
+  assert.equal(reports[0]?.chains[0]?.calls[0]?.symbol?.qualifiedName, 'alpha');
+  assert.equal(reports[0]?.chains[0]?.calls[0]?.route?.testSource, true);
+});

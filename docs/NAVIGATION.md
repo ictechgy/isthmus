@@ -48,6 +48,9 @@ HTTP matcher로 backend 선언·계약에 연결한다. 같은 URL 문자열만�
 직접 합치지 않는다. 없는 분석·잘림·미해결 호출·조인하지 못한 요청은 gaps로 남는다.
 일반 종료는 0, strict의 gaps는 1, 입력/출력 실패는 2, 사용 오류는 64다.
 
-근거 등급·미해결 호출 집계를 신고하지 않은 분석은 `unknown`과 gaps로 표시하며 strict는 1로 끝난다. HTTP 생산자·조인의 한계와 스코프는 `httpLimitations`로 보존한다. navigation/HTTP 한계가 있거나 HTTP 호출의 caller 심볼이 없으면 전역 coverage gap을 남겨 strict 통과를 보류한다. source revision 신선도를 이 별도
+근거 등급·미해결 호출 집계를 신고하지 않은 분석은 `unknown`과 gaps로 표시하며 strict는 1로 끝난다. HTTP 생산자·조인의 한계와 스코프는 `httpLimitations`로 보존한다. navigation/HTTP 한계가 있거나, 해당 screen root의 순회 분석이 한계를 신고하거나, HTTP 호출의 caller 심볼이 없으면 전역 coverage gap을 남겨 strict 통과를 보류한다. source revision 신선도를 이 별도
 artifact만으로 증명하지 않으며 limitation을 유지한다. 입력은 파일당 16 MiB·전체 64 MiB UTF-8 바이트까지 일반 파일에서만 읽고, 출력은 16 Mi UTF-16 문자로 제한한다. 읽기·인코딩·JSON·계약·project 불일치·예산 실패를 구분한다. 1,000,000 link-work
 예산을 넘으면 부분 목록 대신 실패한다. 기존 `trace`·bridge-facts 처리와 출력은 변경하지 않는다.
+
+같은 HTTP 발생의 부가 이름이 다르면 canonical 대표를 고르고, 하나라도 testSource를 신고하면
+그 표시를 보존합니다. 원시 문서 순서를 바꿔도 chain·호출·gap·한계의 출력은 같습니다.

@@ -70,3 +70,15 @@ test('every read receives the remaining byte budget and over-limit custom reader
   const excessive = await runNavigationTraceCommand(['trace-navigation', 'context'], async () => ' '.repeat(16 * 1024 * 1024 + 1));
   assert.equal(excessive.exitCode, 2); assert.match(excessive.standardError, /byte limit/);
 });
+
+test('strict rejects a declared analysis limitation even with graded, untruncated reach', async () => {
+  const analysis = { format: 'language-traversal', version: 1, platform: 'js', project: navigation.project,
+    tool: navigation.tool, generatedAt: navigation.generatedAt, direction: 'dependencies', dispatch: 'direct',
+    roots: [{ id: 'src/screen.ts#Catalog', symbol: { usr: 'src/screen.ts#Catalog' } }], reached: [],
+    truncated: false, limitations: ['graph-coverage: incomplete source discovery'] };
+  const inputs: Record<string, unknown> = { '/work/context.json': { ...context, analyses: ['reach.json'] },
+    '/work/screens.json': navigation, '/work/reach.json': analysis };
+  const result = await runNavigationTraceCommand(['trace-navigation', '/work/context.json', '--strict'], async (path) => JSON.stringify(inputs[path]));
+  assert.equal(result.exitCode, 1);
+  assert.ok(JSON.parse(result.standardOutput).gaps.some((gap: { code: string }) => gap.code === 'screen-analysis-limitations'));
+});

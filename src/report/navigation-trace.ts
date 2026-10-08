@@ -43,11 +43,18 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
     if (++work > 1_000_000) throw new NavigationTraceInputError('Navigation linking exceeds its work limit; narrow screen or analysis inputs.');
   };
   const byCall = new Map<string, { endpoint: HttpMatch['uses'][number]; routes: HttpMatch[] }>();
+  const recordCall = (endpoint: HttpMatch['uses'][number], routes: readonly HttpMatch[] = []): void => {
+    const key = callKey(endpoint);
+    const value = byCall.get(key);
+    if (value === undefined) { byCall.set(key, { endpoint, routes: [...routes] }); return; }
+    const preferred = uniqueByCanonicalJson([withoutTestSource(value.endpoint), withoutTestSource(endpoint)])[0]!;
+    const testSource = value.endpoint.route?.testSource === true || endpoint.route?.testSource === true;
+    value.endpoint = testSource ? { ...preferred, route: { ...preferred.route!, testSource: true } } : preferred;
+    value.routes.push(...routes);
+  };
   for (const match of matches) for (const endpoint of match.uses) {
     if (endpoint.platform !== 'js' || endpoint.route?.kind !== 'route-call' || endpoint.symbol?.usr === undefined) continue;
-    const key = callKey(endpoint);
-    const value = byCall.get(key) ?? { endpoint, routes: [] };
-    value.routes.push(match); byCall.set(key, value);
+    recordCall(endpoint, [match]);
   }
   let missingCallSymbols = 0;
   for (const document of documents) {
@@ -60,8 +67,7 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
         route: { kind: 'route-call', ...(fact.method === undefined ? {} : { method: fact.method }),
           ...(fact.channel === null ? {} : { template: fact.channel }), pathAnchor: fact.pathAnchor ?? 'root',
           ...(fact.testSource === true ? { testSource: true } : {}) } };
-      const key = callKey(endpoint);
-      if (!byCall.has(key)) byCall.set(key, { endpoint, routes: [] });
+      recordCall(endpoint);
     }
   }
   const gaps: { code: string; screen?: string }[] = [];
@@ -78,6 +84,7 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
       const roots = analysis.roots.flatMap((root, index) => { charge(); return root.symbol?.usr === fact.screen!.usr ? [index] : []; });
       if (roots.length === 0) continue;
       found = true;
+      if (analysis.limitations.length > 0) gaps.push({ code: 'screen-analysis-limitations', screen: fact.screen.usr });
       if (analysis.truncated) gaps.push({ code: 'screen-analysis-truncated', screen: fact.screen.usr });
       if (analysis.rootsTruncated) gaps.push({ code: 'screen-analysis-roots-truncated', screen: fact.screen.usr });
       const certainty = traversalGraphFromDocument(analysis);
@@ -126,4 +133,11 @@ function strength(evidence: NavigationEvidence): number {
 function callKey(endpoint: HttpMatch['uses'][number]): string {
   return JSON.stringify([endpoint.symbol?.usr, endpoint.location, endpoint.route?.kind,
     endpoint.route?.method, endpoint.route?.template, endpoint.route?.pathAnchor]);
+}
+
+/** 합성한 OR flag가 다음 대표 선택의 정렬 순서를 바꾸지 않게 분리한다. */
+function withoutTestSource(endpoint: HttpMatch['uses'][number]): HttpMatch['uses'][number] {
+  if (endpoint.route?.testSource !== true) return endpoint;
+  const { testSource: _, ...route } = endpoint.route;
+  return { ...endpoint, route };
 }
