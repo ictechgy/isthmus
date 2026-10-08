@@ -122,6 +122,7 @@ measured.
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Confirmed facts vs. unconfirmed claims |
 | [`docs/PERSISTENCE-TRACE.md`](docs/PERSISTENCE-TRACE.md) | Manual code → table → DB dependents round trip with `check --pairs` |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace` (in development): route → handler → tables → DB dependents, and route → call sites → affected client code, joined by exact producer ids with explicit gaps |
+| [`docs/NAVIGATION.md`](docs/NAVIGATION.md) | `trace-navigation`: Configured screen URLs → exact JS forward reach → observed HTTP callers and backend matches; gaps and producer limits are preserved |
 | [`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md) | `diff --http` (in development): base vs head route surface of one server/spec or a workspace, calls that bound at base and no longer bind at head, `--fail-on` exit codes, and a base..head CI example |
 | [`docs/CI.md`](docs/CI.md) | GitHub Action (in development, `action.yml` at the repository root): per pull request, capture base and head, run `diff --http` and `trace` on the changed routes, and post a sticky comment listing broken client calls, affected tables and client code (Korean) |
 | [`docs/HTTP-SURFACE.md`](docs/HTTP-SURFACE.md) | `isthmus-http-surface` v1 and `surface export` (in development): a server's route declarations published across an organization boundary without handler paths, names or internals, imported by `trace` and `diff --http` as a sha256-pinned surface member |

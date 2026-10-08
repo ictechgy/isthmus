@@ -2,6 +2,12 @@
 
 이 프로젝트의 주요 변경 사항을 기록한다.
 
+## Unreleased
+
+- HTTP wrapper v2에 bounded path suffix 계약과 합성 conformance를 추가했다.
+- `trace-navigation`으로 별도 화면 URL 사실과 JS 정방향 분석을 실제 HTTP 호출에 연결한다.
+  근거가 없는 순회·잘림·미해결 호출·조인 gap과 HTTP 분석 한계를 보존하며 입력 바이트 상한을 적용한다.
+
 ## [Unreleased]
 
 ## [0.12.0] - 2026-10-01

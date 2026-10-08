@@ -39,6 +39,7 @@ verifyImpact();
 verifyRuntime();
 verifyPreflight();
 verifyTrace();
+verifyNavigationTrace();
 verifyTraceEntryPoints();
 verifyWorkspaceTrace();
 verifyOrgBoundary();
@@ -750,4 +751,43 @@ function run(arguments_) {
 /** 계약 위반이면 민감정보 없는 검사 이름으로 실패한다. */
 function verify(condition, name) {
   if (!condition) throw new Error(`CLI contract failed: ${name}`);
+}
+
+/** 화면 자체의 호출만 정확히 잇고 unassessed 입력을 strict에서 거부한다. */
+function verifyNavigationTrace() {
+  const root = mkdtempSync(join(tmpdir(), 'isthmus-navigation-'));
+  try {
+    const project = '/work/example';
+    const tool = { name: 'tsograph', version: 'example' };
+    const generatedAt = '2026-01-01T00:00:00Z';
+    const symbol = { usr: 'src/screen.ts#Catalog', qualifiedName: 'Catalog' };
+    const location = { path: 'src/screen.ts', line: 1, column: 1 };
+    const navigation = { format: 'navigation-facts', version: 1, project, tool, generatedAt,
+      platform: 'js', limitations: [], facts: [{ kind: 'screen-route', urlTemplate: '/catalog', dynamic: false, location, screen: symbol }] };
+    const client = { format: 'bridge-facts', version: 1, project, tool, generatedAt, platform: 'js', target: 'http',
+      roles: ['client'], limitations: [], facts: [{ kind: 'route-call', channel: '/v2/catalog', method: 'GET', dynamic: false, pathAnchor: 'root', location, symbol }] };
+    const server = { ...client, roles: ['server'], dispatch: 'specificity',
+      facts: [{ ...client.facts[0], kind: 'route-decl', symbol: { usr: 'src/server.ts#list', qualifiedName: 'list' } }] };
+    const traversal = { format: 'language-traversal', version: 1, project, tool, generatedAt,
+      platform: 'js', direction: 'dependencies', dispatch: 'direct', roots: [{ id: symbol.usr, symbol }],
+      reached: [], truncated: false, limitations: [] };
+    const context = { format: 'navigation-trace-context', version: 1, navigation: 'navigation.json',
+      documents: ['client.json', 'server.json'], analyses: ['reach.json'] };
+    for (const [name, value] of Object.entries({ context, navigation, client, server, reach: traversal })) {
+      writeFileSync(join(root, `${name}.json`), JSON.stringify(value));
+    }
+    const args = ['trace-navigation', join(root, 'context.json'), '--strict', '--compact'];
+    const result = run(args);
+    verify(result.status === 0, 'navigation trace strict observed status');
+    const report = JSON.parse(result.stdout);
+    verify(report.format === 'navigation-trace' && report.chains[0].calls[0].depth === 0, 'navigation self caller');
+    verify(report.chains[0].calls[0].routes[0].decls[0].symbol.usr === 'src/server.ts#list', 'navigation backend match');
+    const { dispatch: _, ...unassessed } = traversal;
+    writeFileSync(join(root, 'reach.json'), JSON.stringify(unassessed));
+    verify(run(args).status === 1, 'navigation unassessed strict gap');
+    verify(run(['help', 'trace-navigation']).stdout.startsWith('Usage: isthmus trace-navigation'), 'navigation help');
+    verify(run(['trace-navigation']).status === 64, 'navigation usage');
+    writeFileSync(join(root, 'context.json'), '{');
+    verify(run(args).status === 2, 'navigation JSON failure');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 }

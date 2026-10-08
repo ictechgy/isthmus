@@ -113,6 +113,7 @@ http 문서를 거부한다.
 | [`docs/CI.md`](docs/CI.md) | GitHub Action(개발 중, 저장소 루트 `action.yml`): PR마다 base·head를 수집해 `diff --http`와 바뀐 route의 `trace`를 돌리고, 끊기는 클라이언트 호출·영향받는 테이블·클라이언트 코드를 스티키 댓글로 싣는다 |
 | [`docs/HTTP-SURFACE.md`](docs/HTTP-SURFACE.md) | `isthmus-http-surface` v1과 `surface export`(개발 중): 핸들러 경로·이름·내부를 빼고 조직 경계 너머로 게시하는 서버 route 선언, sha256을 고정한 surface member로 `trace`·`diff --http`에 가져오기 |
 | [`docs/TRACE.md`](docs/TRACE.md) | `trace`(개발 중): route → 핸들러 → 테이블 → DB 의존자, route → 호출부 → 영향받는 클라이언트 코드를 생산자 id 정확 일치와 명시적 gap으로 잇는다 |
+| [`docs/NAVIGATION.md`](docs/NAVIGATION.md) | `trace-navigation`: 설정한 화면 URL → 정확한 JS 정방향 순회 → 실제 HTTP 호출과 backend 조인; gap과 생산자 한계를 보존 |
 | [`docs/LANGUAGE-TRAVERSAL.md`](docs/LANGUAGE-TRAVERSAL.md) | 생산자가 `trace`용으로 내는 정방향·역방향 순회 공유 형식 `language-traversal` v1 |
 | [`experiments/real-corpus/`](experiments/real-corpus/) | 고정 공개 플러그인·앱 정밀도 코퍼스(TP/FN/FP 계수) |
 | [`experiments/phase-0/`](experiments/phase-0/) | Dart·Swift 임시 추출기, 고정 JSON, 손 조인 검증 |
