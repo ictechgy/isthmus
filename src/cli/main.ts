@@ -2,6 +2,7 @@
 
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 
+import { readBoundedTextFile } from './bounded-text-file.ts';
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
 import type { CaptureFileSystem, CommandResult } from './command-support.ts';
@@ -19,6 +20,7 @@ import { impactUsage, runImpactCommand } from './impact-command.ts';
 import { runtimeUsage, runRuntimeCommand } from './runtime-command.ts';
 import { preflightUsage, runPreflightCommand } from './preflight-command.ts';
 import { runTraceCommand, traceUsage } from './trace-command.ts';
+import { navigationTraceUsage, runNavigationTraceCommand } from './navigation-trace-command.ts';
 import {
   retentionUsage,
   runRetentionsCommand,
@@ -37,6 +39,7 @@ const commandUsages = new Map([
   ['impact', impactUsage],
   ['preflight', preflightUsage],
   ['trace', traceUsage],
+  ['trace-navigation', navigationTraceUsage],
   ['surface', surfaceUsage],
   ['verify-runtime', runtimeUsage],
   ['retentions', retentionUsage],
@@ -54,6 +57,7 @@ Commands:
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
   trace        Follow a route, relation, symbol, or file to DB and client impact candidates
+  trace-navigation  Follow screen URL mappings through JS forward reach into HTTP calls
   surface      Export a server http surface for clients in another organization
   verify-runtime  Verify recorded calls against scenario expectations
   graph        Render matched boundary edges
@@ -177,6 +181,8 @@ async function dispatchCommand(
       return runPreflightCommand(commandArguments, readTextFile);
     case 'trace':
       return runTraceCommand(commandArguments, readTextFile);
+    case 'trace-navigation':
+      return runNavigationTraceCommand(commandArguments, readBoundedTextFile);
     case 'surface':
       return runSurfaceCommand(commandArguments, readTextFile, await readPackageVersion());
     case 'verify-runtime':

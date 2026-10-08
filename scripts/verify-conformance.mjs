@@ -106,6 +106,7 @@ function runCase(suite, testCase) {
     'compose.interpolation': runCompose,
     'compose.query-tail': runCompose,
     'compose.suffix': runCompose,
+    'compose.wrapper-suffix': runWrapperSuffix,
     'compose.normalize': runCompose,
     'compose.base-join': runBaseJoin,
     'compose.strip': runStrip,
@@ -442,6 +443,25 @@ function runMatch({ decls, call }) {
  * 3) 값 보간은 앞이 `/`로 끝나고 뒤가 `/`로 시작하거나 끝일 때만 `{}`다. 그 밖(부분 세그먼트,
  * 중간의 query 꼬리, `/` 앞의 값)은 dynamic이고 앞선 부분이 `/`로 시작하면 channelPrefix다.
  */
+/** v2 명시 suffix segment의 참조 실행기이며 transport 구현을 추측하지 않는다. */
+function runWrapperSuffix({ main, channelPrefix, segments = [], unresolved = false }) {
+  const dynamic = () => ({ dynamic: true, ...(main == null ? channelPrefix === undefined ? {} : { channelPrefix } : { channelPrefix: main }) });
+  if (main == null || unresolved || segments.length > 64) return dynamic();
+  let template = main;
+  for (const [index, segment] of segments.entries()) {
+    let encoded;
+    if ('value' in segment) encoded = '{}';
+    else {
+      const value = segment.literal;
+      if (typeof value !== 'string' || value === '' || value === '.' || value === '..' || !value.isWellFormed()
+          || /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/u.test(value)) return dynamic();
+      encoded = encodeURIComponent(value).replace(/[!'()*]/gu, (character) => '%' + character.charCodeAt(0).toString(16).toUpperCase());
+    }
+    template += (index > 0 || !template.endsWith('/') ? '/' : '') + encoded;
+  }
+  return template.length > 2048 ? dynamic() : { template };
+}
+
 function runCompose({ parts }) {
   const kept = [];
   let queryTailStripped = false;

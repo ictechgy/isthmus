@@ -1,4 +1,4 @@
-# HTTP 래퍼 선언과 호출 조립 규칙 (`http-wrappers` v1)
+# HTTP 래퍼 선언과 호출 조립 규칙 (`http-wrappers` v1·v2)
 
 _상태: 개발 중 계약(v1). isthmus는 이 파일을 읽지 않는다. 호출 측 생산자(cartograph·kartograph·
 dartograph·TS 생산자·gartograph·rustograph·pythograph 등)가 읽는 입력 스키마와, 그 생산자들이 함께 지켜야 하는
@@ -53,6 +53,51 @@ dartograph·TS 생산자·gartograph·rustograph·pythograph 등)가 읽는 입�
 문서가 소유하며, 생산자는 같은 선언 파일을 서로 다른 언어의 래퍼에 함께 쓸 수 있다.
 
 ## 생산자 의무
+
+### v2의 선택적 경로 suffix
+
+v2는 v1 필드를 유지하고 선택적 `pathSuffix`를 더한다. HTTP 사실 출력은 계속
+bridge-facts v1이다. suffix 없는 v1 입력은 이전 동작과 같아야 한다. v1 파일에 새 필드를
+넣으면 선언 오류이며, v2를 지원하지 않는 생산자는 명시적으로 버전을 거부한다.
+
+```jsonc
+{
+  "format": "http-wrappers",
+  "version": 2,
+  "wrappers": [{
+    "language": "swift", "kind": "constructor", "owner": "CatalogEndpoint", "name": "init",
+    "pathArg": {"label": "route"}, "defaultMethod": "GET", "pathAnchor": "root",
+    "pathSuffix": [
+      {"literal": "details"},
+      {"argument": {"label": "slug"}, "shape": "scalar"},
+      {"argument": {"label": "segments"}, "shape": "array"}
+    ]
+  }]
+}
+```
+
+- 선언 하나에 최대 32개 suffix 항목을 둔다. 항목은 `literal` 하나 또는 `argument`와
+  `shape` 두 필드로만 이뤄진다. `argument`는 기존 index/label 바인딩이다.
+- `scalar`는 해당 값이 decoded 경로 segment 하나라는 작성자의 명시적인 모델 선언이다.
+  알려진 문자열은 하나의 segment로 인코딩하고, 미상 scalar·숫자·Bool은 `{}`다.
+  인자 부재·nil·명백한 비scalar는 dynamic이다. segment 보장을 할 수 없는 래퍼에는 쓰지 않는다.
+- `array`는 길이를 아는 bounded array literal만 펼친다. 빈 배열은 아무것도 붙이지 않는다.
+  런타임 길이·spread·비scalar 원소·해석하지 못한 배열은 dynamic이다.
+- 한 호출에서 최대 64개 segment를 펼친다. 빈 문자열·`.`·`..`·제어 문자를 가진
+  literal segment는 정적 경로로 만들지 않는다.
+- segment는 decoded 데이터다. RFC 3986 unreserved만 그대로 두고 나머지는 UTF-8
+  대문자 퍼센트 인코딩한다. `/`는 `%2F`, `%`는 `%25`다. 기존 escape로 해석하거나
+  데이터의 slash를 segment 경계로 쓰지 않는다. 미상 scalar 하나만 `{}`로 표현한다.
+- 정규화된 main 경로 뒤에 경계 slash 하나로 붙이고, 제거된 query/fragment 상태·authority·
+  pathAnchor·마스킹 정책을 보존한다. main의 기존 `{}`나 escape는 다시 인코딩하지 않는다.
+- main이 dynamic이면 suffix로 정적으로 승격하지 않는다. suffix가 불확실하거나 상한을 넘으면
+  `dynamic: true`이며 기존에 증명한 main 템플릿만 `channelPrefix`로 남긴다. 호출 사실은
+  그대로 내보내고, 발생 수를 기존 `http-wrapper-unresolved:` 접두사 아래에 보고한다.
+- 선언 JSON 파일은 최대 1 MiB다. IO 구현은 가능하면 상한+1 byte까지만 읽어 판정한다.
+
+생산자 지원은 단계적으로 배포한다. 구현과 conformance 검증을 마친 생산자만 v2를 받으며,
+지원 전에는 각 생산자에 v1/v2 파일을 따로 전달한다. suffix가 있는 v2의 v1 down-convert는
+데이터를 잃으므로 허용하지 않는다. 공유 벡터는 지원 생산자별 `appliesTo`를 명시한다.
 
 - 선언과 일치하는 호출을 찾으면 `route-call`을 낸다. `symbol.usr`는 호출을 감싸는 선언의
   생산자 impact id다(GRAPH-EXCHANGE의 route 사실 필드).
