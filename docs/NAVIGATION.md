@@ -1,5 +1,7 @@
 # 화면 URL과 API 호출 연결
 
+isthmus-cli 0.13.0과 tsograph 0.10.0부터 지원한다.
+
 `navigation-facts` v1은 화면의 URL 템플릿과 생산자 그래프 심볼을 연결한다. HTTP
 method·service·authority·backend dispatch 의미는 없으며 bridge-facts와 별도 형식이다.
 화면 경로를 backend `route-decl`로 합성하지 않는다.

@@ -41,12 +41,12 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The compatible producer set for **0.12.0** is:
-cartograph **0.23.1**, kartograph **0.18.2**, dartograph **0.16.1**, schemagraph **0.7.0**,
-gartograph **0.9.1**, rustograph **0.4.1**, and tsograph **0.3.0** — see
+The compatible producer set for **0.13.0** is:
+cartograph **0.25.0**, kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**,
+gartograph **0.9.1**, rustograph **0.4.1**, and tsograph **0.10.0** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. Earlier npm archives keep the manifest they
-were published with; tsograph was added to the repository manifest after the npm 0.10.0
+were published with; tsograph was added to the repository manifest after the isthmus-cli npm 0.10.0
 tarball was published, so that tarball does not list it and the 0.11.0 tarball includes tsograph 0.2.0. MethodChannel joins and the retention
 round trip are supported from cartograph 0.5.3+ and dartograph 0.1.1+ — exercised on a
 public battery plugin — and the round trip was re-verified on the previous public
