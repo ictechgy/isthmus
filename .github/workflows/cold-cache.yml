@@ -174,3 +174,26 @@ jobs:
             gartograph="$api/gartograph/gartograph-$GARTOGRAPH_VERSION-linux-amd64/gartograph" \
             rustograph="$api/rustograph/rustograph-$RUSTOGRAPH_VERSION-linux-amd64/rustograph" \
             tsograph="$(command -v tsograph)"
+
+  # Python은 프로젝트 코드를 import하지 않는 실제 설치본으로 HTTP·순회·trace를 대조한다.
+  python-producer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - name: Install pinned published tools in isolated locations
+        run: |
+          python3 -m venv "$RUNNER_TEMP/python-producer"
+          "$RUNNER_TEMP/python-producer/bin/python" -m pip install "pythograph==$(node -p "require('./compatibility.json').producers.pythograph")"
+          npm install --prefix "$RUNNER_TEMP/isthmus" "isthmus-cli@$(node -p "require('./compatibility.json').isthmus")"
+      - name: Verify versions and producer-consumer behavior
+        run: |
+          node scripts/verify-installed-compatibility.mjs \
+            isthmus="$RUNNER_TEMP/isthmus/node_modules/.bin/isthmus" \
+            pythograph="$RUNNER_TEMP/python-producer/bin/pythograph"
+          node scripts/verify-python-producer.mjs \
+            "$RUNNER_TEMP/isthmus/node_modules/isthmus-cli/dist/cli/main.js" \
+            "$RUNNER_TEMP/python-producer/bin/pythograph"

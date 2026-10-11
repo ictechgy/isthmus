@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- Python 생산자를 호환 manifest에 포함하고, 공개 설치본의 HTTP 조인·순회·route trace와 음성 대조를 cold-cache CI에서 검증한다.
+
 ## [0.13.0] - 2026-10-09
 
 ### Added

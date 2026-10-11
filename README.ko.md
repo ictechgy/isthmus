@@ -40,7 +40,7 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 
 **0.13.0**의 호환 producer 세트는 cartograph **0.25.0**,
 kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph **0.9.1**,
-rustograph **0.4.1**, tsograph **0.10.0**이다 — 설치 명령·고정 예제·CI 예시는
+rustograph **0.4.1**, tsograph **0.10.0**, pythograph **0.2.1**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. 이전 npm 아카이브는 발행 당시의
 manifest를 유지한다. tsograph는 isthmus-cli npm 0.10.0 발행 뒤 저장소 manifest에 더했으므로 그
 tarball에는 없고 0.11.0 tarball에는 tsograph 0.2.0이 포함된다. MethodChannel 조인과 보존 근거 왕복은

@@ -32,7 +32,7 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.6.0** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
+**0.13.0** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
 Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
 It adds `impact --file`/`--symbol`/`--changes` (with lossless `--compact` JSON and a
 gap-aware `--strict` gate), `preflight <context.json>` with `--summary`/`--explain` over
@@ -43,7 +43,7 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 
 The compatible producer set for **0.13.0** is:
 cartograph **0.25.0**, kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**,
-gartograph **0.9.1**, rustograph **0.4.1**, and tsograph **0.10.0** — see
+gartograph **0.9.1**, rustograph **0.4.1**, tsograph **0.10.0**, and pythograph **0.2.1** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
 fixed end-to-end example, and a CI sketch. Earlier npm archives keep the manifest they
 were published with; tsograph was added to the repository manifest after the isthmus-cli npm 0.10.0
@@ -115,7 +115,7 @@ measured.
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | What, for whom, how far |
 | [`docs/PLAN.md`](docs/PLAN.md) | Step-by-step plan. **cartograph and dartograph have prerequisite work** |
-| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | Approved plan for API-change impact (API → DB tables, API → client call sites) over a new HTTP boundary domain — Phase 1 consumer (check/query) implemented, producers and later phases planned |
+| [`docs/API-IMPACT-PLAN.md`](docs/API-IMPACT-PLAN.md) | Approved plan for API-change impact (API → DB tables, API → client call sites) over a new HTTP boundary domain — Implementation history; current HTTP producers, trace and compatibility are documented below |
 | [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md) | `http-wrappers` v1 schema and the shared rules producers use to turn wrapper calls into `route-call` facts (with the `conformance/` vectors) |
 | [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) | The bridge-facts format the sister tools export — the contract shared across the sister repositories |
 | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Compatible public versions, fixed example, and CI setup |
