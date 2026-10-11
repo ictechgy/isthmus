@@ -20,6 +20,18 @@ isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
 
+## Python 생산자 왕복 검증 (2026-10-11)
+
+pythograph 0.2.1을 manifest와 cold-cache 검사에 포함한다. `scripts/verify-python-producer.mjs`
+는 실제 설치본으로 합성 Flask 서버·requests 호출·Python 정방향 순회를 추출하고,
+isthmus의 HTTP 조인과 route trace로 연결한다. 맞지 않는 경로의 음성 대조와 분석 대상 코드의
+실행 금지도 확인한다. 이는 제한된 합성 계약 검증이며 전체 Django/Flask·운영 앱의 정확도나
+모든 언어의 종단 검증을 뜻하지 않는다. 프로젝트는 설치하거나 import하지 않는다.
+
+재현: `node scripts/verify-python-producer.mjs <isthmus-main.js> <pythograph-executable>`.
+현재 소스 후보와 공개 PyPI 설치본은 각각 검사한다. registry/CI 결과가 없으면 발행 완료로
+표현하지 않는다. 이전 npm 아카이브의 manifest는 바꾸지 않는다.
+
 ## 0.13.0 릴리스 검증 (2026-10-09)
 
 이번 후보는 isthmus-cli 0.13.0·tsograph 0.10.0·cartograph 0.25.0·kartograph 0.20.0이다.
@@ -49,7 +61,7 @@ isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
   GitHub asset digest와 대조하고 macOS arm64 다운로드 설치본의 버전을 확인했다.
   gartograph 0.9.1은 Go proxy 설치본 버전도 확인했다.
 - pythograph 0.2.1은 PyPI Trusted Publishing을 마쳤고 registry wheel·sdist 해시와 설치본 CLI 계약을
-  확인했다. pythograph는 현재 `compatibility.json`의 producer 표에 포함하지 않는 별도 Python 도구다.
+  확인했다. 이 당시에는 pythograph를 producer 표에서 제외했다. 현재 추가 검증 범위는 아래 Python 절을 따른다.
 
 이 기록만으로 npm 0.11.0·tsograph 0.2.0의 registry 발행 또는 전체 cold-cache CI 완료를 주장하지 않는다.
 그 검증은 발행된 버전을 실제 설치한 뒤 수행한다. 이전 발행본의 설치 기록은 아래 절에 보존한다.
@@ -69,6 +81,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 | gartograph | **0.9.1** | `brew install ictechgy/tap/gartograph` 또는 `go install github.com/ictechgy/gartograph/cmd/gartograph@v0.9.1` | `schema`(persistence `relation-use`), `routes --role server`(net/http·chi·gin·echo)·`--role client`(net/http·resty), `reach`, `impact --format language-traversal` |
 | rustograph | **0.4.1** | `brew install ictechgy/tap/rustograph` 또는 `cargo install --git https://github.com/ictechgy/rustograph --tag v0.4.1` | `schema`(persistence `relation-use`), `routes --role server`(axum·actix)·`--role client`(reqwest·ureq), `reach`, `impact --format language-traversal` |
 | tsograph | **0.10.0** | `npm i -g tsograph@0.10.0` (Node 22.18.0 이상) | `openapi`(OpenAPI 2.0/3.0/3.1 → `route-contract`), `routes --role server`(Next.js App Router·Pages Router API, Hono·Express·Fastify·Koa·NestJS)·`--role client`(웹/RN fetch·axios·ky), `schema`(Prisma·SQL 텍스트 persistence `relation-use`), `graph`·`reach`·`impact`(language-traversal v1), `--entry-points`(페이지·서버 액션 표식; isthmus 0.12.0+) |
+| pythograph | **0.2.1** | `python -m pip install pythograph==0.2.1` (Python 3.10 이상) | Python HTTP server/client 사실과 language-traversal을 실제 CLI로 추출해 HTTP 조인·route trace까지 검사 |
 
 최소 조합은 따로 있다. MethodChannel(v1) 조인과 retention 왕복만 필요하면
 cartograph 0.5.3 이상·dartograph 0.1.1 이상도 동작한다. BasicMessageChannel(v2),
