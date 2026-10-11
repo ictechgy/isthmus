@@ -1,6 +1,6 @@
 # 공개 호환 버전 세트
 
-2026-10-09 준비한 isthmus 0.13.0의 호환 대상 세트다. source 구현·CI와 패키지 후보 검증,
+2026-10-12 준비한 isthmus 0.13.1의 호환 대상 세트다. source 구현·CI와 패키지 후보 검증,
 registry 발행·독립 설치 확인은 각각 기록한다. 새 버전의 발행 전에는 아래 표가 릴리스 후보이며
 발행 완료를 뜻하지 않는다. 이전 조합의 검증 이력은 아래 절에 보존한다.
 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이 필요할 때의 대안이다.
@@ -73,7 +73,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.13.0** | `npm install --global isthmus-cli@0.13.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`·`trace-navigation`, GitHub Action `ictechgy/isthmus@v0.13.0` |
+| isthmus-cli | **0.13.1** | `npm install --global isthmus-cli@0.13.1` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`·`trace-navigation`, GitHub Action `ictechgy/isthmus@v0.13.1` |
 | cartograph | **0.25.0** | GitHub Release 아카이브(`cartograph-0.25.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
 | kartograph | **0.20.0** | GitHub Release 아카이브(`kartograph-0.20.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
 | dartograph | **0.16.1** | `dart pub global activate dartograph 0.16.1` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |

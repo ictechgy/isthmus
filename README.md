@@ -32,7 +32,7 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-**0.13.0** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
+**0.13.1** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
 Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
 It adds `impact --file`/`--symbol`/`--changes` (with lossless `--compact` JSON and a
 gap-aware `--strict` gate), `preflight <context.json>` with `--summary`/`--explain` over
@@ -41,7 +41,7 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The compatible producer set for **0.13.0** is:
+The compatible producer set for **0.13.1** is:
 cartograph **0.25.0**, kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**,
 gartograph **0.9.1**, rustograph **0.4.1**, tsograph **0.10.0**, and pythograph **0.2.1** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a
