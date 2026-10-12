@@ -43,7 +43,7 @@ test('serve는 줄 단위 세션을 돌리고 입력이 닫히면 0으로 끝난
           },
         }),
       ]),
-      writeLine: (line) => written.push(line),
+      writeLine: (line) => { written.push(line); },
     },
   );
 
