@@ -56,3 +56,29 @@ artifact만으로 증명하지 않으며 limitation을 유지한다. 입력은 �
 
 같은 HTTP 발생의 부가 이름이 다르면 canonical 대표를 고르고, 하나라도 testSource를 신고하면
 그 표시를 보존합니다. 원시 문서 순서를 바꿔도 chain·호출·gap·한계의 출력은 같습니다.
+
+## 다음 릴리스: 목격 경로와 분석 출처
+
+아래 보강은 다음 릴리스 대상이며 isthmus-cli 0.13.1 발행본에는 없다.
+
+- 각 호출의 `path`는 생산자가 기록한 실제 목격 경로다. 여러 root가 같은 호출에 닿아도
+  `depth`는 이 목격의 시작 root 기준이다. 선택한 화면과 다르면 `witnessRoot`와
+  `screen-witness-other-root` gap을 남긴다. root 순환으로 앞부분이 없으면
+  `witnessPartial: true`와 `screen-witness-partial` gap을 남기며 경로를 지어내지 않는다.
+- `witnesses`는 같은 호출을 관찰한 모든 서로 다른 경로·근거 등급·분석 메타데이터를 보존한다.
+  기존 `depth`·`evidence`와 `path`는 가장 강한 등급, 화면 기준 완전한 목격, 작은 depth, canonical 순서로 고른
+  대표 관찰이다. 다른 관찰의 `candidate`·`unknown` 또는 한계를 제거하는 뜻이 아니다.
+  화면 자체의 호출은 `[screen.usr]`, depth 0이며 순회 간선이 없어 analysis가 없다.
+- 보고서 `analyses`는 호출이 없어도 생산자·생성 시각·revision·graphRevision·root·잘림·한계를
+  보존한다. 호출의 `witnesses[].analysis`는 이 목록의 `id`를 참조한다. id는 정규화한 순회 문서의
+  SHA-256이며 출처 식별용이다. 현재 소스 신선도를 증명하는 서명이 아니다. 반복된 메타데이터를
+  호출마다 복사하지 않는다. 목격 목록·대표 경로의 누적 직렬화 크기는 8 Mi UTF-16 문자로
+  제한하며, 상한을 넘으면 부분 성공 대신 코드 2로 실패한다.
+- 해당 화면을 root로 가진 분석의 source revision 또는 graphRevision이 충돌하면 각각
+  `screen-analysis-revision-conflict`·`screen-analysis-graph-revision-conflict` gap이다.
+  revision이 없으면 `screen-analysis-revision-unknown`, 다른 분석이 graphRevision을 신고했으나
+  일부가 생략했으면 `screen-analysis-graph-revision-unknown`이다. 시각으로 새 revision을 추측하지 않는다.
+- `candidate` 도달은 `screen-candidate-dispatch` gap을 남긴다. 위 gap들은 strict에서 코드 1이며
+  관찰된 호출은 그대로 반환한다. 동일 revision만으로 navigation·HTTP 사실 또는 현재 소스와의
+  정합성을 증명하지 않으므로 기존 freshness limitation도 유지한다. 빈 결과나 코드 0은
+  전체 도달 범위·삭제 안전성을 증명하지 않는다.

@@ -769,7 +769,7 @@ function verifyNavigationTrace() {
     const server = { ...client, roles: ['server'], dispatch: 'specificity',
       facts: [{ ...client.facts[0], kind: 'route-decl', symbol: { usr: 'src/server.ts#list', qualifiedName: 'list' } }] };
     const traversal = { format: 'language-traversal', version: 1, project, tool, generatedAt,
-      platform: 'js', direction: 'dependencies', dispatch: 'direct', roots: [{ id: symbol.usr, symbol }],
+      platform: 'js', direction: 'dependencies', revision: 'navigation-fixture', dispatch: 'direct', roots: [{ id: symbol.usr, symbol }],
       reached: [], truncated: false, limitations: [] };
     const context = { format: 'navigation-trace-context', version: 1, navigation: 'navigation.json',
       documents: ['client.json', 'server.json'], analyses: ['reach.json'] };
@@ -782,6 +782,29 @@ function verifyNavigationTrace() {
     const report = JSON.parse(result.stdout);
     verify(report.format === 'navigation-trace' && report.chains[0].calls[0].depth === 0, 'navigation self caller');
     verify(report.chains[0].calls[0].routes[0].decls[0].symbol.usr === 'src/server.ts#list', 'navigation backend match');
+    const caller = { usr: 'src/api.ts#read', qualifiedName: 'read' };
+    writeFileSync(join(root, 'client.json'), JSON.stringify({ ...client, facts: [{ ...client.facts[0], symbol: caller }] }));
+    const candidate = { ...traversal, reached: [{ symbol: caller, via: symbol.usr, depth: 1, roots: [0], evidence: 'candidate' }] };
+    writeFileSync(join(root, 'reach.json'), JSON.stringify(candidate));
+    const uncertain = run(args);
+    verify(uncertain.status === 1 && JSON.parse(uncertain.stdout).chains[0].calls[0].evidence === 'candidate', 'navigation candidate reach remains visible with strict gap');
+    const multi = { ...traversal, roots: [{ id: 'Other', symbol: { usr: 'Other' } }, ...traversal.roots],
+      reached: [{ symbol: caller, via: 'Other', depth: 1, roots: [0, 1] }] };
+    writeFileSync(join(root, 'reach.json'), JSON.stringify(multi));
+    const witnessed = run(args);
+    const witnessedCall = JSON.parse(witnessed.stdout).chains[0].calls[0];
+    verify(witnessed.status === 1 && witnessedCall.witnessRoot === 'Other'
+      && witnessedCall.path.join(',') === `Other,${caller.usr}`, 'navigation multi-root witness is not a screen-specific distance');
+    const conflict = { ...traversal, revision: 'another-revision' };
+    writeFileSync(join(root, 'other.json'), JSON.stringify(conflict));
+    writeFileSync(join(root, 'context.json'), JSON.stringify({ ...context, analyses: ['reach.json', 'other.json'] }));
+    const mixed = run(args);
+    verify(mixed.status === 1 && JSON.parse(mixed.stdout).gaps.some(({ code }) => code === 'screen-analysis-revision-conflict'), 'navigation revision conflict is a strict gap');
+    writeFileSync(join(root, 'context.json'), JSON.stringify(context));
+    const { revision: _revision, ...unknownRevision } = traversal;
+    writeFileSync(join(root, 'reach.json'), JSON.stringify(unknownRevision));
+    const unknown = run(args);
+    verify(unknown.status === 1 && JSON.parse(unknown.stdout).gaps.some(({ code }) => code === 'screen-analysis-revision-unknown'), 'navigation missing revision remains unknown');
     const { dispatch: _, ...unassessed } = traversal;
     writeFileSync(join(root, 'reach.json'), JSON.stringify(unassessed));
     verify(run(args).status === 1, 'navigation unassessed strict gap');

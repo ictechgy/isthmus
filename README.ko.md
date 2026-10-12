@@ -80,14 +80,15 @@ sqlite3·postgres·drift·floor)에 대해 같은 `relation-use` 사실을 낸�
 계약은 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 persistence 절을
 참조한다.
 
-세 번째 도메인 `http`는 개발 중이다([API 변경 영향 계획](docs/API-IMPACT-PLAN.md)의 Phase 1).
+`http` 도메인은 isthmus-cli 0.10.0부터 발행됐다([API 변경 영향 계획](docs/API-IMPACT-PLAN.md)은 구현 이력이다).
 `check`와 `query`가 `target: "http"` 문서를 소비한다. 서버 `route-decl`, 클라이언트 `route-call`,
 OpenAPI `route-contract` 사실을 (HTTP method, 정규 경로 템플릿)으로 세그먼트 매칭·구체성·경로
 제약·경로 앵커 네 조합 규칙에 따라 잇는다. 호출은 `service` 문자열이 정확히 같을 때(또는 아무도
 service를 선언하지 않았을 때)만 선언 측에 귀속되고, 귀속되지 않은 호출은 개수만 세며 출력하지
 않는다. error는 모든 전제가 증명될 때만 내고, 스펙만 있는 선언 측은 `route-call-without-decl`을
-만들지 않는다. 아직 이 문서를 내는 생산자는 없고 요청·응답 필드, query 파라미터, 헤더는 비교하지
-않는다. `diff --http`는 두 revision의 route 표면을 비교하고 결합하지 않게 되는 클라이언트 호출을 보고한다
+만들지 않는다. Swift·Kotlin·Dart·Go·Rust·JS/TS·Python·OpenAPI HTTP 생산자가 구현돼 있다.
+명령·지원 프레임워크·고정 호환 버전은 [COMPATIBILITY.md](docs/COMPATIBILITY.md)를 따른다.
+이는 소스 전체의 완전한 관찰을 뜻하지 않는다. 요청·응답 필드, query 파라미터, 헤더는 비교하지 않는다. `diff --http`는 두 revision의 route 표면을 비교하고 결합하지 않게 되는 클라이언트 호출을 보고한다
 ([`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)). `graph`·`impact`·`retentions`·`preflight`와 `--http` 없는 `diff`는 지금은
 http 문서를 거부한다.
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md)의 HTTP 절과 [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md)를 본다.
