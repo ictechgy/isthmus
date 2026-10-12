@@ -156,3 +156,131 @@ test('three metadata variants choose the same representative under every input p
   assert.equal(reports[0]?.chains[0]?.calls[0]?.symbol?.qualifiedName, 'alpha');
   assert.equal(reports[0]?.chains[0]?.calls[0]?.route?.testSource, true);
 });
+
+test('multi-root navigation preserves the actual witness instead of attributing its depth to the screen', () => {
+  const multi = parseLanguageTraversal({ ...traversal, revision: 'rev-a', graphRevision: 'graph-a',
+    roots: [{ id: 'Other', symbol: { usr: 'Other' } }, ...traversal.roots],
+    reached: [{ ...traversal.reached[0]!, via: 'Other', roots: [0, 1] }] });
+  const report = createNavigationTrace(navigation, [client, server], [multi]);
+  const call = report.chains[0]!.calls[0]!;
+  assert.deepEqual(call.path, ['Other', 'src/api.ts#read']);
+  assert.equal(call.witnessRoot, 'Other');
+  const source = report.analyses.find((analysis) => analysis.id === call.witnesses[0]!.analysis)!;
+  assert.equal(source.revision, 'rev-a');
+  assert.equal(source.graphRevision, 'graph-a');
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-witness-other-root'));
+});
+
+test('candidate reach and conflicting source or graph revisions cannot become a gap-free trace', () => {
+  const candidate = parseLanguageTraversal({ ...traversal, revision: 'old', graphRevision: 'graph-old',
+    dispatch: 'candidates', reached: [{ ...traversal.reached[0]!, evidence: 'candidate' }] });
+  const current = parseLanguageTraversal({ ...traversal, revision: 'new', graphRevision: 'graph-new' });
+  const report = createNavigationTrace(navigation, [client, server], [candidate, current]);
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-candidate-dispatch'));
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-analysis-revision-conflict'));
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-analysis-graph-revision-conflict'));
+  assert.deepEqual(report.chains[0]!.calls[0]!.witnesses.map((witness) => witness.evidence).sort(), ['candidate', 'direct']);
+  assert.deepEqual(report, createNavigationTrace(navigation, [server, client], [current, candidate, current]));
+});
+
+test('selected-screen witnesses and missing revisions retain exact source metadata even with no HTTP calls', () => {
+  const known = { ...traversal, revision: 'rev-a', graphRevision: 'graph-a' };
+  const partial = { ...traversal, truncated: true, rootsTruncated: true, truncationReasons: ['depth-limit'], limitations: ['scope: partial'] };
+  const report = createNavigationTrace(navigation, [client, server], [known, partial]);
+  const call = report.chains[0]!.calls[0]!;
+  assert.deepEqual(call.path, ['src/screen.ts#Catalog', 'src/api.ts#read']);
+  assert.equal(call.witnessRoot, undefined);
+  assert.equal(call.witnessPartial, undefined);
+  assert.equal(call.witnesses.length, 2);
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-analysis-revision-unknown'));
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-analysis-graph-revision-unknown'));
+  const source = report.analyses.find((item) => item.truncated)!;
+  assert.equal(source.revision, undefined);
+  assert.deepEqual(source.tool, traversal.tool);
+  assert.equal(source.generatedAt, traversal.generatedAt);
+  assert.equal(source.rootsTruncated, true);
+  assert.deepEqual(source.truncationReasons, ['depth-limit']);
+  assert.deepEqual(source.limitations, ['scope: partial']);
+  const empty = createNavigationTrace(navigation, [], [partial]);
+  assert.deepEqual(empty.chains[0]!.calls, []);
+  assert.deepEqual(empty.analyses, [source]);
+});
+
+test('partial cyclic root witnesses stay partial and never invent a screen-to-call path', () => {
+  const cyclic = parseLanguageTraversal({ ...traversal, revision: 'rev-a',
+    roots: [{ id: 'src/api.ts#read', symbol: { usr: 'src/api.ts#read' } }, ...traversal.roots],
+    reached: [
+      { symbol: { usr: 'V' }, via: 'src/api.ts#read', depth: 1, roots: [0, 1] },
+      { symbol: { usr: 'W' }, via: 'src/screen.ts#Catalog', depth: 1, roots: [1] },
+      { symbol: { usr: 'src/api.ts#read' }, via: 'V', depth: 3, roots: [1] },
+    ] });
+  const report = createNavigationTrace(navigation, [client, server], [cyclic]);
+  assert.deepEqual(report.chains[0]!.calls[0]!.path, ['V', 'src/api.ts#read']);
+  assert.equal(report.chains[0]!.calls[0]!.witnessPartial, true);
+  assert.equal(report.chains[0]!.calls[0]!.witnessRoot, undefined);
+  assert.equal(report.chains[0]!.calls[0]!.witnesses[0]!.witnessRoot, undefined);
+  assert.ok(report.gaps.some((gap) => gap.code === 'screen-witness-partial'));
+  // 완전한 입력에서는 V도 다른 root를 목격한다. 부분 귀속 fixture로 그 관찰을
+  // 분리해, 부분 경로 자체가 other-root gap을 만들어 내지 않음을 검증한다.
+  const partialAttribution = parseLanguageTraversal({ ...cyclic, truncated: true,
+    reached: cyclic.reached.map((row) => row.symbol.usr === 'V' ? { ...row, roots: [0] } : row) });
+  const isolated = createNavigationTrace(navigation, [client, server], [partialAttribution]);
+  assert.ok(isolated.gaps.some((gap) => gap.code === 'screen-witness-partial'));
+  assert.ok(!isolated.gaps.some((gap) => gap.code === 'screen-witness-other-root'));
+
+});
+
+test('unrelated revision conflicts do not contaminate the selected screen but remain visible as provenance', () => {
+  const related = { ...traversal, revision: 'rev-a', graphRevision: 'graph-a' };
+  const unrelated = { ...traversal, revision: 'rev-b', graphRevision: 'graph-b',
+    roots: [{ id: 'Other', symbol: { usr: 'Other' } }], reached: [] };
+  const report = createNavigationTrace(navigation, [client, server], [related, unrelated]);
+  assert.ok(!report.gaps.some((gap) => gap.code.includes('revision')));
+  assert.deepEqual(report.analyses.map((analysis) => analysis.revision).sort(), ['rev-a', 'rev-b']);
+});
+
+test('a complete selected-screen witness is preferred to an equal-grade witness from another root', () => {
+  const own = parseLanguageTraversal({ ...traversal, revision: 'rev-a' });
+  const other = parseLanguageTraversal({ ...traversal, revision: 'rev-a',
+    roots: [{ id: 'Other', symbol: { usr: 'Other' } }, ...traversal.roots],
+    reached: [{ ...traversal.reached[0]!, via: 'Other', roots: [0, 1] }] });
+  for (const analyses of [[other, own], [own, other]]) {
+    const call = createNavigationTrace(navigation, [client, server], analyses).chains[0]!.calls[0]!;
+    assert.deepEqual(call.path, ['src/screen.ts#Catalog', 'src/api.ts#read']);
+    assert.equal(call.witnessRoot, undefined);
+    assert.equal(call.witnesses.length, 2);
+  }
+});
+
+test('a stronger representative never discards unknown alternate observations', () => {
+  const { dispatch: _, ...unknown } = traversal;
+  const report = createNavigationTrace(navigation, [client, server], [traversal, unknown]);
+  assert.equal(report.chains[0]!.calls[0]!.evidence, 'direct');
+  assert.deepEqual(report.chains[0]!.calls[0]!.witnesses.map(({ evidence }) => evidence).sort(), ['direct', 'unknown']);
+  for (const witness of report.chains[0]!.calls[0]!.witnesses) {
+    assert.ok(report.analyses.some(({ id }) => id === witness.analysis));
+  }
+  assert.ok(report.gaps.some(({ code }) => code === 'screen-analysis-evidence-unreported'));
+});
+
+test('analysis limitations are stored once in the inventory instead of amplified into every call witness', () => {
+  const limited = { ...traversal, limitations: [`scope: ${'x'.repeat(128_000)}`] };
+  const repeated = parseBridgeFactsDocument({ ...client, facts: Array.from({ length: 100 }, (_, index) =>
+    ({ ...client.facts[0], location: { ...location, line: index + 1 } })) });
+  const report = createNavigationTrace(navigation, [repeated], [limited]);
+  assert.equal(report.chains[0]!.calls.length, 100);
+  assert.equal(report.analyses.length, 1);
+  const id = report.analyses[0]!.id;
+  assert.match(id, /^sha256:[a-f0-9]{64}$/);
+  assert.ok(report.chains[0]!.calls.every(({ witnesses }) => witnesses[0]!.analysis === id));
+  assert.ok(JSON.stringify(report).length < 500_000);
+});
+
+test('repeated long witness paths fail within a bounded output budget instead of constructing oversized output', () => {
+  const usr = 'x'.repeat(4096);
+  const repeated = parseBridgeFactsDocument({ ...client, facts: Array.from({ length: 1100 }, (_, index) =>
+    ({ ...client.facts[0], symbol: { usr, qualifiedName: 'read' }, location: { ...location, line: index + 1 } })) });
+  const long = parseLanguageTraversal({ ...traversal,
+    reached: [{ ...traversal.reached[0], symbol: { usr } }] });
+  assert.throws(() => createNavigationTrace(navigation, [repeated], [long]), /witness output exceeds its text limit/);
+});

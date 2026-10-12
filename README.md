@@ -89,15 +89,17 @@ downgrading findings to `*-unverified` when a producer saw less than the whole
 schema. See the persistence section of
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) for the contract.
 
-A third domain, `http`, is in development (Phase 1 of the
+The `http` domain is available since isthmus-cli 0.10.0 (see the implementation history in the
 [API-change impact plan](docs/API-IMPACT-PLAN.md)). `check` and `query` consume `target: "http"`
 documents: server `route-decl`, client `route-call`, and OpenAPI `route-contract` facts join by
 (HTTP method, canonical path template) with segment matching, specificity, path constraints, and
 four path-anchor combinations. Calls are attributed to a declaration side only by exact `service`
 strings (or when nobody declares one); unattributed calls are counted, never printed. Errors are
 reported only when every precondition is proven, and a spec-only side never produces
-`route-call-without-decl`. No producer emits these documents yet; request/response fields, query
-parameters, and headers are not compared. `diff --http` compares the route surface of two revisions
+`route-call-without-decl`. HTTP producers are implemented for Swift, Kotlin, Dart, Go, Rust,
+JS/TS, Python, and OpenAPI; commands, supported frameworks, and the pinned compatibility set are
+listed in [COMPATIBILITY.md](docs/COMPATIBILITY.md). This does not imply complete source coverage.
+Request/response fields, query parameters, and headers are not compared. `diff --http` compares the route surface of two revisions
 and reports client calls that stop binding ([`docs/HTTP-DIFF.md`](docs/HTTP-DIFF.md)). `graph`,
 `impact`, `retentions`, `preflight`, and `diff` without `--http` reject http documents for now. See the HTTP section of
 [`docs/GRAPH-EXCHANGE.md`](docs/GRAPH-EXCHANGE.md) and [`docs/HTTP-WRAPPERS.md`](docs/HTTP-WRAPPERS.md).
