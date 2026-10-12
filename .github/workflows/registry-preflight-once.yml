@@ -1,0 +1,478 @@
+# SOURCE-ONLY PROPOSAL. Do not create the branch, commit, PR, or run without approval.
+name: Observe graph release registries once
+on:
+  push:
+    branches:
+      - ci/registry-preflight-20261012-37f99d0
+    paths:
+      - .github/workflows/registry-preflight-once.yml
+permissions: {}
+concurrency:
+  group: graph-registry-read-only-preflight-20261012-37f99d0
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: >-
+      github.repository == 'ictechgy/isthmus' &&
+      github.ref == 'refs/heads/ci/registry-preflight-20261012-37f99d0' &&
+      github.event.before == '37f99d0cc61def725f8ef177066297660ddafd95' &&
+      github.event.deleted == false && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Read fixed public registry metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir=$(mktemp -d)
+          cd "$workdir"
+          cat > coordinates.json <<'GRAPH_COORDINATES'
+          [
+            {
+              "repo": "pythograph",
+              "coordinate": "pythograph",
+              "target_version": "0.2.2",
+              "kind": "pypi",
+              "url": "https://pypi.org/pypi/pythograph/json",
+              "manifest": {
+                "url": "https://github.com/ictechgy/pythograph/blob/43b396af5429a1e54460735289b25914968df2da/pyproject.toml",
+                "sha256": "6b24132c478650ab450929e0cfaf8143fc0a60c75db38c50891553258df5c347",
+                "commit": "43b396af5429a1e54460735289b25914968df2da"
+              }
+            },
+            {
+              "repo": "tsograph",
+              "coordinate": "tsograph",
+              "target_version": "0.11.0",
+              "kind": "npm",
+              "url": "https://registry.npmjs.org/tsograph",
+              "manifest": {
+                "url": "https://github.com/ictechgy/tsograph/blob/6bd415799149e50b39da818651af5dd5b1061d4c/package.json",
+                "sha256": "e62820c2885999ed606a4419045160c5d4073428a28229cc2701f06b13a7e06c",
+                "commit": "6bd415799149e50b39da818651af5dd5b1061d4c"
+              }
+            },
+            {
+              "repo": "isthmus",
+              "coordinate": "isthmus-cli",
+              "target_version": "0.13.1",
+              "kind": "npm",
+              "url": "https://registry.npmjs.org/isthmus-cli",
+              "manifest": {
+                "url": "https://github.com/ictechgy/isthmus/blob/37f99d0cc61def725f8ef177066297660ddafd95/package.json",
+                "sha256": "c744a4cd771d091f0a1a75322db3368f3842ee38903d903b9ff88ba34e5cd629",
+                "commit": "37f99d0cc61def725f8ef177066297660ddafd95"
+              }
+            },
+            {
+              "repo": "dartograph",
+              "coordinate": "dartograph",
+              "target_version": "0.16.2",
+              "kind": "pub",
+              "url": "https://pub.dev/api/packages/dartograph",
+              "manifest": {
+                "url": "https://github.com/ictechgy/dartograph/blob/38e233c95b129154f8a83e009c7da3d7e0698892/pubspec.yaml",
+                "sha256": "d741f26bed76961303b8a795863f046017328e34c6f5a70dbd2ba8b6e717a198",
+                "commit": "38e233c95b129154f8a83e009c7da3d7e0698892"
+              }
+            },
+            {
+              "repo": "rustograph",
+              "coordinate": "rustograph",
+              "target_version": "0.5.0",
+              "kind": "crates",
+              "url": "https://index.crates.io/ru/st/rustograph",
+              "manifest": {
+                "url": "https://github.com/ictechgy/rustograph/blob/5cc5517b3cf8223b2a09c757a5a6daeb4766368e/Cargo.toml",
+                "sha256": "4521a4efbe1a69fce81fb7e072aab7825a1d75e629a3bf52bad770329edb8d01",
+                "commit": "5cc5517b3cf8223b2a09c757a5a6daeb4766368e"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-core",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-core",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/core/Cargo.toml",
+                "sha256": "09a855a557723cbb6faeba9eae24798b898cabcca0fa235e3c23a6a374db1d73",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-source",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-source",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/source/Cargo.toml",
+                "sha256": "ae06878a37c5ab5d6894f331b625ad2efa293f5d41e46942fc0fd0c8a06d45e7",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-parser",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-parser",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/parser/Cargo.toml",
+                "sha256": "efae54257d3b10b8b4c2878bfd7d05d1812c1f9164d85be43b1973e64a5fa7c1",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-analysis",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-analysis",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/analysis/Cargo.toml",
+                "sha256": "a274b25d5ae626605faacfd8a592e06489881766693de2c0fd77e1f60f67dbe9",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-export",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-export",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/export/Cargo.toml",
+                "sha256": "c1630fc34da845d2a9333e109cdede4f7efb5f2fc92a0ded63dfcbda90610e2f",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "schemagraph-cli",
+              "target_version": "0.7.1",
+              "kind": "crates",
+              "url": "https://index.crates.io/sc/he/schemagraph-cli",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/cli/Cargo.toml",
+                "sha256": "5465f29cadd17a8b39bf328acc40394141c159e5c7624ee616692fae1a63b11f",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/engine/Cargo.toml",
+                "sha256": "67e4b5de9df2b965512f9567c09b908e783a524087d8379ff9f79777d5c8439d"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "io.github.ictechgy:schemagraph-probe",
+              "target_version": "0.7.1",
+              "kind": "maven-central",
+              "url": "https://repo.maven.apache.org/maven2/io/github/ictechgy/schemagraph-probe/maven-metadata.xml",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/probe/build.gradle.kts",
+                "sha256": "7cc709e206c36788eebe654bed34c535569b0d8a2e6379d5c70e802a3db9cc3e",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              }
+            },
+            {
+              "repo": "schemagraph",
+              "coordinate": "io.github.ictechgy:schemagraph-probe",
+              "target_version": "0.7.1",
+              "kind": "maven-pages",
+              "url": "https://ictechgy.github.io/schemagraph/maven/io/github/ictechgy/schemagraph-probe/maven-metadata.xml",
+              "manifest": {
+                "url": "https://github.com/ictechgy/schemagraph/blob/f92e94200cf138bfff105f4db358b10821c21e2f/probe/build.gradle.kts",
+                "sha256": "7cc709e206c36788eebe654bed34c535569b0d8a2e6379d5c70e802a3db9cc3e",
+                "commit": "f92e94200cf138bfff105f4db358b10821c21e2f"
+              }
+            },
+            {
+              "repo": "gartograph",
+              "coordinate": "github.com/ictechgy/gartograph",
+              "target_version": "v0.9.2",
+              "kind": "go",
+              "url": "https://proxy.golang.org/github.com/ictechgy/gartograph/@v/list",
+              "manifest": {
+                "url": "https://github.com/ictechgy/gartograph/blob/8fabc07ed6fddfdeaa20968a00779a752466cd21/go.mod",
+                "sha256": "71a1eb423b52b17758d880201cc22fb532af33ead23504aad4801ab6cdaed08e",
+                "commit": "8fabc07ed6fddfdeaa20968a00779a752466cd21"
+              },
+              "version_source": {
+                "url": "https://github.com/ictechgy/gartograph/blob/8fabc07ed6fddfdeaa20968a00779a752466cd21/cli/cli.go",
+                "sha256": "73c9ebe365c68e3a1330425f4fd9fbe6dc4e26a761aa98935afd6e8d648459a0"
+              }
+            }
+          ]
+          GRAPH_COORDINATES
+          cat > preflight.py <<'GRAPH_PREFLIGHT'
+          #!/usr/bin/env python3
+          """Observe fixed public registry metadata; never authorizes a publication.
+          
+          Standard library only. No package installation, subprocess, credentials, writes
+          to services, redirects, or response-derived requests. Output is a JSON receipt.
+          The reviewed workflow embeds this file and coordinates.json without checkout.
+          """
+          
+          import datetime
+          import hashlib
+          import http.client
+          import json
+          import math
+          import pathlib
+          import re
+          import signal
+          import socket
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          
+          
+          MAX_BYTES = 2 * 1024 * 1024
+          SOCKET_SECONDS = 8
+          WALL_SECONDS = 20
+          COORDINATES_SHA256 = "1474c2da12cd7f9b1884350f99da3c2b0faedfb107941de3b588060b4d327e01"
+          
+          
+          def utc_now():
+              return datetime.datetime.now(datetime.timezone.utc).isoformat()
+          
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          
+          
+          def deadline(_signum, _frame):
+              raise TimeoutError("Request wall-clock limit exceeded")
+          
+          
+          def request_metadata(url):
+              """GET one reviewed HTTPS URL with bounded time and response bytes."""
+              result = {"url": url, "started_at": utc_now(), "http_status": None,
+                        "body_sha256": None, "body_hash_scope": None}
+              started = time.monotonic()
+              body = bytearray()
+              response = None
+              signal.signal(signal.SIGALRM, deadline)
+              signal.alarm(WALL_SECONDS)
+              try:
+                  opener = urllib.request.build_opener(
+                      urllib.request.ProxyHandler({}), NoRedirect())
+                  req = urllib.request.Request(url, method="GET", headers={
+                      "User-Agent": "graph-release-registry-preflight/1.0",
+                      "Accept-Encoding": "identity",
+                      "Accept": "application/json, application/xml, text/plain",
+                  })
+                  try:
+                      response = opener.open(req, timeout=SOCKET_SECONDS)
+                  except urllib.error.HTTPError as exc:
+                      response = exc
+                  result["http_status"] = response.code
+                  result["headers"] = {name: response.headers.get(name) for name in (
+                      "Date", "Age", "ETag", "Last-Modified", "Content-Type",
+                      "Content-Length", "Content-Encoding")}
+                  while len(body) <= MAX_BYTES:
+                      chunk = response.read(min(65536, MAX_BYTES + 1 - len(body)))
+                      if not chunk:
+                          break
+                      body.extend(chunk)
+                  result["body_complete"] = len(body) <= MAX_BYTES
+                  if not result["body_complete"]:
+                      result["error"] = "response_size_limit"
+                  elif response.headers.get("Content-Length") is not None:
+                      length_text = response.headers.get("Content-Length").strip()
+                      if len(length_text) > 20 or not re.fullmatch(r"[0-9]+", length_text):
+                          result["body_complete"] = False
+                          result["error"] = "invalid_content_length"
+                      elif int(length_text) != len(body):
+                          result["body_complete"] = False
+                          result["error"] = "content_length_mismatch"
+                  if response.headers.get("Content-Encoding", "identity") != "identity":
+                      result["error"] = "unexpected_content_encoding"
+              except (urllib.error.URLError, TimeoutError, socket.timeout, OSError,
+                      http.client.HTTPException) as exc:
+                  result["error"] = type(exc).__name__
+                  result["body_complete"] = False
+              finally:
+                  signal.alarm(0)
+                  if response is not None:
+                      response.close()
+                  result["completed_at"] = utc_now()
+                  result["elapsed_seconds"] = round(time.monotonic() - started, 3)
+                  result["body_bytes"] = len(body)
+                  result["body_sha256"] = hashlib.sha256(body).hexdigest()
+                  result["body_hash_scope"] = (
+                      "full" if result.get("body_complete") else "received_prefix_only")
+              return result, bytes(body)
+          
+          
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError("duplicate_json_key")
+                  result[key] = value
+              return result
+          
+          
+          def parse_json(body):
+              def reject_nonfinite(_constant):
+                  raise ValueError("nonfinite_json_constant")
+              def finite_float(value):
+                  parsed = float(value)
+                  if not math.isfinite(parsed):
+                      raise ValueError("nonfinite_json_number")
+                  return parsed
+              return json.loads(body.decode("utf-8"), object_pairs_hook=unique_object,
+                                parse_constant=reject_nonfinite, parse_float=finite_float)
+          
+          
+          def exact_name(actual, expected):
+              if not isinstance(actual, str) or actual != expected:
+                  raise ValueError("coordinate_mismatch")
+          
+          
+          def inspect_metadata(target, body):
+              kind, name, version = (target[k] for k in (
+                  "kind", "coordinate", "target_version"))
+              detail = {}
+              if kind == "pypi":
+                  data = parse_json(body)
+                  exact_name(data["info"]["name"], name)
+                  versions = data["releases"]
+                  if not isinstance(versions, dict):
+                      raise ValueError("invalid_version_map")
+                  detail["advertised_latest"] = data["info"]["version"]
+                  if version in versions:
+                      detail["target_file_count"] = len(versions[version])
+              elif kind == "npm":
+                  data = parse_json(body)
+                  exact_name(data["name"], name)
+                  versions = data["versions"]
+                  if not isinstance(versions, dict):
+                      raise ValueError("invalid_version_map")
+                  detail["advertised_latest"] = data.get("dist-tags", {}).get("latest")
+                  # An unpublished version may survive in time metadata and is not free.
+                  if version in data.get("time", {}) and version not in versions:
+                      return {"state": "historically_occupied", "version_count": len(versions)}
+              elif kind == "pub":
+                  data = parse_json(body)
+                  exact_name(data["name"], name)
+                  if not isinstance(data["versions"], list) or not data["versions"]:
+                      raise ValueError("invalid_versions")
+                  versions = [entry["version"] for entry in data["versions"]]
+                  detail["advertised_latest"] = data["latest"]["version"]
+              elif kind == "crates":
+                  entries = [parse_json(line) for line in body.splitlines() if line.strip()]
+                  if not entries:
+                      raise ValueError("empty_crates_index")
+                  for entry in entries:
+                      exact_name(entry["name"], name)
+                  versions = [entry["vers"] for entry in entries]
+                  detail["target_yanked"] = next(
+                      (entry.get("yanked") for entry in entries if entry["vers"] == version),
+                      None)
+              elif kind in ("maven-central", "maven-pages"):
+                  if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
+                      raise ValueError("xml_declaration_forbidden")
+                  root = ET.fromstring(body)
+                  group, artifact = name.split(":")
+                  exact_name(root.findtext("groupId"), group)
+                  exact_name(root.findtext("artifactId"), artifact)
+                  versions = [node.text for node in root.findall("./versioning/versions/version")]
+                  if not versions:
+                      raise ValueError("missing_versions")
+                  detail["advertised_latest"] = root.findtext("./versioning/release")
+              elif kind == "go":
+                  versions = body.decode("utf-8").splitlines()
+                  if any(not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.+-]+)?", v)
+                         for v in versions):
+                      raise ValueError("invalid_go_version_list")
+                  # The Go proxy list is a cache view, not an origin tag reservation check.
+                  return {"state": "present" if version in versions else "not_in_proxy_list",
+                          "version_count": len(versions),
+                          "caveat": "Absence does not prove the origin Git tag is unused."}
+              else:
+                  raise ValueError("unsupported_registry")
+              if not versions or any(not isinstance(item, str) or not item for item in versions):
+                  raise ValueError("missing_or_invalid_versions")
+              return {"state": "present" if version in versions else "not_listed",
+                      "version_count": len(versions), **detail}
+          
+          
+          def classify_response(target, receipt, body):
+              """Only a complete 200 response with validated registry schema can clear listing."""
+              observation = {"state": "unknown"}
+              if receipt.get("error"):
+                  observation["reason"] = receipt["error"]
+              elif receipt.get("http_status") != 200:
+                  # A 404 can mean a package is missing; it never clears a target version.
+                  observation["reason"] = "http_status_not_200"
+              elif not receipt.get("body_complete"):
+                  observation["reason"] = "incomplete_body"
+              else:
+                  try:
+                      observation = inspect_metadata(target, body)
+                  except (ValueError, KeyError, TypeError, AttributeError, RecursionError,
+                          ET.ParseError) as exc:
+                      observation["reason"] = "schema_or_parse_error:" + type(exc).__name__
+              return observation
+          
+          
+          def main():
+              coordinate_bytes = pathlib.Path("coordinates.json").read_bytes()
+              if hashlib.sha256(coordinate_bytes).hexdigest() != COORDINATES_SHA256:
+                  raise SystemExit("Reviewed coordinate file hash mismatch; no requests made.")
+              targets = parse_json(coordinate_bytes)
+              if len(targets) != 14:
+                  raise SystemExit("Unexpected target count; no requests made.")
+              report = {"schema_version": 1, "started_at": utc_now(),
+                        "coordinates_sha256": COORDINATES_SHA256, "results": [],
+                        "limits": {"requests": 14, "bytes_per_response": MAX_BYTES,
+                                   "wall_seconds_per_request": WALL_SECONDS},
+                        "meaning": "not_listed means absent from a successfully parsed official "
+                                   "registry snapshot. It does not prove never-used, ownership, "
+                                   "publish permission, or future availability. Recheck before publishing."}
+              for target in targets:
+                  receipt, body = request_metadata(target["url"])
+                  observation = classify_response(target, receipt, body)
+                  report["results"].append({**target, "observation": observation, "receipt": receipt})
+              report["completed_at"] = utc_now()
+              pathlib.Path("registry-receipt.json").write_text(
+                  json.dumps(report, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+              print(json.dumps(report, indent=2, ensure_ascii=True))
+              # Fail closed for occupancy, an unverified endpoint, or Go cache non-listing.
+              states = [entry["observation"]["state"] for entry in report["results"]]
+              return 0 if all(state == "not_listed" for state in states) else 2
+          
+          
+          if __name__ == "__main__":
+              sys.exit(main())
+          GRAPH_PREFLIGHT
+          # Scrub inherited environment. The script makes public GETs only.
+          # The entire JSON receipt is retained in Actions logs, even on exit 2.
+          env -i PATH=/usr/bin:/bin HOME="$workdir" LANG=C.UTF-8 python3 -I preflight.py
