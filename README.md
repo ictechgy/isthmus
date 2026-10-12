@@ -206,7 +206,7 @@ suffix and instance wiring. These additions are available in the public producer
 versions listed above (`bridges --messages`).
 Agent clients can call the same commands over `isthmus serve`, an MCP stdio server
 that exposes check, query, graph, diff, impact, preflight, retentions, and trace (with output caps) as tools.
-See the [MCP server contract](docs/MCP.md).
+See the [MCP server contract](docs/MCP.md). Frames are capped at 1 MiB before decoding; malformed UTF-8 and oversized frames return a safe error, and output writes respect slow consumers.
 To reproduce a verified development combination or audit the toolchain, build the tools
 from pinned local Git commits with the
 [toolchain build workflow (Korean)](docs/TOOLCHAIN.md). It produces a standalone

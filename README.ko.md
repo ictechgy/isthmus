@@ -185,7 +185,7 @@ summary는 목록당 기본 20개(`--limit 1..100`)를 표시하며 생략한 �
 이 추가 기능은 위에 나열한 공개 producer 버전의 `bridges --messages`로 사용할 수 있다.
 에이전트 클라이언트는 `isthmus serve`(MCP stdio 서버)로 같은 명령을 도구로 호출할 수 있다 —
 check·query·graph·diff·impact·preflight·retentions·trace(출력 상한 포함)를 노출한다.
-[MCP 서버 계약](docs/MCP.md)을 본다.
+[MCP 서버 계약](docs/MCP.md)을 본다. 프레임은 디코딩 전에 1 MiB로 제한하며, 잘못된 UTF-8·초과 프레임은 안전한 오류로 반환한다. 느린 출력 소비자에 대한 역압도 유지한다.
 검증된 개발 조합을 재현하거나 도구를 직접 감사하려면 로컬 Git의 고정 commit에서
 구축하는 [도구 구축 절차](docs/TOOLCHAIN.md)를 쓴다. Dart AOT 실행 파일, impact와
 Basic을 함께 제공하는 cartograph, 격리 설치된 isthmus 패키지를 준비한다.

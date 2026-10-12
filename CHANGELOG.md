@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP stdio 입력을 1 MiB 프레임으로 제한하고, 잘못된 UTF-8·초과 프레임 뒤 정상 요청을 복구한다. stdout 쓰기 완료를 기다려 응답 누적을 막는다.
+
 ## [0.13.1] - 2026-10-12
 
 - Python 생산자를 호환 manifest에 포함하고, 공개 설치본의 HTTP 조인·순회·route trace와 음성 대조를 cold-cache CI에서 검증한다.

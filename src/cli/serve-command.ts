@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline';
+import { readStdioFrames, writeStdioLine, type StdioFrame } from './stdio-frames.ts';
 
 import { createMcpSession } from './mcp-server.ts';
 import type {
@@ -11,8 +11,8 @@ export const serveUsage = 'Usage: isthmus serve';
 
 /** 세션이 읽는 NDJSON 입력과 응답을 쓰는 싱크다. 테스트는 메모리로 주입한다. */
 export interface ServeIo {
-  readonly lines: AsyncIterable<string>;
-  readonly writeLine: (line: string) => void;
+  readonly lines: AsyncIterable<StdioFrame>;
+  readonly writeLine: (line: string) => void | Promise<void>;
 }
 
 /**
@@ -41,10 +41,17 @@ export async function runServeCommand(
   });
   const { lines, writeLine } = io ?? stdioLines();
   for await (const line of lines) {
+    if (typeof line !== 'string') {
+      await writeLine(JSON.stringify({ jsonrpc: '2.0', id: null, error: {
+        code: -32700, message: line.error === 'too-large'
+          ? 'Message exceeds the 1 MiB frame limit' : 'Message is not valid UTF-8',
+      } }));
+      continue;
+    }
     if (line.trim().length === 0) continue;
     const response = await session.handleLine(line);
     if (response !== undefined) {
-      writeLine(response);
+      await writeLine(response);
     }
   }
   return { standardOutput: '', standardError: '', exitCode: 0 };
@@ -53,10 +60,7 @@ export async function runServeCommand(
 /** stdin을 줄 단위로 읽고 stdout에 한 줄씩 쓰는 기본 IO다. */
 function stdioLines(): ServeIo {
   return {
-    lines: createInterface({
-      input: process.stdin,
-      crlfDelay: Infinity,
-    }),
-    writeLine: (line) => process.stdout.write(`${line}\n`),
+    lines: readStdioFrames(process.stdin),
+    writeLine: (line) => writeStdioLine(process.stdout, line),
   };
 }
