@@ -73,7 +73,7 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
 try {
   await checkoutPublicFixture();
   await installSwiftHarness();
-  runStep('swift', ['build', '--package-path', checkoutRoot], 'Swift fixture build', 10 * 60_000);
+  runStep('swift', ['build', '--package-path', checkoutRoot], 'Swift fixture build', { timeout: 10 * 60_000 });
 
   const swiftFacts = run(cartographBinary, [
     'bridges',
