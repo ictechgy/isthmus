@@ -454,6 +454,12 @@ In 0.8.0, `--for cartograph` requires a Swift platform document and
 Objective-C implementations need an actual Clang `c:` USR. Missing identities fail with code 2.
 Use cartograph 0.20.0+ for indexed Clang declarations and kartograph 0.11.0+ for external retentions. Kartograph also rejects IDs absent from its graph.
 
+The unreleased producer also attaches document-level `provenance` with original input headers and joined
+limitations, even when no retention matches. Missing source context remains unknown; conversion time does
+not refresh the captured evidence. Roots and caller evidence are unchanged. Older consumers may ignore this
+optional field, so those minimum versions do not promise provenance preservation. Coordinated Cartograph/
+Kartograph consumer validation remains a release gate. See the [shared contract](docs/GRAPH-EXCHANGE.md#선택적-문서-수준-출처-provenance-v1-미발행).
+
 ```bash
 isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.json
 # Add --external-retentions kotlin-retentions.json to your normal kartograph dead arguments.

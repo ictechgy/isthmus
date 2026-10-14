@@ -4,12 +4,13 @@ import type {
   BridgePlatform,
   BridgeSymbol,
 } from '../exchange/parse.ts';
-import { isBridgeReceiverDocument } from '../exchange/parse.ts';
+import { isBridgeReceiverDocument, isBridgeTimestamp } from '../exchange/parse.ts';
 import type { BridgeMessageDocument } from '../exchange/messages.ts';
 import {
   isBridgeJoinDeferred,
   type BridgeEndpoint,
   type BridgeJoinResult,
+  type JoinLimitation,
 } from '../join/join.ts';
 import type { MessageBridgeJoin, MessageEndpoint } from '../join/messages.ts';
 import { encodeSortedJson } from './sorted-json.ts';
@@ -64,7 +65,26 @@ export interface RetentionsDocument {
   readonly generatedAt: string;
   readonly retentions: readonly ExternalRetention[];
   readonly omittedObjectiveCHandlers?: number;
+  readonly provenance?: RetentionProvenance;
 }
+
+/** 원본 입력의 헤더이며 보존 선언이나 신선도 판정을 합성하지 않는다. */
+export type RetentionSource = Pick<BridgeFactsDocument | BridgeMessageDocument,
+  'format' | 'version' | 'tool' | 'platform' | 'project' | 'target' | 'generatedAt' | 'sourceModifiedAt'>
+  & { readonly transport?: BridgeMessageDocument['transport'] };
+
+/** 빈 보존 목록에도 남는 문서 수준의 출처와 관찰 한계다. sources 생략은 미확인이다. */
+export interface RetentionProvenance {
+  readonly version: 1;
+  readonly sources?: readonly RetentionSource[];
+  readonly limitations: readonly JoinLimitation[];
+}
+
+/** Cartograph/Kartograph 문서 수준 출처의 공유 상한이다. */
+export const MAX_RETENTION_PROVENANCE_BYTES = 1_048_576;
+export const MAX_RETENTION_PROVENANCE_SOURCES = 256;
+export const MAX_RETENTION_PROVENANCE_LIMITATIONS = 4096;
+export const MAX_RETENTION_PROVENANCE_DEPTH = 64;
 
 /** 근거 하나가 실을 수 있는 호출 위치 상한이다. */
 export const MAX_RETENTION_CALLERS = 100;
@@ -116,6 +136,7 @@ export function validateRetentionInputs(
 export function encodeRetentionsDocument(
   document: RetentionsDocument,
 ): string {
+  if (document.provenance !== undefined) validateRetentionProvenance(document.provenance);
   return encodeSortedJson(document);
 }
 
@@ -124,6 +145,7 @@ export function encodeRetentionsDocument(
  *
  * `messages`를 주면 literal로 확정된 v2 경계의 Swift 핸들러도 보존 근거로 싣는다.
  * v2 근거에는 메서드가 없으므로 `method`를 생략하며, cartograph는 선택 필드로 읽는다.
+ * 원본 문서를 주지 않은 직접 호출은 sources를 생략하되 조인 한계는 항상 보존한다.
  */
 export function createRetentionsDocument(
   joined: BridgeJoinResult,
@@ -131,12 +153,14 @@ export function createRetentionsDocument(
   producerVersion: string,
   messages?: MessageBridgeJoin,
   target: RetentionTarget = 'cartograph',
+  originalDocuments?: readonly (BridgeFactsDocument | BridgeMessageDocument)[],
 ): RetentionsDocument {
   if (isBridgeJoinDeferred(joined)) {
     throw new RetentionValidationError(
       'Cannot create retentions from a deferred bridge join.',
     );
   }
+  const provenance = retentionProvenance(joined, messages, originalDocuments);
   const platform = target === 'cartograph' ? 'swift' : 'kotlin';
   rejectUnresolvedHandlers(joined, messages, platform);
   const retentions = [
@@ -154,7 +178,130 @@ export function createRetentionsDocument(
     producedBy: { name: 'isthmus', version: producerVersion },
     generatedAt,
     retentions,
+    provenance,
   };
+}
+
+/** 원본 헤더만 투영하고 조인 한계의 스코프·순서를 그대로 보존한다. */
+function retentionProvenance(
+  joined: BridgeJoinResult,
+  messages: MessageBridgeJoin | undefined,
+  documents: readonly (BridgeFactsDocument | BridgeMessageDocument)[] | undefined,
+): RetentionProvenance {
+  if ((documents?.length ?? 0) > MAX_RETENTION_PROVENANCE_SOURCES
+    || joined.limitations.length + (messages?.limitations.length ?? 0) > MAX_RETENTION_PROVENANCE_LIMITATIONS) {
+    invalidProvenance();
+  }
+  const sources = documents?.map((document): RetentionSource => {
+    if (document === null || typeof document !== 'object' || Array.isArray(document)
+      || Array.isArray(document.tool)
+      || (document.version === 1 && 'transport' in document)) invalidProvenance();
+    return {
+      format: document.format, version: document.version,
+      tool: { name: document.tool?.name, version: document.tool?.version },
+      platform: document.platform, project: document.project, target: document.target,
+      generatedAt: document.generatedAt,
+      ...(document.sourceModifiedAt === undefined ? {} : { sourceModifiedAt: document.sourceModifiedAt }),
+      ...(document.version === 2 ? { transport: document.transport } : {}),
+    };
+  });
+  const value: RetentionProvenance = {
+    version: 1,
+    ...(sources === undefined ? {} : { sources }),
+    limitations: [...joined.limitations, ...(messages?.limitations ?? [])],
+  };
+  validateRetentionProvenance(value);
+  // 호출자가 나중에 조인 결과를 변경해도 이미 검증한 문서가 달라지지 않게 한다.
+  return JSON.parse(encodeSortedJson(value, true)) as RetentionProvenance;
+}
+
+/** 직접 만든 문서와 생성 뒤 변경된 문서도 같은 출력 경계에서 검증한다. */
+function validateRetentionProvenance(value: RetentionProvenance): void {
+  validateProvenanceBudget(value);
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || value.version !== 1
+    || !Array.isArray(value.limitations) || value.limitations.length > MAX_RETENTION_PROVENANCE_LIMITATIONS
+    || (value.sources !== undefined && (!Array.isArray(value.sources) || value.sources.length > MAX_RETENTION_PROVENANCE_SOURCES))) {
+    invalidProvenance();
+  }
+  for (const source of value.sources ?? []) {
+    if (source === null || typeof source !== 'object' || Array.isArray(source)
+      || source.format !== 'bridge-facts' || (source.version !== 1 && source.version !== 2)
+      || source.tool === null || typeof source.tool !== 'object' || Array.isArray(source.tool)
+      || typeof source.tool.name !== 'string' || typeof source.tool.version !== 'string'
+      || typeof source.platform !== 'string' || typeof source.project !== 'string'
+      || !nullableString(source.target) || !provenanceTimestamp(source.generatedAt)
+      || (source.sourceModifiedAt !== undefined && !provenanceTimestamp(source.sourceModifiedAt))
+      || (source.version === 2 && !['basic-message-channel', 'event-channel', 'react-native-event'].includes(source.transport!))
+      || (source.version === 1 && source.transport !== undefined)) {
+      invalidProvenance();
+    }
+  }
+  for (const limitation of value.limitations) {
+    if (limitation === null || typeof limitation !== 'object' || Array.isArray(limitation)
+      || typeof limitation.platform !== 'string' || typeof limitation.tool !== 'string'
+      || typeof limitation.message !== 'string' || !nullableString(limitation.target)
+      || (limitation.origin !== undefined && typeof limitation.origin !== 'string')
+      || (limitation.channels !== undefined && !strings(limitation.channels))) invalidProvenance();
+    if (limitation.routeScope !== undefined) {
+      const scope = limitation.routeScope;
+      if (scope === null || typeof scope !== 'object' || Array.isArray(scope)) invalidProvenance();
+      for (const key of ['templates', 'templatePrefixes', 'templateSuffixes', 'methods'] as const) {
+        if (scope[key] !== undefined && !strings(scope[key])) invalidProvenance();
+      }
+      if (scope.withheldElements !== undefined
+        && (!Number.isSafeInteger(scope.withheldElements) || scope.withheldElements < 0)) invalidProvenance();
+    }
+  }
+}
+
+/** 전체 문자열을 만들기 전에 compact JSON의 바이트·깊이·안전한 값 상한을 센다. */
+function validateProvenanceBudget(value: unknown): void {
+  let bytes = 0;
+  const add = (count: number): void => {
+    bytes += count;
+    if (bytes > MAX_RETENTION_PROVENANCE_BYTES) invalidProvenance();
+  };
+  const string = (text: string): void => {
+    add(2);
+    for (const scalar of text) {
+      const code = scalar.codePointAt(0)!;
+      if (code >= 0xd800 && code <= 0xdfff) invalidProvenance();
+      if ([34, 92, 8, 9, 10, 12, 13].includes(code)) add(2);
+      else if (code < 32) add(6);
+      else add(code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code <= 0xffff ? 3 : 4);
+    }
+  };
+  const visit = (item: unknown, depth: number): void => {
+    if (item === null) { add(4); return; }
+    if (typeof item === 'string') { string(item); return; }
+    if (typeof item === 'boolean') { add(item ? 4 : 5); return; }
+    if (typeof item === 'number') {
+      if (!Number.isSafeInteger(item) || Object.is(item, -0)) invalidProvenance();
+      add(String(item).length); return;
+    }
+    if (typeof item !== 'object' || depth >= MAX_RETENTION_PROVENANCE_DEPTH) invalidProvenance();
+    add(2);
+    if (Array.isArray(item)) {
+      for (const [index, child] of item.entries()) { if (index > 0) add(1); visit(child, depth + 1); }
+    } else {
+      if (Object.getPrototypeOf(item) !== Object.prototype && Object.getPrototypeOf(item) !== null) invalidProvenance();
+      for (const [index, key] of Object.keys(item).entries()) {
+        if (index > 0) add(1);
+        string(key); add(1); visit((item as Record<string, unknown>)[key], depth + 1);
+      }
+    }
+  };
+  visit(value, 0);
+}
+
+function nullableString(value: unknown): boolean { return value === null || typeof value === 'string'; }
+function strings(value: unknown): boolean { return Array.isArray(value) && value.every((item) => typeof item === 'string'); }
+/** 공유 출처는 소문자 t/z도 허용한다. 검증용 문자열만 바꾸고 원본 철자는 보존한다. */
+function provenanceTimestamp(value: unknown): boolean {
+  return typeof value === 'string' && isBridgeTimestamp(value.replace('t', 'T').replace(/z$/u, 'Z'));
+}
+function invalidProvenance(): never {
+  throw new RetentionValidationError('Cannot produce retention provenance: metadata is malformed or exceeds its bounds; narrow or regenerate the inputs.');
 }
 
 /**

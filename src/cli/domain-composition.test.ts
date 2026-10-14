@@ -20,6 +20,8 @@ import { encodeSortedJson } from '../report/sorted-json.ts';
  * persistence 전용, 혼합, 사실 0건 bridge 문서 입력마다 stdout 바이트(SHA-256)와 stderr,
  * 종료 코드를 비교한다. 의도한 동작 변경(원인 문구, 새 거부, impact 이슈 귀속)은 이 표에
  * 넣지 않고 아래 개별 테스트로 기대값을 적는다.
+ * 선택적 retention provenance는 원본 입력 헤더와 별도로 대조한 뒤 제외하여,
+ * 과거 root/evidence 바이트 표를 덮어쓰지 않고 기존 계약도 계속 검증한다.
  *
  * 다시 캡처하기: 이 표의 명령 출력을 의도적으로 바꿨다면
  * `UPDATE_DOMAIN_COMPOSITION=1 node --test src/cli/domain-composition.test.ts`로 각 항목의
@@ -103,7 +105,21 @@ if (shouldUpdatePinnedScenarios) {
 
 for (const scenario of shouldUpdatePinnedScenarios ? [] : scenarios) {
   test(`입력 구성 불변: ${scenario.name}`, async () => {
-    const result = await run(scenario.args);
+    const actual = await run(scenario.args);
+    let result = actual;
+    if (scenario.args[0] === 'retentions' && scenario.exitCode === 0) {
+      const { provenance, ...legacy } = JSON.parse(actual.standardOutput);
+      const sources = await Promise.all(scenario.args.slice(1, scenario.args.indexOf('--for')).map(async (path) => {
+        const { format, version, tool, platform, project, target, generatedAt, limitations } = JSON.parse(await read(path));
+        assert.deepEqual(limitations, []);
+        return { format, version, tool, platform, project, target, generatedAt };
+      }));
+      assert.deepEqual(provenance, { version: 1, sources, limitations: [] });
+      assert.equal(actual.standardOutput, encodeSortedJson({ ...legacy, provenance }));
+      if (!Object.hasOwn(scenario.stdout as object, 'provenance')) {
+        result = { ...actual, standardOutput: encodeSortedJson(legacy) };
+      }
+    }
     assert.equal(result.exitCode, scenario.exitCode);
     assert.equal(result.standardError, scenario.stderr);
     // 파싱본 비교는 실패 시 차이를 읽기 쉽게 하고, 해시는 키 순서·공백까지 같은지 본다.
