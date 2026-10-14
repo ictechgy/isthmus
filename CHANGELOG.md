@@ -2,17 +2,17 @@
 
 이 프로젝트의 주요 변경 사항을 기록한다.
 
-## [Unreleased]
+## [0.13.1] - Unreleased
+
+아직 npm에 발행하지 않은 릴리스 후보이다.
+
+- Python 생산자를 호환 manifest에 포함하고, 공개 설치본의 HTTP 조인·순회·route trace와 음성 대조를 cold-cache CI에서 검증한다.
 
 ### Fixed
 
 - navigation trace가 다중 root 목격 경로·분석 출처·모든 근거 등급을 보존하고, 후보 도달·revision 충돌·미신고를 strict gap으로 남긴다. HTTP 생산자가 없다는 오래된 시작 안내를 현재 호환 문서에 맞춘다.
 
 - MCP stdio 입력을 1 MiB 프레임으로 제한하고, 잘못된 UTF-8·초과 프레임 뒤 정상 요청을 복구한다. stdout 쓰기 완료를 기다려 응답 누적을 막는다.
-
-## [0.13.1] - 2026-10-12
-
-- Python 생산자를 호환 manifest에 포함하고, 공개 설치본의 HTTP 조인·순회·route trace와 음성 대조를 cold-cache CI에서 검증한다.
 
 ## [0.13.0] - 2026-10-09
 
