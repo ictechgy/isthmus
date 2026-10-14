@@ -1,0 +1,178 @@
+name: retention-producers
+
+# Release-only producer/consumer checks. No recurring PR or scheduled cost.
+on:
+  workflow_dispatch:
+    inputs:
+      isthmus_sha:
+        description: 'Reviewed full Isthmus commit SHA; must equal the selected dispatch ref'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retention-producers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CARTOGRAPH_SHA: b46612a6ec4af69bddc01959c95ad04da6ec90b2
+      DARTOGRAPH_SHA: 7c6f54b6fe7093b2d9ee46140321112136909bb8
+    steps:
+      - name: Require the reviewed dispatch source
+        env:
+          INTENDED_SHA: ${{ inputs.isthmus_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          expected = os.environ['INTENDED_SHA']
+          actual = os.environ['GITHUB_SHA']
+          pathlib.Path('retention-report').mkdir()
+          pathlib.Path('retention-report/dispatch.json').write_text(json.dumps({
+              'expected': expected, 'actual': actual,
+              'cartograph': os.environ['CARTOGRAPH_SHA'], 'dartograph': os.environ['DARTOGRAPH_SHA']
+          }, indent=2) + '\n')
+          assert re.fullmatch('[0-9a-f]{40}', expected) and expected == actual, 'dispatch source mismatch'
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: isthmus
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ictechgy/cartograph
+          ref: b46612a6ec4af69bddc01959c95ad04da6ec90b2
+          path: cartograph
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ictechgy/dartograph
+          ref: 7c6f54b6fe7093b2d9ee46140321112136909bb8
+          path: dartograph
+          persist-credentials: false
+      - name: Verify all source revisions before building
+        run: |
+          set -euo pipefail
+          test "$(git -C isthmus rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C cartograph rev-parse HEAD)" = "$CARTOGRAPH_SHA"
+          test "$(git -C dartograph rev-parse HEAD)" = "$DARTOGRAPH_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: '3.13.3'
+      - name: Select the newest available Xcode
+        run: |
+          set -euo pipefail
+          latest="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$latest"
+          swift --version
+      - name: Build the exact Isthmus source
+        working-directory: isthmus
+        timeout-minutes: 5
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code -- package-lock.json
+      - name: Build the pinned Dartograph producer
+        working-directory: dartograph
+        timeout-minutes: 5
+        run: |
+          dart pub get
+          dart compile exe bin/dartograph.dart -o "$RUNNER_TEMP/dartograph"
+          cp pubspec.lock ../retention-report/dartograph-resolved.lock
+      - name: Build the pinned Cartograph consumer
+        working-directory: cartograph
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          swift build
+          git diff --exit-code -- Package.resolved
+          echo "CARTOGRAPH=$(swift build --show-bin-path)/cartograph" >> "$GITHUB_ENV"
+      - name: Run the three actual producer gates serially
+        timeout-minutes: 35
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+          import { resolve } from 'node:path';
+          import { runChild } from './isthmus/scripts/run-child.mjs';
+          const report = resolve('retention-report');
+          const isthmus = realpathSync('isthmus');
+          const cartograph = realpathSync('cartograph');
+          const cart = realpathSync(process.env.CARTOGRAPH);
+          const dart = realpathSync(resolve(process.env.RUNNER_TEMP, 'dartograph'));
+          const entry = resolve(isthmus, 'dist/cli/main.js');
+          const observations = [];
+          function run(name, command, args, timeout = 60_000, cwd) {
+            const start = performance.now();
+            const observation = { name, command, args, state: 'started', status: null };
+            observations.push(observation);
+            // Outer cancellation can interrupt spawnSync. A started-only row is incomplete,
+            // never an invented child status or a completed three-gate result.
+            writeFileSync(resolve(report, 'commands.json'), JSON.stringify(observations, null, 2) + '\n');
+            const result = runChild(command, args, { timeout, cwd, maxBuffer: 1024 * 1024 });
+            Object.assign(observation, { state: 'completed', status: result.status, signal: result.signal,
+              errorCode: result.error?.code ?? null, wallMilliseconds: performance.now() - start });
+            writeFileSync(resolve(report, `${name}.stdout`), result.stdout ?? '');
+            writeFileSync(resolve(report, `${name}.stderr`), result.stderr ?? '');
+            writeFileSync(resolve(report, 'commands.json'), JSON.stringify(observations, null, 2) + '\n');
+            console.log(JSON.stringify(observation));
+            return result;
+          }
+          function requireZero(result, label) {
+            assert.equal(result.error, undefined, `${label}: child execution error`);
+            assert.equal(result.status, 0, `${label}: child exit`);
+          }
+          // Record real tool identities and refuse before fixture tests on mismatch.
+          const versions = [
+            ['node-version', process.execPath, ['--version'], /^v22\.18\.0\s*$/u],
+            ['dart-version', 'dart', ['--version'], /^Dart SDK version: 3\.13\.3\b/u],
+            ['cartograph-version', cart, ['--version'], /^0\.25\.1\s*$/u],
+            ['dartograph-version', dart, ['--version'], /^dartograph 0\.16\.1\s*$/u],
+            ['isthmus-version', process.execPath, [entry, '--version'], /^0\.13\.1\s*$/u],
+          ];
+          for (const [name, command, args, expected] of versions) {
+            const result = run(name, command, args);
+            requireZero(result, name);
+            assert.match(result.stdout, expected, `${name}: expected source version`);
+          }
+          const hash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+          writeFileSync(resolve(report, 'runtime-hashes.json'), JSON.stringify({
+            cartograph: hash(cart), dartograph: hash(dart), isthmusEntry: hash(entry),
+            npmLock: hash(resolve(isthmus, 'package-lock.json')),
+            swiftLock: hash(resolve(cartograph, 'Package.resolved')),
+            dartResolvedLock: hash(resolve(report, 'dartograph-resolved.lock')),
+            scope: 'source builds and existing producer checks; not published-package or full Flutter runtime validation',
+          }, null, 2) + '\n');
+          requireZero(run('false-positive-corpus', 'bash',
+            [resolve(cartograph, 'Scripts/verify-fixtures.sh'), cart], 10 * 60_000, cartograph), 'corpus');
+          const gates = [
+            ['roundtrip', 'verify-cartograph-roundtrip.mjs', [cart, dart, resolve(cartograph, 'Fixtures/FalsePositiveCorpus'), entry]],
+            ['public-plugin', 'verify-public-flutter-plugin.mjs', [cart, dart, entry]],
+            ['limitation-scopes', 'verify-limitation-scopes.mjs', [cart, dart, entry]],
+          ];
+          let failed = false;
+          for (const [name, script, args] of gates) {
+            const result = run(name, process.execPath, [resolve(isthmus, 'scripts', script), ...args], 12 * 60_000, isthmus);
+            if (result.error !== undefined || result.status !== 0) failed = true;
+          }
+          // Do not let a later passing gate replace an earlier original failure.
+          process.exitCode = failed ? 1 : 0;
+          JS
+      - name: Preserve original bounded results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: retention-producers-${{ github.sha }}
+          path: retention-report/
+          if-no-files-found: error
+          retention-days: 7
