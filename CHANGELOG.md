@@ -2,6 +2,14 @@
 
 이 프로젝트의 주요 변경 사항을 기록한다.
 
+## [Unreleased]
+
+### Added
+
+- 외부 보존 문서에 원본 v1/v2 입력 헤더와 조인 한계를 제한된 `provenance` v1로 보존한다.
+  빈 보존 목록에서도 문맥을 남기며 기존 root 선택은 유지한다. Cartograph/Kartograph 실제
+  소비·snapshot 조합 검증은 발행 전 게이트이며, 현재 배포본 지원을 뜻하지 않는다.
+
 ## [0.13.1] - Unreleased
 
 아직 npm에 발행하지 않은 릴리스 후보이다.

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { runRetentionsCommand } from './retentions-command.ts';
+import { encodeSortedJson } from '../report/sorted-json.ts';
 
 const dartPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/dart.json', import.meta.url),
@@ -30,7 +31,17 @@ test('retentions가 cartograph 외부 보존 JSON을 출력한다', async () => 
   assert.equal(document.generatedAt, '2026-09-04T13:00:00.000Z');
   assert.equal(document.retentions.length, 1);
   assert.equal(document.retentions[0].symbol.qualifiedName, 'CameraPlugin.register');
-  assert.equal(result.standardOutput, await readFile(retentionsPath, 'utf8'));
+  // 옛 root/evidence golden은 그대로 두고 새 문서 수준 출처만 따로 확인한다.
+  const { provenance, ...legacy } = document;
+  assert.equal(encodeSortedJson(legacy), await readFile(retentionsPath, 'utf8'));
+  assert.equal(provenance.version, 1);
+  assert.deepEqual(provenance.sources.map(({ platform, generatedAt }: { platform: string; generatedAt: string }) =>
+    ({ platform, generatedAt })), [
+    { platform: 'dart', generatedAt: '2026-09-04T12:00:00.000Z' },
+    { platform: 'swift', generatedAt: '2026-09-04T12:00:00.000Z' },
+  ]);
+  assert.equal(provenance.limitations.length, 7);
+  assert.equal(provenance.limitations.filter(({ origin }: { origin?: string }) => origin === 'consumer').length, 3);
 });
 
 test('retentions는 --for를 입력 앞에 두어도 읽는다', async () => {

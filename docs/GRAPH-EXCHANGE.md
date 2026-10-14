@@ -553,6 +553,42 @@ kartograph 보존은 `symbol.usr`에 생산자가 실제 JVM 그래프에서 얻
 
 이 문서는 대상 범위 안에서 부분적으로 만들지 않는다. 소비 도구가 읽을 수 있는 수신 측 문서가 입력에 없거나, 호출자가 있는데도 `symbol`이 없어 근거로 바꿀 수 없는 매치 핸들러가 있으면 isthmus는 일부만 담은 목록 대신 도구 실패(종료 코드 2)로 끝낸다. 근거가 빠진 목록은 소비자에게 살아 있는 핸들러를 미사용으로 보이게 하기 때문이다. 문서에 실제로 실은 호출 위치 총상한(1,000,000개)을 초과한 경우에도 부분 근거를 내지 않고 입력을 좁히도록 안내하며 종료 코드 2로 실패한다.
 
+### 선택적 문서 수준 출처: provenance v1 (미발행)
+
+외부 문서의 `version: 0`과 `retentions` 선택 규칙은 유지한다. 새 생산자는 보존 항목이
+0개여도 `provenance: { version: 1, sources: [...], limitations: [...] }`를 붙인다.
+이 문맥은 관찰 범위와 한계를 전달할 뿐 신선도·완전성·삭제 안전성을 판정하지 않는다.
+옛 소비자는 선택 필드를 무시할 수 있으므로 **근거 보존 지원**과 **출처 보존 지원**을
+구분한다. Cartograph의 현재 소스는 이 문맥을 보존하지만, Kartograph와 실제 배포본을
+통한 조합 검증·동시 호환성 확인은 아직 발행 게이트로 남는다.
+
+- `sources`의 각 항목은 파싱된 원본 문서의 `format: "bridge-facts"`, `version: 1 | 2`,
+  `tool: { name, version }`, `platform`, `project`, `target`(문자열 또는 null),
+  `generatedAt`과 선택 `sourceModifiedAt`이다. v2만 원래 `transport`
+  (`basic-message-channel`, `event-channel`, `react-native-event`)를 함께 싣는다.
+  사실·개별 호출 위치는 이 헤더에 복사하지 않는다.
+- 원본 시각의 대소문자·소수 자리·offset과 project를 그대로 보존한다. 외부 문서의
+  새 `generatedAt`은 변환 시각일 뿐 원본 캡처를 갱신하지 않는다. 출처 timestamp는
+  유효한 달력 날짜, 시각 00:00:00–23:59:59와 Z/z 또는 최대 ±23:59 offset을 허용한다.
+  leap second `:60`은 지원하지 않는다. 기존 bridge 입력 파서의 허용 범위는 별도다.
+- CLI는 v1 입력 헤더 뒤에 v2 입력 헤더를 싣고, 각 그룹 안에서는 입력 순서를 유지한다.
+  직접 API의 선택적 여섯 번째 인자는 원본 문서 배열이다. 이를 생략하면 `sources`도
+  생략한다(미확인). 명시적 빈 배열과 구분하며, 헤더의 중복을 임의로 제거하지 않는다.
+- `limitations`는 필수 배열이다. v1 조인 한계 뒤에 v2 조인 한계를 원래 순서로 복사하며
+  중복·문구·Unicode 철자를 보존한다. 각 항목의 `platform`, `target`(문자열 또는 null),
+  `tool`, `message`와 선택 `origin`, `channels`, `routeScope`도 유지한다.
+  `routeScope`의 `templates`, `templatePrefixes`, `templateSuffixes`, `methods`는
+  문자열 배열이며 `withheldElements`는 비음수 안전 정수다. 원본 문서가 없어도 이미
+  조인에 남은 한계는 생략하지 않는다.
+- 출력 전에 sources 최대 256개, limitations 최대 4096개, 컨테이너 깊이 최대 64,
+  compact JSON 기준 UTF-8 최대 1,048,576바이트를 검증한다. pretty 공백과 마지막
+  개행은 이 예산에 넣지 않는다. 안전 정수 범위는 ±9,007,199,254,740,991이며,
+  비정수·음의 0·잘못된 surrogate와 알려진 필드의 잘못된 모양은 거부한다.
+  위반 시 CLI는 stdout에 부분 문서를 쓰지 않고 종료 코드 2로 끝난다.
+- 이 생산자는 알려진 provenance v1만 낸다. 소비자는 미지원 양의 버전을 같은 자원
+  상한 아래 opaque 문맥으로 보존하고, 알려진 v1로 추측하지 않는다. 문맥이 없거나
+  미지원이어도 관찰하지 않은 상태를 검증된 부재로 해석하지 않는다.
+
 ## 자매 도구가 해야 할 일 (선행 작업)
 
 | 도구 | 명령 | 낼 것 | 읽을 것 |

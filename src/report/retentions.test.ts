@@ -42,7 +42,10 @@ test('매치된 Swift 심볼에 Dart 호출 근거를 붙여 보존 문서를 �
     '1.2.3',
   );
 
-  assert.deepEqual(document, {
+  const { provenance, ...legacy } = document;
+  assert.equal(provenance?.sources, undefined);
+  assert.deepEqual(provenance?.limitations, joined.limitations);
+  assert.deepEqual(legacy, {
     format: 'external-retentions',
     version: 0,
     producedBy: { name: 'isthmus', version: '1.2.3' },

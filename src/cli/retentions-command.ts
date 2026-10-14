@@ -56,6 +56,7 @@ export async function runRetentionsCommand(
       producerVersion,
       messageJoin,
       target,
+      [...bridges, ...messages],
     );
     return {
       standardOutput: encodeRetentionsDocument(retentions),

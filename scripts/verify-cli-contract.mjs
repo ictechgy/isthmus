@@ -401,6 +401,36 @@ function verifyRetentions() {
   const document = JSON.parse(result.stdout);
   verify(document.format === 'external-retentions', 'retentions JSON');
   verify(document.retentions.length === 1, 'retentions count');
+  verify(document.provenance.version === 1 && document.provenance.sources.length === 2
+    && document.provenance.limitations.length === 7
+    && document.provenance.limitations.filter(({ origin }) => origin === 'consumer').length === 3,
+  'retentions source and consumer limitation context');
+  verify(document.provenance.sources.every(({ generatedAt }) => generatedAt === '2026-09-04T12:00:00.000Z'),
+    'retentions original source timestamps');
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-retention-provenance-'));
+  try {
+    const paths = [dartPath, swiftPath].map((path, index) => {
+      const input = { ...JSON.parse(readFileSync(path, 'utf8')), facts: [], target: null,
+        limitations: index === 1 ? ['index-freshness: source changed after index capture'] : [] };
+      const output = join(directory, `${index}.json`);
+      writeFileSync(output, JSON.stringify(input));
+      return output;
+    });
+    const empty = run(['retentions', ...paths, '--for', 'cartograph']);
+    verify(empty.status === 0 && empty.stderr === '', 'zero-retention context exit');
+    const context = JSON.parse(empty.stdout);
+    verify(context.retentions.length === 0 && context.provenance.sources.length === 2
+      && context.provenance.limitations.some(({ message }) => message === 'index-freshness: source changed after index capture'),
+    'zero-retention context survives');
+    const invalid = JSON.parse(readFileSync(paths[1], 'utf8'));
+    invalid.limitations = ['invalid unicode \ud800'];
+    writeFileSync(paths[1], JSON.stringify(invalid));
+    const refused = run(['retentions', ...paths, '--for', 'cartograph']);
+    verify(refused.status === 2 && refused.stdout === '' && refused.stderr.includes('retention provenance'),
+      'invalid provenance has no partial output');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** query가 찾은 bridge subject를 JSON으로 내는지 검증한다. */
