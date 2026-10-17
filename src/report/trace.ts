@@ -383,15 +383,21 @@ export const MAX_TRACE_UPSTREAM_ROWS = 10_000;
 /** 개수를 싣는 gap이 문구에 함께 드는 예시 id 수 상한이다. 문구가 무한정 길어지지 않게 한다. */
 export const MAX_GAP_EXAMPLES = 5;
 
-/** trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다. */
-export function createTraceReport(input: TraceInput): TraceReport {
+/**
+ * trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다.
+ *
+ * `limits`는 상한 동작을 작은 입력으로 확인하려는 테스트용 내부 값이다. CLI·MCP는 넘기지 않으므로 문서화된
+ * {@link MAX_TRACE_OUTPUT_ITEMS}를 쓴다.
+ */
+export function createTraceReport(input: TraceInput,
+  limits: Readonly<{ maxOutputItems: number }> = { maxOutputItems: MAX_TRACE_OUTPUT_ITEMS }): TraceReport {
   validateAnalysisMembers(input);
   const prepared = prepareTraceInputs(input.context, input.documents, input.surfaces);
   const upstreamDepth = input.upstreamDepth ?? input.context.upstreamDepth ?? 1;
   if (!isTraceUpstreamDepth(upstreamDepth)) {
     throw new TraceInputError(`Trace upstreamDepth must be an integer from 1 to ${MAX_TRACE_UPSTREAM_DEPTH}.`);
   }
-  const builder = new TraceBuilder(input, prepared, upstreamDepth);
+  const builder = new TraceBuilder(input, prepared, upstreamDepth, limits.maxOutputItems);
   const chains = builder.buildChains();
   const gaps = builder.finishGaps();
   const notices = builder.finishNotices();
@@ -496,6 +502,11 @@ class TraceBuilder {
   /** 지금 만드는 체인에서 upstream 호출 hop에 더 실을 수 있는 행 수다. 체인마다 {@link MAX_TRACE_UPSTREAM_ROWS}로 되돌린다. */
   private upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
   private outputItems = 0;
+  /**
+   * 지금 만드는 체인에서 이미 만든 영향 행(호출·library consumer·DB hop)을 미리 센 수다. 만든 hop은 모두 그 체인
+   * 출력에 실리므로 {@link count}가 셀 수의 하한이고, count가 0으로 되돌린 뒤 체인 전체를 센다.
+   */
+  private pendingItems = 0;
   /** dynamic 선언 스코프 비교의 예산이다. 한 보고서의 모든 route 선택이 공유한다. */
   private readonly dynamicScopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
 
@@ -503,11 +514,14 @@ class TraceBuilder {
   private readonly prepared: PreparedTrace;
   /** upstream route를 따라갈 단계 수다(1이면 v1처럼 한 단계). */
   private readonly upstreamDepth: number;
+  /** 보고서 항목 상한이다. 테스트가 아니면 {@link MAX_TRACE_OUTPUT_ITEMS}다. */
+  private readonly maxOutputItems: number;
 
-  constructor(input: TraceInput, prepared: PreparedTrace, upstreamDepth: number) {
+  constructor(input: TraceInput, prepared: PreparedTrace, upstreamDepth: number, maxOutputItems: number) {
     this.input = input;
     this.prepared = prepared;
     this.upstreamDepth = upstreamDepth;
+    this.maxOutputItems = maxOutputItems;
     this.workspace = prepared.workspace;
     this.members = new Map(prepared.members.map((member) => [member.key, member]));
     this.scopes = prepared.scopes;
@@ -981,6 +995,7 @@ class TraceBuilder {
       return { affected: [] };
     }
     const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
+    this.reserve(1 + affected.length);
     spend(1 + affected.length);
     const routes = this.upstreamRoutes(selector, member, endpoint.platform,
       [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))], upstream);
@@ -1114,6 +1129,7 @@ class TraceBuilder {
     const hits = entries.flatMap(({ consumer }) => this.rootedRows(selector, library.consumer, 'reverse', platform, consumer));
     const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
     const affected = affectedRows(hits);
+    this.reserve(affected.length + entries.length);
     // consumer root는 SDK 심볼 id(앱 코드가 아니다)라 도달 행만 본다.
     const routes = this.upstreamRoutes(selector, library.consumer, platform,
       affected.map((row) => ({ usr: row.usr, depth: row.depth })), upstream);
@@ -1207,10 +1223,11 @@ class TraceBuilder {
     }
     return [...vertices.values()]
       .sort((left, right) => compareStrings(left.member, right.member) || compareStrings(left.vertex, right.vertex))
-      .map(({ member, vertex }) => ({
-        vertex, ...this.memberField(member),
-        dependents: affectedRows(this.rootedRows(selector, member, 'db-dependents', 'sql', vertex)),
-      }));
+      .map(({ member, vertex }) => {
+        const dependents = affectedRows(this.rootedRows(selector, member, 'db-dependents', 'sql', vertex));
+        this.reserve(1 + dependents.length);
+        return { vertex, ...this.memberField(member), dependents };
+      });
   }
 
   /**
@@ -1547,8 +1564,9 @@ class TraceBuilder {
     target.set(key, cleaned);
   }
 
-  /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. */
+  /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. 조립 중에 미리 센 영향 행은 여기서 다시 세므로 되돌린다. */
   private count(chain: TraceChain): TraceChain {
+    this.pendingItems = 0;
     this.witnessGaps(chain);
     this.candidateGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
@@ -1655,8 +1673,23 @@ class TraceBuilder {
 
   private bump(items: number): void {
     this.outputItems += items;
-    if (this.outputItems > MAX_TRACE_OUTPUT_ITEMS) {
-      throw new TraceInputError(`Trace output exceeds ${MAX_TRACE_OUTPUT_ITEMS} items; narrow the selection and retry. `
+    this.checkOutputItems();
+  }
+
+  /**
+   * 체인을 조립하는 중에 방금 만든 영향 행 수를 미리 센다. 상한 검사를 체인이 끝난 뒤({@link count})까지 미루면 상한을
+   * 넘는 입력이 출력 크기만큼(GB 단위) 메모리를 쓰거나 힙 부족으로 죽은 뒤에야 실패한다. 미리 센 수는 최종 수의
+   * 하한이라 실패 여부·문구는 그대로이고, 처음 상한을 넘긴 hop에서 시점만 당겨진다.
+   */
+  private reserve(items: number): void {
+    this.pendingItems += items;
+    this.checkOutputItems();
+  }
+
+  /** 센 항목과 조립 중에 미리 센 항목의 합이 상한을 넘으면 부분 결과 없이 실패한다. */
+  private checkOutputItems(): void {
+    if (this.outputItems + this.pendingItems > this.maxOutputItems) {
+      throw new TraceInputError(`Trace output exceeds ${this.maxOutputItems} items; narrow the selection and retry. `
         + 'No partial trace is emitted.');
     }
   }

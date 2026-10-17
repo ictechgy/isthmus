@@ -729,6 +729,56 @@ test('platform go·rust 서버 문서와 그 forward·reverse 순회도 같은 r
   }
 });
 
+/**
+ * GET /api/users/{}를 부르는 Android 호출 `calls`개를 더하고, 호출마다 자기 정점 `rows`개에만 닿는 역방향 분석
+ * `android-bulk`를 더한다. 호출 hop 하나가 1 + rows 항목이라 체인 항목은 fixture의 13개 + calls × (1 + rows)다.
+ */
+const bulkCalls = (calls: number, rows: number) => (value: Fixture) => {
+  const id = (index: number) => `kt:Bulk.${String(index).padStart(3, '0')}`;
+  const reached = [];
+  for (let index = 0; index < calls; index++) {
+    value.docs.android.facts.push({ kind: 'route-call', method: 'GET', channel: '/api/users/{}', dynamic: false, pathAnchor: 'root',
+      location: { path: 'android/Bulk.kt', line: index + 1, column: 1 }, symbol: { qualifiedName: `Bulk.call${index}`, usr: id(index) } });
+    for (let row = 0; row < rows; row++) {
+      reached.push({ symbol: { usr: `${id(index)}.${String(row).padStart(3, '0')}` }, via: id(index), depth: 1, roots: [index] });
+    }
+  }
+  value.analyses['android-bulk'] = { ...structuredClone(fixture.analyses['android-reverse']),
+    roots: Array.from({ length: calls }, (_, index) => ({ id: id(index), symbol: { usr: id(index) } })), reached };
+  value.context.analyses.push({ id: 'android-bulk', path: 'android-bulk.json', platform: 'kotlin', role: 'reverse' });
+};
+
+/**
+ * 분석 `id`의 정점 행을 감싸 depth를 읽은 행의 usr를 `touched`에 모은다. route 선택에서 정점의 depth는 영향 행을
+ * 만들 때만 읽으므로, 실제로 만든 영향 행을 시간에 기대지 않고 센다.
+ */
+function touching(input: TraceInput, id: string, touched: Set<string>): TraceInput {
+  return { ...input, analyses: input.analyses.map((analysis) => analysis.id !== id ? analysis : { ...analysis,
+    graph: { ...analysis.graph, reached: analysis.graph.reached.map((row) => new Proxy(row, {
+      get(target, property, receiver) {
+        if (property === 'depth') touched.add(target.symbol.usr);
+        return Reflect.get(target, property, receiver);
+      },
+    })) } }) };
+}
+
+test('출력 항목 수가 상한과 같은 입력은 그대로 성공하고 하나 작은 상한에서만 실패한다', () => {
+  // fixture 13개 + 호출 3개 × (호출 1 + 영향 4) = 28개다. 조립 중 미리 세는 수가 최종 수를 넘으면 경계가 당겨진다.
+  for (const [input, items] of [[build(), 13], [build(bulkCalls(3, 4)), 28]] as const) {
+    assert.equal(encodeSortedJson(createTraceReport(input, { maxOutputItems: items })), encodeSortedJson(createTraceReport(input)));
+    assert.throws(() => createTraceReport(input, { maxOutputItems: items - 1 }),
+      new RegExp(`^TraceInputError: Trace output exceeds ${items - 1} items; narrow the selection and retry\\. No partial trace is emitted\\.$`));
+  }
+});
+
+test('출력 상한의 몇 배인 체인은 끝까지 만들지 않고 처음 상한을 넘긴 호출 hop에서 실패한다', () => {
+  // 호출 20개 × 영향 50개 = 1,020개 넘는 체인을 상한 100으로 만든다. 상한을 넘긴 hop까지만 영향 행을 만들어야 한다.
+  const touched = new Set<string>();
+  const input = touching(build(bulkCalls(20, 50)), 'android-bulk', touched);
+  assert.throws(() => createTraceReport(input, { maxOutputItems: 100 }), /Trace output exceeds 100 items/);
+  assert.ok(touched.size <= 100 + 50, `built ${touched.size} affected rows before failing`);
+});
+
 test('단일 project의 upstream route는 service scope를 싣고, 체인이 이미 싣는 route(재귀 호출)에는 따라가지 않음 gap을 만들지 않는다', () => {
   /** Android 문서가 자기 route GET /api/admin/{}도 선언하고, 그 핸들러(kt:UsersApi.get)가 그 route를 다시 부른다. */
   const selfCalling = (template: string) => (value: Fixture) => {

@@ -85,8 +85,8 @@ function context(extra: Record<string, unknown> = {}) {
   };
 }
 
-/** trace를 만든다. `upstreamDepth`는 CLI 값(TraceInput)이다. */
-function trace(options: { depth?: number; contextDepth?: number; extraReached?: number } = {}): TraceReport {
+/** trace를 만든다. `upstreamDepth`는 CLI 값(TraceInput)이다. `maxOutputItems`는 테스트용 출력 상한이다. */
+function trace(options: { depth?: number; contextDepth?: number; extraReached?: number; maxOutputItems?: number } = {}): TraceReport {
   const parsed = parseTraceContext(context(options.contextDepth === undefined ? {} : { upstreamDepth: options.contextDepth }));
   const all = files(options.extraReached);
   return createTraceReport({
@@ -94,7 +94,7 @@ function trace(options: { depth?: number; contextDepth?: number; extraReached?: 
     documents: parsed.documents.map((path) => parseBridgeFactsDocument(all[path])),
     analyses: parsed.analyses.map((reference) => normalizeTraceAnalysis(all[reference.path], reference, analysisProject(parsed, reference))),
     ...(options.depth === undefined ? {} : { upstreamDepth: options.depth }),
-  });
+  }, options.maxOutputItems === undefined ? undefined : { maxOutputItems: options.maxOutputItems });
 }
 
 /** upstream 트리를 `member route [scope: caller → …]` 문자열로 펼친다. */
@@ -212,6 +212,13 @@ test('같은 입력은 바이트 단위로 같고, 출력 상한은 따라간 �
   assert.deepEqual(limited.truncation.omitted.filter(({ path }) => path.includes('callers')), [{
     path: 'chains[0].routes[0].calls[0].upstreamRoutes[0].callers[0].calls[0].affected', total: 2, shown: 1,
   }]);
+});
+
+test('따라간 upstream route hop의 선언 측은 출력에 들지 않으므로 출력 상한 경계도 체인을 다 센 수 그대로다', () => {
+  // 깊이 8: 체인 22개(route hop 2 + 호출 hop 4개 × 2 + upstream route 4개 × (1 + 선언 1) + 따라간 scope 3 + 핸들러 1),
+  // gap 7개, 알림 1개다. 따라간 route hop 자신(선언·계약)을 미리 세면 경계가 당겨진다.
+  assert.equal(encodeSortedJson(trace({ depth: 8, maxOutputItems: 30 })), encodeSortedJson(trace({ depth: 8 })));
+  assert.throws(() => trace({ depth: 8, maxOutputItems: 29 }), /Trace output exceeds 29 items/);
 });
 
 test('upstreamDepth는 1..8 정수만 받는다', () => {
