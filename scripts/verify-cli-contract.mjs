@@ -589,6 +589,10 @@ function verifyDiff() {
   verify(run(['diff']).status === 64, 'diff usage');
   verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,
     'diff input failure');
+  // after 쪽 입력 순번은 before 다음부터 센다(합계 입력 예산도 함께 쓴다).
+  const afterFailure = run(['diff', '--before', dartPath, swiftPath, '--after', 'missing.json', swiftPath]);
+  verify(afterFailure.status === 2 && afterFailure.stderr.startsWith('Unable to read bridge facts input 3'),
+    'diff after input numbering');
 }
 
 /**

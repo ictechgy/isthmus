@@ -398,6 +398,26 @@ test('도구의 경로 인자가 `-`로 시작해도 경로로만 읽고 스키�
   assert.equal(JSON.parse(query.result.content[0].text).status, 'notFound');
 });
 
+test('tools/call diff는 before·after에 합계 상한 하나와 전체 입력 순번을 적용해 isError로 알린다', async () => {
+  // 파일마다 파일 상한(16Mi)과 같은 길이다. 합계 64Mi는 after의 세 번째, 전체 다섯 번째 입력에서 넘는다.
+  const [dart, swift] = (await Promise.all([readFile(dartPath, 'utf8'), readFile(swiftPath, 'utf8')]))
+    .map((text) => text.padEnd(16 * 1024 * 1024, ' '));
+  const contents = new Map([['b1', dart!], ['b2', swift!], ['a1', dart!], ['a2', swift!], ['a3', dart!], ['broken', '{']]);
+  const diffSession = createMcpSession({
+    readTextFile: async (path) => contents.get(path)!,
+    producerVersion: '0.0.0-test',
+  });
+  const call = async (id: number, after: readonly string[]) => JSON.parse((await diffSession.handleLine(
+    request(id, 'tools/call', { name: 'diff', arguments: { before: ['b1', 'b2'], after } }),
+  ))!);
+  const overBudget = await call(260, ['a1', 'a2', 'a3']);
+  assert.equal(overBudget.result.isError, true);
+  assert.match(overBudget.result.content[0].text, /^Bridge facts input 5 exceeds the input size limits;/u);
+  const broken = await call(261, ['broken', 'a2']);
+  assert.equal(broken.result.isError, true);
+  assert.match(broken.result.content[0].text, /^Bridge facts input 3 is not valid JSON;/u);
+});
+
 test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문서를 돌려준다', async () => {
   const contextPath = fileURLToPath(new URL('../../fixtures/trace/context.json', import.meta.url));
   const call = async (id: number, args: Record<string, unknown>) => JSON.parse(

@@ -286,6 +286,46 @@ test('읽기·JSON 실패는 민감한 경로를 출력하지 않고 원인을 �
   assert.ok(result.standardError.startsWith('Internal'));
 });
 
+test('after 쪽 입력 실패는 before 다음부터 세는 전체 인수 순번으로 알린다', async () => {
+  // diffArgs의 new-dart는 세 번째 입력이다. before만 세던 순번(1)이면 정상인 old-dart를 가리킨다.
+  const valid = new Map([
+    ['old-dart', JSON.stringify(document('dart'))],
+    ['old-swift', JSON.stringify(document('swift'))],
+    ['new-swift', JSON.stringify(document('swift'))],
+  ]);
+  const jsonFailure = await runDiffCommand(diffArgs, async (path) => valid.get(path) ?? '{private');
+  assert.equal(jsonFailure.exitCode, 2);
+  assert.equal(jsonFailure.standardOutput, '');
+  assert.ok(jsonFailure.standardError.startsWith('Bridge facts input 3 is not valid JSON'), jsonFailure.standardError);
+  const readFailure = await runDiffCommand(diffArgs, async (path) => {
+    const text = valid.get(path);
+    if (text === undefined) throw new Error('/secret/path');
+    return text;
+  });
+  assert.ok(readFailure.standardError.startsWith('Unable to read bridge facts input 3'), readFailure.standardError);
+  assert.equal(readFailure.standardError.includes('/secret'), false);
+  const contract = await runDiffCommand(diffArgs, async (path) => valid.get(path) ?? '{"format":"bridge-facts"}');
+  assert.match(contract.standardError, /^Bridge facts input 3 violates the bridge-facts contract:/u);
+});
+
+test('before·after는 명령 합계 상한 하나를 함께 쓰고 넘은 입력 뒤로는 읽지 않는다', async () => {
+  // 파일마다 파일 상한(16Mi)과 같은 길이라 파일 상한은 넘지 않는다. 합계 64Mi는 다섯 번째 입력(after의 세 번째)에서 넘는다.
+  const padded = (platform: 'dart' | 'swift') => JSON.stringify(document(platform)).padEnd(16 * 1024 * 1024, ' ');
+  const contents = new Map([['b1', padded('dart')], ['b2', padded('swift')]]);
+  for (const [index, path] of ['a1', 'a2', 'a3', 'a4'].entries()) {
+    contents.set(path, contents.get(index % 2 === 0 ? 'b1' : 'b2')!);
+  }
+  const reads: string[] = [];
+  const result = await runDiffCommand(['diff', '--before', 'b1', 'b2', '--after', 'a1', 'a2', 'a3', 'a4'], async (path) => {
+    reads.push(path);
+    return contents.get(path)!;
+  });
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.standardOutput, '');
+  assert.ok(result.standardError.startsWith('Bridge facts input 5 exceeds the input size limits'), result.standardError);
+  assert.deepEqual(reads, ['b1', 'b2', 'a1', 'a2', 'a3']);
+});
+
 test('큰 입력은 다음 파일을 읽지 않는다', async () => {
   let reads = 0;
   const result = await runDiffCommand(diffArgs, async () => {

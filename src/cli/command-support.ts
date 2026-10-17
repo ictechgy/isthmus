@@ -58,16 +58,22 @@ interface ParsedInput {
   readonly value: unknown;
 }
 
-/** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 JSON 값으로 만든다. */
+/**
+ * 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 JSON 값으로 만든다.
+ *
+ * @param firstPosition 첫 입력의 순번이다. 목록을 나눠 읽는 명령은 오류 순번이 명령 전체 입력 목록을 가리키게 넘긴다.
+ * @returns 읽은 값과, initialTextLength를 포함한 UTF-16 길이 합계다.
+ */
 async function readJsonInputs(
   inputPaths: readonly string[],
   readTextFile: ReadTextFile,
   initialTextLength: number,
-): Promise<ParsedInput[]> {
+  firstPosition: number,
+): Promise<{ inputs: ParsedInput[]; textLength: number }> {
   const inputs: ParsedInput[] = [];
   let totalTextLength = initialTextLength;
   for (const [index, path] of inputPaths.entries()) {
-    const inputPosition = index + 1;
+    const inputPosition = firstPosition + index;
     let text: string;
     try {
       text = await readTextFile(path);
@@ -92,7 +98,7 @@ async function readJsonInputs(
       throw error;
     }
   }
-  return inputs;
+  return { inputs, textLength: totalTextLength };
 }
 
 /** 입력을 순서대로 읽어 파일 수·메모리 상한 안에서 v1 교환 문서로 파싱한다. */
@@ -102,11 +108,12 @@ export async function readBridgeDocuments(
   initialTextLength = 0,
 ): Promise<BridgeFactsDocument[]> {
   const documents: BridgeFactsDocument[] = [];
-  for (const { position, value } of await readJsonInputs(
+  for (const { position, value } of (await readJsonInputs(
     inputPaths,
     readTextFile,
     initialTextLength,
-  )) {
+    1,
+  )).inputs) {
     try {
       documents.push(parseBridgeFactsDocument(value));
     } catch (error) {
@@ -119,22 +126,32 @@ export async function readBridgeDocuments(
   return documents;
 }
 
-/** v1 MethodChannel과 v2 Basic/Event 문서를 한 번에 읽어 버전별로 나눈다. */
+/**
+ * v1 MethodChannel과 v2 Basic/Event 문서를 한 번에 읽어 버전별로 나눈다.
+ *
+ * diff처럼 입력 목록을 나눠 읽는 명령은 앞 호출이 돌려준 `textLength`와 이어지는 `firstPosition`을 넘겨, 명령
+ * 전체가 합계 상한 하나와 1부터 이어지는 오류 순번을 쓰게 한다.
+ */
 export async function readBridgeInputs(
   inputPaths: readonly string[],
   readTextFile: ReadTextFile,
   initialTextLength = 0,
+  firstPosition = 1,
 ): Promise<{
   bridges: BridgeFactsDocument[];
   messages: BridgeMessageDocument[];
+  /** initialTextLength를 포함해 지금까지 읽은 UTF-16 길이 합계다. */
+  textLength: number;
 }> {
   const bridges: BridgeFactsDocument[] = [];
   const messages: BridgeMessageDocument[] = [];
-  for (const { position, value } of await readJsonInputs(
+  const { inputs, textLength } = await readJsonInputs(
     inputPaths,
     readTextFile,
     initialTextLength,
-  )) {
+    firstPosition,
+  );
+  for (const { position, value } of inputs) {
     try {
       if (isJsonObject(value) && value.version === 2) {
         messages.push(parseMessageBridgeDocument(value));
@@ -148,7 +165,7 @@ export async function readBridgeInputs(
       throw error;
     }
   }
-  return { bridges, messages };
+  return { bridges, messages, textLength };
 }
 
 /**
