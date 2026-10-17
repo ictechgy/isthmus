@@ -512,14 +512,11 @@ class TraceBuilder {
     this.members = new Map(prepared.members.map((member) => [member.key, member]));
     this.scopes = prepared.scopes;
     for (const member of prepared.members) if (member.surface !== undefined) this.surfaces.set(member.key, member.surface);
-    for (const library of input.context.workspace?.libraries ?? []) {
-      this.librariesByProvider.set(library.provider, [...(this.librariesByProvider.get(library.provider) ?? []), library]);
-    }
+    for (const library of input.context.workspace?.libraries ?? []) appendTo(this.librariesByProvider, library.provider, library);
     for (const member of prepared.members) this.indexRelations(member);
     this.indexHandlers();
     for (const { member, fact } of prepared.unlinkedRoutes) {
-      const key = memberSymbolKey(member, fact.endpoint.platform, fact.endpoint.symbol!.usr!);
-      this.unlinkedByHandler.set(key, [...(this.unlinkedByHandler.get(key) ?? []), fact]);
+      appendTo(this.unlinkedByHandler, memberSymbolKey(member, fact.endpoint.platform, fact.endpoint.symbol!.usr!), fact);
     }
     this.indexAnalyses();
   }
@@ -1477,10 +1474,7 @@ class TraceBuilder {
       decls: (match?.decls ?? []).map((decl) => this.endpoint(member.key, decl)), outcome,
       ...(resolution?.status === 'ambiguous' ? { candidates: resolution.candidates } : {}) };
     this.uses.push(record);
-    if (record.usr !== undefined) {
-      const key = memberSymbolKey(record.member, record.platform, record.usr);
-      this.usesBySymbol.set(key, [...(this.usesBySymbol.get(key) ?? []), record]);
-    }
+    if (record.usr !== undefined) appendTo(this.usesBySymbol, memberSymbolKey(record.member, record.platform, record.usr), record);
   }
 
   /** route-decl 핸들러 (server member, usr)별 선언 사실 색인이다. 테스트 소스 decl은 역방향 체인에서 뺀다. */
@@ -1490,8 +1484,7 @@ class TraceBuilder {
       for (const fact of linked.scope.decls) {
         const usr = fact.endpoint.symbol?.usr;
         if (usr === undefined || fact.testSource) continue;
-        const key = memberSymbolKey(linked.server, fact.endpoint.platform, usr);
-        this.declsByHandler.set(key, [...(this.declsByHandler.get(key) ?? []), { scope: linked, fact }]);
+        appendTo(this.declsByHandler, memberSymbolKey(linked.server, fact.endpoint.platform, usr), { scope: linked, fact });
       }
     }
   }
@@ -1501,7 +1494,7 @@ class TraceBuilder {
     for (const analysis of [...this.input.analyses].sort((left, right) => compareStrings(left.id, right.id))) {
       const byRoot = new Map<number, TraversalReached[]>();
       for (const row of analysis.graph.reached) {
-        for (const index of row.roots) byRoot.set(index, [...(byRoot.get(index) ?? []), row]);
+        for (const index of row.roots) appendTo(byRoot, index, row);
       }
       this.rowsByRoot.set(analysis, byRoot);
       analysis.graph.roots.forEach(({ id, symbol }, rootIndex) => {
@@ -1509,10 +1502,10 @@ class TraceBuilder {
         // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다. library 연속만 "생산자가
         // 그 노드를 찾지 못했다"는 신고로 따로 기억한다.
         if (symbol === undefined) {
-          this.missingRoots.set(key, [...(this.missingRoots.get(key) ?? []), analysis.id]);
+          appendTo(this.missingRoots, key, analysis.id);
           return;
         }
-        this.roots.set(key, [...(this.roots.get(key) ?? []), { analysis, rootIndex }]);
+        appendTo(this.roots, key, { analysis, rootIndex });
       });
     }
   }
@@ -1653,9 +1646,7 @@ class TraceBuilder {
   private candidateListGaps(rows: readonly TraceAffected[], emit: (analysis: string, detail: string) => void,
     noun: 'client' | 'database'): void {
     const byAnalysis = new Map<string, string[]>();
-    for (const row of rows) {
-      if (row.evidence === 'candidate') byAnalysis.set(row.analysis, [...(byAnalysis.get(row.analysis) ?? []), row.usr]);
-    }
+    for (const row of rows) if (row.evidence === 'candidate') appendTo(byAnalysis, row.analysis, row.usr);
     for (const [analysis, usrs] of [...byAnalysis.entries()].sort(([left], [right]) => compareStrings(left, right))) {
       emit(analysis, `${usrs.length} ${noun} symbol(s) are reached from this root only through possible-implementation `
         + `dispatch edges (candidate evidence) and may not actually be affected (e.g. ${examples(usrs)}).`);
@@ -1902,6 +1893,16 @@ function libraryTranslation(library: TraceLibrary): (provider: string) => string
 /** 호출 하나의 클라이언트 영향과 library consumer 영향 행 전부다. */
 function consumerAndClientRows(call: TraceCallHop): TraceAffected[] {
   return [...call.affected, ...(call.consumers ?? []).flatMap(({ affected }) => affected)];
+}
+
+/**
+ * 키의 목록 끝에 값을 더한다(추가 순서 유지). 목록을 매번 복사하면 같은 키에 n개를 더할 때 O(n²)이라, root 하나에
+ * 정점이 몰리는 큰 다중 root 분석의 색인만으로 수 분이 걸린다. 색인을 다 만든 뒤에만 목록을 읽으므로 제자리에 더한다.
+ */
+function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list === undefined) map.set(key, [value]);
+  else list.push(value);
 }
 
 /** 시작 심볼 중복을 제거하고 정렬한다. */
