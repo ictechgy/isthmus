@@ -344,6 +344,60 @@ test('거절 응답은 검출 가능한 스칼라 id를 에코한다', async () 
   assert.equal(nonScalar.id, null);
 });
 
+test('도구의 경로 인자가 `-`로 시작해도 경로로만 읽고 스키마에 없는 CLI 플래그를 열지 않는다', async () => {
+  // 읽은 경로를 기록해 플래그로 소비됐는지 가린다. MCP에는 쓰기 도구가 없으므로 주입된 writer는 불리면 안 된다.
+  const fixtures = new Map([
+    [dartPath, await readFile(dartPath, 'utf8')],
+    [swiftPath, await readFile(swiftPath, 'utf8')],
+  ]);
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const guarded = createMcpSession({
+    readTextFile: async (path) => {
+      reads.push(path);
+      const text = fixtures.get(path);
+      if (text === undefined) throw new Error('missing fixture');
+      return text;
+    },
+    writeTextFile: async (path) => { writes.push(path); },
+    producerVersion: '0.0.0-test',
+  });
+  const bridgeInput = (position: number) => new RegExp(`^Unable to read bridge facts input ${position};`, 'u');
+  const cases: [string, Record<string, unknown>, string, RegExp][] = [
+    ['check', { documents: ['--update-baseline', 'baseline.json', dartPath, swiftPath] }, '--update-baseline', bridgeInput(1)],
+    ['check', { documents: [dartPath, swiftPath, '--update-baseline', 'baseline.json'] }, '--update-baseline', bridgeInput(3)],
+    ['check', { documents: ['--baseline', 'baseline.json', dartPath, swiftPath] }, '--baseline', bridgeInput(1)],
+    ['check', { documents: ['--format', 'sarif', dartPath, swiftPath] }, '--format', bridgeInput(1)],
+    ['check', { documents: ['--pairs', dartPath, swiftPath] }, '--pairs', bridgeInput(1)],
+    ['check', { documents: ['--', dartPath, swiftPath] }, '--', bridgeInput(1)],
+    ['graph', { documents: ['--format', 'dot', dartPath, swiftPath] }, '--format', bridgeInput(1)],
+    ['impact', { documents: ['--runtime', 'runtime.json', dartPath, swiftPath], file: 'lib/a.dart' }, '--runtime',
+      bridgeInput(1)],
+    ['retentions', { documents: ['--for', 'kartograph', dartPath, swiftPath], producer: 'cartograph' }, '--for',
+      bridgeInput(1)],
+    ['preflight', { context: '--strict' }, '--strict', /^Unable to read preflight context;/u],
+    ['trace', { context: '--compact' }, '--compact', /^Unable to read the trace context;/u],
+  ];
+  for (const [index, [name, args, flag, message]] of cases.entries()) {
+    reads.length = 0;
+    const response = JSON.parse(
+      (await guarded.handleLine(request(200 + index, 'tools/call', { name, arguments: args })))!,
+    );
+    const label = `${name} ${JSON.stringify(args)}`;
+    assert.equal(response.result?.isError, true, label);
+    assert.ok(reads.includes(flag), `${label} reads ${flag} as a path`);
+    assert.match(response.result.content[0].text, message, label);
+  }
+  assert.deepEqual(writes, []);
+
+  // query 이름도 위치 인수다. `-`로 시작하는 이름은 사용법 오류가 아니라 찾지 못한 이름으로 답한다.
+  const query = JSON.parse((await guarded.handleLine(request(250, 'tools/call', {
+    name: 'query', arguments: { name: '--strict', documents: [dartPath, swiftPath] },
+  })))!);
+  assert.equal(query.result.isError, false);
+  assert.equal(JSON.parse(query.result.content[0].text).status, 'notFound');
+});
+
 test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문서를 돌려준다', async () => {
   const contextPath = fileURLToPath(new URL('../../fixtures/trace/context.json', import.meta.url));
   const call = async (id: number, args: Record<string, unknown>) => JSON.parse(

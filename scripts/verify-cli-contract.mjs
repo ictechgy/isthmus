@@ -645,6 +645,22 @@ function verifyServe() {
   verify(query.status === 'found', 'serve tools/call query');
   verify(run(['serve', '--verbose']).status === 64, 'serve usage');
   verify(run(['help', 'serve']).stdout.startsWith('Usage: isthmus serve'), 'serve help');
+  // 경로 원소는 숨긴 check 플래그를 열지 못한다: 뒤의 파일을 baseline으로 덮어쓰지 않고 첫 경로 읽기 실패로 끝난다.
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-serve-'));
+  try {
+    const victim = join(directory, 'victim.txt');
+    writeFileSync(victim, 'original\n');
+    const injected = runChild(process.execPath, [binaryPath, 'serve'], {
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'check',
+        arguments: { documents: ['--update-baseline', victim, dartPath, swiftPath] } } })}\n`,
+    });
+    const response = JSON.parse(injected.stdout.trim());
+    verify(injected.status === 0 && response.result.isError === true
+      && response.result.content[0].text.startsWith('Unable to read bridge facts input 1;'), 'serve keeps document paths positional');
+    verify(readFileSync(victim, 'utf8') === 'original\n', 'serve opens no write path');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** extract-js가 발행 CLI에서 bridge-facts 문서를 내는지 검증한다. */
