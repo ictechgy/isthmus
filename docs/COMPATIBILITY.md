@@ -245,7 +245,8 @@ cartograph는 Homebrew formula 대신 같은 GitHub Release 아카이브를 mani
 최신 formula 하나만 있어 `brew install`로는 버전을 고정할 수 없다 — 그래서 cartograph를 새로 발행할 때마다
 manifest를 올리기 전까지 cold-cache가 실패했다. formula의 `url`이 바로 이 아카이브이므로 설치되는 실행 파일은
 같다. cartograph 릴리스에는 checksum 파일이 없어 workflow는 GitHub가 기록한 release asset digest(sha256)와
-대조한다. formula 자체(`brew test`)는 producer 릴리스 절차가 확인한다.
+대조한다. formula 자체(`brew test`)는 producer 릴리스 절차가 확인한다. kartograph TAR는 같은 릴리스의
+`SHA256SUMS`와 대조한 뒤에만 풀고, 아카이브 안의 `kartograph-<version>/bin/kartograph` 하나만 실행한다.
 
 두 번째 명령은 `fixtures/bridge-app`을 세 producer가 각각 스캔한다 —
 Swift는 `swift build`로 실제 컴파일러 인덱스를 만들고, Kotlin은 스냅샷 없는
