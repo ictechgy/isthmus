@@ -779,6 +779,52 @@ test('출력 상한의 몇 배인 체인은 끝까지 만들지 않고 처음 �
   assert.ok(touched.size <= 100 + 50, `built ${touched.size} affected rows before failing`);
 });
 
+/** 배열 원소를 읽을 때마다 `counter.reads`를 올리는 사본이다. 입력 목록을 몇 번 훑는지 시간에 기대지 않고 잰다. */
+function countingArray<T>(items: readonly T[], counter: { reads: number }): readonly T[] {
+  return new Proxy(items, {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\d+$/u.test(property)) counter.reads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+test('파일 선택은 고른 파일 수와 무관하게 분석 정점과 사실 목록을 같은 횟수만 읽는다', () => {
+  const reads = (files: string[]): number => {
+    const counter = { reads: 0 };
+    const input = build(select({ files }));
+    createTraceReport({ ...input,
+      documents: input.documents.map((document) => ({ ...document, facts: countingArray(document.facts, counter) })),
+      analyses: input.analyses.map((analysis) => ({ ...analysis, graph: { ...analysis.graph,
+        roots: countingArray(analysis.graph.roots, counter), reached: countingArray(analysis.graph.reached, counter) } })) });
+    return counter.reads;
+  };
+  // 사실이 있는 파일 하나에 아무것도 놓이지 않은 파일 19개를 더한다. 파일마다 입력 전체를 다시 훑으면 읽기가 파일 수에 비례한다.
+  const others = Array.from({ length: 19 }, (_, index) => `server/other${index}.ts`);
+  assert.equal(reads(['server/db/users.ts', ...others]), reads(['server/db/users.ts']));
+});
+
+test('root 목록이 잘린 분석의 잘림 판정은 hop마다 모든 정점의 root 목록을 다시 읽지 않는다', () => {
+  const reads = (template: string): number => {
+    const counter = { reads: 0 };
+    const input = build((value) => {
+      bulkCalls(10, 5)(value);
+      value.analyses['android-bulk'].rootsTruncated = true;
+      value.context.selection = { routes: [{ method: 'GET', template }] };
+    });
+    createTraceReport({ ...input, analyses: input.analyses.map((analysis) => analysis.id !== 'android-bulk' ? analysis : { ...analysis,
+      graph: { ...analysis.graph, reached: analysis.graph.reached.map((row) => new Proxy(row, {
+        get(target, property, receiver) {
+          if (property === 'roots') counter.reads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      })) } }) });
+    return counter.reads;
+  };
+  // 이 분석에 호출 hop 10개를 만드는 route 선택과 hop이 없는 선택이 정점의 root 목록을 같은 횟수만 읽어야 한다.
+  assert.equal(reads('/api/users/{}'), reads('/nope'));
+});
+
 test('단일 project의 upstream route는 service scope를 싣고, 체인이 이미 싣는 route(재귀 호출)에는 따라가지 않음 gap을 만들지 않는다', () => {
   /** Android 문서가 자기 route GET /api/admin/{}도 선언하고, 그 핸들러(kt:UsersApi.get)가 그 route를 다시 부른다. */
   const selfCalling = (template: string) => (value: Fixture) => {

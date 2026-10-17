@@ -472,6 +472,32 @@ interface DeclGroup {
   readonly decls: readonly TraceEndpoint[];
 }
 
+/** 파일 선택의 (member, 파일 경로) 색인이다. 키는 {@link memberKey}(member, 경로)다. */
+interface FileIndex {
+  /** 언어 분석(sql 제외)이 그 파일에 위치시킨 root·도달 심볼이다. */
+  readonly analysisSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** context `fileSymbols`가 그 파일에 놓은 심볼이다. */
+  readonly listedSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** member 문서(sql·openapi 제외)에서 그 파일에 위치한 사실의 `symbol.usr`다. */
+  readonly factSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** 그 파일에 위치한 relation-use 기록이다(색인 순서). */
+  readonly uses: ReadonlyMap<string, readonly UseRecord[]>;
+}
+
+/** route 키 하나의 선언 측 사실이다(scope 순서, 테스트 소스 포함). */
+interface RouteKeyFacts {
+  readonly decls: RouteDeclarationFact[];
+  readonly contracts: RouteDeclarationFact[];
+}
+
+/** scope 하나의 route hop 색인이다. */
+interface ScopeRouteIndex {
+  /** {@link routeFactsKey}(method, template) → 그 키의 선언 측 사실이다. */
+  readonly facts: ReadonlyMap<string, RouteKeyFacts>;
+  /** 측별 선언 id → 그 id를 matched·ambiguous 대상으로 가리키는 호출의 `scope.calls` 인덱스다(오름차순). */
+  readonly callsByTarget: Readonly<Record<'decl' | 'contract', ReadonlyMap<number, readonly number[]>>>;
+}
+
 /** 체인과 gap을 모으는 작업 상태다. 입력 색인을 한 번만 만든다. */
 class TraceBuilder {
   private readonly gaps = new Map<string, TraceGap>();
@@ -492,6 +518,15 @@ class TraceBuilder {
   private readonly surfaces = new Map<string, ImportedHttpSurface>();
   private readonly librariesByProvider = new Map<string, TraceLibrary[]>();
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
+  /**
+   * 분석별로 64개로 잘린 정점 root 목록의 마지막 인덱스 중 가장 작은 값이다(잘린 목록이 없으면 Infinity). 이보다 큰
+   * root index만 어떤 정점의 목록에서 빠졌을 수 있다 — hop마다 모든 정점을 다시 훑지 않으려고 색인할 때 구한다.
+   */
+  private readonly cappedRootIndex = new Map<TraceAnalysis, number>();
+  /** 파일 선택 색인이다. 첫 파일 선택 때 {@link fileIndex}가 만든다. */
+  private files: FileIndex | undefined;
+  /** scope별 route hop 색인이다. 그 scope의 첫 route hop 때 {@link routeIndex}가 만든다. */
+  private readonly routeIndexes = new Map<TraceLinkedScope, ScopeRouteIndex>();
   private readonly workspace: boolean;
   /**
    * 지금 만드는 체인이 싣는 route의 upstream 조상 키(member, scope, method, template)다. upstream route가 이 중 하나면 그
@@ -566,8 +601,7 @@ class TraceBuilder {
   private routeChain(selector: { route: TraceRouteSelection }): TraceChain[] {
     const { method, template, scope } = selector.route;
     const scopes = this.scopes.filter((candidate) => scope === undefined || candidate.scope.scope === scope);
-    this.chainRoutes = new Set(scopes.filter(({ scope: { decls, contracts } }) => [...decls, ...contracts].some(({ declaration }) =>
-      declaration.method === method && declaration.template === template))
+    this.chainRoutes = new Set(scopes.filter((candidate) => this.routeIndex(candidate).facts.has(routeFactsKey(method, template)))
       .map((candidate) => upstreamKey(candidate.server, candidate.scope.scope, method, template)));
     this.upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
     const found = scopes.flatMap((candidate) => {
@@ -600,7 +634,7 @@ class TraceBuilder {
       }
       // 테스트 소스 decl만 있는 경우는 test-source-omitted가 이미 밝힌다. 계약만 있는 route만 여기서 남긴다.
       // found의 scope에는 decl이나 contract가 있으므로 decl이 없으면 계약만 있는 route다.
-      if (!linked.scope.decls.some(({ declaration }) => declaration.method === method && declaration.template === template)) {
+      if ((this.routeIndex(linked).facts.get(routeFactsKey(method, template))?.decls.length ?? 0) === 0) {
         this.gap({ code: 'route-contract-only', selector, route: key,
           detail: 'The route is declared only by a contract (no route-decl), so there is no handler to follow.' });
       }
@@ -750,12 +784,13 @@ class TraceBuilder {
     const member = selector.member ?? '';
     const byAnalyses = this.locatedAnalysisSymbols(member, selector.file);
     // 생산자 목록(`fileSymbols`)의 심볼은 분석 위치와 같은 근거다 — 둘 다 생산자가 이 파일에 둔 심볼이다.
-    const listed = this.listedFileSymbols(member, selector.file).filter((start) =>
-      !byAnalyses.some((other) => other.platform === start.platform && other.usr === start.usr));
+    // 시작 심볼은 모두 이 member의 것이라 (platform, usr) 비교는 체인 키 비교와 같다.
+    const byAnalysisKeys = new Set(byAnalyses.map(startKey));
+    const listed = this.listedFileSymbols(member, selector.file).filter((start) => !byAnalysisKeys.has(startKey(start)));
     const located = [...byAnalyses, ...listed];
-    const facts = this.locatedFactSymbols(member, selector.file).filter((start) =>
-      !located.some((other) => other.platform === start.platform && other.usr === start.usr));
-    const uses = this.uses.filter((use) => use.member === member && use.fact.location?.path === selector.file);
+    const locatedKeys = new Set(located.map(startKey));
+    const facts = this.locatedFactSymbols(member, selector.file).filter((start) => !locatedKeys.has(startKey(start)));
+    const uses = this.fileIndex().uses.get(memberKey(member, selector.file)) ?? [];
     if (located.length === 0 && facts.length === 0 && uses.length === 0) {
       this.gap({ code: 'file-without-symbols', selector, ...this.memberField(member),
         detail: 'No analysis symbol or bridge fact is located in this file, so nothing was followed; this is not evidence '
@@ -784,36 +819,59 @@ class TraceBuilder {
 
   /** member의 언어 분석(sql 제외)이 이 파일에 위치시킨 root·도달 심볼이다. */
   private locatedAnalysisSymbols(member: string, path: string): StartSymbol[] {
-    const found: StartSymbol[] = [];
-    for (const analysis of this.input.analyses) {
-      if ((analysis.member ?? '') !== member || analysis.platform === 'sql') continue;
-      const symbols = [...analysis.graph.roots.flatMap(({ symbol }) => symbol === undefined ? [] : [symbol]),
-        ...analysis.graph.reached.map(({ symbol }) => symbol)];
-      for (const symbol of symbols) {
-        if (symbol.location?.path === path) found.push({ member, platform: analysis.platform, usr: symbol.usr });
-      }
-    }
-    return uniqueStarts(found);
+    return uniqueStarts(this.fileIndex().analysisSymbols.get(memberKey(member, path)) ?? []);
   }
 
   /** context `fileSymbols`가 이 member·파일에 놓은 심볼이다. 없으면 빈 목록이다. */
   private listedFileSymbols(member: string, path: string): StartSymbol[] {
-    return uniqueStarts((this.input.context.fileSymbols ?? [])
-      .filter((entry) => (entry.member ?? '') === member && entry.path === path)
-      .flatMap(({ platform, usrs }) => usrs.map((usr) => ({ member, platform, usr }))));
+    return uniqueStarts(this.fileIndex().listedSymbols.get(memberKey(member, path)) ?? []);
   }
 
   /** member 문서에서 이 파일에 위치한 사실의 `symbol.usr`다(sql·openapi 제외). */
   private locatedFactSymbols(member: string, path: string): StartSymbol[] {
-    const found: StartSymbol[] = [];
-    for (const document of this.members.get(member)!.documents) {
-      if (document.platform === 'sql' || document.platform === 'openapi') continue;
-      for (const fact of document.facts) {
-        const usr = fact.symbol?.usr;
-        if (usr !== undefined && fact.location?.path === path) found.push({ member, platform: document.platform, usr });
+    return uniqueStarts(this.fileIndex().factSymbols.get(memberKey(member, path)) ?? []);
+  }
+
+  /**
+   * 파일 선택이 쓰는 (member, 파일 경로) 색인이다. 첫 파일 선택 때 분석 정점·fileSymbols·사실·relation-use를 한 번씩만
+   * 훑어 만든다 — 파일마다 입력 전체를 다시 훑으면 선택 파일 수 × 입력 크기가 된다. 목록은 입력 순서를 지키고, 시작
+   * 심볼은 호출자가 {@link uniqueStarts}로 정렬·중복 제거한다.
+   */
+  private fileIndex(): FileIndex {
+    if (this.files !== undefined) return this.files;
+    const analysisSymbols = new Map<string, StartSymbol[]>();
+    for (const analysis of this.input.analyses) {
+      const { platform } = analysis;
+      if (platform === 'sql') continue;
+      const member = analysis.member ?? '';
+      const symbols = [...analysis.graph.roots.flatMap(({ symbol }) => symbol === undefined ? [] : [symbol]),
+        ...analysis.graph.reached.map(({ symbol }) => symbol)];
+      for (const { usr, location } of symbols) {
+        if (location !== undefined) appendTo(analysisSymbols, memberKey(member, location.path), { member, platform, usr });
       }
     }
-    return uniqueStarts(found);
+    const listedSymbols = new Map<string, StartSymbol[]>();
+    for (const { member = '', path, platform, usrs } of this.input.context.fileSymbols ?? []) {
+      for (const usr of usrs) appendTo(listedSymbols, memberKey(member, path), { member, platform, usr });
+    }
+    const factSymbols = new Map<string, StartSymbol[]>();
+    for (const [member, { documents }] of this.members) {
+      for (const document of documents) {
+        if (document.platform === 'sql' || document.platform === 'openapi') continue;
+        for (const fact of document.facts) {
+          const usr = fact.symbol?.usr;
+          const path = fact.location?.path;
+          if (usr !== undefined && path !== undefined) appendTo(factSymbols, memberKey(member, path), { member, platform: document.platform, usr });
+        }
+      }
+    }
+    const uses = new Map<string, UseRecord[]>();
+    for (const use of this.uses) {
+      const path = use.fact.location?.path;
+      if (path !== undefined) appendTo(uses, memberKey(use.member, path), use);
+    }
+    this.files = { analysisSymbols, listedSymbols, factSymbols, uses };
+    return this.files;
   }
 
   /**
@@ -905,17 +963,20 @@ class TraceBuilder {
     { hop: TraceRouteHop; declFacts: RouteDeclarationFact[] } | undefined {
     const { scope } = linked;
     const key = routeKey(scope.scope, method, template);
-    const pick = (facts: readonly RouteDeclarationFact[]) => facts.filter(({ declaration }) =>
-      declaration.method === method && declaration.template === template);
-    const declAll = pick(scope.decls);
-    const contractAll = pick(scope.contracts);
+    const index = this.routeIndex(linked);
+    const { decls: declAll, contracts: contractAll } = index.facts.get(routeFactsKey(method, template)) ?? { decls: [], contracts: [] };
     if (declAll.length === 0 && contractAll.length === 0) return undefined;
     const declFacts = declAll.filter(({ testSource }) => !testSource);
     let testSources = declAll.length - declFacts.length;
     const declIds = new Set(declFacts.map(({ declaration }) => declaration.id));
     const contractIds = new Set(contractAll.map(({ declaration }) => declaration.id));
+    // 이 route의 선언·계약을 matched·ambiguous 대상으로 가리키는 호출만 원래 순서로 본다. 나머지 호출은 아래 판정에서
+    // matched도 ambiguous도 아니라 건너뛰므로 결과가 같다.
+    const targeted = new Set<number>();
+    for (const id of declIds) for (const callIndex of index.callsByTarget.decl.get(id) ?? []) targeted.add(callIndex);
+    for (const id of contractIds) for (const callIndex of index.callsByTarget.contract.get(id) ?? []) targeted.add(callIndex);
     const calls: TraceCallHop[] = [];
-    for (const call of scope.calls) {
+    for (const call of [...targeted].sort((left, right) => left - right).map((callIndex) => scope.calls[callIndex]!)) {
       const matched = (['decl', 'contract'] as const).flatMap((side) => {
         const outcome = call[side];
         return outcome?.status === 'matched' &&
@@ -953,6 +1014,38 @@ class TraceBuilder {
       },
       declFacts,
     };
+  }
+
+  /**
+   * scope 하나의 route hop 색인이다. 그 scope의 첫 route hop 때 선언 측 사실과 호출을 한 번씩만 훑어 만든다 — route
+   * 선택·역방향으로 닿은 route·따라간 upstream route마다 scope 전체를 다시 훑지 않게 한다.
+   */
+  private routeIndex(linked: TraceLinkedScope): ScopeRouteIndex {
+    const cached = this.routeIndexes.get(linked);
+    if (cached !== undefined) return cached;
+    const facts = new Map<string, RouteKeyFacts>();
+    const entry = ({ declaration }: RouteDeclarationFact): RouteKeyFacts => {
+      const key = routeFactsKey(declaration.method, declaration.template);
+      let found = facts.get(key);
+      if (found === undefined) {
+        found = { decls: [], contracts: [] };
+        facts.set(key, found);
+      }
+      return found;
+    };
+    for (const fact of linked.scope.decls) entry(fact).decls.push(fact);
+    for (const fact of linked.scope.contracts) entry(fact).contracts.push(fact);
+    const callsByTarget = { decl: new Map<number, number[]>(), contract: new Map<number, number[]>() };
+    linked.scope.calls.forEach((call, callIndex) => {
+      for (const side of ['decl', 'contract'] as const) {
+        const outcome = call[side];
+        if (outcome?.status !== 'matched' && outcome?.status !== 'ambiguous') continue;
+        for (const { id } of outcome.targets) appendTo(callsByTarget[side], id, callIndex);
+      }
+    });
+    const index = { facts, callsByTarget };
+    this.routeIndexes.set(linked, index);
+    return index;
   }
 
   /** route hop 하나에 딸린 scope 수준 공백(테스트 소스, 호출 측 미스캔, 미귀속·동적 호출)이다. */
@@ -1247,9 +1340,9 @@ class TraceBuilder {
           detail: `The producer truncated this traversal${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}; `
             + 'reached symbols may be missing.' });
       }
-      // 잘린 목록은 가장 작은 인덱스 64개를 싣는다. 마지막 인덱스보다 큰 root만 빠졌을 수 있다.
-      if (graph.rootsTruncated && graph.reached.some(({ roots }) =>
-        roots.length === MAX_ROOTS_PER_REACHED && rootIndex > roots[roots.length - 1]!)) {
+      // 잘린 목록은 가장 작은 인덱스 64개를 싣는다. 마지막 인덱스보다 큰 root만 빠졌을 수 있다 — 어느 잘린 목록에서든
+      // 빠졌는지는 마지막 인덱스의 최솟값과 한 번 비교하는 것과 같다.
+      if (graph.rootsTruncated && rootIndex > this.cappedRootIndex.get(analysis)!) {
         this.gap({ code: 'analysis-truncated', selector, analysis: analysis.id,
           detail: 'Root attribution was capped at 64 roots per symbol; some symbols reached from this root may be missing.' });
       }
@@ -1510,10 +1603,14 @@ class TraceBuilder {
   private indexAnalyses(): void {
     for (const analysis of [...this.input.analyses].sort((left, right) => compareStrings(left.id, right.id))) {
       const byRoot = new Map<number, TraversalReached[]>();
+      let capped = Infinity;
       for (const row of analysis.graph.reached) {
-        for (const index of row.roots) appendTo(byRoot, index, row);
+        const { roots } = row;
+        for (const index of roots) appendTo(byRoot, index, row);
+        if (roots.length === MAX_ROOTS_PER_REACHED) capped = Math.min(capped, roots[roots.length - 1]!);
       }
       this.rowsByRoot.set(analysis, byRoot);
+      this.cappedRootIndex.set(analysis, capped);
       analysis.graph.roots.forEach(({ id, symbol }, rootIndex) => {
         const key = JSON.stringify([analysis.member ?? '', analysis.role, analysis.platform, id]);
         // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다. library 연속만 "생산자가
@@ -1936,6 +2033,16 @@ function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list === undefined) map.set(key, [value]);
   else list.push(value);
+}
+
+/** 시작 심볼의 체인 키다. */
+function startKey(start: StartSymbol): string {
+  return memberSymbolKey(start.member, start.platform, start.usr);
+}
+
+/** scope route 색인의 (method, template) 키다. */
+function routeFactsKey(method: RouteMethod, template: string): string {
+  return JSON.stringify([method, template]);
 }
 
 /** 시작 심볼 중복을 제거하고 정렬한다. */
