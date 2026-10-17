@@ -53,6 +53,9 @@ flutter test tool/emit_runtime_fixture.dart --no-pub
 flutter test tool/benchmark_recorder.dart --no-pub
 ```
 
+`emit_runtime_fixture.dart`는 기록 JSON을 시스템 임시 디렉터리 아래 새 디렉터리에 쓰고
+`ISTHMUS_RUNTIME_FIXTURE <경로>` 줄로 위치를 출력한다. 경로를 정하려면 `ISTHMUS_RUNTIME_FIXTURE_OUT`을 준다.
+
 벤치마크는 fake messenger를 쓰는 디버그 Flutter 테스트다. 실제 디바이스 IPC 지연의 측정이
 아니다. 임시/진단 빌드에서 필요한 채널과 실제 codec을 명시하며, Basic/Pigeon reply의 성공·
 실패 의미는 명시 classifier가 정한다. 대응하는 codec이 없으면 이름만으로 추측하지 않는다.

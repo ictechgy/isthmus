@@ -43,15 +43,32 @@ void main() {
       method.invokeMethod<void>('takePhoto').then<void>((_) {}),
       pigeon.send(<Object?>['takePhoto']).then<void>((_) {}),
     ]).then<void>((_) {
-      File(
-        '/tmp/isthmus-runtime-recorder.json',
-      ).writeAsStringSync(recorder.finish().encode());
+      final output = _fixtureOutputFile();
+      output.writeAsStringSync(recorder.finish().encode());
+      // ignore: avoid_print
+      print('ISTHMUS_RUNTIME_FIXTURE ${output.path}');
     });
   });
 }
 
 RuntimeOutcome pigeonOutcome(Object? reply) =>
     reply == null ? RuntimeOutcome.missingHandler : RuntimeOutcome.success;
+
+/// 기록 JSON을 쓸 파일을 정한다.
+///
+/// `ISTHMUS_RUNTIME_FIXTURE_OUT`이 있으면 그 경로를 쓴다. 없으면 시스템 임시 디렉터리
+/// 아래에 새로 만든 전용 디렉터리의 `runtime-recorder.json`을 쓴다. 공유 `/tmp`의 고정
+/// 이름은 다른 로컬 사용자가 미리 만들거나 링크로 심어 둘 수 있기 때문이다.
+File _fixtureOutputFile() {
+  final configured = Platform.environment['ISTHMUS_RUNTIME_FIXTURE_OUT'];
+  if (configured != null && configured.isNotEmpty) {
+    return File(configured);
+  }
+  final directory = Directory.systemTemp.createTempSync('isthmus-runtime-');
+  return File(
+    '${directory.path}${Platform.pathSeparator}runtime-recorder.json',
+  );
+}
 
 class _FixtureMessenger implements BinaryMessenger {
   @override
