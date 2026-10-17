@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { parseBridgeFactsDocument, type BridgeFactsDocument, type RoutePathAnchor } from '../exchange/parse.ts';
 import { parseRouteTemplate, type HttpMethod } from '../exchange/route-template.ts';
-import { BridgeJoinValidationError, joinBridgeDocuments } from './join.ts';
+import { BridgeJoinValidationError, compareEndpoints, joinBridgeDocuments } from './join.ts';
 import {
   clearlyViolates,
   compareRanks,
@@ -15,7 +15,7 @@ import {
   type RouteProbe,
   type RouteSideOutcome,
 } from './route-index.ts';
-import type { RouteJoinResult, RouteScope } from './route-join.ts';
+import { joinRouteFacts, type RouteJoinResult, type RouteScope } from './route-join.ts';
 
 /** 합성 http 문서를 계약 파서로 검증해 만든다. */
 function document(platform: string, roles: string[], facts: unknown[], extra: Record<string, unknown> = {}): BridgeFactsDocument {
@@ -276,6 +276,66 @@ test('선언 측 service가 일부만 있으면 scope를 정할 수 없어 입�
     document('openapi', ['server'], [contract('GET', '/a')]),
     document('kotlin', ['client'], []),
   ]), (error) => error instanceof BridgeJoinValidationError && /all declare a service or none/.test(error.message));
+});
+
+test('다중 service 입력은 scope마다 자기 선언 측 문서·사실과 닿을 수 있는 호출 측 문서만 받는다', () => {
+  const routes = joinRoutes(
+    document('js', ['server'], [
+      decl('GET', '/a', { service: 'one' }), decl('GET', '/b', { service: 'two' }),
+      { ...decl('GET', 'base + x', { service: 'two' }), dynamic: true },
+    ]),
+    document('js', ['server'], [], { service: 'three', limitations: ['route-coverage: three'] }),
+    document('openapi', ['server'], [
+      contract('GET', '/a', { service: 'one' }), contract('GET', '/c', { service: 'two' }),
+      { ...contract('GET', 'spec + y', { service: 'one' }), dynamic: true },
+    ]),
+    document('kotlin', ['client'], [
+      call('GET', '/a', { service: 'one' }), call('GET', '/b', { service: 'two' }), call('GET', '/z', { service: 'unknown' }),
+      call('GET', '/n'), { ...call('GET', 'base + "/a/x"', { service: 'one' }), dynamic: true, channelPrefix: '/a' },
+    ], { limitations: ['route-call-coverage: kotlin'] }),
+    document('swift', ['client'], [call('GET', '/t')], { service: 'three', limitations: ['route-call-coverage: swift'] }),
+  );
+  assert.deepEqual(routes.scopes.map((scope) => [
+    scope.scope, scope.serverLimitations.map(({ message }) => message), scope.declScanned, scope.contractDocuments,
+    scope.clientDocuments, scope.clientLimitations.map(({ message }) => message),
+    scope.decls.map(({ declaration }) => declaration.template), scope.contracts.map(({ declaration }) => declaration.template),
+    scope.dynamicDecls, scope.dynamicContracts,
+    scope.calls.map(({ template, decl: declSide, contract: contractSide }) => `${template}:${declSide?.status}:${contractSide?.status}`),
+    scope.dynamicCalls, scope.prefixCalls.length, scope.unboundCalls,
+  ]), [
+    // service 없는 호출 측 문서(kotlin)는 모든 scope에 닿고, service 있는 문서(swift)는 그 scope에만 닿는다.
+    // 귀속되지 않은 호출 중 service 없는 /n만 모든 scope의 unboundCalls가 된다(unknown service는 어느 scope도 아니다).
+    ['one', [], true, 1, 1, ['route-call-coverage: kotlin'], ['/a'], ['/a'], 0, 1, ['/a:matched:matched'], 1, 1, 1],
+    ['three', ['route-coverage: three'], true, 0, 2, ['route-call-coverage: kotlin', 'route-call-coverage: swift'],
+      [], [], 0, 0, ['/t:missing:undefined'], 0, 0, 1],
+    ['two', [], true, 1, 1, ['route-call-coverage: kotlin'], ['/b'], ['/c'], 1, 0, ['/b:matched:missing'], 0, 0, 1],
+  ]);
+});
+
+/** facts 원소를 읽을 때마다 세는 문서 사본이다. 조인이 입력 사실을 몇 번 훑는지 시간에 기대지 않고 잰다. */
+function countingFacts(source: BridgeFactsDocument, counter: { reads: number }): BridgeFactsDocument {
+  const facts = new Proxy(source.facts, {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\d+$/u.test(property)) counter.reads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  return { ...source, facts };
+}
+
+test('http 조인은 service 수와 무관하게 입력 사실을 같은 횟수만 읽는다', () => {
+  const reads = (services: number): number => {
+    const counter = { reads: 0 };
+    const service = (index: number) => ({ service: `s${index % services}` });
+    const server = document('js', ['server'], Array.from({ length: 100 }, (_, index) => decl('GET', `/items/${index}`, service(index))));
+    const client = document('kotlin', ['client'], Array.from({ length: 100 }, (_, index) => call('GET', `/items/${index}`, service(index))));
+    const joined = joinRouteFacts([countingFacts(server, counter), countingFacts(client, counter)], compareEndpoints);
+    assert.equal(joined.scopes.length, services);
+    assert.equal(joined.scopes.flatMap(({ calls }) => calls).filter(({ decl: outcome }) => outcome?.status === 'matched').length, 100);
+    return counter.reads;
+  };
+  // 사실 수는 같고 service 수만 다르다. scope마다 입력 전체를 다시 훑으면 읽기 횟수가 service 수에 비례한다.
+  assert.equal(reads(50), reads(1));
 });
 
 test('http 입력 구성: 선언 측과 호출 측이 각각 필요하고 드리프트 입력만 예외다', () => {
