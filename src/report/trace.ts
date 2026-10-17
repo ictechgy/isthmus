@@ -612,7 +612,7 @@ class TraceBuilder {
       this.missingRouteGap(selector);
       return [];
     }
-    const handlers = new Map<string, TraceHandlerHop>();
+    const handlers = new Map<string, MutableHandler>();
     const uses = new Map<string, MutableUse>();
     for (const { linked, declFacts } of found) {
       const key = routeKey(linked.scope.scope, method, template);
@@ -643,7 +643,7 @@ class TraceBuilder {
     return [this.count({
       selector,
       routes: found.map(({ hop }) => hop),
-      handlers: sortHandlers(handlers),
+      handlers: finishHandlers(handlers),
       relationUses,
       database: this.database(selector, declGroups(uses)),
     })];
@@ -879,9 +879,9 @@ class TraceBuilder {
    * 핸들러·표시된 비HTTP 진입점 어느 쪽에도 닿지 못한 시작점은 `non-http-entry`로 남긴다. 시작 심볼의 member 안에서만 찾는다.
    */
   private reverseRoutes(selector: TraceSelector, starts: readonly StartSymbol[]): Pick<TraceChain, 'routes' | 'handlers' | 'entryPoints'> {
-    const handlers = new Map<string, TraceHandlerHop>();
+    const handlers = new Map<string, MutableHandler>();
     const routes = new Map<string, TraceRouteKey>();
-    const entryPoints = new Map<string, TraceEntryPointHop>();
+    const entryPoints = new Map<string, MutableEntryPoint>();
     for (const start of starts) {
       const reach = new Map<string, TraceReach>([[start.usr, selfReach(start.usr)]]);
       let found = false;
@@ -924,33 +924,37 @@ class TraceBuilder {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
     });
-    return { routes: hops, handlers: sortHandlers(handlers),
-      ...(entryPoints.size === 0 ? {} : { entryPoints: valuesSortedByKey(entryPoints) }) };
+    return { routes: hops, handlers: finishHandlers(handlers),
+      ...(entryPoints.size === 0 ? {} : { entryPoints: finishEntryPoints(entryPoints) }) };
   }
 
-  /** 같은 member·platform·usr의 진입점 관찰을 합치고 시작점별 가장 강한 도달 근거를 보존한다. */
-  private addEntryPoint(target: Map<string, TraceEntryPointHop>, start: StartSymbol, symbol: TraversalSymbol,
+  /**
+   * 같은 member·platform·usr의 진입점 관찰을 합치고 시작점별 가장 강한 도달 근거를 보존한다. 체인이 끝날 때
+   * {@link finishEntryPoints}가 한 번 정렬한다 — 관찰마다 목록을 다시 만들어 정렬하면 시작점 수에 대해 이차다.
+   */
+  private addEntryPoint(target: Map<string, MutableEntryPoint>, start: StartSymbol, symbol: TraversalSymbol,
     via: TraceReach): boolean {
     const entries = symbol.entries?.filter((entry) => entry !== 'route-handler') ?? [];
     if (entries.length === 0) return false;
     const key = memberSymbolKey(start.member, start.platform, symbol.usr);
-    const current = target.get(key);
-    const reaches = new Map((current?.reachedFrom ?? []).map((reach) => [reach.from, reach]));
-    keepNearest(reaches, via.from, via);
     const observed = {
       ...(symbol.qualifiedName === undefined ? {} : { qualifiedName: symbol.qualifiedName }),
       ...(symbol.location === undefined ? {} : { location: symbol.location }),
     };
-    const prior = current === undefined ? undefined : {
-      ...(current.qualifiedName === undefined ? {} : { qualifiedName: current.qualifiedName }),
-      ...(current.location === undefined ? {} : { location: current.location }),
-    };
+    const observedKey = canonicalJsonKey(observed);
+    const current = target.get(key);
+    if (current === undefined) {
+      target.set(key, { platform: start.platform, usr: symbol.usr, member: this.memberField(start.member), metadata: observed,
+        metadataKey: observedKey, entries: new Set(entries), reachedFrom: new Map([[via.from, via]]) });
+      return true;
+    }
     // 다른 분석이 같은 id의 부가 정보를 달리 신고해도 입력 순서에 기대지 않는다. freshness 공백은 별도로 유지한다.
-    const metadata = prior === undefined || compareStrings(canonicalJsonKey(observed), canonicalJsonKey(prior)) < 0 ? observed : prior;
-    target.set(key, { platform: start.platform, usr: symbol.usr, ...this.memberField(start.member), ...metadata,
-      entries: [...new Set([...(current?.entries ?? []), ...entries])].sort(compareStrings),
-      reachedFrom: [...reaches.values()].sort((left, right) => compareStrings(left.from, right.from)),
-    });
+    if (compareStrings(observedKey, current.metadataKey) < 0) {
+      current.metadata = observed;
+      current.metadataKey = observedKey;
+    }
+    for (const entry of entries) current.entries.add(entry);
+    keepNearest(current.reachedFrom, via.from, via);
     return true;
   }
 
@@ -1624,22 +1628,21 @@ class TraceBuilder {
     }
   }
 
-  /** 핸들러 hop을 합친다. route 키와 도달 근거는 중복 없이 모은다. */
-  private addHandler(handlers: Map<string, TraceHandlerHop>, member: string, platform: BridgePlatform, usr: string,
+  /**
+   * 핸들러 hop을 합친다. route 키와 도달 근거는 중복 없이 모으고, qualifiedName은 처음 알려진 값을 지킨다. 체인이 끝날
+   * 때 {@link finishHandlers}가 한 번 정렬한다 — 합칠 때마다 목록을 다시 만들어 정렬하면 시작점 수에 대해 이차다.
+   */
+  private addHandler(handlers: Map<string, MutableHandler>, member: string, platform: BridgePlatform, usr: string,
     qualifiedName: string | undefined, route: TraceRouteKey, reach: TraceReach | undefined): void {
     const key = memberSymbolKey(member, platform, usr);
-    const existing = handlers.get(key);
-    const routes = new Map((existing?.routes ?? []).map((item) => [JSON.stringify(item), item]));
-    routes.set(JSON.stringify(route), route);
-    const reached = new Map((existing?.reachedFrom ?? []).map((item) => [item.from, item]));
-    if (reach !== undefined) keepNearest(reached, reach.from, reach);
-    const name = existing?.qualifiedName ?? qualifiedName;
-    handlers.set(key, {
-      platform, usr, ...this.memberField(member),
-      ...(name === undefined ? {} : { qualifiedName: name }),
-      routes: [...routes.values()].sort(compareRouteKeys),
-      reachedFrom: [...reached.values()].sort((left, right) => compareStrings(left.from, right.from)),
-    });
+    let entry = handlers.get(key);
+    if (entry === undefined) {
+      entry = { platform, usr, member: this.memberField(member), qualifiedName, routes: new Map(), reachedFrom: new Map() };
+      handlers.set(key, entry);
+    }
+    entry.qualifiedName ??= qualifiedName;
+    entry.routes.set(JSON.stringify(route), route);
+    if (reach !== undefined) keepNearest(entry.reachedFrom, reach.from, reach);
   }
 
   /** 조인 끝점을 출력 끝점으로 바꾼다. workspace면 member를 붙인다. */
@@ -1922,9 +1925,47 @@ function finishUses(uses: ReadonlyMap<string, MutableUse>): TraceRelationUseHop[
   });
 }
 
-/** 핸들러 hop을 (member, 플랫폼, usr) 순으로 정렬한다. */
-function sortHandlers(handlers: ReadonlyMap<string, TraceHandlerHop>): TraceHandlerHop[] {
-  return valuesSortedByKey(handlers);
+/** 조립 중인 핸들러 hop이다. route 키(직렬화)와 시작점별 도달 근거를 모은다. */
+interface MutableHandler {
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  /** workspace면 `{member}`, 단일 project면 빈 객체다. */
+  readonly member: { member?: string };
+  qualifiedName: string | undefined;
+  readonly routes: Map<string, TraceRouteKey>;
+  readonly reachedFrom: Map<string, TraceReach>;
+}
+
+/** 조립한 핸들러 hop을 (member, 플랫폼, usr) 순으로 확정한다. route는 route 키 순, 도달 근거는 시작점 순이다. */
+function finishHandlers(handlers: ReadonlyMap<string, MutableHandler>): TraceHandlerHop[] {
+  return valuesSortedByKey(handlers).map(({ platform, usr, member, qualifiedName, routes, reachedFrom }) => ({
+    platform, usr, ...member,
+    ...(qualifiedName === undefined ? {} : { qualifiedName }),
+    routes: [...routes.values()].sort(compareRouteKeys),
+    reachedFrom: [...reachedFrom.values()].sort((left, right) => compareStrings(left.from, right.from)),
+  }));
+}
+
+/** 조립 중인 비HTTP 진입점 hop이다. 부가 정보는 지금까지 관찰한 것 중 정렬 JSON이 가장 작은 것이다. */
+interface MutableEntryPoint {
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  /** workspace면 `{member}`, 단일 project면 빈 객체다. */
+  readonly member: { member?: string };
+  metadata: Readonly<{ qualifiedName?: string; location?: TraversalLocation }>;
+  /** `metadata`의 {@link canonicalJsonKey}다. 관찰마다 다시 계산하지 않으려고 둔다. */
+  metadataKey: string;
+  readonly entries: Set<TraversalEntryKind>;
+  readonly reachedFrom: Map<string, TraceReach>;
+}
+
+/** 조립한 진입점 hop을 (member, 플랫폼, usr) 순으로 확정한다. 표식은 이름 순, 도달 근거는 시작점 순이다. */
+function finishEntryPoints(entryPoints: ReadonlyMap<string, MutableEntryPoint>): TraceEntryPointHop[] {
+  return valuesSortedByKey(entryPoints).map(({ platform, usr, member, metadata, entries, reachedFrom }) => ({
+    platform, usr, ...member, ...metadata,
+    entries: [...entries].sort(compareStrings),
+    reachedFrom: [...reachedFrom.values()].sort((left, right) => compareStrings(left.from, right.from)),
+  }));
 }
 
 /** 같은 정점에 여러 도달이 있으면 (depth, analysis) 최솟값 하나만 남긴다. */

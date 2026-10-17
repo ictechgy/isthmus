@@ -192,3 +192,23 @@ test('여러 분석의 표식·부가 정보는 결정적으로 합치고 더 �
   assert.ok(!result.gaps.some(({ code }) => code === 'candidate-dispatch'));
   assert.equal(encodeSortedJson(result), encodeSortedJson(createTraceReport({ ...input, analyses: [extra, ...input.analyses] })));
 });
+
+test('진입점 부가 정보는 어느 분석을 먼저 합치든 정렬 JSON이 가장 작은 관찰을 고른다', () => {
+  // 분석은 id 순으로 합친다. 위치만 실은 관찰(더 작은 키)이 server-reverse의 이름 관찰보다 먼저든 나중이든 같아야 한다.
+  const metadata = (id: string) => {
+    const input = build((value) => {
+      value.reverse.reached = [entryRow(page, ['page'])];
+      delete value.reverse.reached[0].symbol.location;
+    });
+    const extra = normalizeTraceAnalysis({ ...fixture.reverse, reached: [{ ...entryRow(page, ['page']),
+      symbol: { usr: page, entries: ['page'], location: { path: 'server/page.ts', line: 1 } } }] },
+    { id, path: `${id}.json`, platform: 'js', role: 'reverse' }, input.context.project!);
+    const entry = createTraceReport({ ...input, analyses: [...input.analyses, extra] }).chains[0]!.entryPoints![0]!;
+    return { qualifiedName: entry.qualifiedName, location: entry.location, analyses: entry.reachedFrom.map(({ analysis }) => analysis) };
+  };
+  // 도달 근거는 따로 가장 가까운 것(같은 등급·depth면 분석 id가 작은 것)을 고른다.
+  assert.deepEqual(metadata('a-reverse'), { qualifiedName: undefined, location: { path: 'server/page.ts', line: 1 },
+    analyses: ['a-reverse'] });
+  assert.deepEqual(metadata('z-reverse'), { qualifiedName: undefined, location: { path: 'server/page.ts', line: 1 },
+    analyses: ['server-reverse'] });
+});
