@@ -658,6 +658,20 @@ function verifyServe() {
     verify(injected.status === 0 && response.result.isError === true
       && response.result.content[0].text.startsWith('Unable to read bridge facts input 1;'), 'serve keeps document paths positional');
     verify(readFileSync(victim, 'utf8') === 'original\n', 'serve opens no write path');
+    // 일반 파일이 아닌 경로(FIFO)는 열어 기다리지 않고 읽기 실패로 답하며, 순차 세션은 다음 요청을 처리한다.
+    const fifo = join(directory, 'pipe.json');
+    verify(runChild('mkfifo', [fifo]).status === 0, 'serve FIFO fixture');
+    const fifoSession = runChild(process.execPath, [binaryPath, 'serve'], {
+      input: `${[
+        { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'check', arguments: { documents: [fifo, swiftPath] } } },
+        { jsonrpc: '2.0', id: 5, method: 'ping' },
+      ].map((message) => JSON.stringify(message)).join('\n')}\n`,
+      timeout: 20_000,
+    });
+    const answered = fifoSession.status === 0
+      ? fifoSession.stdout.trim().split('\n').map((line) => JSON.parse(line)) : [];
+    verify(answered.length === 2 && answered[0].result.isError === true && answered[1].id === 5,
+      'serve rejects non-regular files without blocking');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

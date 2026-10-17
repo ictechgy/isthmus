@@ -34,3 +34,23 @@ export async function readBoundedTextFile(path: string, maximumBytes: number): P
     throw new BoundedTextReadError('read');
   } finally { await handle.close(); }
 }
+
+/**
+ * 일반 파일만 `readFile(path, 'utf8')`과 같게 읽는다. 요청을 하나씩 처리하는 MCP serve의 읽기 경계다.
+ *
+ * FIFO 열기나 끝없는 장치 읽기 하나가 순차 세션 전체를 멈추므로, O_NONBLOCK으로 열어 FIFO에서도 막히지 않고 연
+ * 핸들이 일반 파일이 아니면 읽기 전에 `read`로 거부한다. 디코딩은 readFile과 같아(BOM 보존, 잘못된 바이트는
+ * U+FFFD) CLI와 같은 문서·sha256을 낸다. 크기 상한은 지금처럼 호출부의 UTF-16 길이 검사가 맡는다.
+ */
+export async function readRegularTextFile(path: string): Promise<string> {
+  let handle;
+  try { handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK); }
+  catch { throw new BoundedTextReadError('read'); }
+  try {
+    if (!(await handle.stat()).isFile()) throw new BoundedTextReadError('read');
+    return await handle.readFile({ encoding: 'utf8' });
+  } catch (error) {
+    if (error instanceof BoundedTextReadError) throw error;
+    throw new BoundedTextReadError('read');
+  } finally { await handle.close(); }
+}

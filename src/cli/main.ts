@@ -2,7 +2,7 @@
 
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 
-import { readBoundedTextFile } from './bounded-text-file.ts';
+import { readBoundedTextFile, readRegularTextFile } from './bounded-text-file.ts';
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
 import type { CaptureFileSystem, CommandResult } from './command-support.ts';
@@ -212,9 +212,10 @@ async function dispatchCommand(
         process.cwd(),
       );
     case 'serve':
+      // 세션은 요청을 하나씩 처리한다. FIFO·장치 경로 하나가 이후 모든 요청을 막지 않게 일반 파일만 읽는다.
       return runServeCommand(
         commandArguments,
-        readTextFile,
+        readRegularTextFile,
         writeTextFile,
         await readPackageVersion(),
       );
