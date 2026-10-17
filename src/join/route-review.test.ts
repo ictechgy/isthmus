@@ -131,16 +131,33 @@ test('리뷰 6: 문서 service와 다른 사실 service는 파서가 거부하�
 });
 
 test('suffix 비교 예산을 넘으면 조인이 부분 결과 없이 원인과 해결 방향을 담은 입력 오류로 바꾼다', () => {
-  // 선언 2,500개 × 오프셋 20 × base 호출 101개 > 5,000,000번 비교. 어느 후보도 맞지 않아 상한(64)에
-  // 걸려 일찍 끝나지 않는다.
-  const deep = `/${Array.from({ length: 19 }, () => 'a').join('/')}/x`;
-  const decls = Array.from({ length: 2_500 }, () => decl('GET', deep));
-  const calls = Array.from({ length: 101 }, () => call('GET', '/y/x', { pathAnchor: 'base' }));
+  // 선언 2,500개 × base 호출 2,001개 > 5,000,000번 비교(선언마다 길이가 맞는 오프셋 하나). 어느 후보도 맞지 않아
+  // 상한(64)에 걸려 일찍 끝나지 않는다.
+  const decls = Array.from({ length: 2_500 }, () => decl('GET', '/a/x'));
+  const calls = Array.from({ length: 2_001 }, () => call('GET', '/y/x', { pathAnchor: 'base' }));
   assert.throws(
     () => joinBridgeDocuments([document('js', ['server'], decls), document('kotlin', ['client'], calls)]),
     (error: unknown) => error instanceof Error && error.name === 'BridgeJoinValidationError' &&
       /Http suffix matching exceeds 5000000 comparisons; narrow the inputs/.test(error.message),
   );
+});
+
+test('REST 모양 선언 1,200개와 base 호출 1,500개는 suffix 비교 예산 안에서 모두 하나의 선언에 match한다', () => {
+  // 자원마다 경로 6개(목록 GET·POST, 항목 GET·PUT·DELETE, 하위 목록 GET)다. 환경 변수 base URL 뒤의 호출은 base
+  // 앵커라 suffix 후보로만 잇는다. 길이가 맞을 수 없는 오프셋까지 세던 때는 이 규모에서 예산을 넘어 결과가 없었다.
+  const decls = Array.from({ length: 200 }, (_, index) => `/api/v1/resource${index}`).flatMap((base) => [
+    decl('GET', base), decl('POST', base), decl('GET', `${base}/{}`), decl('PUT', `${base}/{}`),
+    decl('DELETE', `${base}/{}`), decl('GET', `${base}/{}/items`),
+  ]);
+  const calls = Array.from({ length: 1_500 }, (_, index) => (index % 2 === 0
+    ? call('GET', `/resource${index % 200}/{}/items`, { pathAnchor: 'base' })
+    : call('PUT', `/v1/resource${index % 200}/{}`, { pathAnchor: 'base' })));
+  const scope = joinBridgeDocuments([document('js', ['server'], decls), document('kotlin', ['client'], calls)]).routes!.scopes[0]!;
+  assert.equal(scope.calls.length, 1_500);
+  const unexpected = scope.calls.filter(({ method, template, decl: outcome }) => !(outcome?.status === 'matched' &&
+    outcome.quality === 'suffix' && outcome.targets.length === 1 && outcome.targets[0]!.method === method &&
+    outcome.targets[0]!.template === `/api${template.startsWith('/v1/') ? '' : '/v1'}${template}`));
+  assert.deepEqual(unexpected.map(({ template }) => template), []);
 });
 
 test('매니페스트 없는 입력의 route-call-without-contract는 공백이 없어도 항상 -unverified다', () => {
