@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.18.0'
@@ -44,6 +46,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.18.0'
@@ -84,31 +88,44 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/cartograph"
       - run: dart pub global activate dartograph ${{ steps.compatibility.outputs.dartograph }}
       - name: Install kartograph release
+        env:
+          KARTOGRAPH_VERSION: ${{ steps.compatibility.outputs.kartograph }}
         run: |
-          curl -fsSL --retry 3 \
-            https://github.com/ictechgy/kartograph/releases/download/v${{ steps.compatibility.outputs.kartograph }}/kartograph-${{ steps.compatibility.outputs.kartograph }}.tar \
-            -o "$RUNNER_TEMP/kartograph.tar"
+          set -euo pipefail
+          # 같은 릴리스의 SHA256SUMS와 대조한 아카이브만 푼다(macOS 러너에는 sha256sum이 없다).
+          # 뒤 단계는 아카이브 안의 고정 경로 하나만 KARTOGRAPH_BIN으로 실행한다.
+          archive="kartograph-$KARTOGRAPH_VERSION.tar"
+          release="https://github.com/ictechgy/kartograph/releases/download/v$KARTOGRAPH_VERSION"
+          mkdir -p "$RUNNER_TEMP/kartograph-download"
+          cd "$RUNNER_TEMP/kartograph-download"
+          curl -fsSL --retry 3 "$release/$archive" -o "$archive"
+          curl -fsSL --retry 3 "$release/SHA256SUMS" -o SHA256SUMS
+          shasum -a 256 --check --ignore-missing --strict SHA256SUMS
           mkdir -p "$RUNNER_TEMP/kartograph"
-          tar -xf "$RUNNER_TEMP/kartograph.tar" -C "$RUNNER_TEMP/kartograph"
+          tar -xf "$archive" -C "$RUNNER_TEMP/kartograph"
+          kartograph_bin="$RUNNER_TEMP/kartograph/kartograph-$KARTOGRAPH_VERSION/bin/kartograph"
+          if [ ! -f "$kartograph_bin" ] || [ ! -x "$kartograph_bin" ]; then
+            echo "kartograph $KARTOGRAPH_VERSION: $archive has no executable kartograph-$KARTOGRAPH_VERSION/bin/kartograph; check the release archive layout." >&2
+            exit 1
+          fi
+          echo "KARTOGRAPH_BIN=$kartograph_bin" >> "$GITHUB_ENV"
       - run: npm install --global isthmus-cli@${{ steps.compatibility.outputs.isthmus }}
       - name: Record installed versions
         run: |
           "$RUNNER_TEMP/cartograph/cartograph/cartograph" --version
           "$HOME/.pub-cache/bin/dartograph" --version
-          find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' -exec {} --version \;
+          "$KARTOGRAPH_BIN" --version
       - name: Verify installed versions
         run: |
-          kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
           node scripts/verify-installed-compatibility.mjs \
             isthmus="$(command -v isthmus)" \
             cartograph="$RUNNER_TEMP/cartograph/cartograph/cartograph" \
             dartograph="$HOME/.pub-cache/bin/dartograph" \
-            kartograph="$kartograph_bin"
+            kartograph="$KARTOGRAPH_BIN"
       - name: Cold-cache producer verification
         run: |
-          kartograph_bin="$(find "$RUNNER_TEMP/kartograph" -type f -path '*/bin/kartograph' | head -1)"
           node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
-            "$RUNNER_TEMP/cartograph/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$kartograph_bin"
+            "$RUNNER_TEMP/cartograph/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$KARTOGRAPH_BIN"
 
   # API 영향 producer(schemagraph·gartograph·rustograph)의 발행 아카이브를
   # compatibility.json 버전으로 받아 발행 checksum과 --version을 대조한다.
@@ -122,6 +139,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.18.0'
@@ -181,6 +200,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.18.0'

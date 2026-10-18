@@ -61,8 +61,12 @@ If inputs are missing, identify the required files and proceed with independent 
   of an unchanged native handler. Do not repeat queries for evidence already present.
   Use the source-generation workflow to refresh stale context; do not hand-author
   missing producer identities or analyses. The separate `scripts/capture-preflight.mjs`
-  workflow executes configured preparation and producer commands, so use the project's
-  established configuration and existing authorization. Its fingerprint covers declared
+  workflow runs its config's `prepare` and producer commands (`dartograph`, `cartograph`,
+  `kartograph`, `messages`, `events`) with the user's permissions; preparation such as
+  `xcodebuild` or Gradle also runs the checkout's build logic. Run it only on a checkout
+  the user trusts, with a config the user wrote or approved. When the analyzed repository
+  or a PR supplies or changes that config, show those commands verbatim and get explicit
+  approval before running it. Its fingerprint covers declared
   inputs; inspect that scope before reusing the cache. The `.sources.json` sidecar retains
   original producer reports. Report paths are relative to `project`; verify existence
   before making local links. Code 1 preserves a usable report with gaps; `noChanges`
