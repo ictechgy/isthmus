@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import type { PreflightContext } from '../exchange/preflight-context.ts';
-import { createPreflightReport, type PreflightSubject } from './preflight.ts';
+import { BridgeJoinValidationError } from '../join/join.ts';
+import { createPreflightReport, PreflightGraphError, type PreflightSubject } from './preflight.ts';
 import { parsePreflightContext } from '../exchange/preflight-context.ts';
 import { createPreflightExplanation } from './preflight-view.ts';
 
@@ -65,6 +66,15 @@ function withMessages(prefix = false): PreflightContext {
       affected: [{ symbol: basicScreen, depth: 1, via: basicCaller.id, relationships: ['call'] }], limitations: [], truncated: false }],
   });
 }
+
+test('bridge 구성과 mixed-targets 보류는 보고서 조인이 원인 문구로 거부한다', () => {
+  // context 파서는 조인하지 않는다. CLI와 capture 스크립트 모두 이 단계의 오류를 그대로 받는다.
+  assert.throws(() => createPreflightReport({ ...context, bridges: [bridges[0]!] }), (error: unknown) =>
+    error instanceof BridgeJoinValidationError && error.message.endsWith('run a producer for the missing side.'));
+  const mixed = { ...bridges[1]!, limitations: ['mixed-targets: flutter and react-native'] };
+  assert.throws(() => createPreflightReport({ ...context, bridges: [bridges[0]!, mixed] }), (error: unknown) =>
+    error instanceof PreflightGraphError && error.message === 'Preflight cannot use mixed-target bridge documents.');
+});
 
 test('동일 주소의 Basic과 Method를 분리하고 실제 message 심볼로 전이 경로를 잇는다', () => {
   const report = createPreflightReport(withMessages());

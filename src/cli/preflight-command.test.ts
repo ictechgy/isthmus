@@ -62,6 +62,21 @@ test('인수 실패는 읽기 전에 64, 입력 실패는 값 노출 없이 2다
   }
 });
 
+test('조인할 수 없는 bridge 구성은 join의 해결 안내를, mixed-targets는 보류 문구를 코드 2로 낸다', async () => {
+  const run = async (mutate: (value: any) => void) => {
+    const value = JSON.parse(input);
+    mutate(value);
+    return runPreflightCommand(['preflight', 'context.json', '--strict'], async () => JSON.stringify(value));
+  };
+  // 수신 측(Swift) 문서가 빠지면 일반 문구 대신 빠진 쪽 producer를 실행하라는 join 원문을 그대로 전달한다.
+  const missing = await run((value) => { value.bridges = value.bridges.filter(({ platform }: { platform: string }) => platform === 'dart'); });
+  assert.deepEqual(missing, { standardOutput: '', exitCode: 2, standardError: 'Bridge documents must include at least one caller '
+    + 'platform (dart, js) document and one receiver platform (swift, kotlin) document; run a producer for the missing side.\n' });
+  const mixed = await run((value) => { value.bridges[1].limitations = ['mixed-targets: flutter and react-native']; });
+  assert.deepEqual(mixed, { standardOutput: '', exitCode: 2,
+    standardError: 'Preflight context violates its contract: Preflight cannot use mixed-target bridge documents.\n' });
+});
+
 test('preflight 프로세스 경계가 runtime 기대·기록·누락과 읽기 실패를 함께 평가한다', async () => {
   const context = JSON.parse(input);
   const expectations = { format: 'bridge-expectations', version: 1, project: context.project, revision: context.revision,

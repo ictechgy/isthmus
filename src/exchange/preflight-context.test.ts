@@ -47,14 +47,18 @@ test('empty noChanges context is valid only without initial analyses', () => {
     (error: unknown) => error instanceof PreflightValidationError);
 });
 
-test('rejects unknown selection platforms, mixed targets, and foreign projects', () => {
+test('validates bridge documents without joining them so join causes reach the report layer', () => {
+  // 구성(호출·수신 측)과 mixed-targets 보류는 createPreflightReport의 조인이 원인 문구와 함께 판정한다.
+  const dartOnly = parsePreflightContext(context({ bridges: [context().bridges[0]] }));
+  assert.deepEqual(dartOnly.bridges.map(({ platform }) => platform), ['dart']);
+  const mixed = parsePreflightContext(context({ bridges: [context().bridges[0],
+    { ...context().bridges[1], limitations: ['mixed-targets: flutter and react-native'] }] }));
+  assert.deepEqual(mixed.bridges[1]?.limitations, ['mixed-targets: flutter and react-native']);
+});
+
+test('rejects unknown selection platforms and foreign projects', () => {
   assert.throws(() => parsePreflightContext(context({ selection: { js: { files: ['x'], symbols: [] } } })),
     PreflightValidationError);
-  assert.throws(() => parsePreflightContext(context({ bridges: [
-    bridge('dart', [fact('dart', 'lib/camera.dart', 3, 'method-invoke', 'Camera.call')]),
-    { ...bridge('swift', [fact('swift', 'ios/Camera.swift', 8, 'method-handle', 'Camera.handle')]),
-      limitations: ['mixed-targets: flutter and react-native'] },
-  ] })), PreflightValidationError);
   assert.throws(() => parsePreflightContext(context({ bridges: [
     bridge('dart', [fact('dart', 'lib/camera.dart', 3, 'method-invoke', 'Camera.call')]),
     { ...bridge('swift', [fact('swift', 'ios/Camera.swift', 8, 'method-handle', 'Camera.handle')]), project: '/elsewhere' },
