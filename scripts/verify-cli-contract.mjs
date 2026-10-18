@@ -717,6 +717,8 @@ function verifyExtractJsHostileSources() {
     // 닫히지 않은 `\u{`(파일 끝까지 16진수 뒤 따옴표 하나)는 예전에 렉서 커서를 파일 처음으로
     // 되돌려 힙이 바닥날 때까지 멈추지 않았다.
     writeFileSync(join(directory, 'src', 'escape.js'), 'export const ok = 1;\n"\\u{41"');
+    // 중첩 템플릿 10,000단계는 예전에 재귀로 호출 스택을 넘겨 스택과 함께 exit 1로 끝났다.
+    writeFileSync(join(directory, 'src', 'nested.js'), '`${'.repeat(10_000) + '`x`' + '}`'.repeat(10_000));
     const extracted = run(['extract-js', directory]);
     verify(extracted.status === 0 && extracted.stderr === '', 'extract-js hostile sources exit code');
     const { facts } = JSON.parse(extracted.stdout);

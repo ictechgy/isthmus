@@ -262,17 +262,47 @@ function readTemplate(
   return { end: cursor, ...(interpolated ? {} : { value: text }) };
 }
 
-/** `${` 뒤의 보간 본문을 중괄호 균형으로 건너뛰어 닫는 `}` 다음을 돌려준다. */
+/**
+ * 보간 건너뛰기가 지금 읽는 문맥이다. 보간 본문은 중괄호 깊이를, 그 안의 문자열
+ * 계열 리터럴(따옴표·중첩 템플릿)은 닫는 따옴표를 기억한다.
+ */
+type InterpolationFrame =
+  | { readonly kind: 'interpolation'; depth: number }
+  | { readonly kind: 'quoted'; readonly quote: string };
+
+/**
+ * `${` 뒤의 보간 본문을 중괄호 균형으로 건너뛰어 닫는 `}` 다음을 돌려준다.
+ *
+ * 보간 안의 문자열과 중첩 템플릿, 그 안의 보간은 명시적 스택으로 따라간다 —
+ * 중첩마다 재귀하면 수천 단계로 중첩된 템플릿 파일 하나가 호출 스택을 넘긴다.
+ * 닫히지 않으면 소스 끝을 돌려준다.
+ */
 function skipInterpolation(source: string, start: number): number {
-  let depth = 1;
+  const frames: InterpolationFrame[] = [{ kind: 'interpolation', depth: 1 }];
   let cursor = start;
-  while (cursor < source.length && depth > 0) {
+  while (cursor < source.length && frames.length > 0) {
+    const frame = frames[frames.length - 1]!;
     const char = source[cursor]!;
-    if (char === '{') depth++;
-    else if (char === '}') depth--;
-    else if (char === '\'' || char === '"' || char === '`') {
-      cursor = skipStringLike(source, cursor, char);
+    if (frame.kind === 'quoted') {
+      // 문자열 계열 리터럴은 통째로 건너뛴다 — 줄바꿈에서도 멈추지 않는다.
+      if (char === '\\') {
+        cursor += 2;
+      } else if (frame.quote === '`' && char === '$' && source[cursor + 1] === '{') {
+        frames.push({ kind: 'interpolation', depth: 1 });
+        cursor += 2;
+      } else {
+        if (char === frame.quote) frames.pop();
+        cursor++;
+      }
       continue;
+    }
+    if (char === '{') frame.depth++;
+    else if (char === '}') {
+      frame.depth--;
+      if (frame.depth === 0) frames.pop();
+    }
+    else if (char === '\'' || char === '"' || char === '`') {
+      frames.push({ kind: 'quoted', quote: char });
     }
     // 보간 안의 주석도 중괄호 깊이에 섞이면 안 된다.
     else if (char === '/' && source[cursor + 1] === '/') {
@@ -284,22 +314,6 @@ function skipInterpolation(source: string, start: number): number {
       cursor = close === -1 ? source.length : close + 2;
       continue;
     }
-    cursor++;
-  }
-  return cursor;
-}
-
-/** 보간 안의 문자열 계열 리터럴을 통째로 건너뛴다. */
-function skipStringLike(source: string, start: number, quote: string): number {
-  let cursor = start + 1;
-  while (cursor < source.length) {
-    const char = source[cursor]!;
-    if (char === '\\') { cursor += 2; continue; }
-    if (quote === '`' && char === '$' && source[cursor + 1] === '{') {
-      cursor = skipInterpolation(source, cursor + 2);
-      continue;
-    }
-    if (char === quote) return cursor + 1;
     cursor++;
   }
   return cursor;

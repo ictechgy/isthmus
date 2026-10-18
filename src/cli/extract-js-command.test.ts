@@ -247,6 +247,45 @@ test('닫히지 않은 \\u{ 이스케이프 파일이 있어도 추출이 끝나
   );
 });
 
+test('깊게 중첩된 템플릿 파일도 호출 스택을 넘기지 않고 추출한다', async () => {
+  const depth = 10_000;
+  const files = new Map([
+    ['/p/deep.js', '`${'.repeat(depth) + '`x`' + '}`'.repeat(depth)],
+    ['/p/good.js', "requireNativeComponent('Grid');"],
+  ]);
+  const dirs = new Map<string, readonly string[]>([['/p', ['deep.js', 'good.js']]]);
+  for (const flags of [[], ['--events']]) {
+    const result = await runExtractJsCommand(
+      ['extract-js', '/p', ...flags], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+    );
+    assert.equal(result.exitCode, 0, flags.join(' '));
+    assert.equal(result.standardError, '');
+  }
+});
+
+/** 스캔 중 예상하지 못한 결함을 흉내 낸다 — 토큰 원문을 자르는 순간 경로가 든 오류를 던진다. */
+class FaultySource extends String {
+  override slice(): string {
+    throw new Error('scanner defect at /private/install/lexer.ts:1');
+  }
+}
+
+test('문서 생성 중 분류하지 못한 예외는 스택·경로 없이 내부 오류 코드 2다', async () => {
+  const files = new Map([['/p/a.ts', 'x']]);
+  const dirs = new Map<string, readonly string[]>([['/p', ['a.ts']]]);
+  for (const flags of [[], ['--events']]) {
+    const result = await runExtractJsCommand(
+      ['extract-js', '/p', ...flags], fakeFs(files, dirs),
+      async () => new FaultySource('x') as unknown as string, fixedNow, '1.0.0',
+    );
+    assert.deepEqual(result, {
+      standardOutput: '',
+      standardError: 'Internal isthmus error; retry with a current version.\n',
+      exitCode: 2,
+    }, flags.join(' '));
+  }
+});
+
 test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다', async () => {
   const files = new Map([['/p/a\\b.ts', "requireNativeModule('B');"]]);
   const dirs = new Map<string, readonly string[]>([['/p', ['a\\b.ts']]]);

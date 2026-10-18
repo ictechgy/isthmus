@@ -136,6 +136,37 @@ test('중괄호 유니코드 이스케이프는 범위 안의 16진수만 코드
   );
 });
 
+test('보간 안의 문자열·주석·이스케이프·중첩 템플릿을 건너뛰어 종료 백틱을 찾는다', () => {
+  const cases: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
+    // 중첩 템플릿 안 보간의 문자열·블록 주석 속 `}`, 이스케이프된 백틱, 줄 주석 속 백틱은 경계가 아니다.
+    ['const s = `a${ `b${ "x}" /* } */ }c\\`` // `\n}d`; after()', [
+      ['keyword', 'const'], ['identifier', 's'], ['punct', '='],
+      ['template', '`a${ `b${ "x}" /* } */ }c\\`` // `\n}d`'],
+      ['punct', ';'], ['identifier', 'after'], ['punct', '('], ['punct', ')'],
+    ]],
+    // 보간 안의 따옴표 문자열은 줄바꿈에서 멈추지 않는다.
+    ["`${ 'p\nq}' }e`; next", [['template', "`${ 'p\nq}' }e`"], ['punct', ';'], ['identifier', 'next']]],
+    // 닫히지 않은 중첩과 끝의 백슬래시는 소스 끝까지 한 토큰이다.
+    ['`${ `x${ {', [['template', '`${ `x${ {']]],
+    ['`${ "\\', [['template', '`${ "\\']]],
+  ];
+  for (const [source, expected] of cases) {
+    const tokens = tokenizeJsSource(source);
+    assert.deepEqual(tokens.map((token) => [token.kind, token.text]), expected, source);
+    assert.ok(tokens.every((token) => token.kind !== 'template' || token.value === undefined), source);
+  }
+});
+
+test('깊게 중첩된 템플릿도 호출 스택을 넘기지 않고 한 template 토큰으로 읽는다', () => {
+  const depth = 10_000;
+  const nested = '`${'.repeat(depth) + '`x`' + '}`'.repeat(depth);
+  const tokens = tokenizeJsSource(`${nested};after`);
+  assert.deepEqual(
+    tokens.map((token) => [token.kind, token.text, token.value ?? null]),
+    [['template', nested, null], ['punct', ';', null], ['identifier', 'after', null]],
+  );
+});
+
 test('증감 연산 뒤의 /는 정규식이 아니라 나눗셈이다', () => {
   const tokens = tokenizeJsSource('count++ / total');
   // `/`는 구두점 집합에 없어 나눗셈도 정규식도 other로 남는다 — 중요한 것은
