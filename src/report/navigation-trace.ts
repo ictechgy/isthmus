@@ -3,7 +3,7 @@ import { compareStrings } from '../compare.ts';
 import { traversalWitness, traversalGraphFromDocument, type LanguageTraversal, type TraversalEvidence } from '../exchange/language-traversal.ts';
 import type { NavigationFactsDocument, ScreenRouteFact } from '../exchange/navigation.ts';
 import type { BridgeFactsDocument, BridgeLocation, BridgeSymbol } from '../exchange/parse.ts';
-import { joinBridgeDocuments, type JoinLimitation } from '../join/join.ts';
+import { isBridgeJoinDeferred, joinBridgeDocuments, type JoinLimitation } from '../join/join.ts';
 import { canonicalJsonKey, uniqueByCanonicalJson } from './sorted-json.ts';
 import { createHttpMatches, type HttpMatch } from './pairs.ts';
 
@@ -59,6 +59,10 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
   if (analyses.length > 256) throw new NavigationTraceInputError('Navigation trace exceeds its analysis limit.');
   const provenance = new Map(analyses.map((analysis) => [analysis, analysisProvenance(analysis)]));
   const joined = joinBridgeDocuments(documents, { composition: 'trace' });
+  // mixed-targets 보류를 빈 결과나 쌍 생성기의 미분류 예외로 흘리지 않고 trace와 같은 입력 오류로 거부한다.
+  if (isBridgeJoinDeferred(joined)) {
+    throw new NavigationTraceInputError('Navigation trace cannot use documents with mixed bridge targets; split them by target.');
+  }
   const matches = createHttpMatches(joined);
   let work = 0;
   const charge = (): void => {

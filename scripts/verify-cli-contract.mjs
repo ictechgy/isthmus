@@ -872,6 +872,10 @@ function verifyNavigationTrace() {
     const { dispatch: _, ...unassessed } = traversal;
     writeFileSync(join(root, 'reach.json'), JSON.stringify(unassessed));
     verify(run(args).status === 1, 'navigation unassessed strict gap');
+    writeFileSync(join(root, 'client.json'), JSON.stringify({ ...client, limitations: ['mixed-targets: flutter and react-native'] }));
+    const deferred = run(args);
+    verify(deferred.status === 2 && deferred.stdout === '' && deferred.stderr
+      === 'Navigation trace cannot use documents with mixed bridge targets; split them by target.\n', 'navigation mixed-targets input failure');
     verify(run(['help', 'trace-navigation']).stdout.startsWith('Usage: isthmus trace-navigation'), 'navigation help');
     verify(run(['trace-navigation']).status === 64, 'navigation usage');
     writeFileSync(join(root, 'context.json'), '{');

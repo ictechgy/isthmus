@@ -60,6 +60,33 @@ test('input failures distinguish read, JSON, navigation, HTTP, traversal and pro
   assert.match(failure.standardError, /readable regular file/); assert.ok(!failure.standardError.includes('sensitive'));
 });
 
+test('deferred joins, pair limits and unclassified faults exit 2 without a report or stack', async () => {
+  const caller = { format: 'bridge-facts', version: 1, platform: 'js', target: 'http', project: navigation.project,
+    tool: navigation.tool, generatedAt: navigation.generatedAt, roles: ['client'], limitations: [],
+    facts: [{ kind: 'route-call', channel: '/v2/catalog', method: 'GET', dynamic: false, pathAnchor: 'root',
+      location: { path: 'src/api.ts', line: 1, column: 1 }, symbol: { usr: 'src/api.ts#read', qualifiedName: 'read' } }] };
+  const run = (documents: Record<string, unknown>) => runNavigationTraceCommand(['trace-navigation', '/work/context.json', '--strict'],
+    async (path) => JSON.stringify(({ '/work/context.json': { ...context, documents: Object.keys(documents) },
+      '/work/screens.json': navigation, ...Object.fromEntries(Object.entries(documents).map(([name, value]) => [`/work/${name}`, value])) }
+    )[path]));
+  // 생산자가 mixed-targets를 신고하면 조인을 보류한다. strict gap(1)이나 처리되지 않은 예외로 끝나면 안 된다.
+  const mixed = await run({ 'client.json': { ...caller, limitations: ['mixed-targets: flutter and react-native'] } });
+  assert.deepEqual(mixed, { standardOutput: '', exitCode: 2,
+    standardError: 'Navigation trace cannot use documents with mixed bridge targets; split them by target.\n' });
+  // http 쌍 끝점 상한(100,000)을 넘는 호출은 부분 목록 대신 상한 문구로 끝난다.
+  const many = (file: number) => ({ ...caller, facts: Array.from({ length: 50_001 }, (_, index) => ({ ...caller.facts[0],
+    location: { path: `src/calls${file}.ts`, line: index + 1, column: 1 } })) });
+  const server = { ...caller, roles: ['server'], dispatch: 'specificity', facts: [{ ...caller.facts[0], kind: 'route-decl',
+    symbol: { usr: 'src/server.ts#catalog', qualifiedName: 'catalog' } }] };
+  const limited = await run({ 'server.json': server, 'c0.json': many(0), 'c1.json': many(1) });
+  assert.equal(limited.exitCode, 2);
+  assert.equal(limited.standardOutput, '');
+  assert.match(limited.standardError, /^Cannot produce http pairs with more than 100000 call, declaration, and contract endpoints;/);
+  // 입력 탓이 아닌 결함(여기서는 문자열이 아닌 값을 돌려주는 reader)은 경로·스택 없는 내부 오류다.
+  const internal = await runNavigationTraceCommand(['trace-navigation', '/work/context.json'], async () => 42 as unknown as string);
+  assert.deepEqual(internal, { standardOutput: '', exitCode: 2, standardError: 'Internal isthmus error; retry with a current version.\n' });
+});
+
 test('every read receives the remaining byte budget and over-limit custom readers are rejected', async () => {
   const observed: number[] = [];
   const result = await runNavigationTraceCommand(['trace-navigation', '/work/context.json'], async (path, limit) => {

@@ -3,8 +3,9 @@ import { TraversalValidationError, parseLanguageTraversal } from '../exchange/la
 import { NavigationValidationError, parseNavigationFactsDocument } from '../exchange/navigation.ts';
 import { BridgeFactsValidationError, isJsonObject, isSafeNonEmptyString, parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { NavigationTraceInputError, createNavigationTrace } from '../report/navigation-trace.ts';
+import { HttpPairsLimitError } from '../report/pairs.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
-import { inputFailure, MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH, type CommandResult } from './command-support.ts';
+import { inputFailure, internalError, MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH, type CommandResult } from './command-support.ts';
 import { BridgeJoinValidationError } from '../join/join.ts';
 import { BoundedTextReadError } from './bounded-text-file.ts';
 import { parseCommandArguments } from './parse-arguments.ts';
@@ -64,8 +65,10 @@ export async function runNavigationTraceCommand(arguments_: readonly string[], r
     if (error instanceof NavigationValidationError) return inputFailure('Navigation facts violate their contract; regenerate them with a navigation producer.\n');
     if (error instanceof BridgeFactsValidationError) return inputFailure('HTTP facts violate their bridge-facts contract; regenerate them with an HTTP producer.\n');
     if (error instanceof TraversalValidationError) return inputFailure('Navigation analysis violates its traversal contract; regenerate forward reach.\n');
-    if (error instanceof NavigationTraceInputError || error instanceof BridgeJoinValidationError) return inputFailure(`${error.message}\n`);
-    throw error;
+    if (error instanceof NavigationTraceInputError || error instanceof BridgeJoinValidationError
+      || error instanceof HttpPairsLimitError) return inputFailure(`${error.message}\n`);
+    // 분류하지 못한 예외를 다시 던지면 Node가 설치 경로가 든 스택을 쓰고 1(strict gap)로 끝난다.
+    return internalError();
   }
 }
 

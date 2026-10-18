@@ -4,7 +4,7 @@ import test from 'node:test';
 import { parseNavigationFactsDocument } from '../exchange/navigation.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { parseLanguageTraversal } from '../exchange/language-traversal.ts';
-import { createNavigationTrace } from './navigation-trace.ts';
+import { createNavigationTrace, NavigationTraceInputError } from './navigation-trace.ts';
 
 const project = '/work/example';
 const navigation = parseNavigationFactsDocument({ format: 'navigation-facts', version: 1, platform: 'js', project,
@@ -45,6 +45,15 @@ test('unrelated roots cannot make a screen reach a call and virtual URLs never f
   assert.deepEqual(report.chains[0]?.calls, []);
   assert.ok(report.gaps.some((gap) => gap.code === 'screen-analysis-missing'));
   assert.ok(report.chains.every((chain) => chain.calls.every((call) => call.routes.every((route) => route.key.template !== '/catalog'))));
+});
+
+test('mixed-target HTTP documents defer the join and fail as a navigation input error', () => {
+  const mixed = { ...client, limitations: ['mixed-targets: flutter and react-native'] };
+  for (const documents of [[mixed, server], [server, mixed], [mixed]]) {
+    assert.throws(() => createNavigationTrace(navigation, documents, [traversal]), (error: unknown) =>
+      error instanceof NavigationTraceInputError
+      && error.message === 'Navigation trace cannot use documents with mixed bridge targets; split them by target.');
+  }
 });
 
 test('reachable client calls without backend declarations remain visible with a gap', () => {
