@@ -167,6 +167,20 @@ test('깊게 중첩된 템플릿도 호출 스택을 넘기지 않고 한 templa
   );
 });
 
+test('value 키는 닫힌 문자열과 보간 없는 템플릿 토큰에만 있고 키 순서는 고정이다', () => {
+  const tokens = tokenizeJsSource("const a = '' + 'x' + `y` + `z${w}` + /r/ + 1;\n'open");
+  assert.deepEqual(
+    tokens.filter((token) => 'value' in token).map((token) => [token.kind, token.text, token.value]),
+    [['string', "''", ''], ['string', "'x'", 'x'], ['template', '`y`', 'y']],
+  );
+  assert.deepEqual(Object.keys(tokens[0]!), ['kind', 'text', 'offset', 'line', 'column']);
+  assert.deepEqual(
+    Object.keys(tokens.find((token) => token.kind === 'string')!),
+    ['kind', 'text', 'value', 'offset', 'line', 'column'],
+  );
+  assert.equal(tokens.at(-1)?.kind, 'other');
+});
+
 test('증감 연산 뒤의 /는 정규식이 아니라 나눗셈이다', () => {
   const tokens = tokenizeJsSource('count++ / total');
   // `/`는 구두점 집합에 없어 나눗셈도 정규식도 other로 남는다 — 중요한 것은

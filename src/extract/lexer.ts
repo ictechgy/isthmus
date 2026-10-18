@@ -83,16 +83,14 @@ export function tokenizeJsSource(source: string): JsToken[] {
   let line = 1;
   let columnOffset = 0;
   let byteColumn = 1;
+  // 토큰마다 조건부 스프레드로 임시 객체를 만들면 추출 시간의 큰 몫을 차지한다 —
+  // 키 집합과 순서가 같은 고정 리터럴 두 개로 만든다.
   const push = (kind: JsTokenKind, start: number, startLine: number,
     startColumn: number, value?: string): void => {
-    tokens.push({
-      kind,
-      text: source.slice(start, index),
-      ...(value === undefined ? {} : { value }),
-      offset: start,
-      line: startLine,
-      column: startColumn,
-    });
+    const text = source.slice(start, index);
+    tokens.push(value === undefined
+      ? { kind, text, offset: start, line: startLine, column: startColumn }
+      : { kind, text, value, offset: start, line: startLine, column: startColumn });
   };
   const advance = (end: number): void => {
     while (index < end) {
