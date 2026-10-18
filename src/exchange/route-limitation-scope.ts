@@ -10,6 +10,34 @@ import { httpMethods, parseRouteTemplate, type HttpMethod } from './route-templa
  * GRAPH-EXCHANGE의 "http limitation 스코프" 절이다.
  */
 
+/** 서버(수신) 측 공백 접두사다. `route-call-without-decl`·`route-method-mismatch`를 완화한다. */
+export const serverRouteGapPrefixes = [
+  'route-coverage:',
+  'unresolved-route-prefix:',
+  'route-framework-version-unknown:',
+  'framework-provided-routes:',
+  'route-dispatch-order-unknown:',
+  'route-template-expansion-capped:',
+] as const;
+
+/** 계약 측 공백 접두사다. `route-call-without-contract`를 완화한다. */
+export const contractRouteGapPrefixes = [
+  'unresolved-contract-servers:',
+  'contract-coverage:',
+] as const;
+
+/** 호출 측 공백 접두사다. `route-decl-without-call`·`route-contract-without-call`을 완화한다. */
+export const clientRouteGapPrefixes = [
+  'route-call-coverage:',
+  'unresolved-base-url:',
+  'url-rewrite-interceptors:',
+  'ambiguous-base-join:',
+  'http-wrapper-undeclared:',
+  'http-wrapper-unresolved:',
+  'generated-client-unscanned:',
+  'unbound-route-calls-omitted:',
+] as const;
+
 /** http 문서 스코프 항목의 경로 필드 이름이다. 셋 중 하나 이상이 있어야 한다. */
 export const routeScopePathFields = ['templates', 'templatePrefixes', 'templateSuffixes'] as const;
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { compareStrings } from '../compare.ts';
-import { contractRouteGapPrefixes, serverRouteGapPrefixes } from '../join/route-limitation-scope.ts';
+import { contractRouteGapPrefixes, serverRouteGapPrefixes } from './route-limitation-scope.ts';
 import {
   BridgeFactsValidationError,
   isJsonObject,

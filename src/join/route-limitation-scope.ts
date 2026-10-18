@@ -1,6 +1,8 @@
 import type { BridgeFact, BridgeFactsDocument, RoutePathAnchor } from '../exchange/parse.ts';
 import { isChannelLimitationScope } from '../exchange/parse.ts';
-import type { RouteLimitationRange } from '../exchange/route-limitation-scope.ts';
+import {
+  clientRouteGapPrefixes, contractRouteGapPrefixes, serverRouteGapPrefixes, type RouteLimitationRange,
+} from '../exchange/route-limitation-scope.ts';
 import { parseRouteTemplate, type HttpMethod, type RouteMethod, type RouteSegment } from '../exchange/route-template.ts';
 
 /**
@@ -17,33 +19,8 @@ import { parseRouteTemplate, type HttpMethod, type RouteMethod, type RouteSegmen
  *   앞부분 뒤의 템플릿이다.
  */
 
-/** 서버(수신) 측 공백 접두사다. `route-call-without-decl`·`route-method-mismatch`를 완화한다. */
-export const serverRouteGapPrefixes = [
-  'route-coverage:',
-  'unresolved-route-prefix:',
-  'route-framework-version-unknown:',
-  'framework-provided-routes:',
-  'route-dispatch-order-unknown:',
-  'route-template-expansion-capped:',
-] as const;
-
-/** 계약 측 공백 접두사다. `route-call-without-contract`를 완화한다. */
-export const contractRouteGapPrefixes = [
-  'unresolved-contract-servers:',
-  'contract-coverage:',
-] as const;
-
-/** 호출 측 공백 접두사다. `route-decl-without-call`·`route-contract-without-call`을 완화한다. */
-export const clientRouteGapPrefixes = [
-  'route-call-coverage:',
-  'unresolved-base-url:',
-  'url-rewrite-interceptors:',
-  'ambiguous-base-join:',
-  'http-wrapper-undeclared:',
-  'http-wrapper-unresolved:',
-  'generated-client-unscanned:',
-  'unbound-route-calls-omitted:',
-] as const;
+// 공백 접두사는 교환 문서의 한계 문법이라 exchange가 소유한다(surface 검증도 쓴다). 기존 import 경로를 위해 다시 내보낸다.
+export { clientRouteGapPrefixes, contractRouteGapPrefixes, serverRouteGapPrefixes };
 
 /**
  * 스코프 원소를 출력에 그대로 실어도 되는 한계인지다. 서버·계약 측 공백의 스코프는 선언 측 경로(이미 증거로
