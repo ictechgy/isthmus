@@ -135,6 +135,12 @@ interface ScanContext {
   readonly bindings: Map<string, BoundName>;
   readonly constStrings: Map<string, string>;
   readonly imports: ScannedImport[];
+  /**
+   * `imports`를 로컬 이름별로 나눈 색인이다(각 목록은 수집 순서). 식별자마다 import
+   * 전체를 훑지 않게 recordImport가 `imports`와 함께 채운다 — 바인딩 수집 중의
+   * 조회도 그때까지 수집된 import만 본다.
+   */
+  readonly importsByLocalName: Map<string, ScannedImport[]>;
   readonly namedExports: Map<string, BoundName>;
   readonly reexports: Map<string, {
     specifier: string;
@@ -146,12 +152,12 @@ interface ScanContext {
     dynamicMethodNames: number;
   };
   /**
-   * 매개변수가 가리는 토큰 구간이다. `function f(M) {…}`·`f(M) {…}`·
+   * 매개변수가 가리는 토큰 구간의 이름별 색인이다. `function f(M) {…}`·`f(M) {…}`·
    * `(M) => {…}` 형태의 `{…}` 본문 구간과 매개변수 이름을 담는다 — 파일
    * 전역 바인딩 지도는 스코프를 모르기 때문에 이 구간 안에서는 같은 이름의
    * 바인딩을 적용하지 않는다.
    */
-  readonly paramShadows: readonly ParamShadow[];
+  readonly paramShadows: ParamShadowIndex;
   /**
    * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등).
    * Expo API와 동명인 이름이 로컬에 선언됐으면 그 호출은 Expo API가 아니므로
@@ -169,10 +175,61 @@ interface ScanContext {
 }
 
 /** 매개변수 이름이 가리는 토큰 구간(토큰 인덱스, 끝은 배타적)이다. */
-interface ParamShadow {
+export interface ParamShadow {
   readonly from: number;
   readonly to: number;
   readonly names: ReadonlySet<string>;
+}
+
+/**
+ * 매개변수 가림 구간을 이름별로 모은 색인이다.
+ *
+ * 식별자마다 파일의 모든 가림 구간을 훑으면 함수가 많은 생성 코드에서 스캔이
+ * 이차가 된다. 이름별 구간을 from 오름차순으로 두고 to의 앞쪽 최댓값을 함께
+ * 저장해, "from ≤ index < to인 구간이 하나라도 있는가"를 이분 탐색 한 번으로
+ * 답한다 — 구간 목록 전체를 훑는 판정과 결과가 같고 구간의 중첩 여부를 가정하지 않는다.
+ */
+export class ParamShadowIndex {
+  readonly #byName = new Map<string, { readonly froms: number[]; readonly prefixMaxTo: number[] }>();
+
+  constructor(shadows: Iterable<ParamShadow>) {
+    const rangesByName = new Map<string, { from: number; to: number }[]>();
+    for (const shadow of shadows) {
+      for (const name of shadow.names) {
+        let ranges = rangesByName.get(name);
+        if (ranges === undefined) {
+          ranges = [];
+          rangesByName.set(name, ranges);
+        }
+        ranges.push({ from: shadow.from, to: shadow.to });
+      }
+    }
+    for (const [name, ranges] of rangesByName) {
+      ranges.sort((left, right) => left.from - right.from);
+      const froms: number[] = [];
+      const prefixMaxTo: number[] = [];
+      for (const { from, to } of ranges) {
+        froms.push(from);
+        prefixMaxTo.push(Math.max(to, prefixMaxTo.at(-1) ?? to));
+      }
+      this.#byName.set(name, { froms, prefixMaxTo });
+    }
+  }
+
+  /** 위치 `index`의 `name`이 어떤 매개변수 구간에 가려졌는지 판정한다. */
+  has(name: string, index: number): boolean {
+    const ranges = this.#byName.get(name);
+    if (ranges === undefined) return false;
+    // from ≤ index인 구간 수를 찾는다 — 그 구간들의 to 최댓값이 index보다 커야 가려진다.
+    let low = 0;
+    let high = ranges.froms.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (ranges.froms[middle]! <= index) low = middle + 1;
+      else high = middle;
+    }
+    return low > 0 && ranges.prefixMaxTo[low - 1]! > index;
+  }
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
@@ -186,6 +243,7 @@ function createBoundContext(source: string): ScanContext {
     bindings: new Map(),
     constStrings: new Map(),
     imports: [],
+    importsByLocalName: new Map(),
     namedExports: new Map(),
     reexports: new Map(),
     counts: {
@@ -193,7 +251,7 @@ function createBoundContext(source: string): ScanContext {
       dynamicComponentNames: 0,
       dynamicMethodNames: 0,
     },
-    paramShadows: collectParamShadows(tokens),
+    paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
     localNames: new Set(),
     requireSpecifiers: new Map(),
     unstableAliasNames: new Set(tokens.filter((token, index) =>
@@ -463,6 +521,7 @@ function collectImport(context: ScanContext, start: number): number {
   const { tokens } = context;
   let index = start + 1;
   const clause: { name: string; exported: string | 'default' }[] = [];
+  const inBraceClause = createBraceClauseTracker(tokens, start + 1);
   while (index < tokens.length) {
     const token = tokens[index]!;
     // `import type ...`는 문 전체가 타입 전용 — 런타임 바인딩이 아니다.
@@ -476,8 +535,7 @@ function collectImport(context: ScanContext, start: number): number {
       return cursor;
     }
     // `import { type A, B }`의 인라인 타입 지정은 그 이름만 바인딩에서 뺀다.
-    if (token.text === 'type' &&
-      inBraceClause(tokens, start + 1, index)) {
+    if (token.text === 'type' && inBraceClause(index)) {
       const after = tokens[index + 1];
       if ((after?.kind === 'identifier' || after?.kind === 'keyword') &&
         after.text !== 'as') {
@@ -510,9 +568,7 @@ function collectImport(context: ScanContext, start: number): number {
       // 중괄호 안이면 named export, 아니면 default다.
       clause.push({
         name: token.text,
-        exported: inBraceClause(tokens, start + 1, index)
-          ? token.text
-          : 'default',
+        exported: inBraceClause(index) ? token.text : 'default',
       });
       index++;
       continue;
@@ -530,28 +586,41 @@ function recordImport(
   endIndex: number,
 ): number {
   for (const entry of clause) {
-    context.imports.push({
+    const scanned: ScannedImport = {
       localName: entry.name,
       specifier: specifier.value ?? specifier.text,
       exportedName: entry.exported,
       token: specifier,
-    });
+    };
+    context.imports.push(scanned);
+    const sameName = context.importsByLocalName.get(entry.name);
+    if (sameName === undefined) context.importsByLocalName.set(entry.name, [scanned]);
+    else sameName.push(scanned);
   }
   return endIndex;
 }
 
-/** 토큰이 `{` 절 안에 있는지 판정한다(named import 구분용). */
-function inBraceClause(
+/**
+ * import 절의 위치가 `{` 절 안(named import)인지 답하는 판정을 만든다.
+ *
+ * `from`부터 위치 `to` 앞까지의 `{`·`}` 깊이가 양수면 안이다. 판정할 위치는 줄지
+ * 않아야 한다 — 이전 위치까지 센 깊이를 이어 쓰므로 한 절의 판정 전체가 절 길이에
+ * 선형이다. 위치마다 처음부터 다시 세면 긴 절(`import a a a …`)에서 이차 시간이 든다.
+ */
+export function createBraceClauseTracker(
   tokens: readonly JsToken[],
   from: number,
-  to: number,
-): boolean {
+): (to: number) => boolean {
+  let next = from;
   let depth = 0;
-  for (let index = from; index < to; index++) {
-    if (tokens[index]!.text === '{') depth++;
-    if (tokens[index]!.text === '}') depth--;
-  }
-  return depth > 0;
+  return (to) => {
+    for (; next < to; next++) {
+      const text = tokens[next]!.text;
+      if (text === '{') depth++;
+      if (text === '}') depth--;
+    }
+    return depth > 0;
+  };
 }
 
 /** `export` 뒤의 default·named 모듈 바인딩을 수집한다. */
@@ -925,7 +994,7 @@ function readModuleExpression(
   const isExpoModuleAlias = token.kind === 'identifier' &&
     !isShadowed(context, token.text, start) &&
     !context.unstableAliasNames.has(token.text) &&
-    context.imports.some((entry) => entry.localName === token.text &&
+    (context.importsByLocalName.get(token.text) ?? []).some((entry) =>
       moduleImportCalls.has(entry.exportedName) &&
       expoSpecifierPattern.test(entry.specifier));
   if (moduleImportCalls.has(token.text) || componentRequireCalls.has(token.text) ||
@@ -1222,10 +1291,9 @@ function boundaryAliasOf(
   context: ScanContext,
   localName: string,
 ): string | undefined {
-  for (const entry of context.imports) {
-    if (entry.localName === localName &&
-      (moduleImportCalls.has(entry.exportedName) ||
-        componentRequireCalls.has(entry.exportedName))) {
+  for (const entry of context.importsByLocalName.get(localName) ?? []) {
+    if (moduleImportCalls.has(entry.exportedName) ||
+      componentRequireCalls.has(entry.exportedName)) {
       return entry.exportedName;
     }
   }
@@ -1304,8 +1372,7 @@ function mechanismOf(
   // 같은 이름의 매개변수가 가리는 구간에서는 import·require·선언 해석이
   // 이 호출에 적용되지 않는다 — mechanism을 생략해 추측하지 않는다.
   if (isShadowed(context, localName, start)) return undefined;
-  const specifiers = context.imports
-    .filter((entry) => entry.localName === localName)
+  const specifiers = (context.importsByLocalName.get(localName) ?? [])
     .map((entry) => entry.specifier);
   if (specifiers.length > 0) {
     return specifiers.some((specifier) => expoSpecifierPattern.test(specifier))
@@ -1391,7 +1458,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
   const token = tokens[start]!;
   const bound = !isShadowed(context, token.text, start) &&
     (context.bindings.has(token.text) ||
-      context.imports.some((entry) => entry.localName === token.text));
+      context.importsByLocalName.has(token.text));
   const accessor = tokens[start + 1];
   // `M[expr]()` — 대괄호 접근은 식별자 바로 뒤에 온다.
   if (accessor?.text === '[') {
@@ -1527,19 +1594,63 @@ function isShadowed(
   name: string,
   index: number,
 ): boolean {
-  return context.paramShadows.some(
-    (shadow) =>
-      index >= shadow.from && index < shadow.to && shadow.names.has(name),
-  );
+  return context.paramShadows.has(name, index);
 }
 
-/** 짝 맞는 괄호 토큰을 찾는다. */
-function findMatching(
+/** 짝 표로 답하는 괄호 종류다 — 여는 텍스트 → 닫는 텍스트. */
+const bracketPairs: ReadonlyMap<string, string> = new Map([['(', ')'], ['[', ']'], ['{', '}']]);
+
+/** 토큰 열마다 한 번 만든 괄호 짝 표다(여는 위치 → 닫는 위치, 짝이 없으면 -1). */
+const matchingTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/**
+ * 토큰 열의 괄호 짝 표를 한 번만 만든다.
+ *
+ * 종류별 스택이 같은 종류의 괄호만 세므로, 여는 위치에서 같은 종류만 세어 깊이가
+ * 0이 되는 첫 닫는 괄호를 찾는 선형 탐색과 짝이 같다. 짝 없는 닫는 괄호는 무시한다.
+ */
+function matchingTable(tokens: readonly JsToken[]): Int32Array {
+  let table = matchingTables.get(tokens);
+  if (table === undefined) {
+    table = new Int32Array(tokens.length).fill(-1);
+    // 여는 텍스트와 그 닫는 텍스트가 같은 스택을 가리킨다.
+    const parentheses: number[] = [];
+    const brackets: number[] = [];
+    const braces: number[] = [];
+    const opens = new Map([['(', parentheses], ['[', brackets], ['{', braces]]);
+    const closes = new Map([[')', parentheses], [']', brackets], ['}', braces]]);
+    for (let index = 0; index < tokens.length; index++) {
+      const text = tokens[index]!.text;
+      const stack = opens.get(text);
+      if (stack !== undefined) {
+        stack.push(index);
+        continue;
+      }
+      const open = closes.get(text)?.pop();
+      if (open !== undefined) table[open] = index;
+    }
+    matchingTables.set(tokens, table);
+  }
+  return table;
+}
+
+/**
+ * 짝 맞는 괄호 토큰을 찾는다.
+ *
+ * `open`이 `(`·`[`·`{` 토큰이면 토큰 열마다 한 번 만든 짝 표를 조회한다 — 여는
+ * 괄호마다 끝까지 훑으면 닫히지 않은 괄호가 많은 파일에서 이차 시간이 든다. 그 밖의
+ * 짝이나 시작점은 `open`부터 같은 종류만 세는 선형 탐색이다.
+ */
+export function findMatching(
   tokens: readonly JsToken[],
   open: number,
   openText: string,
   closeText: string,
 ): number | undefined {
+  if (tokens[open]?.text === openText && bracketPairs.get(openText) === closeText) {
+    const close = matchingTable(tokens)[open]!;
+    return close === -1 ? undefined : close;
+  }
   let depth = 0;
   for (let index = open; index < tokens.length; index++) {
     const text = tokens[index]!.text;
