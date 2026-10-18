@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { parseMessageBridgeDocument } from '../exchange/messages.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import {
   type ExtractJsFileSystem,
@@ -213,6 +214,37 @@ test('파일 수 상한을 넘는 트리는 조기에 멈추고 코드 2다', as
   );
   assert.equal(result.exitCode, 2);
   assert.ok(result.standardError.includes('files'));
+});
+
+test('닫히지 않은 \\u{ 이스케이프 파일이 있어도 추출이 끝나고 다른 파일의 사실을 낸다', async () => {
+  const files = new Map([
+    ['/p/src/escape.js', 'export const ok=1;\n"\\u{41"'],
+    ['/p/src/escape-template.js', 'const a=`x`;\n`\\u{41`'],
+    ['/p/src/good.js', "requireNativeComponent('Grid');\nimport { DeviceEventEmitter as E } from 'react-native';\nE.addListener('ready', cb);"],
+  ]);
+  const dirs = new Map<string, readonly string[]>([
+    ['/p', ['src']],
+    ['/p/src', ['escape.js', 'escape-template.js', 'good.js']],
+  ]);
+  const facts = await runExtractJsCommand(
+    ['extract-js', '/p'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.equal(facts.exitCode, 0);
+  assert.equal(facts.standardError, '');
+  assert.deepEqual(
+    parseBridgeFactsDocument(JSON.parse(facts.standardOutput)).facts
+      .map((fact) => [fact.kind, fact.channel, fact.location?.path]),
+    [['component-require', 'Grid', 'src/good.js']],
+  );
+  const events = await runExtractJsCommand(
+    ['extract-js', '/p', '--events'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.equal(events.exitCode, 0);
+  assert.deepEqual(
+    parseMessageBridgeDocument(JSON.parse(events.standardOutput)).facts
+      .map((fact) => [fact.kind, fact.channel, fact.location.path]),
+    [['event-listen', 'ready', 'src/good.js']],
+  );
 });
 
 test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다', async () => {

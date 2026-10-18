@@ -45,6 +45,7 @@ verifyWorkspaceTrace();
 verifyOrgBoundary();
 verifyServe();
 verifyExtractJs();
+verifyExtractJsHostileSources();
 verifyDoctorInit();
 verifyMessageViews();
 verifyReactNativeEvents();
@@ -702,6 +703,28 @@ function verifyExtractJs() {
     verify(run(['extract-js']).status === 64, 'extract-js usage');
     verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
     verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** 해석할 수 없는 소스가 섞여도 extract-js가 끝나고 나머지 파일의 사실을 낸다. */
+function verifyExtractJsHostileSources() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-extract-js-hostile-'));
+  try {
+    mkdirSync(join(directory, 'src'), { recursive: true });
+    writeFileSync(join(directory, 'src', 'app.ts'), "requireNativeComponent('Grid');\n");
+    // 닫히지 않은 `\u{`(파일 끝까지 16진수 뒤 따옴표 하나)는 예전에 렉서 커서를 파일 처음으로
+    // 되돌려 힙이 바닥날 때까지 멈추지 않았다.
+    writeFileSync(join(directory, 'src', 'escape.js'), 'export const ok = 1;\n"\\u{41"');
+    const extracted = run(['extract-js', directory]);
+    verify(extracted.status === 0 && extracted.stderr === '', 'extract-js hostile sources exit code');
+    const { facts } = JSON.parse(extracted.stdout);
+    verify(facts.length === 1 && facts[0].channel === 'Grid' && facts[0].location.path === 'src/app.ts',
+      'extract-js hostile sources facts');
+    const events = run(['extract-js', directory, '--events']);
+    verify(events.status === 0 && events.stderr === '' && JSON.parse(events.stdout).facts.length === 0,
+      'extract-js hostile sources events');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

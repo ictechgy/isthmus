@@ -111,6 +111,31 @@ test('비교·증감·복합 대입 연산자가 한 토큰이다', () => {
   );
 });
 
+test('닫히지 않은 \\u{ 이스케이프는 알 수 없는 이스케이프로 읽고 커서를 되돌리지 않는다', () => {
+  // 닫는 `}`가 없고 뒤가 16진수뿐이면 끝 위치가 0으로 계산돼 같은 따옴표를 끝없이 다시 읽었다.
+  const cases: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string, string | null]>]> = [
+    ['x;\n"\\u{41"', [['identifier', 'x', null], ['punct', ';', null], ['string', '"\\u{41"', 'u{41']]],
+    ['x;\n"\\u{41\n', [['identifier', 'x', null], ['punct', ';', null], ['other', '"\\u{41', null]]],
+    ['const a=`x`;\n`\\u{41`', [
+      ['keyword', 'const', null], ['identifier', 'a', null], ['punct', '=', null],
+      ['template', '`x`', 'x'], ['punct', ';', null], ['template', '`\\u{41`', 'u{41'],
+    ]],
+  ];
+  for (const [source, expected] of cases) {
+    const tokens = tokenizeJsSource(source);
+    assert.deepEqual(tokens.map((token) => [token.kind, token.text, token.value ?? null]), expected, source);
+    assert.ok(tokens.every((token, index) => index === 0 || token.offset > tokens[index - 1]!.offset), source);
+  }
+});
+
+test('중괄호 유니코드 이스케이프는 범위 안의 16진수만 코드 포인트로 읽는다', () => {
+  const tokens = tokenizeJsSource("'\\u{41}' + '\\u{1F600}' + '\\u{}' + '\\u{110000}' + '\\u{4G}'");
+  assert.deepEqual(
+    tokens.filter((token) => token.kind === 'string').map((token) => token.value),
+    ['A', '😀', 'u{}', 'u{110000}', 'u{4G}'],
+  );
+});
+
 test('증감 연산 뒤의 /는 정규식이 아니라 나눗셈이다', () => {
   const tokens = tokenizeJsSource('count++ / total');
   // `/`는 구두점 집합에 없어 나눗셈도 정규식도 other로 남는다 — 중요한 것은

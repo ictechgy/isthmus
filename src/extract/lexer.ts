@@ -143,16 +143,17 @@ export function tokenizeJsSource(source: string): JsToken[] {
       push('other', start, startLine, startColumn);
       continue;
     }
+    // 리터럴 읽기가 끝 위치를 잘못 주더라도 한 글자는 전진해 같은 위치를 다시 읽지 않는다.
     if (char === '\'' || char === '"') {
       const value = readQuoted(source, index, char);
-      advance(value.end);
+      advance(Math.max(value.end, start + 1));
       if (value.closed) push('string', start, startLine, startColumn, value.text);
       else push('other', start, startLine, startColumn);
       continue;
     }
     if (char === '`') {
       const template = readTemplate(source, index);
-      advance(template.end);
+      advance(Math.max(template.end, start + 1));
       push('template', start, startLine, startColumn, template.value);
       continue;
     }
@@ -214,7 +215,8 @@ function readQuoted(
     if (char === '\\') {
       const escaped = cookEscape(source, cursor);
       text += escaped.text;
-      cursor = escaped.end;
+      // 이스케이프 해석이 커서를 되돌리거나 세우면 같은 위치를 끝없이 다시 읽는다.
+      cursor = Math.max(escaped.end, cursor + 1);
       continue;
     }
     if (char === quote) return { end: cursor + 1, closed: true, text };
@@ -243,7 +245,7 @@ function readTemplate(
     if (char === '\\') {
       const escaped = cookEscape(source, cursor);
       text += escaped.text;
-      cursor = escaped.end;
+      cursor = Math.max(escaped.end, cursor + 1);
       continue;
     }
     if (char === '`') {
@@ -322,16 +324,16 @@ function cookEscape(
     }
   }
   if (char === 'u') {
-    const braced = source[start + 2] === '{'
-      ? source.slice(start + 3, source.indexOf('}', start + 3))
-      : source.slice(start + 2, start + 6);
-    if (/^[0-9A-Fa-f]+$/.test(braced)) {
-      const code = parseInt(braced, 16);
+    // 닫는 `}`가 없는 `\u{`는 알 수 없는 이스케이프다 — indexOf의 -1로 끝 위치를
+    // 계산하면 커서가 소스 앞쪽으로 돌아가 같은 리터럴을 끝없이 다시 읽는다.
+    const isBraced = source[start + 2] === '{';
+    const close = isBraced ? source.indexOf('}', start + 3) : start + 6;
+    const digits = close === -1 ? '' : source.slice(isBraced ? start + 3 : start + 2, close);
+    if (/^[0-9A-Fa-f]+$/.test(digits)) {
+      const code = parseInt(digits, 16);
       if (code <= 0x10FFFF) {
         return {
-          end: source[start + 2] === '{'
-            ? source.indexOf('}', start + 3) + 1
-            : start + 6,
+          end: isBraced ? close + 1 : close,
           text: String.fromCodePoint(code),
         };
       }
