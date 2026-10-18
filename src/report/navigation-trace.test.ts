@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { compareStrings } from '../compare.ts';
 import { parseNavigationFactsDocument } from '../exchange/navigation.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { parseLanguageTraversal } from '../exchange/language-traversal.ts';
@@ -292,4 +293,46 @@ test('repeated long witness paths fail within a bounded output budget instead of
   const long = parseLanguageTraversal({ ...traversal,
     reached: [{ ...traversal.reached[0], symbol: { usr } }] });
   assert.throws(() => createNavigationTrace(navigation, [repeated], [long]), /witness output exceeds its text limit/);
+});
+
+test('a documented multi-screen reach links every screen instead of spending the budget on rescans', () => {
+  // `tsograph reach <screen-usr>...` 모양: 화면 200개를 root로 넣은 분석 하나, 화면마다 닿는 행 25개(합 5,000), 호출 500개.
+  // 화면마다 모든 root·행·호출을 다시 세면 200 × (200 + 5,000 + 500)이 예산 1,000,000을 넘어, 실제 연결은 2만 남짓인데도 거부됐다.
+  const screens = Array.from({ length: 200 }, (_, index) => `src/screens.ts#S${String(index).padStart(3, '0')}`);
+  const reachedRow = (screen: number, index: number) => `${screens[screen]}.r${String(index).padStart(2, '0')}`;
+  const reach = parseLanguageTraversal({ ...traversal, revision: 'rev-a', roots: screens.map((usr) => ({ id: usr, symbol: { usr } })),
+    reached: screens.flatMap((screen, root) => Array.from({ length: 25 }, (_, index) =>
+      ({ symbol: { usr: reachedRow(root, index) }, via: screen, depth: 1, roots: [root] })))
+      .sort((left, right) => compareStrings(left.symbol.usr, right.symbol.usr)) });
+  const input = parseNavigationFactsDocument({ ...navigation, facts: screens.map((usr, index) => ({ kind: 'screen-route',
+    urlTemplate: `/s${index}`, dynamic: false, location: { ...location, line: index + 1 }, screen: { usr } })) });
+  const calls = parseBridgeFactsDocument({ ...client, facts: Array.from({ length: 500 }, (_, index) => ({ ...client.facts[0]!,
+    location: { ...location, line: index + 1 }, symbol: { usr: reachedRow(index % 200, Math.floor(index / 200)), qualifiedName: 'read' } })) });
+  const report = createNavigationTrace(input, [calls, server], [reach]);
+  assert.deepEqual(report.gaps, []);
+  assert.equal(report.chains.length, 200);
+  assert.equal(report.chains.reduce((total, chain) => total + chain.calls.length, 0), 500);
+  assert.ok(report.chains.every((chain) => chain.calls.every((call) =>
+    call.path.length === 2 && call.path[0] === chain.screen.usr && call.routes.length === 1)));
+});
+
+test('link-work counts only the roots, rows, witness path elements and calls that each screen links', () => {
+  // 화면 X의 사실 10개 × (root 1 + 행 33,333 + 목격 경로 원소 2 × 33,333) = 정확히 1,000,000이다. 다른 분석의
+  // root·행, X가 닿지 않는 호출, 분석이 없는 화면은 연결 작업이 아니므로 세지 않는다.
+  const rows = (via: string, count: number) => Array.from({ length: count }, (_, index) =>
+    ({ symbol: { usr: `${via}.r${String(index).padStart(5, '0')}` }, via, depth: 1, roots: [0] }));
+  const analysis = (root: string, count: number) => parseLanguageTraversal({ ...traversal, revision: 'rev-a',
+    roots: [{ id: root, symbol: { usr: root } }], reached: rows(root, count) });
+  const facts = (usr: string, count: number) => Array.from({ length: count }, (_, index) => ({ kind: 'screen-route',
+    urlTemplate: `/${usr}/${index}`, dynamic: false, location: { ...location, line: index + 1 }, screen: { usr } }));
+  const unrelatedCalls = parseBridgeFactsDocument({ ...client, facts: Array.from({ length: 100 }, (_, index) => ({ ...client.facts[0]!,
+    location: { ...location, line: index + 1 }, symbol: { usr: `U.r${String(index).padStart(5, '0')}`, qualifiedName: 'read' } })) });
+  const analyses = [analysis('X', 33_333), analysis('U', 1_000)];
+  const exact = parseNavigationFactsDocument({ ...navigation, facts: [...facts('X', 10), ...facts('W', 100)] });
+  assert.equal(createNavigationTrace(exact, [unrelatedCalls, server], analyses).chains.length, 110);
+  // root 하나를 더 찾는 화면 사실 하나가 1,000,001번째 작업이라 부분 목록 대신 실패한다.
+  const over = parseNavigationFactsDocument({ ...exact, facts: [...exact.facts, ...facts('Y', 1)] });
+  assert.throws(() => createNavigationTrace(over, [unrelatedCalls, server], [...analyses, analysis('Y', 0)]),
+    (error: unknown) => error instanceof NavigationTraceInputError
+      && error.message === 'Navigation linking exceeds its work limit; narrow screen or analysis inputs.');
 });
