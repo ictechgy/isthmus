@@ -286,6 +286,28 @@ test('문서 생성 중 분류하지 못한 예외는 스택·경로 없이 내�
   }
 });
 
+test('스캔 파일 순서는 로캘과 무관한 UTF-16 코드 단위 순서다(기본·--events)', async () => {
+  const names = ['h.ts', 'ä.ts', 'chat.ts', 'aa.ts', 'a.ts', 'B.ts'];
+  const source = "requireNativeModule('M');\nimport { DeviceEventEmitter as E } from 'react-native';\nE.addListener('ready', cb);";
+  const files = new Map(names.map((name) => [`/p/src/${name}`, source]));
+  const dirs = new Map<string, readonly string[]>([['/p', ['src']], ['/p/src', names]]);
+  const expected = ['src/B.ts', 'src/a.ts', 'src/aa.ts', 'src/chat.ts', 'src/h.ts', 'src/ä.ts'];
+  const facts = await runExtractJsCommand(
+    ['extract-js', '/p'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.deepEqual(
+    parseBridgeFactsDocument(JSON.parse(facts.standardOutput)).facts.map((fact) => fact.location?.path),
+    expected,
+  );
+  const events = await runExtractJsCommand(
+    ['extract-js', '/p', '--events'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.deepEqual(
+    parseMessageBridgeDocument(JSON.parse(events.standardOutput)).facts.map((fact) => fact.location.path),
+    expected,
+  );
+});
+
 test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다', async () => {
   const files = new Map([['/p/a\\b.ts', "requireNativeModule('B');"]]);
   const dirs = new Map<string, readonly string[]>([['/p', ['a\\b.ts']]]);

@@ -6,6 +6,7 @@
  * 파일시스템을 읽지 않는 순수 조립이다 — 경로 해석·읽기는 cli/가 담당한다.
  */
 
+import { compareStrings } from '../compare.ts';
 import type { BridgeFact, BridgeFactsDocument, BridgeLocation } from '../exchange/parse.ts';
 import type { BoundName, ScannedImport } from './js-scan.ts';
 import { scanJsSource } from './js-scan.ts';
@@ -195,7 +196,12 @@ function locationOf(
   return { path, line: token.line, column: token.column };
 }
 
-/** 같은 위치·같은 키의 중복 사실을 한 번만 남기고 결정적으로 정렬한다. */
+/**
+ * 같은 위치·같은 키의 중복 사실을 한 번만 남기고 결정적으로 정렬한다.
+ *
+ * 경로·채널은 UTF-16 코드 단위로 비교한다 — 로캘 정렬은 실행 환경마다 대소문자·
+ * 비ASCII 경로 순서가 달라 같은 소스에서 다른 문서를 낸다.
+ */
 function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
   const seen = new Map<string, BridgeFact>();
   for (const fact of facts) {
@@ -216,7 +222,7 @@ function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
   return [...seen.values()].sort((left, right) => {
     const leftLocation = left.location!;
     const rightLocation = right.location!;
-    const byPath = leftLocation.path.localeCompare(rightLocation.path);
+    const byPath = compareStrings(leftLocation.path, rightLocation.path);
     if (byPath !== 0) return byPath;
     if (leftLocation.line !== rightLocation.line) {
       return leftLocation.line - rightLocation.line;
@@ -224,7 +230,7 @@ function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
     if (leftLocation.column !== rightLocation.column) {
       return leftLocation.column - rightLocation.column;
     }
-    return (left.channel ?? '').localeCompare(right.channel ?? '');
+    return compareStrings(left.channel ?? '', right.channel ?? '');
   });
 }
 

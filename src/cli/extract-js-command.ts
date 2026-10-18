@@ -8,6 +8,7 @@
  */
 
 import { sep } from 'node:path';
+import { compareStrings } from '../compare.ts';
 import {
   createJsFactsDocument,
   JS_SOURCE_EXTENSIONS,
@@ -152,9 +153,10 @@ export async function runExtractJsCommand(
     }
   }
 
-  // 같은 파일이 여러 입력에서 발견돼도 한 번만 스캔한다.
+  // 같은 파일이 여러 입력에서 발견돼도 한 번만 스캔한다. --events 문서는 이 순서를
+  // 그대로 쓰므로 로캘과 무관한 코드 단위 순서로 정렬한다.
   const ordered = [...new Map(discovered.map((f) => [f.path, f])).values()]
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) => compareStrings(left.path, right.path));
   let totalLength = 0;
   for (const file of ordered) {
     let text: string;
@@ -220,7 +222,7 @@ async function walkDirectory(
       throw new Error(`listDirectory failed: ${current}`, { cause: error });
     }
     for (const entry of [...entries]
-      .sort((left, right) => left.name.localeCompare(right.name))) {
+      .sort((left, right) => compareStrings(left.name, right.name))) {
       const child = `${current}/${entry.name}`;
       if (entry.isDirectory) {
         if (SKIPPED_DIRECTORIES.has(entry.name) || entry.name.startsWith('.')) {

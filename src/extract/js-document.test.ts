@@ -131,6 +131,16 @@ test('여러 파일의 사실 순서와 위치별 중복 보존이 결정적이�
   ]);
 });
 
+test('여러 파일의 사실은 로캘과 무관한 UTF-16 코드 단위 경로 순서다', () => {
+  // 로캘 정렬이면 en-US·sv-SE·cs-CZ·da-DK마다 대소문자·ä·ch·aa 위치가 달라진다.
+  const paths = ['src/h.ts', 'src/ä.ts', 'src/chat.ts', 'src/aa.ts', 'src/a.ts', 'src/B.ts'];
+  const document = assemble(Object.fromEntries(paths.map((path) => [path, "requireNativeModule('M');"])));
+  assert.deepEqual(
+    document.facts.map((fact) => fact.location?.path),
+    ['src/B.ts', 'src/a.ts', 'src/aa.ts', 'src/chat.ts', 'src/h.ts', 'src/ä.ts'],
+  );
+});
+
 test('Expo 모듈 API 별칭 반환값의 호출과 optional 계약을 보존한다', () => {
   for (const [api, specifier, optional] of [
     ['requireNativeModule', 'expo', undefined],
