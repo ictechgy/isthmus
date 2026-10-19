@@ -379,7 +379,8 @@ Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 
 기존 뜻을 SQL 텍스트에 적용한 것이다. 그 밖의 판독(어떤 키워드 뒤를 관계
 이름으로 읽는지, 한정 이름·인용 부호, GRANT/REVOKE, 자리표시자, 내는 순서·
 중복)은 각 생산자의 기존 규칙을 따른다. CTE 이름과 피연산자를 다른 대소문자로
-쓴 경우의 비교는 방언마다 달라 이 규칙이 정하지 않는다.
+쓴 경우의 비교는 방언마다 달라 이 규칙이 정하지 않는다. 세 규칙의 공유 사례는
+`conformance/sql-relations.json`이다([공유 적합성 벡터](#공유-적합성-벡터)).
 
 ### 종류별 의미
 
@@ -1463,6 +1464,12 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   적용(`scope.dynamic-applies`)을 제품 조인 층·파서로 실행한다. `http-dispatch`:
   `order` 검증(`dispatch.validate`, 생산자도 적용), 등록 순서·dispatch 단위를 넘는 match(`dispatch.match`), 건전한
   가림 판정(`dispatch.shadow`)을 제품 파서·매처·가림 판정기로 실행한다.
+- `sql-relations`: persistence 호출 측 생산자가 SQL 텍스트에서 관계 이름을 읽는 규칙
+  ([SQL 텍스트의 관계 이름](#sql-텍스트의-관계-이름)) 14케이스 — 함수 인자 안의 `FROM`(`relations.function-from`, 하위
+  질의 안의 `FROM`은 그대로 낸다는 3건 포함), 문장 단위 CTE 이름(`relations.cte`), `IS [NOT] DISTINCT FROM`(`relations.distinct-from`).
+  모두 `producer`이고 입력은 `sql`, 기대값 `relations`는 이름 집합이다(순서·중복 없이 비교한다). 참조 구현은 세 규칙을
+  확인하는 데 필요한 만큼만 읽으며 생산자 스캐너 전체가 아니다. persistence 생산자(cartograph·kartograph·dartograph·
+  gartograph·rustograph·tsograph·pythograph)는 이 suite를 벤더링해 `conformance.lock`에 새 항목으로 더한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
   케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는

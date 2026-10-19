@@ -74,6 +74,7 @@ for (const requiredPath of [
   'conformance/http-dispatch.json',
   'conformance/http-limitation-scope.json',
   'conformance/http-template.json',
+  'conformance/sql-relations.json',
   'conformance/url-compose.json',
   'compatibility.json',
   'package.json',
