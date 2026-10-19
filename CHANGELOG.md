@@ -9,6 +9,11 @@
 - 외부 보존 문서에 원본 v1/v2 입력 헤더와 조인 한계를 제한된 `provenance` v1로 보존한다.
   빈 보존 목록에서도 문맥을 남기며 기존 root 선택은 유지한다. Cartograph/Kartograph 실제
   소비·snapshot 조합 검증은 발행 전 게이트이며, 현재 배포본 지원을 뜻하지 않는다.
+- 공유 적합성 벡터 `conformance/sql-relations.json`(14케이스, `producer`)과 참조 구현을 더했다. SQL 텍스트의 CTE
+  이름(같은 문장 안), 함수 인자 안의 `FROM`(`EXTRACT`·`TRIM`·`SUBSTRING` 등), `IS [NOT] DISTINCT FROM` 피연산자는
+  관계 이름이 아니므로 `relation-use`로 내지 않는다([계약](docs/GRAPH-EXCHANGE.md#sql-텍스트의-관계-이름)). 기존 벡터와
+  그 sha256은 그대로이며, persistence 생산자(cartograph·kartograph·dartograph·gartograph·rustograph·tsograph·
+  pythograph)는 이 suite를 벤더링해 `conformance.lock`에 새 항목으로 더해야 한다.
 
 ### Fixed
 
