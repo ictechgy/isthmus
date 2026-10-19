@@ -25,6 +25,9 @@
   뒤에야 실패하던 결함을 고쳤다. 도구는 일반 파일만 읽고 그 밖의 경로는 바로 읽기 실패(`isError`)로 답한다.
   입력 상한(UTF-16 길이)의 3배 바이트를 넘는 일반 파일도 통째로 메모리에 올리지 않고 바로 크기 상한 오류로 답해,
   큰 파일 하나가 힙이 작은 세션을 메모리 부족으로 끝내지 않는다.
+- CLI 명령이 입력 경로의 FIFO를 열다가 멈추고, 상한을 넘을 수밖에 없는 큰 파일도 통째로 메모리에 올린 뒤에야 크기
+  상한 문구로 끝나던 결함을 고쳤다(200 MiB 파일의 최대 RSS 322 MB → 103 MB, 힙이 작으면 메모리 부족으로 종료 코드
+  134였다). CLI도 이제 MCP serve와 같은 경계 리더로 입력을 읽는다 — 달라진 입력 규칙은 아래 Changed에 적었다.
 - bridge `diff`가 before·after에 입력 합계 상한(UTF-16 64Mi)을 따로 적용하고, after 쪽 입력 오류를 before
   기준 순번(`input 1`)으로 알리던 결함을 고쳤다. 이제 두 목록이 상한 하나와 전체 인수 순번을 함께 쓴다.
 - http 조인이 길이로 맞을 수 없는 suffix 오프셋까지 비교 예산(5,000,000)에 세어, REST 모양 선언 1,200개 ×
@@ -59,6 +62,30 @@
 - GitHub Action이 잘못된 `comment-key`를 capture·diff를 마친 뒤에야 거부하던 것을 시작 전 입력 오류로 바꿨다.
   댓글 렌더링이 실패하면 `failed` 출력 없이 단계가 예외로 끝나던 결함도 고쳐, `meta.json`에 `render` 오류를
   남기고 `failed=true`로 끝난다(댓글은 게시하지 않는다).
+- `scripts/capture-preflight.mjs`의 `since`와 `scripts/capture-trace.mjs`의 git 판독(member `revision: {"git": true}`·
+  도구 `source`)이 분석 대상 저장소(와 서브모듈) 설정의 filter 드라이버(clean·process)·`core.fsmonitor` 명령과,
+  `since`의 diff가 index를 고쳐 쓸 때 도는 post-index-change hook을 실행하던 결함을 고쳤다. 이제 조회마다 그 순간
+  설정된 filter 드라이버를 빈 명령으로 덮고 fsmonitor·서명 표시·외부 diff·textconv를 끄며, index를 고쳐 쓰지 않고
+  서브모듈에서 git을 띄우지 않는다([PREFLIGHT](docs/PREFLIGHT.md#자동-수집과-ci)·
+  [TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
+
+### Changed
+
+- 업그레이드 전에 확인: CLI도 입력 경로로 일반 파일만 받는다. FIFO·장치·디렉터리는 열지 않고 각 명령의 기존 읽기
+  실패 문구와 종료 코드 2로 끝나며, 프로세스 치환 `<(...)`와 파이프에 연결된 `/dev/stdin`도 여기에 들어간다 — 이런
+  입력은 파일로 저장해 넘긴다.
+- 입력 크기 상한(UTF-16 길이)의 3배 바이트를 넘는 파일은 CLI에서도 읽지 않고 기존 크기 상한 문구로 거부하고, 읽는
+  중 커지는 파일은 그 바이트+1에서 읽기를 멈춘다(MCP serve 포함). `check --baseline`·`doctor`의 capture 설정·
+  `init --toolchain`·`diff --http`의 before·after·`surface export --workspace` 매니페스트·`extract-js` 소스 읽기도 이
+  상한을 쓴다. 일반 파일의 출력과 문구·종료 코드 분류는 그대로다([입력 자원 상한](docs/GRAPH-EXCHANGE.md#입력-자원-상한)).
+- capture git 조회를 격리한 결과로 `since`는 stat 정보만 바뀐 파일과 git-lfs처럼 filter로 정규화되던 파일도 변경으로
+  고를 수 있다(빠뜨리지 않는 쪽이다. 신뢰하는 checkout이면 수집 전에 `git update-index --refresh`를 실행하면 줄어든다).
+  capture-trace manifest `dirty`도 filter로 정규화되던 파일의 stat 정보가 낡았으면 `true`일 수 있다. 서브모듈은 기록된
+  commit과 다를 때만 변경·`dirty`로 보고 서브모듈 안의 커밋하지 않은 변경은 보지 않는다. capture-trace manifest
+  `steps`에는 git 조회마다 바로 앞의 `<단계>:config`가, preflight 수집기 출력 `timings`에는 `<단계>-config`가 더해진다.
+- 업그레이드 전에 확인: 이름에 `=`가 들었거나 이름이 UTF-8이 아닌 filter 드라이버가 설정된 저장소에서는 그 드라이버를
+  명령줄로 덮을 수 없어, git을 조회하지 않고 `since` 수집과 git 판독을 쓰는 capture-trace가 실패(종료 코드 2)한다.
+  그 드라이버를 설정에서 지우거나 이름을 바꾼다.
 
 ## [0.13.1] - Unreleased
 
