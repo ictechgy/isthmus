@@ -39,7 +39,7 @@ import {
   analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
 } from '../dist/exchange/trace-context.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
-import { CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
+import { CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /**
@@ -248,7 +248,9 @@ async function run(session, { step, label, command, args, timeoutSeconds, accept
   const result = await session.execute(command[0], [...command.slice(1), ...args], {
     // SIGTERM을 무시하는 자식이 있어도 시간 제한이 지켜지도록 SIGKILL로 끝낸다.
     cwd: cwd ?? session.output, timeout: timeoutSeconds * 1000, killSignal: 'SIGKILL', maxBuffer: MAX_CHILD_OUTPUT_BYTES,
-    env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0' },
+    // git 조회에는 부분 clone의 promisor lazy fetch가 분석 대상 설정의 명령을 실행하지 못하게 끄는 환경을 더한다.
+    env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0',
+      ...(command[0] === 'git' ? GIT_ISOLATION_ENVIRONMENT : {}) },
   });
   const milliseconds = Math.round(performance.now() - begin);
   const entry = { step, command: [...command, ...args], exitCode: result.status ?? null, milliseconds };

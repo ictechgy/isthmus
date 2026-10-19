@@ -14,7 +14,7 @@ import { adaptKartographImpact } from '../dist/exchange/kartograph-impact.js';
 import { createPreflightReport, hasPreflightBlockers } from '../dist/report/preflight.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
 import { writeTextAtomically } from '../dist/cli/atomic-write.js';
-import { CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
+import { CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /** workflow 실패는 자식 출력·입력 경로를 오류 본문에 싣지 않는다. */
@@ -46,7 +46,9 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     const start = performance.now();
     const result = await execute(command[0], [...command.slice(1), ...args], {
       cwd: project, timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env, CI: 'true', DART_SUPPRESS_ANALYTICS: 'true', FLUTTER_SUPPRESS_ANALYTICS: 'true' },
+      // git 조회에는 부분 clone의 promisor lazy fetch가 분석 대상 설정의 명령을 실행하지 못하게 끄는 환경을 더한다.
+      env: { ...process.env, CI: 'true', DART_SUPPRESS_ANALYTICS: 'true', FLUTTER_SUPPRESS_ANALYTICS: 'true',
+        ...(command[0] === 'git' ? GIT_ISOLATION_ENVIRONMENT : {}) },
     });
     timings.push({ step, milliseconds: Math.round(performance.now() - start) });
     if (result.error || result.signal || !accepted.includes(result.status)) throw new CaptureError(`Preflight producer step failed: ${step}.`);

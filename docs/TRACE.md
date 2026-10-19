@@ -607,7 +607,10 @@ node scripts/capture-trace.mjs capture.json
   git-lfs처럼 filter로 정규화되던 파일은 stat 정보가 낡았으면 `dirty: true`로 보일 수 있고(깨끗하다고 주장하지 않는 쪽),
   서브모듈은 기록된 commit과 다를 때만 `dirty`에 들어가며 서브모듈 안의 커밋하지 않은 변경은 보지 않는다. 이름에 `=`가
   들었거나 UTF-8이 아닌 filter 드라이버는 명령줄로 덮을 수 없어 조회하지 않고 그 단계 실패로 끝낸다 — 그 드라이버를 설정에서
-  지우거나 이름을 바꾼다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
+  지우거나 이름을 바꾼다. 조회는 `GIT_NO_LAZY_FETCH=1`로 promisor remote의 lazy fetch도 꺼(저장소 설정의
+  `remote.<이름>.uploadpack`·`core.sshCommand`·`credential.helper`가 실행되지 않게), 분석 대상이 부분 clone이고 조회에
+  필요한 객체가 로컬에 없으면 내려받지 않고 그 단계 실패로 끝낸다 — 수집 전에 필요한 commit을 fetch해 두면 로컬 객체만으로
+  끝난다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
   둘 다 없는 옛 형식 artifact(`change-impact` 등)는 받지 않는다.
 - **catalog**(workspace member만): `catalog.graph`의 파일 sha256을 `catalog.graphSha`로 싣는다(schemagraph
   `graphRevision`과 같은 규칙).

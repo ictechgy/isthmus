@@ -7,7 +7,9 @@
  * 전용으로 보이는 조회에서도 명령을 실행한다. 그래서 호출자는 조회마다 바로 앞에서 {@link CONFIG_NAMES_QUERY}로 그 순간
  * 설정된 키 이름을 다시 읽고(사이에 실행된 생산자가 설정을 바꿔도 따라간다) {@link isolatedGitArguments}로 덮는다.
  * 명령줄 `-c`는 모든 설정 파일보다 우선하고, git은 빈 filter 명령을 실행하지 않는다(git 2.54 실측). 서브모듈에서는 git을
- * 띄우지 않는다 — 서브모듈 자신의 설정에 있는 드라이버 이름은 상위 저장소의 조회로 알 수 없다.
+ * 띄우지 않는다 — 서브모듈 자신의 설정에 있는 드라이버 이름은 상위 저장소의 조회로 알 수 없다. 분석 대상이 부분 clone이면
+ * 조회가 빠진 객체를 만났을 때 git이 띄우는 promisor lazy fetch도 저장소 설정의 명령을 실행하므로, 호출자는 그 환경에
+ * {@link GIT_ISOLATION_ENVIRONMENT}도 함께 준다.
  */
 
 /**
@@ -19,6 +21,15 @@
  * (git 2.54, macOS 실측). 전체 키 목록은 로캘과 무관하다.
  */
 export const CONFIG_NAMES_QUERY = Object.freeze(['config', '-z', '--name-only', '--list']);
+
+/**
+ * 격리한 git 조회에 함께 주는 환경이다. 분석 대상이 부분 clone(promisor remote)이고 조회에 필요한 객체가 로컬에
+ * 없으면, git은 조회 도중 자식 fetch를 띄워 그 저장소 설정의 `remote.<name>.uploadpack`(로컬 경로 전송은 셸로 실행)·
+ * `core.sshCommand`·`credential.helper` 같은 명령을 실행한다. 이 변수로 lazy fetch를 끄면 빠진 객체를 만난 조회는
+ * fetch 없이 실패한다(fail-closed) — filter·fsmonitor와 달리 `-c`로 끌 수 없어 환경 변수를 쓴다. git 2.41 미만은 이
+ * 변수를 무시하지만(그 git에는 끄는 수단이 없다) 정상 저장소의 조회 결과는 그대로다(빠진 객체가 없으면 fetch도 없다).
+ */
+export const GIT_ISOLATION_ENVIRONMENT = Object.freeze({ GIT_NO_LAZY_FETCH: '1' });
 
 /** 명령을 가진 filter 드라이버 키다. 이름(첫 묶음)은 `filter.`과 마지막 `.<키>` 사이 전체다. */
 const FILTER_COMMAND_KEY = /^filter\.(.*)\.(?:clean|smudge|process)$/su;

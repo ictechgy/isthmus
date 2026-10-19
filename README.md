@@ -396,7 +396,8 @@ writes a single-project or workspace trace context, a manifest of producer versi
 optionally `trace.json`. Children run from argument arrays without a shell, with a timeout per step, and
 every path must stay inside the declared roots. Its git queries (`revision: {"git": true}` and tool `source`, like
 the preflight collector's `since`) override the analysed repository's filter drivers and fsmonitor, use no external
-diff or textconv, and do not run git inside submodules, so repository settings never run commands
+diff or textconv, do not run git inside submodules, and disable promisor lazy fetch, so those settings do not run
+commands during collection — a partial clone missing a needed object then fails instead of fetching it
 ([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). For a file selection it collects in two stages: forward
 traversals and optional producer symbol listings first (tsograph `graph`, kartograph `snapshot`, cartograph
 `graph`), then the reverse traversals rooted also at the symbols located in the selected files, so helpers

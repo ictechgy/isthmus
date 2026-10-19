@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { capturePreflight } from './capture-preflight.mjs';
 import {
-  fixtureEnvironment, initHostileRepository, initSuperprojectWithHostileSubmodule, markerKit,
+  fixtureEnvironment, initHostileRepository, initPartialCloneWithPromisorMarker,
+  initSuperprojectWithHostileSubmodule, markerKit,
 } from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
@@ -373,6 +374,21 @@ test('since는 서브모듈에서 git을 띄우지 않고 기록된 commit 차�
   const second = await capturePreflight({ ...rest, since: 'HEAD' }, { execute: realGit(f) });
   assert.deepEqual(await kit.found(), []);
   assert.ok(second.context.limitations.includes('unmodeled-changes: 1 tracked configuration/resource change(s) require separate review'));
+});
+
+test('since는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령을 실행하지 않고 실패한다', async (t) => {
+  const f = await setup(t);
+  const kit = await markerKit(t);
+  const project = join(kit.scratch, 'project');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  const { selection: _selection, ...rest } = f.config;
+  // 빠진 base blob을 읽어야 rename을 알 수 있어 git이 promisor remote에서 lazy fetch를 띄우려 하지만, 격리가 fetch를
+  // 막으므로 그 설정의 uploadpack 마커가 생기지 않고 조회가 실패한다(fail-closed).
+  const config = { ...rest, project, since: base, output: join(project, 'context.json'),
+    cache: join(project, 'cache.json'), toolInputs: [join(project, 'producer.txt')] };
+  await assert.rejects(capturePreflight(config, { execute: realGit(f) }), /Preflight producer step failed: git-changes\./u);
+  assert.deepEqual(await kit.found(), []);
+  assert.deepEqual(f.calls, [], 'No producer runs after the isolation failure.');
 });
 
 test('선택한 v2 message producer는 같은 capture에 포함되고 캐시 설정을 구분한다', async (t) => {

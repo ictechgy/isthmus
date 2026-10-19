@@ -8,7 +8,8 @@ import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureTrace, CaptureTraceError } from './capture-trace.mjs';
 import {
-  fixtureEnvironment, initHostileRepository, initSuperprojectWithHostileSubmodule, markerKit,
+  fixtureEnvironment, fixtureGit, initHostileRepository, initPartialCloneWithPromisorMarker,
+  initSuperprojectWithHostileSubmodule, markerKit,
 } from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
@@ -490,6 +491,23 @@ test('git revision은 서브모듈에서 git을 띄우지 않고 기록된 commi
   await captureTrace({ ...config, output: { root: 'work', path: 'moved' } }, { execute: fixtureExecute });
   assert.deepEqual(await kit.found(), []);
   assert.equal(await dirty('moved'), true);
+});
+
+test('git revision 조회는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령을 실행하지 않고 실패한다', async (t) => {
+  const { work, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  const project = join(work, 'clone');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  // HEAD↔index에 rename을 만들어 status 조회가 빠진 base blob을 읽게 한다. 격리가 없으면 lazy fetch가 clone의
+  // remote.origin.uploadpack(마커)을 실행하지만, 격리는 fetch 자체를 막아 조회가 그 단계에서 실패한다.
+  fixtureGit(project, ['reset', '--soft', base]);
+  config.members[0].project = { root: 'work', path: 'clone' };
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), 'revision:app:status', /git status exited with status 128/u);
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.failure.step, 'revision:app:status');
 });
 
 test('CLI는 사용법·설정 오류를 종료 코드 2와 단계 문구로 알린다', async (t) => {
