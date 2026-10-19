@@ -109,7 +109,7 @@ inputs:
 
 outputs:
   failed:
-    description: "`true` when fail-on matched or a step failed."
+    description: "`true` when fail-on matched or a step failed. Empty when an input is invalid (the analyze step itself then fails)."
     value: ${{ steps.analyze.outputs.failed }}
   diff-exit-code:
     description: Exit code of `isthmus diff --http` (0 or 1).

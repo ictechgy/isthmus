@@ -236,7 +236,10 @@ artifact에는 `diff.json`(`isthmus-http-diff` v1), `trace.json`(`isthmus-trace`
   정본이고 댓글은 걸린 finding 수를 함께 싣는다.
 - 설치·checkout·capture·diff(2·64)·trace 실패도 `failed=true`다. 그래도 댓글·summary·artifact는 남는다 — 댓글 맨
   위에 "실행이 끝나지 않았다, 결과는 없거나 부분적이다"를 싣는다(빈 댓글이 깨끗함으로 읽히지 않게).
-- 입력 자체가 틀리면(모드 충돌·잘못된 SHA·범위 버전 등) 출력 없이 분석 단계가 실패한다.
+- diff·trace 보고서로 댓글을 렌더링하지 못해도 `failed=true`다. `meta.json`의 `render` 단계 오류와 artifact는 남지만
+  댓글·summary는 없고(`comment-file` 출력 없음) 게시 단계를 건너뛴다. 상세는 분석 단계 로그에 있다.
+- 입력 자체가 틀리면(모드 충돌·잘못된 SHA·범위 버전·`comment-key` 형식 등) 출력 없이 분석 단계가 실패한다.
+  `continue-on-error`를 쓰는 workflow는 `failed == 'true'`가 아니라 `failed != 'false'`로 판정한다.
 
 ## 댓글 모양
 

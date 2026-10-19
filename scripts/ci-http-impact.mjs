@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realp
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { renderPrComment } from './render-pr-comment.mjs';
+import { RenderInputError, renderPrComment, validateCommentKey } from './render-pr-comment.mjs';
 import { runChild } from './run-child.mjs';
 
 /**
@@ -124,6 +124,18 @@ function readTraceFiles(value) {
 }
 
 /**
+ * 댓글 키를 렌더러와 같은 규칙으로 미리 검증한다. 렌더 단계에서야 검증하면 설치·capture·diff·trace를 다 돈 뒤
+ * 실패하므로, 다른 입력 오류처럼 시작 전에 단계 `inputs`로 거부한다.
+ */
+function readCommentKey(value) {
+  try { return validateCommentKey(value || 'default'); }
+  catch (error) {
+    if (!(error instanceof RenderInputError)) throw error;
+    throw new CiStepError('inputs', error.message);
+  }
+}
+
+/**
  * Action 입력(환경 변수 `ISTHMUS_CI_*`)을 읽고 검증한다. action.yml은 입력을 `run` 스크립트에 끼워 넣지 않고
  * 환경 변수로만 넘긴다(식 주입 방지). 모드는 capture 설정 또는 미리 만든 문서 중 정확히 하나다.
  */
@@ -152,7 +164,7 @@ export function parseInputs(env) {
     failOn: readFailOn(env.ISTHMUS_CI_FAIL_ON),
     maxRows: readInteger(env.ISTHMUS_CI_MAX_ROWS, 20, 1, 1000, 'max-rows'),
     maxChains: readInteger(env.ISTHMUS_CI_MAX_CHAINS, 50, 1, 1000, 'max-chains'),
-    commentKey: env.ISTHMUS_CI_COMMENT_KEY || 'default',
+    commentKey: readCommentKey(env.ISTHMUS_CI_COMMENT_KEY),
     isthmusVersion: version, isthmusPath: env.ISTHMUS_CI_ISTHMUS_PATH || undefined,
     repositoryPath: resolve(workspace, env.ISTHMUS_CI_REPOSITORY_PATH || '.'),
     baseSha: readSha(env.ISTHMUS_CI_BASE_SHA, 'base-sha'), headSha: readSha(env.ISTHMUS_CI_HEAD_SHA, 'head-sha'),
@@ -622,6 +634,18 @@ function renderOutputs(options, meta, env) {
   return diff;
 }
 
+/**
+ * 댓글을 렌더링하지 못했을 때의 출력이다(형식이 다르거나 깨진 diff·trace 보고서 등). 출력이 비면
+ * `continue-on-error`로 `failed`만 보는 workflow가 통과하므로 render 오류를 meta에 싣고 `failed=true`를 남긴다.
+ * 댓글 파일이 없으므로 `comment-file`을 빼 게시 단계를 건너뛰게 한다. 상세(경로가 섞일 수 있음)는 로그에만 싣는다.
+ */
+function renderFailureOutputs(options, meta, error, log) {
+  meta.errors.push({ step: 'render', message: 'The comment could not be rendered from the diff or trace report; see the step log.' });
+  writeFileSync(join(options.outputDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
+  logUntrusted(log, 'isthmus: render failure:', error?.stack ?? String(error));
+  return { ...actionOutputs(options, meta, undefined), 'comment-file': undefined };
+}
+
 /** 입력 모드별로 diff 입력과 trace context 경로를 준비한다. */
 function prepareInputs(options, isthmus, dependencies) {
   if (options.captureConfig !== undefined) {
@@ -657,6 +681,7 @@ function analyze(options, meta, dependencies) {
 
 /**
  * Action 분석 단계 진입점이다. 어떤 단계가 실패해도 meta·댓글·출력을 남긴다(실패도 댓글로 보이게).
+ * 댓글 렌더링 자체가 실패하면 댓글 없이 meta·출력(`failed=true`)만 남긴다.
  * 반환값은 종료 코드가 아니라 결과이며, 종료 판정은 action.yml 마지막 단계가 `failed` 출력으로 한다 —
  * 그래야 댓글 게시·artifact 업로드 단계가 실패 뒤에도 돈다.
  */
@@ -686,8 +711,12 @@ export function runCiHttpImpact(env = process.env, dependencies = {}) {
     }
   }
   writeFileSync(join(options.outputDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
-  const diff = renderOutputs(options, meta, env);
-  const outputs = actionOutputs(options, meta, diff);
+  let outputs;
+  try {
+    outputs = actionOutputs(options, meta, renderOutputs(options, meta, env));
+  } catch (error) {
+    outputs = renderFailureOutputs(options, meta, error, log);
+  }
   writeActionOutputs(env.GITHUB_OUTPUT, outputs);
   for (const error of meta.errors) log(`isthmus: step ${error.step} failed (details in the job summary and meta.json).\n`);
   return { failed: outputs.failed === 'true', meta, outputs };
