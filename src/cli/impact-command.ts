@@ -6,7 +6,7 @@ import { MAX_DOCUMENTS_PER_JOIN } from '../join/join.ts';
 import { createBridgeImpact, encodeBridgeImpact, hasImpactBlockers } from '../report/impact.ts';
 import type { ImpactRuntimeInput } from '../report/runtime-impact.ts';
 import {
-  inputFailure, inputFailureResult, internalError, isJsonParseFailure,
+  inputFailure, inputFailureResult, internalError, isInputSizeRejection, isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH, readBridgeDocuments, rejectHttpDocuments,
 } from './command-support.ts';
 import type { CommandResult, ReadTextFile } from './command-support.ts';
@@ -80,10 +80,14 @@ async function readSupplemental<T>(
 > {
   const label = kind === 'changes' ? 'Changes' : 'Runtime';
   const format = kind === 'changes' ? 'isthmus-changes' : 'bridge-runtime';
+  const tooLarge = `${label} input exceeds the input size limit.\n`;
   let text: string;
-  try { text = await readTextFile(path); }
-  catch { return inputFailure(`Unable to read ${kind} input; check that the file exists and is readable.\n`); }
-  if (text.length > MAX_INPUT_TEXT_LENGTH) return inputFailure(`${label} input exceeds the input size limit.\n`);
+  try { text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH); }
+  catch (error) {
+    if (isInputSizeRejection(error)) return inputFailure(tooLarge);
+    return inputFailure(`Unable to read ${kind} input; check that the file exists and is readable.\n`);
+  }
+  if (text.length > MAX_INPUT_TEXT_LENGTH) return inputFailure(tooLarge);
   let value: unknown;
   try { value = JSON.parse(text); }
   catch (error) {

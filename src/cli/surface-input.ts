@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 
 import { HttpSurfaceValidationError, importHttpSurface, type ImportedHttpSurface } from '../exchange/http-surface.ts';
-import { isJsonParseFailure, MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH, type ReadTextFile } from './command-support.ts';
+import {
+  isInputSizeRejection, isJsonParseFailure, MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH, type ReadTextFile,
+} from './command-support.ts';
 
 /**
  * `isthmus-http-surface` artifact 파일 읽기다. trace·`diff --http`가 공유한다.
@@ -34,15 +36,17 @@ export class HttpSurfaceInputError extends Error {
  */
 export async function readHttpSurface(path: string, label: string, pinnedSha256: string | undefined,
   readTextFile: ReadTextFile, budget: { used: number }): Promise<LoadedHttpSurface> {
+  const tooLarge = `${capitalize(label)} exceeds the input size limits.`;
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    if (isInputSizeRejection(error)) throw new HttpSurfaceInputError(tooLarge);
     throw new HttpSurfaceInputError(`Unable to read ${label}; check that the file exists and is readable.`);
   }
   budget.used += text.length;
   if (text.length > MAX_INPUT_TEXT_LENGTH || budget.used > MAX_TOTAL_INPUT_TEXT_LENGTH) {
-    throw new HttpSurfaceInputError(`${capitalize(label)} exceeds the input size limits.`);
+    throw new HttpSurfaceInputError(tooLarge);
   }
   const sha256 = createHash('sha256').update(text, 'utf8').digest('hex');
   if (pinnedSha256 !== undefined && sha256 !== pinnedSha256) {

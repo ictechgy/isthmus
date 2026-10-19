@@ -7,6 +7,7 @@ import {
 import type { BridgeMessageDocument } from '../exchange/messages.ts';
 import { parseMessageBridgeDocument } from '../exchange/messages.ts';
 import { BridgeJoinValidationError } from '../join/join.ts';
+import { BoundedTextReadError } from './bounded-text-file.ts';
 
 /**
  * 모든 분석 하위 명령이 공유하는 CLI 인프라다.
@@ -16,8 +17,25 @@ import { BridgeJoinValidationError } from '../join/join.ts';
  * 오류는 각 명령이 자신의 실패 매퍼를 덧붙이는 방식으로 확장한다.
  */
 
-/** 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다. */
-export type ReadTextFile = (path: string) => Promise<string>;
+/**
+ * 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다.
+ *
+ * `maximumLength`는 호출부가 그 입력에 허용하는 최대 UTF-16 길이다. 리더는 디코딩해도 그 길이를 넘을 수밖에 없는
+ * 파일을 읽기 전에 `BoundedTextReadError('limit')`로 거부할 수 있다(MCP serve의 일반 파일 리더). 길이를 넘기는
+ * 호출부는 그 오류를 {@link isInputSizeRejection}으로 가려 읽기 실패가 아니라 크기 상한 실패로 답한다. CLI 리더는
+ * 길이를 무시하고 파일 전체를 읽는다.
+ */
+export type ReadTextFile = (path: string, maximumLength?: number) => Promise<string>;
+
+/**
+ * 리더가 파일을 읽기 전에 크기 상한으로 거부했는지 판정한다.
+ *
+ * 그런 파일은 다 읽었어도 호출부의 길이 검사에 걸렸을 것이다. 읽기 실패("Unable to read …")로 답하면 원인 안내가
+ * 틀어지므로, 호출부는 다 읽은 뒤 길이 검사에 걸렸을 때와 같은 크기 상한 문구로 답한다.
+ */
+export function isInputSizeRejection(error: unknown): boolean {
+  return error instanceof BoundedTextReadError && error.reason === 'limit';
+}
 
 /** 파일 경로에 UTF-8 텍스트를 쓰는 주입 경계다. */
 export type WriteTextFile = (path: string, text: string) => Promise<void>;
@@ -76,8 +94,9 @@ async function readJsonInputs(
     const inputPosition = firstPosition + index;
     let text: string;
     try {
-      text = await readTextFile(path);
-    } catch {
+      text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+    } catch (error) {
+      if (isInputSizeRejection(error)) throw new BridgeInputLimitError(inputPosition);
       throw new BridgeInputReadError(inputPosition);
     }
     totalTextLength += text.length;
@@ -308,8 +327,9 @@ export type ContextInput =
 /**
  * preflight·trace처럼 context JSON 하나로 시작하는 명령의 첫 입력을 읽는다.
  *
- * 읽기 실패, 크기 상한 초과, JSON 구문 오류를 명령이 준 문구의 코드 2로 나누고, 구문 오류가 아닌 예외는 입력 탓이
- * 아니므로 내부 오류로 둔다. 읽은 텍스트 길이는 뒤따르는 입력의 합계 예산에 쓰도록 함께 돌려준다.
+ * 읽기 실패, 크기 상한 초과(리더가 읽기 전에 거부한 경우 포함), JSON 구문 오류를 명령이 준 문구의 코드 2로 나누고,
+ * 구문 오류가 아닌 예외는 입력 탓이 아니므로 내부 오류로 둔다. 읽은 텍스트 길이는 뒤따르는 입력의 합계 예산에 쓰도록
+ * 함께 돌려준다.
  *
  * @param maximumLength 이 파일 하나에 허용하는 UTF-16 길이다(명령마다 다르다).
  */
@@ -321,9 +341,9 @@ export async function readContextInput(
 ): Promise<ContextInput> {
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
-    return { failure: inputFailure(messages.unreadable) };
+    text = await readTextFile(path, maximumLength);
+  } catch (error) {
+    return { failure: inputFailure(isInputSizeRejection(error) ? messages.tooLarge : messages.unreadable) };
   }
   if (text.length > maximumLength) return { failure: inputFailure(messages.tooLarge) };
   try {

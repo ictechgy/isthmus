@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -37,5 +37,29 @@ test('regular file reads decode like readFile utf8 and reject FIFOs, devices and
     for (const path of [fifo, '/dev/null', root, join(root, 'missing')]) {
       await assert.rejects(readRegularTextFile(path), (error) => error instanceof BoundedTextReadError && error.reason === 'read');
     }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('regular file reads reject before reading only files whose bytes must decode past the caller limit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'isthmus-regular-limit-'));
+  try {
+    const file = join(root, 'input.json');
+    const isLimit = (error: unknown) => error instanceof BoundedTextReadError && error.reason === 'limit';
+    // 3바이트 문자 4개(12바이트)는 UTF-16 4단위다. 바이트가 상한의 3배와 같으면 디코딩해도 상한 안일 수 있으므로 읽는다.
+    await writeFile(file, '가나다라');
+    assert.equal(await readRegularTextFile(file, 4), '가나다라');
+    // 잘린 다중 바이트 순서도 3바이트 안에서 U+FFFD 하나라 같은 경계다: 12바이트 → 4단위.
+    await writeFile(file, Buffer.from([0xf0, 0x90, 0x80, 0xf0, 0x90, 0x80, 0xf0, 0x90, 0x80, 0xf0, 0x90, 0x80]));
+    assert.equal(await readRegularTextFile(file, 4), '�'.repeat(4));
+    // 한 바이트라도 더 많으면 어떻게 디코딩해도 4단위를 넘는다 — 읽지 않고 limit이다.
+    await writeFile(file, '가나다라!');
+    await assert.rejects(readRegularTextFile(file, 4), isLimit);
+    // 상한을 주지 않으면 지금처럼 전부 읽는다. 크기 판정은 호출부의 길이 검사다.
+    assert.equal(await readRegularTextFile(file), '가나다라!');
+    // 디스크를 쓰지 않는 희소 파일로 문서 상한(UTF-16 16Mi)의 3배를 1바이트 넘긴다. 내용을 읽지 않고 거부한다.
+    const sparse = join(root, 'sparse.json');
+    await writeFile(sparse, '');
+    await truncate(sparse, 3 * 16 * 1024 * 1024 + 1);
+    await assert.rejects(readRegularTextFile(sparse, 16 * 1024 * 1024), isLimit);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

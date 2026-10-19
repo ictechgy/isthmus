@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { createMcpSession } from './mcp-server.ts';
 import { runPreflightCommand } from './preflight-command.ts';
 
@@ -439,6 +441,50 @@ test('tools/call diff는 before·after에 합계 상한 하나와 전체 입력 
   const broken = await call(261, ['broken', 'a2']);
   assert.equal(broken.result.isError, true);
   assert.match(broken.result.content[0].text, /^Bridge facts input 3 is not valid JSON;/u);
+});
+
+test('serve 리더가 상한을 넘을 수밖에 없는 파일을 읽기 전에 거부하면 도구는 그 입력의 크기 상한 문구로 답한다', async () => {
+  // serve의 일반 파일 리더는 호출부가 넘긴 UTF-16 상한의 3배 바이트를 넘는 파일을 읽지 않고 limit으로 거부한다.
+  // 도구는 그것을 읽기 실패가 아니라, 다 읽었다면 걸렸을 길이 검사와 같은 크기 상한 실패로 답해야 한다.
+  const fixture = (path: string) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
+  let oversized = '';
+  const reads: Array<[string, number | undefined]> = [];
+  const limited = createMcpSession({
+    readTextFile: async (path, maximumLength) => {
+      reads.push([path, maximumLength]);
+      if (path === oversized) throw new BoundedTextReadError('limit');
+      return readFile(path, 'utf8');
+    },
+    producerVersion: '0.0.0-test',
+  });
+  const preflight = { context: fixture('preflight/context.json'), expectations: fixture('preflight/expectations.json') };
+  const cases: Array<[string, Record<string, unknown>, string, RegExp, number]> = [
+    ['check', { documents: [dartPath, '/virtual/huge.json'] }, '/virtual/huge.json',
+      /^Bridge facts input 2 exceeds the input size limits;/u, MAX_INPUT_TEXT_LENGTH],
+    ['impact', { documents: [dartPath, swiftPath], changes: '/virtual/changes.json' }, '/virtual/changes.json',
+      /^Changes input exceeds the input size limit\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['preflight', { context: '/virtual/context.json' }, '/virtual/context.json',
+      /^Preflight context exceeds the input size limit\.\n$/u, MAX_TOTAL_INPUT_TEXT_LENGTH],
+    ['preflight', { ...preflight, runtime: ['/virtual/runtime.json'] }, '/virtual/runtime.json',
+      /Runtime input 2 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: '/virtual/trace.json' }, '/virtual/trace.json',
+      /^Trace context exceeds the input size limit\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: fixture('trace/context.json') }, fixture('trace/server-forward.json'),
+      /^Trace analysis 1 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: fixture('http-surface/client/context.json') }, fixture('http-surface/surfaces/example-api-2.4.surface.json'),
+      /^Trace http surface 1 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+  ];
+  for (const [index, [name, args, path, message, limit]] of cases.entries()) {
+    oversized = path;
+    reads.length = 0;
+    const response = JSON.parse((await limited.handleLine(request(270 + index, 'tools/call', { name, arguments: args })))!);
+    const label = `${name} ${path}`;
+    assert.equal(response.result?.isError, true, label);
+    assert.match(response.result.content[0].text, message, label);
+    assert.deepEqual(reads.find(([read]) => read === path), [path, limit], label);
+    // serve가 도구로 읽는 입력은 모두 상한을 함께 넘긴다. 상한 없는 읽기는 큰 파일을 통째로 메모리에 올린다.
+    assert.ok(reads.every(([, maximumLength]) => typeof maximumLength === 'number'), label);
+  }
 });
 
 test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문서를 돌려준다', async () => {

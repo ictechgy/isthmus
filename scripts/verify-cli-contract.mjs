@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -677,6 +677,23 @@ function verifyServe() {
       ? fifoSession.stdout.trim().split('\n').map((line) => JSON.parse(line)) : [];
     verify(answered.length === 2 && answered[0].result.isError === true && answered[1].id === 5,
       'serve rejects non-regular files without blocking');
+    // 상한의 3배 바이트를 넘는 일반 파일(디스크를 쓰지 않는 희소 파일)은 읽지 않고 크기 상한 오류로 답한다.
+    // 통째로 읽으면 작은 힙의 세션이 메모리 부족으로 죽어 다음 요청에도 답하지 못한다.
+    const large = join(directory, 'large.json');
+    writeFileSync(large, '');
+    truncateSync(large, 300 * 1024 * 1024);
+    const largeSession = runChild(process.execPath, ['--max-old-space-size=64', binaryPath, 'serve'], {
+      input: `${[
+        { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'check', arguments: { documents: [large, swiftPath] } } },
+        { jsonrpc: '2.0', id: 7, method: 'ping' },
+      ].map((message) => JSON.stringify(message)).join('\n')}\n`,
+      timeout: 20_000,
+    });
+    const largeAnswers = largeSession.status === 0
+      ? largeSession.stdout.trim().split('\n').map((line) => JSON.parse(line)) : [];
+    verify(largeAnswers.length === 2 && largeAnswers[0].result.isError === true
+      && largeAnswers[0].result.content[0].text.startsWith('Bridge facts input 1 exceeds the input size limits;')
+      && largeAnswers[1].id === 7, 'serve rejects oversized regular files before reading');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
