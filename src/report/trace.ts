@@ -383,15 +383,21 @@ export const MAX_TRACE_UPSTREAM_ROWS = 10_000;
 /** 개수를 싣는 gap이 문구에 함께 드는 예시 id 수 상한이다. 문구가 무한정 길어지지 않게 한다. */
 export const MAX_GAP_EXAMPLES = 5;
 
-/** trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다. */
-export function createTraceReport(input: TraceInput): TraceReport {
+/**
+ * trace 보고서를 만든다. 같은 입력이면 항상 같은 바이트로 직렬화된다.
+ *
+ * `limits`는 상한 동작을 작은 입력으로 확인하려는 테스트용 내부 값이다. CLI·MCP는 넘기지 않으므로 문서화된
+ * {@link MAX_TRACE_OUTPUT_ITEMS}를 쓴다.
+ */
+export function createTraceReport(input: TraceInput,
+  limits: Readonly<{ maxOutputItems: number }> = { maxOutputItems: MAX_TRACE_OUTPUT_ITEMS }): TraceReport {
   validateAnalysisMembers(input);
   const prepared = prepareTraceInputs(input.context, input.documents, input.surfaces);
   const upstreamDepth = input.upstreamDepth ?? input.context.upstreamDepth ?? 1;
   if (!isTraceUpstreamDepth(upstreamDepth)) {
     throw new TraceInputError(`Trace upstreamDepth must be an integer from 1 to ${MAX_TRACE_UPSTREAM_DEPTH}.`);
   }
-  const builder = new TraceBuilder(input, prepared, upstreamDepth);
+  const builder = new TraceBuilder(input, prepared, upstreamDepth, limits.maxOutputItems);
   const chains = builder.buildChains();
   const gaps = builder.finishGaps();
   const notices = builder.finishNotices();
@@ -466,6 +472,32 @@ interface DeclGroup {
   readonly decls: readonly TraceEndpoint[];
 }
 
+/** 파일 선택의 (member, 파일 경로) 색인이다. 키는 {@link memberKey}(member, 경로)다. */
+interface FileIndex {
+  /** 언어 분석(sql 제외)이 그 파일에 위치시킨 root·도달 심볼이다. */
+  readonly analysisSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** context `fileSymbols`가 그 파일에 놓은 심볼이다. */
+  readonly listedSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** member 문서(sql·openapi 제외)에서 그 파일에 위치한 사실의 `symbol.usr`다. */
+  readonly factSymbols: ReadonlyMap<string, readonly StartSymbol[]>;
+  /** 그 파일에 위치한 relation-use 기록이다(색인 순서). */
+  readonly uses: ReadonlyMap<string, readonly UseRecord[]>;
+}
+
+/** route 키 하나의 선언 측 사실이다(scope 순서, 테스트 소스 포함). */
+interface RouteKeyFacts {
+  readonly decls: RouteDeclarationFact[];
+  readonly contracts: RouteDeclarationFact[];
+}
+
+/** scope 하나의 route hop 색인이다. */
+interface ScopeRouteIndex {
+  /** {@link routeFactsKey}(method, template) → 그 키의 선언 측 사실이다. */
+  readonly facts: ReadonlyMap<string, RouteKeyFacts>;
+  /** 측별 선언 id → 그 id를 matched·ambiguous 대상으로 가리키는 호출의 `scope.calls` 인덱스다(오름차순). */
+  readonly callsByTarget: Readonly<Record<'decl' | 'contract', ReadonlyMap<number, readonly number[]>>>;
+}
+
 /** 체인과 gap을 모으는 작업 상태다. 입력 색인을 한 번만 만든다. */
 class TraceBuilder {
   private readonly gaps = new Map<string, TraceGap>();
@@ -486,6 +518,15 @@ class TraceBuilder {
   private readonly surfaces = new Map<string, ImportedHttpSurface>();
   private readonly librariesByProvider = new Map<string, TraceLibrary[]>();
   private readonly rowsByRoot = new Map<TraceAnalysis, Map<number, TraversalReached[]>>();
+  /**
+   * 분석별로 64개로 잘린 정점 root 목록의 마지막 인덱스 중 가장 작은 값이다(잘린 목록이 없으면 Infinity). 이보다 큰
+   * root index만 어떤 정점의 목록에서 빠졌을 수 있다 — hop마다 모든 정점을 다시 훑지 않으려고 색인할 때 구한다.
+   */
+  private readonly cappedRootIndex = new Map<TraceAnalysis, number>();
+  /** 파일 선택 색인이다. 첫 파일 선택 때 {@link fileIndex}가 만든다. */
+  private files: FileIndex | undefined;
+  /** scope별 route hop 색인이다. 그 scope의 첫 route hop 때 {@link routeIndex}가 만든다. */
+  private readonly routeIndexes = new Map<TraceLinkedScope, ScopeRouteIndex>();
   private readonly workspace: boolean;
   /**
    * 지금 만드는 체인이 싣는 route의 upstream 조상 키(member, scope, method, template)다. upstream route가 이 중 하나면 그
@@ -496,6 +537,11 @@ class TraceBuilder {
   /** 지금 만드는 체인에서 upstream 호출 hop에 더 실을 수 있는 행 수다. 체인마다 {@link MAX_TRACE_UPSTREAM_ROWS}로 되돌린다. */
   private upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
   private outputItems = 0;
+  /**
+   * 지금 만드는 체인에서 이미 만든 영향 행(호출·library consumer·DB hop)을 미리 센 수다. 만든 hop은 모두 그 체인
+   * 출력에 실리므로 {@link count}가 셀 수의 하한이고, count가 0으로 되돌린 뒤 체인 전체를 센다.
+   */
+  private pendingItems = 0;
   /** dynamic 선언 스코프 비교의 예산이다. 한 보고서의 모든 route 선택이 공유한다. */
   private readonly dynamicScopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
 
@@ -503,23 +549,23 @@ class TraceBuilder {
   private readonly prepared: PreparedTrace;
   /** upstream route를 따라갈 단계 수다(1이면 v1처럼 한 단계). */
   private readonly upstreamDepth: number;
+  /** 보고서 항목 상한이다. 테스트가 아니면 {@link MAX_TRACE_OUTPUT_ITEMS}다. */
+  private readonly maxOutputItems: number;
 
-  constructor(input: TraceInput, prepared: PreparedTrace, upstreamDepth: number) {
+  constructor(input: TraceInput, prepared: PreparedTrace, upstreamDepth: number, maxOutputItems: number) {
     this.input = input;
     this.prepared = prepared;
     this.upstreamDepth = upstreamDepth;
+    this.maxOutputItems = maxOutputItems;
     this.workspace = prepared.workspace;
     this.members = new Map(prepared.members.map((member) => [member.key, member]));
     this.scopes = prepared.scopes;
     for (const member of prepared.members) if (member.surface !== undefined) this.surfaces.set(member.key, member.surface);
-    for (const library of input.context.workspace?.libraries ?? []) {
-      this.librariesByProvider.set(library.provider, [...(this.librariesByProvider.get(library.provider) ?? []), library]);
-    }
+    for (const library of input.context.workspace?.libraries ?? []) appendTo(this.librariesByProvider, library.provider, library);
     for (const member of prepared.members) this.indexRelations(member);
     this.indexHandlers();
     for (const { member, fact } of prepared.unlinkedRoutes) {
-      const key = memberSymbolKey(member, fact.endpoint.platform, fact.endpoint.symbol!.usr!);
-      this.unlinkedByHandler.set(key, [...(this.unlinkedByHandler.get(key) ?? []), fact]);
+      appendTo(this.unlinkedByHandler, memberSymbolKey(member, fact.endpoint.platform, fact.endpoint.symbol!.usr!), fact);
     }
     this.indexAnalyses();
   }
@@ -555,8 +601,7 @@ class TraceBuilder {
   private routeChain(selector: { route: TraceRouteSelection }): TraceChain[] {
     const { method, template, scope } = selector.route;
     const scopes = this.scopes.filter((candidate) => scope === undefined || candidate.scope.scope === scope);
-    this.chainRoutes = new Set(scopes.filter(({ scope: { decls, contracts } }) => [...decls, ...contracts].some(({ declaration }) =>
-      declaration.method === method && declaration.template === template))
+    this.chainRoutes = new Set(scopes.filter((candidate) => this.routeIndex(candidate).facts.has(routeFactsKey(method, template)))
       .map((candidate) => upstreamKey(candidate.server, candidate.scope.scope, method, template)));
     this.upstreamRows = MAX_TRACE_UPSTREAM_ROWS;
     const found = scopes.flatMap((candidate) => {
@@ -567,7 +612,7 @@ class TraceBuilder {
       this.missingRouteGap(selector);
       return [];
     }
-    const handlers = new Map<string, TraceHandlerHop>();
+    const handlers = new Map<string, MutableHandler>();
     const uses = new Map<string, MutableUse>();
     for (const { linked, declFacts } of found) {
       const key = routeKey(linked.scope.scope, method, template);
@@ -589,7 +634,7 @@ class TraceBuilder {
       }
       // 테스트 소스 decl만 있는 경우는 test-source-omitted가 이미 밝힌다. 계약만 있는 route만 여기서 남긴다.
       // found의 scope에는 decl이나 contract가 있으므로 decl이 없으면 계약만 있는 route다.
-      if (!linked.scope.decls.some(({ declaration }) => declaration.method === method && declaration.template === template)) {
+      if ((this.routeIndex(linked).facts.get(routeFactsKey(method, template))?.decls.length ?? 0) === 0) {
         this.gap({ code: 'route-contract-only', selector, route: key,
           detail: 'The route is declared only by a contract (no route-decl), so there is no handler to follow.' });
       }
@@ -598,7 +643,7 @@ class TraceBuilder {
     return [this.count({
       selector,
       routes: found.map(({ hop }) => hop),
-      handlers: sortHandlers(handlers),
+      handlers: finishHandlers(handlers),
       relationUses,
       database: this.database(selector, declGroups(uses)),
     })];
@@ -739,12 +784,13 @@ class TraceBuilder {
     const member = selector.member ?? '';
     const byAnalyses = this.locatedAnalysisSymbols(member, selector.file);
     // 생산자 목록(`fileSymbols`)의 심볼은 분석 위치와 같은 근거다 — 둘 다 생산자가 이 파일에 둔 심볼이다.
-    const listed = this.listedFileSymbols(member, selector.file).filter((start) =>
-      !byAnalyses.some((other) => other.platform === start.platform && other.usr === start.usr));
+    // 시작 심볼은 모두 이 member의 것이라 (platform, usr) 비교는 체인 키 비교와 같다.
+    const byAnalysisKeys = new Set(byAnalyses.map(startKey));
+    const listed = this.listedFileSymbols(member, selector.file).filter((start) => !byAnalysisKeys.has(startKey(start)));
     const located = [...byAnalyses, ...listed];
-    const facts = this.locatedFactSymbols(member, selector.file).filter((start) =>
-      !located.some((other) => other.platform === start.platform && other.usr === start.usr));
-    const uses = this.uses.filter((use) => use.member === member && use.fact.location?.path === selector.file);
+    const locatedKeys = new Set(located.map(startKey));
+    const facts = this.locatedFactSymbols(member, selector.file).filter((start) => !locatedKeys.has(startKey(start)));
+    const uses = this.fileIndex().uses.get(memberKey(member, selector.file)) ?? [];
     if (located.length === 0 && facts.length === 0 && uses.length === 0) {
       this.gap({ code: 'file-without-symbols', selector, ...this.memberField(member),
         detail: 'No analysis symbol or bridge fact is located in this file, so nothing was followed; this is not evidence '
@@ -773,36 +819,59 @@ class TraceBuilder {
 
   /** member의 언어 분석(sql 제외)이 이 파일에 위치시킨 root·도달 심볼이다. */
   private locatedAnalysisSymbols(member: string, path: string): StartSymbol[] {
-    const found: StartSymbol[] = [];
-    for (const analysis of this.input.analyses) {
-      if ((analysis.member ?? '') !== member || analysis.platform === 'sql') continue;
-      const symbols = [...analysis.graph.roots.flatMap(({ symbol }) => symbol === undefined ? [] : [symbol]),
-        ...analysis.graph.reached.map(({ symbol }) => symbol)];
-      for (const symbol of symbols) {
-        if (symbol.location?.path === path) found.push({ member, platform: analysis.platform, usr: symbol.usr });
-      }
-    }
-    return uniqueStarts(found);
+    return uniqueStarts(this.fileIndex().analysisSymbols.get(memberKey(member, path)) ?? []);
   }
 
   /** context `fileSymbols`가 이 member·파일에 놓은 심볼이다. 없으면 빈 목록이다. */
   private listedFileSymbols(member: string, path: string): StartSymbol[] {
-    return uniqueStarts((this.input.context.fileSymbols ?? [])
-      .filter((entry) => (entry.member ?? '') === member && entry.path === path)
-      .flatMap(({ platform, usrs }) => usrs.map((usr) => ({ member, platform, usr }))));
+    return uniqueStarts(this.fileIndex().listedSymbols.get(memberKey(member, path)) ?? []);
   }
 
   /** member 문서에서 이 파일에 위치한 사실의 `symbol.usr`다(sql·openapi 제외). */
   private locatedFactSymbols(member: string, path: string): StartSymbol[] {
-    const found: StartSymbol[] = [];
-    for (const document of this.members.get(member)!.documents) {
-      if (document.platform === 'sql' || document.platform === 'openapi') continue;
-      for (const fact of document.facts) {
-        const usr = fact.symbol?.usr;
-        if (usr !== undefined && fact.location?.path === path) found.push({ member, platform: document.platform, usr });
+    return uniqueStarts(this.fileIndex().factSymbols.get(memberKey(member, path)) ?? []);
+  }
+
+  /**
+   * 파일 선택이 쓰는 (member, 파일 경로) 색인이다. 첫 파일 선택 때 분석 정점·fileSymbols·사실·relation-use를 한 번씩만
+   * 훑어 만든다 — 파일마다 입력 전체를 다시 훑으면 선택 파일 수 × 입력 크기가 된다. 목록은 입력 순서를 지키고, 시작
+   * 심볼은 호출자가 {@link uniqueStarts}로 정렬·중복 제거한다.
+   */
+  private fileIndex(): FileIndex {
+    if (this.files !== undefined) return this.files;
+    const analysisSymbols = new Map<string, StartSymbol[]>();
+    for (const analysis of this.input.analyses) {
+      const { platform } = analysis;
+      if (platform === 'sql') continue;
+      const member = analysis.member ?? '';
+      const symbols = [...analysis.graph.roots.flatMap(({ symbol }) => symbol === undefined ? [] : [symbol]),
+        ...analysis.graph.reached.map(({ symbol }) => symbol)];
+      for (const { usr, location } of symbols) {
+        if (location !== undefined) appendTo(analysisSymbols, memberKey(member, location.path), { member, platform, usr });
       }
     }
-    return uniqueStarts(found);
+    const listedSymbols = new Map<string, StartSymbol[]>();
+    for (const { member = '', path, platform, usrs } of this.input.context.fileSymbols ?? []) {
+      for (const usr of usrs) appendTo(listedSymbols, memberKey(member, path), { member, platform, usr });
+    }
+    const factSymbols = new Map<string, StartSymbol[]>();
+    for (const [member, { documents }] of this.members) {
+      for (const document of documents) {
+        if (document.platform === 'sql' || document.platform === 'openapi') continue;
+        for (const fact of document.facts) {
+          const usr = fact.symbol?.usr;
+          const path = fact.location?.path;
+          if (usr !== undefined && path !== undefined) appendTo(factSymbols, memberKey(member, path), { member, platform: document.platform, usr });
+        }
+      }
+    }
+    const uses = new Map<string, UseRecord[]>();
+    for (const use of this.uses) {
+      const path = use.fact.location?.path;
+      if (path !== undefined) appendTo(uses, memberKey(use.member, path), use);
+    }
+    this.files = { analysisSymbols, listedSymbols, factSymbols, uses };
+    return this.files;
   }
 
   /**
@@ -810,9 +879,9 @@ class TraceBuilder {
    * 핸들러·표시된 비HTTP 진입점 어느 쪽에도 닿지 못한 시작점은 `non-http-entry`로 남긴다. 시작 심볼의 member 안에서만 찾는다.
    */
   private reverseRoutes(selector: TraceSelector, starts: readonly StartSymbol[]): Pick<TraceChain, 'routes' | 'handlers' | 'entryPoints'> {
-    const handlers = new Map<string, TraceHandlerHop>();
+    const handlers = new Map<string, MutableHandler>();
     const routes = new Map<string, TraceRouteKey>();
-    const entryPoints = new Map<string, TraceEntryPointHop>();
+    const entryPoints = new Map<string, MutableEntryPoint>();
     for (const start of starts) {
       const reach = new Map<string, TraceReach>([[start.usr, selfReach(start.usr)]]);
       let found = false;
@@ -855,33 +924,37 @@ class TraceBuilder {
       const linked = this.scopes.find((candidate) => candidate.scope.scope === key.scope)!;
       return [this.routeHop(selector, linked, key.method, key.template)!.hop];
     });
-    return { routes: hops, handlers: sortHandlers(handlers),
-      ...(entryPoints.size === 0 ? {} : { entryPoints: valuesSortedByKey(entryPoints) }) };
+    return { routes: hops, handlers: finishHandlers(handlers),
+      ...(entryPoints.size === 0 ? {} : { entryPoints: finishEntryPoints(entryPoints) }) };
   }
 
-  /** 같은 member·platform·usr의 진입점 관찰을 합치고 시작점별 가장 강한 도달 근거를 보존한다. */
-  private addEntryPoint(target: Map<string, TraceEntryPointHop>, start: StartSymbol, symbol: TraversalSymbol,
+  /**
+   * 같은 member·platform·usr의 진입점 관찰을 합치고 시작점별 가장 강한 도달 근거를 보존한다. 체인이 끝날 때
+   * {@link finishEntryPoints}가 한 번 정렬한다 — 관찰마다 목록을 다시 만들어 정렬하면 시작점 수에 대해 이차다.
+   */
+  private addEntryPoint(target: Map<string, MutableEntryPoint>, start: StartSymbol, symbol: TraversalSymbol,
     via: TraceReach): boolean {
     const entries = symbol.entries?.filter((entry) => entry !== 'route-handler') ?? [];
     if (entries.length === 0) return false;
     const key = memberSymbolKey(start.member, start.platform, symbol.usr);
-    const current = target.get(key);
-    const reaches = new Map((current?.reachedFrom ?? []).map((reach) => [reach.from, reach]));
-    keepNearest(reaches, via.from, via);
     const observed = {
       ...(symbol.qualifiedName === undefined ? {} : { qualifiedName: symbol.qualifiedName }),
       ...(symbol.location === undefined ? {} : { location: symbol.location }),
     };
-    const prior = current === undefined ? undefined : {
-      ...(current.qualifiedName === undefined ? {} : { qualifiedName: current.qualifiedName }),
-      ...(current.location === undefined ? {} : { location: current.location }),
-    };
+    const observedKey = canonicalJsonKey(observed);
+    const current = target.get(key);
+    if (current === undefined) {
+      target.set(key, { platform: start.platform, usr: symbol.usr, member: this.memberField(start.member), metadata: observed,
+        metadataKey: observedKey, entries: new Set(entries), reachedFrom: new Map([[via.from, via]]) });
+      return true;
+    }
     // 다른 분석이 같은 id의 부가 정보를 달리 신고해도 입력 순서에 기대지 않는다. freshness 공백은 별도로 유지한다.
-    const metadata = prior === undefined || compareStrings(canonicalJsonKey(observed), canonicalJsonKey(prior)) < 0 ? observed : prior;
-    target.set(key, { platform: start.platform, usr: symbol.usr, ...this.memberField(start.member), ...metadata,
-      entries: [...new Set([...(current?.entries ?? []), ...entries])].sort(compareStrings),
-      reachedFrom: [...reaches.values()].sort((left, right) => compareStrings(left.from, right.from)),
-    });
+    if (compareStrings(observedKey, current.metadataKey) < 0) {
+      current.metadata = observed;
+      current.metadataKey = observedKey;
+    }
+    for (const entry of entries) current.entries.add(entry);
+    keepNearest(current.reachedFrom, via.from, via);
     return true;
   }
 
@@ -894,17 +967,20 @@ class TraceBuilder {
     { hop: TraceRouteHop; declFacts: RouteDeclarationFact[] } | undefined {
     const { scope } = linked;
     const key = routeKey(scope.scope, method, template);
-    const pick = (facts: readonly RouteDeclarationFact[]) => facts.filter(({ declaration }) =>
-      declaration.method === method && declaration.template === template);
-    const declAll = pick(scope.decls);
-    const contractAll = pick(scope.contracts);
+    const index = this.routeIndex(linked);
+    const { decls: declAll, contracts: contractAll } = index.facts.get(routeFactsKey(method, template)) ?? { decls: [], contracts: [] };
     if (declAll.length === 0 && contractAll.length === 0) return undefined;
     const declFacts = declAll.filter(({ testSource }) => !testSource);
     let testSources = declAll.length - declFacts.length;
     const declIds = new Set(declFacts.map(({ declaration }) => declaration.id));
     const contractIds = new Set(contractAll.map(({ declaration }) => declaration.id));
+    // 이 route의 선언·계약을 matched·ambiguous 대상으로 가리키는 호출만 원래 순서로 본다. 나머지 호출은 아래 판정에서
+    // matched도 ambiguous도 아니라 건너뛰므로 결과가 같다.
+    const targeted = new Set<number>();
+    for (const id of declIds) for (const callIndex of index.callsByTarget.decl.get(id) ?? []) targeted.add(callIndex);
+    for (const id of contractIds) for (const callIndex of index.callsByTarget.contract.get(id) ?? []) targeted.add(callIndex);
     const calls: TraceCallHop[] = [];
-    for (const call of scope.calls) {
+    for (const call of [...targeted].sort((left, right) => left - right).map((callIndex) => scope.calls[callIndex]!)) {
       const matched = (['decl', 'contract'] as const).flatMap((side) => {
         const outcome = call[side];
         return outcome?.status === 'matched' &&
@@ -942,6 +1018,38 @@ class TraceBuilder {
       },
       declFacts,
     };
+  }
+
+  /**
+   * scope 하나의 route hop 색인이다. 그 scope의 첫 route hop 때 선언 측 사실과 호출을 한 번씩만 훑어 만든다 — route
+   * 선택·역방향으로 닿은 route·따라간 upstream route마다 scope 전체를 다시 훑지 않게 한다.
+   */
+  private routeIndex(linked: TraceLinkedScope): ScopeRouteIndex {
+    const cached = this.routeIndexes.get(linked);
+    if (cached !== undefined) return cached;
+    const facts = new Map<string, RouteKeyFacts>();
+    const entry = ({ declaration }: RouteDeclarationFact): RouteKeyFacts => {
+      const key = routeFactsKey(declaration.method, declaration.template);
+      let found = facts.get(key);
+      if (found === undefined) {
+        found = { decls: [], contracts: [] };
+        facts.set(key, found);
+      }
+      return found;
+    };
+    for (const fact of linked.scope.decls) entry(fact).decls.push(fact);
+    for (const fact of linked.scope.contracts) entry(fact).contracts.push(fact);
+    const callsByTarget = { decl: new Map<number, number[]>(), contract: new Map<number, number[]>() };
+    linked.scope.calls.forEach((call, callIndex) => {
+      for (const side of ['decl', 'contract'] as const) {
+        const outcome = call[side];
+        if (outcome?.status !== 'matched' && outcome?.status !== 'ambiguous') continue;
+        for (const { id } of outcome.targets) appendTo(callsByTarget[side], id, callIndex);
+      }
+    });
+    const index = { facts, callsByTarget };
+    this.routeIndexes.set(linked, index);
+    return index;
   }
 
   /** route hop 하나에 딸린 scope 수준 공백(테스트 소스, 호출 측 미스캔, 미귀속·동적 호출)이다. */
@@ -984,6 +1092,7 @@ class TraceBuilder {
       return { affected: [] };
     }
     const affected = affectedRows(this.rootedRows(selector, member, 'reverse', endpoint.platform, usr));
+    this.reserve(1 + affected.length);
     spend(1 + affected.length);
     const routes = this.upstreamRoutes(selector, member, endpoint.platform,
       [{ usr, depth: 0 }, ...affected.map((row) => ({ usr: row.usr, depth: row.depth }))], upstream);
@@ -1117,6 +1226,7 @@ class TraceBuilder {
     const hits = entries.flatMap(({ consumer }) => this.rootedRows(selector, library.consumer, 'reverse', platform, consumer));
     const declaresApi = library.ids === 'symbol-map' || library.publicSymbols !== undefined;
     const affected = affectedRows(hits);
+    this.reserve(affected.length + entries.length);
     // consumer root는 SDK 심볼 id(앱 코드가 아니다)라 도달 행만 본다.
     const routes = this.upstreamRoutes(selector, library.consumer, platform,
       affected.map((row) => ({ usr: row.usr, depth: row.depth })), upstream);
@@ -1210,10 +1320,11 @@ class TraceBuilder {
     }
     return [...vertices.values()]
       .sort((left, right) => compareStrings(left.member, right.member) || compareStrings(left.vertex, right.vertex))
-      .map(({ member, vertex }) => ({
-        vertex, ...this.memberField(member),
-        dependents: affectedRows(this.rootedRows(selector, member, 'db-dependents', 'sql', vertex)),
-      }));
+      .map(({ member, vertex }) => {
+        const dependents = affectedRows(this.rootedRows(selector, member, 'db-dependents', 'sql', vertex));
+        this.reserve(1 + dependents.length);
+        return { vertex, ...this.memberField(member), dependents };
+      });
   }
 
   /**
@@ -1233,9 +1344,9 @@ class TraceBuilder {
           detail: `The producer truncated this traversal${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}; `
             + 'reached symbols may be missing.' });
       }
-      // 잘린 목록은 가장 작은 인덱스 64개를 싣는다. 마지막 인덱스보다 큰 root만 빠졌을 수 있다.
-      if (graph.rootsTruncated && graph.reached.some(({ roots }) =>
-        roots.length === MAX_ROOTS_PER_REACHED && rootIndex > roots[roots.length - 1]!)) {
+      // 잘린 목록은 가장 작은 인덱스 64개를 싣는다. 마지막 인덱스보다 큰 root만 빠졌을 수 있다 — 어느 잘린 목록에서든
+      // 빠졌는지는 마지막 인덱스의 최솟값과 한 번 비교하는 것과 같다.
+      if (graph.rootsTruncated && rootIndex > this.cappedRootIndex.get(analysis)!) {
         this.gap({ code: 'analysis-truncated', selector, analysis: analysis.id,
           detail: 'Root attribution was capped at 64 roots per symbol; some symbols reached from this root may be missing.' });
       }
@@ -1477,10 +1588,7 @@ class TraceBuilder {
       decls: (match?.decls ?? []).map((decl) => this.endpoint(member.key, decl)), outcome,
       ...(resolution?.status === 'ambiguous' ? { candidates: resolution.candidates } : {}) };
     this.uses.push(record);
-    if (record.usr !== undefined) {
-      const key = memberSymbolKey(record.member, record.platform, record.usr);
-      this.usesBySymbol.set(key, [...(this.usesBySymbol.get(key) ?? []), record]);
-    }
+    if (record.usr !== undefined) appendTo(this.usesBySymbol, memberSymbolKey(record.member, record.platform, record.usr), record);
   }
 
   /** route-decl 핸들러 (server member, usr)별 선언 사실 색인이다. 테스트 소스 decl은 역방향 체인에서 뺀다. */
@@ -1490,8 +1598,7 @@ class TraceBuilder {
       for (const fact of linked.scope.decls) {
         const usr = fact.endpoint.symbol?.usr;
         if (usr === undefined || fact.testSource) continue;
-        const key = memberSymbolKey(linked.server, fact.endpoint.platform, usr);
-        this.declsByHandler.set(key, [...(this.declsByHandler.get(key) ?? []), { scope: linked, fact }]);
+        appendTo(this.declsByHandler, memberSymbolKey(linked.server, fact.endpoint.platform, usr), { scope: linked, fact });
       }
     }
   }
@@ -1500,39 +1607,42 @@ class TraceBuilder {
   private indexAnalyses(): void {
     for (const analysis of [...this.input.analyses].sort((left, right) => compareStrings(left.id, right.id))) {
       const byRoot = new Map<number, TraversalReached[]>();
+      let capped = Infinity;
       for (const row of analysis.graph.reached) {
-        for (const index of row.roots) byRoot.set(index, [...(byRoot.get(index) ?? []), row]);
+        const { roots } = row;
+        for (const index of roots) appendTo(byRoot, index, row);
+        if (roots.length === MAX_ROOTS_PER_REACHED) capped = Math.min(capped, roots[roots.length - 1]!);
       }
       this.rowsByRoot.set(analysis, byRoot);
+      this.cappedRootIndex.set(analysis, capped);
       analysis.graph.roots.forEach(({ id, symbol }, rootIndex) => {
         const key = JSON.stringify([analysis.member ?? '', analysis.role, analysis.platform, id]);
         // 심볼이 아닌 root(파일 선택, 생산자가 해석하지 못한 요청)는 생산자 id 조인 대상이 아니다. library 연속만 "생산자가
         // 그 노드를 찾지 못했다"는 신고로 따로 기억한다.
         if (symbol === undefined) {
-          this.missingRoots.set(key, [...(this.missingRoots.get(key) ?? []), analysis.id]);
+          appendTo(this.missingRoots, key, analysis.id);
           return;
         }
-        this.roots.set(key, [...(this.roots.get(key) ?? []), { analysis, rootIndex }]);
+        appendTo(this.roots, key, { analysis, rootIndex });
       });
     }
   }
 
-  /** 핸들러 hop을 합친다. route 키와 도달 근거는 중복 없이 모은다. */
-  private addHandler(handlers: Map<string, TraceHandlerHop>, member: string, platform: BridgePlatform, usr: string,
+  /**
+   * 핸들러 hop을 합친다. route 키와 도달 근거는 중복 없이 모으고, qualifiedName은 처음 알려진 값을 지킨다. 체인이 끝날
+   * 때 {@link finishHandlers}가 한 번 정렬한다 — 합칠 때마다 목록을 다시 만들어 정렬하면 시작점 수에 대해 이차다.
+   */
+  private addHandler(handlers: Map<string, MutableHandler>, member: string, platform: BridgePlatform, usr: string,
     qualifiedName: string | undefined, route: TraceRouteKey, reach: TraceReach | undefined): void {
     const key = memberSymbolKey(member, platform, usr);
-    const existing = handlers.get(key);
-    const routes = new Map((existing?.routes ?? []).map((item) => [JSON.stringify(item), item]));
-    routes.set(JSON.stringify(route), route);
-    const reached = new Map((existing?.reachedFrom ?? []).map((item) => [item.from, item]));
-    if (reach !== undefined) keepNearest(reached, reach.from, reach);
-    const name = existing?.qualifiedName ?? qualifiedName;
-    handlers.set(key, {
-      platform, usr, ...this.memberField(member),
-      ...(name === undefined ? {} : { qualifiedName: name }),
-      routes: [...routes.values()].sort(compareRouteKeys),
-      reachedFrom: [...reached.values()].sort((left, right) => compareStrings(left.from, right.from)),
-    });
+    let entry = handlers.get(key);
+    if (entry === undefined) {
+      entry = { platform, usr, member: this.memberField(member), qualifiedName, routes: new Map(), reachedFrom: new Map() };
+      handlers.set(key, entry);
+    }
+    entry.qualifiedName ??= qualifiedName;
+    entry.routes.set(JSON.stringify(route), route);
+    if (reach !== undefined) keepNearest(entry.reachedFrom, reach.from, reach);
   }
 
   /** 조인 끝점을 출력 끝점으로 바꾼다. workspace면 member를 붙인다. */
@@ -1554,8 +1664,9 @@ class TraceBuilder {
     target.set(key, cleaned);
   }
 
-  /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. */
+  /** 체인이 싣는 항목 수를 세고 상한을 넘으면 실패한다. 조립 중에 미리 센 영향 행은 여기서 다시 세므로 되돌린다. */
   private count(chain: TraceChain): TraceChain {
+    this.pendingItems = 0;
     this.witnessGaps(chain);
     this.candidateGaps(chain);
     const affected = (rows: readonly { affected: readonly unknown[] }[]) => rows.reduce((sum, row) => sum + row.affected.length, 0);
@@ -1653,9 +1764,7 @@ class TraceBuilder {
   private candidateListGaps(rows: readonly TraceAffected[], emit: (analysis: string, detail: string) => void,
     noun: 'client' | 'database'): void {
     const byAnalysis = new Map<string, string[]>();
-    for (const row of rows) {
-      if (row.evidence === 'candidate') byAnalysis.set(row.analysis, [...(byAnalysis.get(row.analysis) ?? []), row.usr]);
-    }
+    for (const row of rows) if (row.evidence === 'candidate') appendTo(byAnalysis, row.analysis, row.usr);
     for (const [analysis, usrs] of [...byAnalysis.entries()].sort(([left], [right]) => compareStrings(left, right))) {
       emit(analysis, `${usrs.length} ${noun} symbol(s) are reached from this root only through possible-implementation `
         + `dispatch edges (candidate evidence) and may not actually be affected (e.g. ${examples(usrs)}).`);
@@ -1664,8 +1773,23 @@ class TraceBuilder {
 
   private bump(items: number): void {
     this.outputItems += items;
-    if (this.outputItems > MAX_TRACE_OUTPUT_ITEMS) {
-      throw new TraceInputError(`Trace output exceeds ${MAX_TRACE_OUTPUT_ITEMS} items; narrow the selection and retry. `
+    this.checkOutputItems();
+  }
+
+  /**
+   * 체인을 조립하는 중에 방금 만든 영향 행 수를 미리 센다. 상한 검사를 체인이 끝난 뒤({@link count})까지 미루면 상한을
+   * 넘는 입력이 출력 크기만큼(GB 단위) 메모리를 쓰거나 힙 부족으로 죽은 뒤에야 실패한다. 미리 센 수는 최종 수의
+   * 하한이라 실패 여부·문구는 그대로이고, 처음 상한을 넘긴 hop에서 시점만 당겨진다.
+   */
+  private reserve(items: number): void {
+    this.pendingItems += items;
+    this.checkOutputItems();
+  }
+
+  /** 센 항목과 조립 중에 미리 센 항목의 합이 상한을 넘으면 부분 결과 없이 실패한다. */
+  private checkOutputItems(): void {
+    if (this.outputItems + this.pendingItems > this.maxOutputItems) {
+      throw new TraceInputError(`Trace output exceeds ${this.maxOutputItems} items; narrow the selection and retry. `
         + 'No partial trace is emitted.');
     }
   }
@@ -1801,9 +1925,47 @@ function finishUses(uses: ReadonlyMap<string, MutableUse>): TraceRelationUseHop[
   });
 }
 
-/** 핸들러 hop을 (member, 플랫폼, usr) 순으로 정렬한다. */
-function sortHandlers(handlers: ReadonlyMap<string, TraceHandlerHop>): TraceHandlerHop[] {
-  return valuesSortedByKey(handlers);
+/** 조립 중인 핸들러 hop이다. route 키(직렬화)와 시작점별 도달 근거를 모은다. */
+interface MutableHandler {
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  /** workspace면 `{member}`, 단일 project면 빈 객체다. */
+  readonly member: { member?: string };
+  qualifiedName: string | undefined;
+  readonly routes: Map<string, TraceRouteKey>;
+  readonly reachedFrom: Map<string, TraceReach>;
+}
+
+/** 조립한 핸들러 hop을 (member, 플랫폼, usr) 순으로 확정한다. route는 route 키 순, 도달 근거는 시작점 순이다. */
+function finishHandlers(handlers: ReadonlyMap<string, MutableHandler>): TraceHandlerHop[] {
+  return valuesSortedByKey(handlers).map(({ platform, usr, member, qualifiedName, routes, reachedFrom }) => ({
+    platform, usr, ...member,
+    ...(qualifiedName === undefined ? {} : { qualifiedName }),
+    routes: [...routes.values()].sort(compareRouteKeys),
+    reachedFrom: [...reachedFrom.values()].sort((left, right) => compareStrings(left.from, right.from)),
+  }));
+}
+
+/** 조립 중인 비HTTP 진입점 hop이다. 부가 정보는 지금까지 관찰한 것 중 정렬 JSON이 가장 작은 것이다. */
+interface MutableEntryPoint {
+  readonly platform: BridgePlatform;
+  readonly usr: string;
+  /** workspace면 `{member}`, 단일 project면 빈 객체다. */
+  readonly member: { member?: string };
+  metadata: Readonly<{ qualifiedName?: string; location?: TraversalLocation }>;
+  /** `metadata`의 {@link canonicalJsonKey}다. 관찰마다 다시 계산하지 않으려고 둔다. */
+  metadataKey: string;
+  readonly entries: Set<TraversalEntryKind>;
+  readonly reachedFrom: Map<string, TraceReach>;
+}
+
+/** 조립한 진입점 hop을 (member, 플랫폼, usr) 순으로 확정한다. 표식은 이름 순, 도달 근거는 시작점 순이다. */
+function finishEntryPoints(entryPoints: ReadonlyMap<string, MutableEntryPoint>): TraceEntryPointHop[] {
+  return valuesSortedByKey(entryPoints).map(({ platform, usr, member, metadata, entries, reachedFrom }) => ({
+    platform, usr, ...member, ...metadata,
+    entries: [...entries].sort(compareStrings),
+    reachedFrom: [...reachedFrom.values()].sort((left, right) => compareStrings(left.from, right.from)),
+  }));
 }
 
 /** 같은 정점에 여러 도달이 있으면 (depth, analysis) 최솟값 하나만 남긴다. */
@@ -1902,6 +2064,26 @@ function libraryTranslation(library: TraceLibrary): (provider: string) => string
 /** 호출 하나의 클라이언트 영향과 library consumer 영향 행 전부다. */
 function consumerAndClientRows(call: TraceCallHop): TraceAffected[] {
   return [...call.affected, ...(call.consumers ?? []).flatMap(({ affected }) => affected)];
+}
+
+/**
+ * 키의 목록 끝에 값을 더한다(추가 순서 유지). 목록을 매번 복사하면 같은 키에 n개를 더할 때 O(n²)이라, root 하나에
+ * 정점이 몰리는 큰 다중 root 분석의 색인만으로 수 분이 걸린다. 색인을 다 만든 뒤에만 목록을 읽으므로 제자리에 더한다.
+ */
+function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list === undefined) map.set(key, [value]);
+  else list.push(value);
+}
+
+/** 시작 심볼의 체인 키다. */
+function startKey(start: StartSymbol): string {
+  return memberSymbolKey(start.member, start.platform, start.usr);
+}
+
+/** scope route 색인의 (method, template) 키다. */
+function routeFactsKey(method: RouteMethod, template: string): string {
+  return JSON.stringify([method, template]);
 }
 
 /** 시작 심볼 중복을 제거하고 정렬한다. */

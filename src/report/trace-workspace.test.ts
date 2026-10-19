@@ -542,6 +542,13 @@ test('consumer 앱의 자기 route 핸들러에도 library hop에서 upstream ro
   assert.equal(result.summary.upstreamRoutes, 1);
 });
 
+test('library consumer hop의 영향 행과 진입 쌍도 출력 상한 경계에 체인을 다 센 수 그대로 든다', () => {
+  const input = { ...build(libraryFixture), surfaces: new Map([['api', librarySurface]]) };
+  // route 체인 9개 + 10개(route hop 3씩, 호출 hop 1 + 영향 1, consumer 영향 2·3개, 진입 쌍 2개씩)와 gap 2개다.
+  assert.equal(encodeSortedJson(createTraceReport(input, { maxOutputItems: 21 })), encodeSortedJson(createTraceReport(input)));
+  assert.throws(() => createTraceReport(input, { maxOutputItems: 20 }), /Trace output exceeds 20 items/);
+});
+
 /** TRACE.md gap 표의 코드 목록이다. 문서와 음성 fixture 목록이 어긋나면 이 테스트가 실패한다. */
 const documentedCodes = (await readFile(new URL('../../docs/TRACE.md', import.meta.url), 'utf8'))
   .split('\n').flatMap((line) => /^\| `([a-z-]+)` \|/u.exec(line)?.[1] ?? []).sort();

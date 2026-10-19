@@ -83,16 +83,14 @@ export function tokenizeJsSource(source: string): JsToken[] {
   let line = 1;
   let columnOffset = 0;
   let byteColumn = 1;
+  // 토큰마다 조건부 스프레드로 임시 객체를 만들면 추출 시간의 큰 몫을 차지한다 —
+  // 키 집합과 순서가 같은 고정 리터럴 두 개로 만든다.
   const push = (kind: JsTokenKind, start: number, startLine: number,
     startColumn: number, value?: string): void => {
-    tokens.push({
-      kind,
-      text: source.slice(start, index),
-      ...(value === undefined ? {} : { value }),
-      offset: start,
-      line: startLine,
-      column: startColumn,
-    });
+    const text = source.slice(start, index);
+    tokens.push(value === undefined
+      ? { kind, text, offset: start, line: startLine, column: startColumn }
+      : { kind, text, value, offset: start, line: startLine, column: startColumn });
   };
   const advance = (end: number): void => {
     while (index < end) {
@@ -143,16 +141,17 @@ export function tokenizeJsSource(source: string): JsToken[] {
       push('other', start, startLine, startColumn);
       continue;
     }
+    // 리터럴 읽기가 끝 위치를 잘못 주더라도 한 글자는 전진해 같은 위치를 다시 읽지 않는다.
     if (char === '\'' || char === '"') {
       const value = readQuoted(source, index, char);
-      advance(value.end);
+      advance(Math.max(value.end, start + 1));
       if (value.closed) push('string', start, startLine, startColumn, value.text);
       else push('other', start, startLine, startColumn);
       continue;
     }
     if (char === '`') {
       const template = readTemplate(source, index);
-      advance(template.end);
+      advance(Math.max(template.end, start + 1));
       push('template', start, startLine, startColumn, template.value);
       continue;
     }
@@ -214,7 +213,8 @@ function readQuoted(
     if (char === '\\') {
       const escaped = cookEscape(source, cursor);
       text += escaped.text;
-      cursor = escaped.end;
+      // 이스케이프 해석이 커서를 되돌리거나 세우면 같은 위치를 끝없이 다시 읽는다.
+      cursor = Math.max(escaped.end, cursor + 1);
       continue;
     }
     if (char === quote) return { end: cursor + 1, closed: true, text };
@@ -243,7 +243,7 @@ function readTemplate(
     if (char === '\\') {
       const escaped = cookEscape(source, cursor);
       text += escaped.text;
-      cursor = escaped.end;
+      cursor = Math.max(escaped.end, cursor + 1);
       continue;
     }
     if (char === '`') {
@@ -260,17 +260,47 @@ function readTemplate(
   return { end: cursor, ...(interpolated ? {} : { value: text }) };
 }
 
-/** `${` 뒤의 보간 본문을 중괄호 균형으로 건너뛰어 닫는 `}` 다음을 돌려준다. */
+/**
+ * 보간 건너뛰기가 지금 읽는 문맥이다. 보간 본문은 중괄호 깊이를, 그 안의 문자열
+ * 계열 리터럴(따옴표·중첩 템플릿)은 닫는 따옴표를 기억한다.
+ */
+type InterpolationFrame =
+  | { readonly kind: 'interpolation'; depth: number }
+  | { readonly kind: 'quoted'; readonly quote: string };
+
+/**
+ * `${` 뒤의 보간 본문을 중괄호 균형으로 건너뛰어 닫는 `}` 다음을 돌려준다.
+ *
+ * 보간 안의 문자열과 중첩 템플릿, 그 안의 보간은 명시적 스택으로 따라간다 —
+ * 중첩마다 재귀하면 수천 단계로 중첩된 템플릿 파일 하나가 호출 스택을 넘긴다.
+ * 닫히지 않으면 소스 끝을 돌려준다.
+ */
 function skipInterpolation(source: string, start: number): number {
-  let depth = 1;
+  const frames: InterpolationFrame[] = [{ kind: 'interpolation', depth: 1 }];
   let cursor = start;
-  while (cursor < source.length && depth > 0) {
+  while (cursor < source.length && frames.length > 0) {
+    const frame = frames[frames.length - 1]!;
     const char = source[cursor]!;
-    if (char === '{') depth++;
-    else if (char === '}') depth--;
-    else if (char === '\'' || char === '"' || char === '`') {
-      cursor = skipStringLike(source, cursor, char);
+    if (frame.kind === 'quoted') {
+      // 문자열 계열 리터럴은 통째로 건너뛴다 — 줄바꿈에서도 멈추지 않는다.
+      if (char === '\\') {
+        cursor += 2;
+      } else if (frame.quote === '`' && char === '$' && source[cursor + 1] === '{') {
+        frames.push({ kind: 'interpolation', depth: 1 });
+        cursor += 2;
+      } else {
+        if (char === frame.quote) frames.pop();
+        cursor++;
+      }
       continue;
+    }
+    if (char === '{') frame.depth++;
+    else if (char === '}') {
+      frame.depth--;
+      if (frame.depth === 0) frames.pop();
+    }
+    else if (char === '\'' || char === '"' || char === '`') {
+      frames.push({ kind: 'quoted', quote: char });
     }
     // 보간 안의 주석도 중괄호 깊이에 섞이면 안 된다.
     else if (char === '/' && source[cursor + 1] === '/') {
@@ -282,22 +312,6 @@ function skipInterpolation(source: string, start: number): number {
       cursor = close === -1 ? source.length : close + 2;
       continue;
     }
-    cursor++;
-  }
-  return cursor;
-}
-
-/** 보간 안의 문자열 계열 리터럴을 통째로 건너뛴다. */
-function skipStringLike(source: string, start: number, quote: string): number {
-  let cursor = start + 1;
-  while (cursor < source.length) {
-    const char = source[cursor]!;
-    if (char === '\\') { cursor += 2; continue; }
-    if (quote === '`' && char === '$' && source[cursor + 1] === '{') {
-      cursor = skipInterpolation(source, cursor + 2);
-      continue;
-    }
-    if (char === quote) return cursor + 1;
     cursor++;
   }
   return cursor;
@@ -322,16 +336,16 @@ function cookEscape(
     }
   }
   if (char === 'u') {
-    const braced = source[start + 2] === '{'
-      ? source.slice(start + 3, source.indexOf('}', start + 3))
-      : source.slice(start + 2, start + 6);
-    if (/^[0-9A-Fa-f]+$/.test(braced)) {
-      const code = parseInt(braced, 16);
+    // 닫는 `}`가 없는 `\u{`는 알 수 없는 이스케이프다 — 없음(-1)으로 끝 위치를
+    // 계산하면 커서가 소스 앞쪽으로 돌아가 같은 리터럴을 끝없이 다시 읽는다.
+    const isBraced = source[start + 2] === '{';
+    const close = isBraced ? bracedEscapeClose(source, start + 3) : start + 6;
+    const digits = close === -1 ? '' : source.slice(isBraced ? start + 3 : start + 2, close);
+    if (/^[0-9A-Fa-f]+$/.test(digits)) {
+      const code = parseInt(digits, 16);
       if (code <= 0x10FFFF) {
         return {
-          end: source[start + 2] === '{'
-            ? source.indexOf('}', start + 3) + 1
-            : start + 6,
+          end: isBraced ? close + 1 : close,
           text: String.fromCodePoint(code),
         };
       }
@@ -339,4 +353,21 @@ function cookEscape(
   }
   // 알려지지 않은 이스케이프는 문자 그대로다(ES에서 '\'는 사라진다).
   return { end: start + 2, text: char };
+}
+
+/**
+ * `\u{` 뒤 `from`부터 16진수 구간을 읽고, 바로 다음 글자가 `}`면 그 위치를, 아니면 -1을 돌려준다.
+ *
+ * 첫 `}`를 소스 끝까지 찾지 않는다 — 닫히지 않은 `\u{`마다 나머지 소스를 훑으면 토큰화가 입력 크기의
+ * 이차가 된다. `}`는 16진수가 아니므로 "첫 `}`까지가 모두 16진수"라는 판정과 결과가 같다.
+ */
+function bracedEscapeClose(source: string, from: number): number {
+  let cursor = from;
+  while (cursor < source.length && isHexDigit(source[cursor]!)) cursor++;
+  return source[cursor] === '}' ? cursor : -1;
+}
+
+/** 16진수 숫자 한 글자다. */
+function isHexDigit(char: string): boolean {
+  return /[0-9A-Fa-f]/.test(char);
 }

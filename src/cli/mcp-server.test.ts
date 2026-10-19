@@ -3,7 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { createMcpSession } from './mcp-server.ts';
+import { runPreflightCommand } from './preflight-command.ts';
 
 const dartPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/dart.json', import.meta.url),
@@ -342,6 +345,146 @@ test('거절 응답은 검출 가능한 스칼라 id를 에코한다', async () 
   );
   assert.equal(nonScalar.error.code, -32600);
   assert.equal(nonScalar.id, null);
+});
+
+test('도구의 경로 인자가 `-`로 시작해도 경로로만 읽고 스키마에 없는 CLI 플래그를 열지 않는다', async () => {
+  // 읽은 경로를 기록해 플래그로 소비됐는지 가린다. MCP에는 쓰기 도구가 없으므로 주입된 writer는 불리면 안 된다.
+  const fixtures = new Map([
+    [dartPath, await readFile(dartPath, 'utf8')],
+    [swiftPath, await readFile(swiftPath, 'utf8')],
+  ]);
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const guarded = createMcpSession({
+    readTextFile: async (path) => {
+      reads.push(path);
+      const text = fixtures.get(path);
+      if (text === undefined) throw new Error('missing fixture');
+      return text;
+    },
+    writeTextFile: async (path) => { writes.push(path); },
+    producerVersion: '0.0.0-test',
+  });
+  const bridgeInput = (position: number) => new RegExp(`^Unable to read bridge facts input ${position};`, 'u');
+  const cases: [string, Record<string, unknown>, string, RegExp][] = [
+    ['check', { documents: ['--update-baseline', 'baseline.json', dartPath, swiftPath] }, '--update-baseline', bridgeInput(1)],
+    ['check', { documents: [dartPath, swiftPath, '--update-baseline', 'baseline.json'] }, '--update-baseline', bridgeInput(3)],
+    ['check', { documents: ['--baseline', 'baseline.json', dartPath, swiftPath] }, '--baseline', bridgeInput(1)],
+    ['check', { documents: ['--format', 'sarif', dartPath, swiftPath] }, '--format', bridgeInput(1)],
+    ['check', { documents: ['--pairs', dartPath, swiftPath] }, '--pairs', bridgeInput(1)],
+    ['check', { documents: ['--', dartPath, swiftPath] }, '--', bridgeInput(1)],
+    ['graph', { documents: ['--format', 'dot', dartPath, swiftPath] }, '--format', bridgeInput(1)],
+    ['impact', { documents: ['--runtime', 'runtime.json', dartPath, swiftPath], file: 'lib/a.dart' }, '--runtime',
+      bridgeInput(1)],
+    ['retentions', { documents: ['--for', 'kartograph', dartPath, swiftPath], producer: 'cartograph' }, '--for',
+      bridgeInput(1)],
+    ['preflight', { context: '--strict' }, '--strict', /^Unable to read preflight context;/u],
+    ['trace', { context: '--compact' }, '--compact', /^Unable to read the trace context;/u],
+  ];
+  for (const [index, [name, args, flag, message]] of cases.entries()) {
+    reads.length = 0;
+    const response = JSON.parse(
+      (await guarded.handleLine(request(200 + index, 'tools/call', { name, arguments: args })))!,
+    );
+    const label = `${name} ${JSON.stringify(args)}`;
+    assert.equal(response.result?.isError, true, label);
+    assert.ok(reads.includes(flag), `${label} reads ${flag} as a path`);
+    assert.match(response.result.content[0].text, message, label);
+  }
+  assert.deepEqual(writes, []);
+
+  // query 이름도 위치 인수다. `-`로 시작하는 이름은 사용법 오류가 아니라 찾지 못한 이름으로 답한다.
+  const query = JSON.parse((await guarded.handleLine(request(250, 'tools/call', {
+    name: 'query', arguments: { name: '--strict', documents: [dartPath, swiftPath] },
+  })))!);
+  assert.equal(query.result.isError, false);
+  assert.equal(JSON.parse(query.result.content[0].text).status, 'notFound');
+});
+
+test('tools/call preflight는 runtime 경로도 context 뒤의 위치 인수로만 넘긴다', async () => {
+  // runtime 배열도 `--` 뒤에 둔다. 정상 경로는 CLI와 같은 문서이고, `-`로 시작하는 원소는 `--compact` 같은 플래그로
+  // 소비되지 않고 runtime 경로로 읽혀 실패한다. 기대 파일을 먼저 읽으므로 첫 runtime 경로는 runtime 입력 2번이다.
+  const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/preflight/${name}`, import.meta.url));
+  const contextFile = fixture('context.json');
+  const expectationsFile = fixture('expectations.json');
+  const runtimeFile = fixture('runtime.json');
+  const call = async (id: number, runtime: readonly string[]) => JSON.parse((await session.handleLine(request(id,
+    'tools/call', { name: 'preflight', arguments: { context: contextFile, expectations: expectationsFile, runtime,
+      compact: true } })))!);
+  const cli = await runPreflightCommand(['preflight', contextFile, runtimeFile, '--expectations', expectationsFile,
+    '--compact'], (path) => readFile(path, 'utf8'));
+  assert.equal(cli.exitCode, 0);
+  const observed = await call(255, [runtimeFile]);
+  assert.equal(observed.result.isError, false);
+  assert.equal(observed.result.content[0].text, cli.standardOutput);
+  assert.equal(JSON.parse(observed.result.content[0].text).runtime.verification.status, 'passed');
+  const injected = await call(256, ['--compact']);
+  assert.equal(injected.result.isError, true);
+  assert.match(injected.result.content[0].text, /Unable to read runtime input 2;/u);
+});
+
+test('tools/call diff는 before·after에 합계 상한 하나와 전체 입력 순번을 적용해 isError로 알린다', async () => {
+  // 파일마다 파일 상한(16Mi)과 같은 길이다. 합계 64Mi는 after의 세 번째, 전체 다섯 번째 입력에서 넘는다.
+  const [dart, swift] = (await Promise.all([readFile(dartPath, 'utf8'), readFile(swiftPath, 'utf8')]))
+    .map((text) => text.padEnd(16 * 1024 * 1024, ' '));
+  const contents = new Map([['b1', dart!], ['b2', swift!], ['a1', dart!], ['a2', swift!], ['a3', dart!], ['broken', '{']]);
+  const diffSession = createMcpSession({
+    readTextFile: async (path) => contents.get(path)!,
+    producerVersion: '0.0.0-test',
+  });
+  const call = async (id: number, after: readonly string[]) => JSON.parse((await diffSession.handleLine(
+    request(id, 'tools/call', { name: 'diff', arguments: { before: ['b1', 'b2'], after } }),
+  ))!);
+  const overBudget = await call(260, ['a1', 'a2', 'a3']);
+  assert.equal(overBudget.result.isError, true);
+  assert.match(overBudget.result.content[0].text, /^Bridge facts input 5 exceeds the input size limits;/u);
+  const broken = await call(261, ['broken', 'a2']);
+  assert.equal(broken.result.isError, true);
+  assert.match(broken.result.content[0].text, /^Bridge facts input 3 is not valid JSON;/u);
+});
+
+test('serve 리더가 상한을 넘을 수밖에 없는 파일을 읽기 전에 거부하면 도구는 그 입력의 크기 상한 문구로 답한다', async () => {
+  // serve의 일반 파일 리더는 호출부가 넘긴 UTF-16 상한의 3배 바이트를 넘는 파일을 읽지 않고 limit으로 거부한다.
+  // 도구는 그것을 읽기 실패가 아니라, 다 읽었다면 걸렸을 길이 검사와 같은 크기 상한 실패로 답해야 한다.
+  const fixture = (path: string) => fileURLToPath(new URL(`../../fixtures/${path}`, import.meta.url));
+  let oversized = '';
+  const reads: Array<[string, number | undefined]> = [];
+  const limited = createMcpSession({
+    readTextFile: async (path, maximumLength) => {
+      reads.push([path, maximumLength]);
+      if (path === oversized) throw new BoundedTextReadError('limit');
+      return readFile(path, 'utf8');
+    },
+    producerVersion: '0.0.0-test',
+  });
+  const preflight = { context: fixture('preflight/context.json'), expectations: fixture('preflight/expectations.json') };
+  const cases: Array<[string, Record<string, unknown>, string, RegExp, number]> = [
+    ['check', { documents: [dartPath, '/virtual/huge.json'] }, '/virtual/huge.json',
+      /^Bridge facts input 2 exceeds the input size limits;/u, MAX_INPUT_TEXT_LENGTH],
+    ['impact', { documents: [dartPath, swiftPath], changes: '/virtual/changes.json' }, '/virtual/changes.json',
+      /^Changes input exceeds the input size limit\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['preflight', { context: '/virtual/context.json' }, '/virtual/context.json',
+      /^Preflight context exceeds the input size limit\.\n$/u, MAX_TOTAL_INPUT_TEXT_LENGTH],
+    ['preflight', { ...preflight, runtime: ['/virtual/runtime.json'] }, '/virtual/runtime.json',
+      /Runtime input 2 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: '/virtual/trace.json' }, '/virtual/trace.json',
+      /^Trace context exceeds the input size limit\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: fixture('trace/context.json') }, fixture('trace/server-forward.json'),
+      /^Trace analysis 1 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+    ['trace', { context: fixture('http-surface/client/context.json') }, fixture('http-surface/surfaces/example-api-2.4.surface.json'),
+      /^Trace http surface 1 exceeds the input size limits\.\n$/u, MAX_INPUT_TEXT_LENGTH],
+  ];
+  for (const [index, [name, args, path, message, limit]] of cases.entries()) {
+    oversized = path;
+    reads.length = 0;
+    const response = JSON.parse((await limited.handleLine(request(270 + index, 'tools/call', { name, arguments: args })))!);
+    const label = `${name} ${path}`;
+    assert.equal(response.result?.isError, true, label);
+    assert.match(response.result.content[0].text, message, label);
+    assert.deepEqual(reads.find(([read]) => read === path), [path, limit], label);
+    // serve가 도구로 읽는 입력은 모두 상한을 함께 넘긴다. 상한 없는 읽기는 큰 파일을 통째로 메모리에 올린다.
+    assert.ok(reads.every(([, maximumLength]) => typeof maximumLength === 'number'), label);
+  }
 });
 
 test('tools/call trace는 기본 출력 상한을 적용하고 CLI와 같은 문서를 돌려준다', async () => {

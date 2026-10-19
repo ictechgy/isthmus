@@ -249,7 +249,10 @@ function addConflicts(issues: Map<string, MutableIssue>, scope: RouteScope): voi
     if (fact.narrowed || fact.declaration.catchAllPrefix || fact.testSource || fact.shadow?.kind === 'full') continue;
     const key = JSON.stringify([fact.declaration.anchor, fact.declaration.method, fact.declaration.template,
       fact.constraintsKey]);
-    groups.set(key, [...(groups.get(key) ?? []), fact]);
+    // 같은 키 decl이 많아도 이차 복사가 없게 기존 목록에 더한다(순서 유지).
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [fact]);
+    else group.push(fact);
   }
   for (const group of groups.values()) {
     if (group.length < 2) continue;

@@ -159,12 +159,14 @@ function keyString(key: HttpRouteKey): string {
   return JSON.stringify([key.pathAnchor, key.method, key.template]);
 }
 
-/** 한 측의 정적 선언 사실을 route 키로 묶는다. */
+/** 한 측의 정적 선언 사실을 route 키로 묶는다. 같은 키가 많아도 이차 복사가 없게 기존 목록에 더한다(순서 유지). */
 function groupByKey(facts: readonly RouteDeclarationFact[]): Map<string, RouteDeclarationFact[]> {
   const groups = new Map<string, RouteDeclarationFact[]>();
   for (const fact of facts) {
     const key = keyString(declarationKey(fact.declaration));
-    groups.set(key, [...(groups.get(key) ?? []), fact]);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [fact]);
+    else group.push(fact);
   }
   return groups;
 }

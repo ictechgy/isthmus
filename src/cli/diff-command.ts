@@ -41,7 +41,8 @@ export async function runDiffCommand(
   }
   try {
     const before = await readBridgeInputs(beforePaths, readTextFile);
-    const after = await readBridgeInputs(afterPaths, readTextFile);
+    // after는 before가 쓴 길이에서 합계 예산을 이어 쓰고, 오류 순번도 전체 인수 목록 기준(before 다음)으로 센다.
+    const after = await readBridgeInputs(afterPaths, readTextFile, before.textLength, beforePaths.length + 1);
     const report = createBridgeDiff(
       before.bridges,
       after.bridges,

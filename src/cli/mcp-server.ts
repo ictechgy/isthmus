@@ -253,6 +253,7 @@ const TOOL_NAMES = new Map(TOOL_DEFINITIONS.map((tool) => [tool.name, tool]));
 /** 세션이 외부에 필요로 하는 주입이다. */
 export interface McpServerDependencies {
   readonly readTextFile: ReadTextFile;
+  /** serve가 CLI와 같은 쓰기 경계를 건네는 자리다. 지금 도구는 파일을 쓰지 않으므로 어느 도구에도 넘기지 않는다. */
   readonly writeTextFile?: WriteTextFile | undefined;
   readonly producerVersion?: string | undefined;
 }
@@ -495,6 +496,10 @@ function validateToolArguments(
 /**
  * 도구 인자를 CLI argv로 변환한다. 스키마 검증을 통과한 인자만 들어오지만,
  * selector 조합처럼 스키마로 표현 못 하는 제약은 여기서도 거른다.
+ *
+ * 플래그를 모두 앞에 두고 경로·이름 같은 위치 인수는 `--` 뒤에 둔다. 공유 파서는 `--` 앞의 `-` 접두 인수를
+ * 자리와 관계없이 플래그로 읽으므로, 경로 원소를 그대로 이어 붙이면 스키마에 없는 플래그(`--update-baseline` 등)가
+ * 열린다. diff는 `-` 접두 경로를 사용법 오류로 거부하므로 기존 모양을 유지한다.
  */
 function buildToolArgv(
   toolName: string,
@@ -504,15 +509,17 @@ function buildToolArgv(
     case 'check':
       return withDocuments('check', args, (documents) => [
         ...booleanFlag('--strict', args.strict),
+        '--',
         ...documents,
       ]);
     case 'query':
       return typeof args.name === 'string' && args.name.length > 0
-        ? withDocuments('query', args, (documents) => [args.name as string, ...documents])
+        ? withDocuments('query', args, (documents) => ['--', args.name as string, ...documents])
         : undefined;
     case 'graph':
       return withDocuments('graph', args, (documents) => [
         ...enumFlag('--format', args.format, ['json', 'dot', 'mermaid']),
+        '--',
         ...documents,
       ]);
     case 'diff': {
@@ -536,11 +543,12 @@ function buildToolArgv(
         ...valueFlag('--file', args.file),
         ...valueFlag('--symbol', args.symbol),
         ...valueFlag('--changes', args.changes),
-        ...documents,
         ...valueFlag('--runtime', args.runtime),
         ...valueFlag('--revision', args.revision),
         ...booleanFlag('--strict', args.strict),
         ...booleanFlag('--compact', args.compact),
+        '--',
+        ...documents,
       ]);
     }
     case 'preflight': {
@@ -553,8 +561,6 @@ function buildToolArgv(
       if (runtimePaths === undefined) return undefined;
       const argv = [
         'preflight',
-        args.context,
-        ...runtimePaths,
         ...valueFlag('--expectations', args.expectations),
         ...valueFlag('--revision', args.revision),
         ...booleanFlag('--summary', args.summary),
@@ -564,14 +570,13 @@ function buildToolArgv(
       if (typeof args.limit === 'number' && Number.isInteger(args.limit)) {
         argv.push('--limit', String(args.limit));
       }
-      argv.push(...valueFlag('--explain', args.explain));
+      argv.push(...valueFlag('--explain', args.explain), '--', args.context, ...runtimePaths);
       return argv;
     }
     case 'trace':
       if (typeof args.context !== 'string' || args.context.length === 0) return undefined;
       return [
         'trace',
-        args.context,
         '--max-chains',
         String(typeof args.maxChains === 'number' ? args.maxChains : MCP_TRACE_DEFAULT_CHAINS),
         '--max-rows',
@@ -579,14 +584,17 @@ function buildToolArgv(
         ...booleanFlag('--strict', args.strict),
         ...booleanFlag('--compact', args.compact),
         ...(typeof args.upstreamDepth === 'number' ? ['--upstream-depth', String(args.upstreamDepth)] : []),
+        '--',
+        args.context,
       ];
     case 'retentions':
       if (args.producer !== 'cartograph' && args.producer !== 'kartograph') return undefined;
       const retentionTarget = args.producer;
       return withDocuments('retentions', args, (documents) => [
-        ...documents,
         '--for',
         retentionTarget,
+        '--',
+        ...documents,
       ]);
     default:
       return undefined;
@@ -636,10 +644,12 @@ async function runToolCommand(
 ): Promise<CommandResult> {
   switch (argv[0]) {
     case 'check':
+      // MCP 도구는 파일 쓰기 경로를 열지 않는다(docs/MCP.md). 인자가 플래그로 새는 회귀가 생겨도 baseline을
+      // 쓰지 못하게 writer를 넘기지 않는다 — check는 `--update-baseline`을 받으면 쓰기 전에 내부 오류로 끝난다.
       return runCheckCommand(
         argv,
         dependencies.readTextFile,
-        dependencies.writeTextFile,
+        undefined,
         undefined,
         dependencies.producerVersion,
       );

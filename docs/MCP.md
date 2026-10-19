@@ -38,7 +38,11 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 내고, 나머지 도구는 http 문서를 CLI와 같은 원인 문구로 거부한다. 귀속되지 않은 호출의 경로·host는
 어떤 응답에도 싣지 않는다.
 경로는 서버 프로세스의 작업 디렉터리 기준으로 해석된다 — 클라이언트는 읽을 수 있는
-경로만 넘겨야 한다.
+경로만 넘겨야 한다. `documents`·`context`·`runtime[]`(`preflight`) 경로와 `query`의 `name`은 `--` 뒤 위치 인수로
+넘기므로 `-`로 시작해도 CLI 플래그로 읽지 않고 경로·이름으로 읽는다. 값으로 넘기는 인자(`impact`의 `file`·`symbol`·
+`changes`·`runtime`·`revision`, `preflight`의 `expectations`·`revision`·`explain`)는 CLI처럼 `-`로 시작하면 사용법
+오류(`isError`)다. `diff`의 `before`·`after` 원소는 CLI의 diff 인수와 같은 규칙으로 읽는다(`-`로 시작하면 사용법
+오류, `--strict`는 strict 플래그).
 
 | 도구 | 대응 명령 | 선택 인자 |
 |---|---|---|
@@ -66,6 +70,10 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 - 서버는 호출자의 파일 읽기 권한을 그대로 상속한다 — MCP 표면 자체에는 인증이 없다.
   부모 에이전트가 이미 읽을 수 있는 파일만 도구 인자로 넘기는 모델이며, 네트워크
   노출은 하지 않는다(stdio 전용).
+- 도구는 일반 파일만 읽는다. FIFO·장치·디렉터리 경로는 열어 기다리지 않고 읽기 실패(`isError`)로 답하므로,
+  요청을 하나씩 처리하는 세션이 한 요청 때문에 멈추지 않는다. 그 입력의 크기 상한(UTF-16 길이)의 3배 바이트를 넘는
+  일반 파일은 다 읽어도 상한에 걸리므로 메모리에 올리지 않고, 다 읽은 뒤 길이 검사에 걸렸을 때와 같은 크기 상한
+  오류(`isError`)로 답한다.
 - `--update-baseline`·`--output` 같은 파일 쓰기 경로는 도구 인자로 열지 않았다.
 - `trace`([TRACE](TRACE.md), 개발 중)는 **항상 출력 상한과 함께** 실행한다 — 도구는 `--max-chains`·`--max-rows`를
   기본값(10·25)이나 인자 값으로 넘긴다. 상한은 목록마다 적용되고, 자른 곳은 보고서의 `truncation.omitted`에

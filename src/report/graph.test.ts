@@ -181,6 +181,61 @@ test('텍스트 그래프는 분석 한계를 문법 안전한 한 줄 주석으
   assert.equal(mermaid.includes('\u0085'), false);
 });
 
+/**
+ * Mermaid가 렌더 전에 텍스트 전체에서 찾는 지시문 정규식이다(mermaid 11.4.1
+ * `diagram-api/regexes.ts`의 `directiveRegex`). 따옴표 라벨·`%%` 주석 안인지 보지 않고, 닫는 `}%%`가
+ * 없으면 텍스트 끝까지 지운다. 패키지를 들이지 않고 정규식만 옮겨 출력에 지시문이 없는지 본다.
+ * 원본은 `u` 플래그가 없고 맨 중괄호를 글자로 쓰므로 플래그도 그대로 둔다(`u`면 문법 오류다).
+ */
+const mermaidDirectivePattern =
+  /%{2}{\s*(?:(\w+)\s*:|(\w+))\s*(?:(\w+)|((?:(?!}%{2}).|\r?\n)*))?\s*(?:}%{2})?/gi;
+
+test('graph mermaid 형식은 분석 대상 문자열의 %%{...}%% 지시문을 중화한다', () => {
+  // 채널·위치 경로·한계 문구는 분석 대상 저장소가 정할 수 있는 문자열이고 파서는 `%`·`{`·`:`를 받는다.
+  const channel = "x%%{init: {'themeCSS': '.edgePaths{display:none}'}}%%";
+  const document = (
+    platform: 'dart' | 'swift',
+    kind: 'channel-create' | 'channel-register',
+    location: { path: string; line: number; column: number },
+    limitations: readonly string[],
+  ) => parseBridgeFactsDocument({
+    format: 'bridge-facts',
+    version: 1,
+    tool: { name: `test-${platform}`, version: '0.0.0' },
+    generatedAt: '2026-09-04T12:00:00Z',
+    platform,
+    target: 'flutter',
+    project: '/fixture',
+    facts: [{ kind, channel, dynamic: false, location }],
+    limitations,
+  });
+  const graph = createBridgeGraph(joinBridgeDocuments([
+    document('dart', 'channel-create', { path: 'lib/%%{a: {.dart', line: 3, column: 23 },
+      ['opaque-handler-bodies: see %%{init: {']),
+    document('swift', 'channel-register', { path: 'ios/Runner/CameraPlugin.swift', line: 11, column: 17 }, []),
+  ]));
+
+  const mermaid = renderBridgeGraph(graph, 'mermaid');
+  const dot = renderBridgeGraph(graph, 'dot');
+
+  assert.deepEqual([...mermaid.matchAll(mermaidDirectivePattern)].map(([match]) => match), []);
+  // 라벨의 `%`는 Mermaid 엔터티(지시문 처리 뒤에 풀려 `%`로 보인다), 렌더되지 않는 주석의 `%`는 `%25`다.
+  assert.equal(mermaid, [
+    'flowchart LR',
+    '  %% limitation: dart/flutter/test-dart: opaque-handler-bodies: see %25%25{init: {',
+    '  n0["dart<br/>lib/#37;#37;{a: {.dart:3:23"]',
+    '  n1["swift<br/>ios/Runner/CameraPlugin.swift:11:17"]',
+    "  n0 -->|\"channel x#37;#37;{init: {'themeCSS': '.edgePaths{display:none}'}}#37;#37;\"| n1",
+    '',
+  ].join('\n'));
+  // DOT은 문자열 리터럴 인용만으로 안전하므로 원문을 그대로 싣는다.
+  assert.equal(
+    dot.includes('  // limitation: dart/flutter/test-dart: opaque-handler-bodies: see %%{init: {\n'),
+    true,
+  );
+  assert.equal(dot.includes(`[label=${JSON.stringify(`channel ${channel}`)}];`), true);
+});
+
 test('그래프 간선 수가 안전 상한을 넘으면 생성 전에 거부한다', () => {
   const joined: BridgeJoinResult = {
     deferred: false,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { parseMessageBridgeDocument } from '../exchange/messages.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import {
   type ExtractJsFileSystem,
@@ -213,6 +214,98 @@ test('파일 수 상한을 넘는 트리는 조기에 멈추고 코드 2다', as
   );
   assert.equal(result.exitCode, 2);
   assert.ok(result.standardError.includes('files'));
+});
+
+test('닫히지 않은 \\u{ 이스케이프 파일이 있어도 추출이 끝나고 다른 파일의 사실을 낸다', async () => {
+  const files = new Map([
+    ['/p/src/escape.js', 'export const ok=1;\n"\\u{41"'],
+    ['/p/src/escape-template.js', 'const a=`x`;\n`\\u{41`'],
+    ['/p/src/good.js', "requireNativeComponent('Grid');\nimport { DeviceEventEmitter as E } from 'react-native';\nE.addListener('ready', cb);"],
+  ]);
+  const dirs = new Map<string, readonly string[]>([
+    ['/p', ['src']],
+    ['/p/src', ['escape.js', 'escape-template.js', 'good.js']],
+  ]);
+  const facts = await runExtractJsCommand(
+    ['extract-js', '/p'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.equal(facts.exitCode, 0);
+  assert.equal(facts.standardError, '');
+  assert.deepEqual(
+    parseBridgeFactsDocument(JSON.parse(facts.standardOutput)).facts
+      .map((fact) => [fact.kind, fact.channel, fact.location?.path]),
+    [['component-require', 'Grid', 'src/good.js']],
+  );
+  const events = await runExtractJsCommand(
+    ['extract-js', '/p', '--events'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.equal(events.exitCode, 0);
+  assert.deepEqual(
+    parseMessageBridgeDocument(JSON.parse(events.standardOutput)).facts
+      .map((fact) => [fact.kind, fact.channel, fact.location.path]),
+    [['event-listen', 'ready', 'src/good.js']],
+  );
+});
+
+test('깊게 중첩된 템플릿 파일도 호출 스택을 넘기지 않고 추출한다', async () => {
+  const depth = 10_000;
+  const files = new Map([
+    ['/p/deep.js', '`${'.repeat(depth) + '`x`' + '}`'.repeat(depth)],
+    ['/p/good.js', "requireNativeComponent('Grid');"],
+  ]);
+  const dirs = new Map<string, readonly string[]>([['/p', ['deep.js', 'good.js']]]);
+  for (const flags of [[], ['--events']]) {
+    const result = await runExtractJsCommand(
+      ['extract-js', '/p', ...flags], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+    );
+    assert.equal(result.exitCode, 0, flags.join(' '));
+    assert.equal(result.standardError, '');
+  }
+});
+
+/** 스캔 중 예상하지 못한 결함을 흉내 낸다 — 토큰 원문을 자르는 순간 경로가 든 오류를 던진다. */
+class FaultySource extends String {
+  override slice(): string {
+    throw new Error('scanner defect at /private/install/lexer.ts:1');
+  }
+}
+
+test('문서 생성 중 분류하지 못한 예외는 스택·경로 없이 내부 오류 코드 2다', async () => {
+  const files = new Map([['/p/a.ts', 'x']]);
+  const dirs = new Map<string, readonly string[]>([['/p', ['a.ts']]]);
+  for (const flags of [[], ['--events']]) {
+    const result = await runExtractJsCommand(
+      ['extract-js', '/p', ...flags], fakeFs(files, dirs),
+      async () => new FaultySource('x') as unknown as string, fixedNow, '1.0.0',
+    );
+    assert.deepEqual(result, {
+      standardOutput: '',
+      standardError: 'Internal isthmus error; retry with a current version.\n',
+      exitCode: 2,
+    }, flags.join(' '));
+  }
+});
+
+test('스캔 파일 순서는 로캘과 무관한 UTF-16 코드 단위 순서다(기본·--events)', async () => {
+  const names = ['h.ts', 'ä.ts', 'chat.ts', 'aa.ts', 'a.ts', 'B.ts'];
+  const source = "requireNativeModule('M');\nimport { DeviceEventEmitter as E } from 'react-native';\nE.addListener('ready', cb);";
+  const files = new Map(names.map((name) => [`/p/src/${name}`, source]));
+  const dirs = new Map<string, readonly string[]>([['/p', ['src']], ['/p/src', names]]);
+  const expected = ['src/B.ts', 'src/a.ts', 'src/aa.ts', 'src/chat.ts', 'src/h.ts', 'src/ä.ts'];
+  const facts = await runExtractJsCommand(
+    ['extract-js', '/p'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.deepEqual(
+    parseBridgeFactsDocument(JSON.parse(facts.standardOutput)).facts.map((fact) => fact.location?.path),
+    expected,
+  );
+  const events = await runExtractJsCommand(
+    ['extract-js', '/p', '--events'], fakeFs(files, dirs), readerFor(files), fixedNow, '1.0.0',
+  );
+  assert.deepEqual(
+    parseMessageBridgeDocument(JSON.parse(events.standardOutput)).facts.map((fact) => fact.location.path),
+    expected,
+  );
 });
 
 test('POSIX 파일명의 백슬래시를 경로 구분자로 바꾸지 않는다', async () => {

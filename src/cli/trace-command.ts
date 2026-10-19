@@ -20,6 +20,7 @@ import {
   inputFailure,
   inputFailureResult,
   internalError,
+  isInputSizeRejection,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   MAX_TOTAL_INPUT_TEXT_LENGTH,
@@ -112,15 +113,17 @@ class AnalysisReadError extends Error {
  */
 async function readAnalysis(path: string, position: number, reference: TraceAnalysisReference, readTextFile: ReadTextFile,
   budget: { used: number }): Promise<unknown> {
+  const tooLarge = `Trace analysis ${position} exceeds the input size limits.`;
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    if (isInputSizeRejection(error)) throw new AnalysisReadError(tooLarge);
     throw new AnalysisReadError(`Unable to read trace analysis ${position}; check that the file exists and is readable.`);
   }
   budget.used += text.length;
   if (text.length > MAX_INPUT_TEXT_LENGTH || budget.used > MAX_TOTAL_INPUT_TEXT_LENGTH) {
-    throw new AnalysisReadError(`Trace analysis ${position} exceeds the input size limits.`);
+    throw new AnalysisReadError(tooLarge);
   }
   if (reference.precomputed !== undefined &&
     createHash('sha256').update(text, 'utf8').digest('hex') !== reference.precomputed.sha256) {

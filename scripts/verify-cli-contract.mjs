@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,7 @@ verifyWorkspaceTrace();
 verifyOrgBoundary();
 verifyServe();
 verifyExtractJs();
+verifyExtractJsHostileSources();
 verifyDoctorInit();
 verifyMessageViews();
 verifyReactNativeEvents();
@@ -589,6 +590,10 @@ function verifyDiff() {
   verify(run(['diff']).status === 64, 'diff usage');
   verify(run(['diff', '--before', 'missing.json', swiftPath, '--after', dartPath, swiftPath]).status === 2,
     'diff input failure');
+  // after 쪽 입력 순번은 before 다음부터 센다(합계 입력 예산도 함께 쓴다).
+  const afterFailure = run(['diff', '--before', dartPath, swiftPath, '--after', 'missing.json', swiftPath]);
+  verify(afterFailure.status === 2 && afterFailure.stderr.startsWith('Unable to read bridge facts input 3'),
+    'diff after input numbering');
 }
 
 /**
@@ -645,6 +650,53 @@ function verifyServe() {
   verify(query.status === 'found', 'serve tools/call query');
   verify(run(['serve', '--verbose']).status === 64, 'serve usage');
   verify(run(['help', 'serve']).stdout.startsWith('Usage: isthmus serve'), 'serve help');
+  // 경로 원소는 숨긴 check 플래그를 열지 못한다: 뒤의 파일을 baseline으로 덮어쓰지 않고 첫 경로 읽기 실패로 끝난다.
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-serve-'));
+  try {
+    const victim = join(directory, 'victim.txt');
+    writeFileSync(victim, 'original\n');
+    const injected = runChild(process.execPath, [binaryPath, 'serve'], {
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'check',
+        arguments: { documents: ['--update-baseline', victim, dartPath, swiftPath] } } })}\n`,
+    });
+    const response = JSON.parse(injected.stdout.trim());
+    verify(injected.status === 0 && response.result.isError === true
+      && response.result.content[0].text.startsWith('Unable to read bridge facts input 1;'), 'serve keeps document paths positional');
+    verify(readFileSync(victim, 'utf8') === 'original\n', 'serve opens no write path');
+    // 일반 파일이 아닌 경로(FIFO)는 열어 기다리지 않고 읽기 실패로 답하며, 순차 세션은 다음 요청을 처리한다.
+    const fifo = join(directory, 'pipe.json');
+    verify(runChild('mkfifo', [fifo]).status === 0, 'serve FIFO fixture');
+    const fifoSession = runChild(process.execPath, [binaryPath, 'serve'], {
+      input: `${[
+        { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'check', arguments: { documents: [fifo, swiftPath] } } },
+        { jsonrpc: '2.0', id: 5, method: 'ping' },
+      ].map((message) => JSON.stringify(message)).join('\n')}\n`,
+      timeout: 20_000,
+    });
+    const answered = fifoSession.status === 0
+      ? fifoSession.stdout.trim().split('\n').map((line) => JSON.parse(line)) : [];
+    verify(answered.length === 2 && answered[0].result.isError === true && answered[1].id === 5,
+      'serve rejects non-regular files without blocking');
+    // 상한의 3배 바이트를 넘는 일반 파일(디스크를 쓰지 않는 희소 파일)은 읽지 않고 크기 상한 오류로 답한다.
+    // 통째로 읽으면 작은 힙의 세션이 메모리 부족으로 죽어 다음 요청에도 답하지 못한다.
+    const large = join(directory, 'large.json');
+    writeFileSync(large, '');
+    truncateSync(large, 300 * 1024 * 1024);
+    const largeSession = runChild(process.execPath, ['--max-old-space-size=64', binaryPath, 'serve'], {
+      input: `${[
+        { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'check', arguments: { documents: [large, swiftPath] } } },
+        { jsonrpc: '2.0', id: 7, method: 'ping' },
+      ].map((message) => JSON.stringify(message)).join('\n')}\n`,
+      timeout: 20_000,
+    });
+    const largeAnswers = largeSession.status === 0
+      ? largeSession.stdout.trim().split('\n').map((line) => JSON.parse(line)) : [];
+    verify(largeAnswers.length === 2 && largeAnswers[0].result.isError === true
+      && largeAnswers[0].result.content[0].text.startsWith('Bridge facts input 1 exceeds the input size limits;')
+      && largeAnswers[1].id === 7, 'serve rejects oversized regular files before reading');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** extract-js가 발행 CLI에서 bridge-facts 문서를 내는지 검증한다. */
@@ -668,6 +720,30 @@ function verifyExtractJs() {
     verify(run(['extract-js']).status === 64, 'extract-js usage');
     verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
     verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+/** 해석할 수 없는 소스가 섞여도 extract-js가 끝나고 나머지 파일의 사실을 낸다. */
+function verifyExtractJsHostileSources() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-extract-js-hostile-'));
+  try {
+    mkdirSync(join(directory, 'src'), { recursive: true });
+    writeFileSync(join(directory, 'src', 'app.ts'), "requireNativeComponent('Grid');\n");
+    // 닫히지 않은 `\u{`(파일 끝까지 16진수 뒤 따옴표 하나)는 예전에 렉서 커서를 파일 처음으로
+    // 되돌려 힙이 바닥날 때까지 멈추지 않았다.
+    writeFileSync(join(directory, 'src', 'escape.js'), 'export const ok = 1;\n"\\u{41"');
+    // 중첩 템플릿 10,000단계는 예전에 재귀로 호출 스택을 넘겨 스택과 함께 exit 1로 끝났다.
+    writeFileSync(join(directory, 'src', 'nested.js'), '`${'.repeat(10_000) + '`x`' + '}`'.repeat(10_000));
+    const extracted = run(['extract-js', directory]);
+    verify(extracted.status === 0 && extracted.stderr === '', 'extract-js hostile sources exit code');
+    const { facts } = JSON.parse(extracted.stdout);
+    verify(facts.length === 1 && facts[0].channel === 'Grid' && facts[0].location.path === 'src/app.ts',
+      'extract-js hostile sources facts');
+    const events = run(['extract-js', directory, '--events']);
+    verify(events.status === 0 && events.stderr === '' && JSON.parse(events.stdout).facts.length === 0,
+      'extract-js hostile sources events');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -838,6 +914,10 @@ function verifyNavigationTrace() {
     const { dispatch: _, ...unassessed } = traversal;
     writeFileSync(join(root, 'reach.json'), JSON.stringify(unassessed));
     verify(run(args).status === 1, 'navigation unassessed strict gap');
+    writeFileSync(join(root, 'client.json'), JSON.stringify({ ...client, limitations: ['mixed-targets: flutter and react-native'] }));
+    const deferred = run(args);
+    verify(deferred.status === 2 && deferred.stdout === '' && deferred.stderr
+      === 'Navigation trace cannot use documents with mixed bridge targets; split them by target.\n', 'navigation mixed-targets input failure');
     verify(run(['help', 'trace-navigation']).stdout.startsWith('Usage: isthmus trace-navigation'), 'navigation help');
     verify(run(['trace-navigation']).status === 64, 'navigation usage');
     writeFileSync(join(root, 'context.json'), '{');

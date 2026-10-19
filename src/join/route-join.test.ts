@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseBridgeFactsDocument, type BridgeFactsDocument } from '../exchange/parse.ts';
+import { parseBridgeFactsDocument, type BridgeFactsDocument, type RoutePathAnchor } from '../exchange/parse.ts';
 import { parseRouteTemplate, type HttpMethod } from '../exchange/route-template.ts';
-import { BridgeJoinValidationError, joinBridgeDocuments } from './join.ts';
+import { BridgeJoinValidationError, compareEndpoints, joinBridgeDocuments } from './join.ts';
 import {
   clearlyViolates,
   compareRanks,
@@ -12,9 +12,10 @@ import {
   methodQuality,
   RouteIndex,
   type RouteDeclaration,
+  type RouteProbe,
   type RouteSideOutcome,
 } from './route-index.ts';
-import type { RouteJoinResult, RouteScope } from './route-join.ts';
+import { joinRouteFacts, type RouteJoinResult, type RouteScope } from './route-join.ts';
 
 /** 합성 http 문서를 계약 파서로 검증해 만든다. */
 function document(platform: string, roles: string[], facts: unknown[], extra: Record<string, unknown> = {}): BridgeFactsDocument {
@@ -277,6 +278,66 @@ test('선언 측 service가 일부만 있으면 scope를 정할 수 없어 입�
   ]), (error) => error instanceof BridgeJoinValidationError && /all declare a service or none/.test(error.message));
 });
 
+test('다중 service 입력은 scope마다 자기 선언 측 문서·사실과 닿을 수 있는 호출 측 문서만 받는다', () => {
+  const routes = joinRoutes(
+    document('js', ['server'], [
+      decl('GET', '/a', { service: 'one' }), decl('GET', '/b', { service: 'two' }),
+      { ...decl('GET', 'base + x', { service: 'two' }), dynamic: true },
+    ]),
+    document('js', ['server'], [], { service: 'three', limitations: ['route-coverage: three'] }),
+    document('openapi', ['server'], [
+      contract('GET', '/a', { service: 'one' }), contract('GET', '/c', { service: 'two' }),
+      { ...contract('GET', 'spec + y', { service: 'one' }), dynamic: true },
+    ]),
+    document('kotlin', ['client'], [
+      call('GET', '/a', { service: 'one' }), call('GET', '/b', { service: 'two' }), call('GET', '/z', { service: 'unknown' }),
+      call('GET', '/n'), { ...call('GET', 'base + "/a/x"', { service: 'one' }), dynamic: true, channelPrefix: '/a' },
+    ], { limitations: ['route-call-coverage: kotlin'] }),
+    document('swift', ['client'], [call('GET', '/t')], { service: 'three', limitations: ['route-call-coverage: swift'] }),
+  );
+  assert.deepEqual(routes.scopes.map((scope) => [
+    scope.scope, scope.serverLimitations.map(({ message }) => message), scope.declScanned, scope.contractDocuments,
+    scope.clientDocuments, scope.clientLimitations.map(({ message }) => message),
+    scope.decls.map(({ declaration }) => declaration.template), scope.contracts.map(({ declaration }) => declaration.template),
+    scope.dynamicDecls, scope.dynamicContracts,
+    scope.calls.map(({ template, decl: declSide, contract: contractSide }) => `${template}:${declSide?.status}:${contractSide?.status}`),
+    scope.dynamicCalls, scope.prefixCalls.length, scope.unboundCalls,
+  ]), [
+    // service 없는 호출 측 문서(kotlin)는 모든 scope에 닿고, service 있는 문서(swift)는 그 scope에만 닿는다.
+    // 귀속되지 않은 호출 중 service 없는 /n만 모든 scope의 unboundCalls가 된다(unknown service는 어느 scope도 아니다).
+    ['one', [], true, 1, 1, ['route-call-coverage: kotlin'], ['/a'], ['/a'], 0, 1, ['/a:matched:matched'], 1, 1, 1],
+    ['three', ['route-coverage: three'], true, 0, 2, ['route-call-coverage: kotlin', 'route-call-coverage: swift'],
+      [], [], 0, 0, ['/t:missing:undefined'], 0, 0, 1],
+    ['two', [], true, 1, 1, ['route-call-coverage: kotlin'], ['/b'], ['/c'], 1, 0, ['/b:matched:missing'], 0, 0, 1],
+  ]);
+});
+
+/** facts 원소를 읽을 때마다 세는 문서 사본이다. 조인이 입력 사실을 몇 번 훑는지 시간에 기대지 않고 잰다. */
+function countingFacts(source: BridgeFactsDocument, counter: { reads: number }): BridgeFactsDocument {
+  const facts = new Proxy(source.facts, {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\d+$/u.test(property)) counter.reads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  return { ...source, facts };
+}
+
+test('http 조인은 service 수와 무관하게 입력 사실을 같은 횟수만 읽는다', () => {
+  const reads = (services: number): number => {
+    const counter = { reads: 0 };
+    const service = (index: number) => ({ service: `s${index % services}` });
+    const server = document('js', ['server'], Array.from({ length: 100 }, (_, index) => decl('GET', `/items/${index}`, service(index))));
+    const client = document('kotlin', ['client'], Array.from({ length: 100 }, (_, index) => call('GET', `/items/${index}`, service(index))));
+    const joined = joinRouteFacts([countingFacts(server, counter), countingFacts(client, counter)], compareEndpoints);
+    assert.equal(joined.scopes.length, services);
+    assert.equal(joined.scopes.flatMap(({ calls }) => calls).filter(({ decl: outcome }) => outcome?.status === 'matched').length, 100);
+    return counter.reads;
+  };
+  // 사실 수는 같고 service 수만 다르다. scope마다 입력 전체를 다시 훑으면 읽기 횟수가 service 수에 비례한다.
+  assert.equal(reads(50), reads(1));
+});
+
 test('http 입력 구성: 선언 측과 호출 측이 각각 필요하고 드리프트 입력만 예외다', () => {
   const client = document('kotlin', ['client'], []);
   const server = document('js', ['server'], []);
@@ -338,18 +399,108 @@ test('trie 없이도 evaluateSegments·compareRanks·clearlyViolates가 계약 �
   assert.equal(clearlyViolates('ok_slug-1', 'slug'), false);
 });
 
-test('suffix 비교 예산을 넘으면 부분 결과 대신 실패한다', () => {
-  const parsed = parseRouteTemplate('/a/b/c');
+/** 색인 단위 테스트용 GET 선언이다. 템플릿은 계약 파서로 해석한다. */
+function routeDeclaration(id: number, template: string, extra: Partial<RouteDeclaration> = {}): RouteDeclaration {
+  const parsed = parseRouteTemplate(template);
   assert.ok(parsed.ok);
-  const declaration: RouteDeclaration = {
-    id: 0, template: '/a/b/c', segments: parsed.segments, method: 'GET', anchor: 'root',
-    caseInsensitive: false, catchAllPrefix: false, constraints: new Map(),
+  return {
+    id, template, segments: parsed.segments, method: 'GET', anchor: 'root',
+    caseInsensitive: false, catchAllPrefix: false, constraints: new Map(), ...extra,
   };
-  const index = new RouteIndex([declaration], { remaining: 1 });
-  const probeSegments = parseRouteTemplate('/c');
-  assert.ok(probeSegments.ok);
-  assert.throws(() => index.match({ segments: probeSegments.segments, anchor: 'base', method: 'GET' as HttpMethod }),
+}
+
+/** 색인 단위 테스트용 GET 호출이다. */
+function routeProbe(template: string, anchor: RoutePathAnchor): RouteProbe {
+  const parsed = parseRouteTemplate(template);
+  assert.ok(parsed.ok);
+  return { segments: parsed.segments, anchor, method: 'GET' as HttpMethod };
+}
+
+test('suffix 비교 예산을 넘으면 부분 결과 대신 실패한다', () => {
+  // 선언마다 길이가 맞는 오프셋 하나를 비교한다. 예산 1은 첫 선언에서 다 쓰고 두 번째 선언에서 넘는다.
+  const index = new RouteIndex([routeDeclaration(0, '/a/b/c'), routeDeclaration(1, '/x/b/c')], { remaining: 1 });
+  assert.throws(() => index.match(routeProbe('/c', 'base')), /RouteSuffixBudgetError/);
+});
+
+test('suffix 비교 예산은 선언과 호출의 길이로 맞을 수 있는 오프셋만 센다', () => {
+  // `{**}`가 아닌 선언은 남은 세그먼트 수가 같아지는 오프셋 하나에서만 맞을 수 있고, `{**}`(마지막 세그먼트) 선언은
+  // `{**}`가 호출 세그먼트를 1개 이상 흡수하는 오프셋에서만 맞을 수 있다. 그 밖의 오프셋은 비교하지 않는다.
+  const cases: Array<[RouteDeclaration, string, RoutePathAnchor, number, RouteSideOutcome['status']]> = [
+    [routeDeclaration(0, '/api/v1/items/{}'), '/items/{}', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/api/v1/items'), '/x/api/v1/items', 'base', 0, 'missing'],
+    [routeDeclaration(0, '/api/v1/Users', { caseInsensitive: true }), '/v1/users', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/api/files', { catchAllPrefix: true }), '/files', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/p/files/{**}'), '/files/a', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/p/q/{**}'), '/x', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/files/{**}'), '/files/a/b', 'base', 1, 'matched'],
+    [routeDeclaration(0, '/reports/{}', { anchor: 'base' }), '/api/v1/reports/7', 'root', 1, 'matched'],
+    [routeDeclaration(0, '/a/b/c', { anchor: 'base' }), '/b/c', 'root', 0, 'missing'],
+    [routeDeclaration(0, '/exports/{**}', { anchor: 'base' }), '/api/exports/x/y', 'root', 2, 'matched'],
+    [routeDeclaration(0, '/exports/{**}', { anchor: 'base' }), '/api/other/x', 'root', 2, 'missing'],
+  ];
+  for (const [declaration, template, anchor, spent, status] of cases) {
+    const budget = { remaining: 100 };
+    const outcome = new RouteIndex([declaration], budget).match(routeProbe(template, anchor));
+    assert.deepEqual([100 - budget.remaining, outcome.status], [spent, status], `${declaration.template} <- ${anchor} ${template}`);
+  }
+});
+
+test('맞을 오프셋이 없는 (호출, 선언) 방문도 일정 비율로 suffix 예산을 쓴다', () => {
+  // 비교하지 않는 방문을 공짜로 두면 짧은 선언 대량 × 긴 호출 대량 문서가 예산 밖에서 호출×선언만큼 돈다.
+  // base 호출(4세그먼트)보다 짧은 root 선언 640개와, root 호출(2세그먼트)보다 긴 base 선언 640개는 모두 비교 대상이 아니다.
+  const shortRoots = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, `/r${id}/{}`));
+  const rootBudget = { remaining: 100 };
+  const rootOutcome = new RouteIndex(shortRoots, rootBudget).match(routeProbe('/a/b/c/{}', 'base'));
+  assert.deepEqual([100 - rootBudget.remaining, rootOutcome.status], [10, 'missing']);
+  const longBases = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, `/b${id}/c/d/e`, { anchor: 'base' }));
+  const baseBudget = { remaining: 100 };
+  const baseOutcome = new RouteIndex(longBases, baseBudget).match(routeProbe('/p/q', 'root'));
+  assert.deepEqual([100 - baseBudget.remaining, baseOutcome.status], [10, 'missing']);
+  // 리터럴이 없는 base 선언은 suffix 후보가 될 수 없어 방문하지 않는다.
+  const literalFree = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, '/{}/{}/{}', { anchor: 'base' }));
+  const literalFreeBudget = { remaining: 100 };
+  new RouteIndex(literalFree, literalFreeBudget).match(routeProbe('/p/q', 'root'));
+  assert.equal(100 - literalFreeBudget.remaining, 0);
+  // 방문 비용도 공유 예산을 넘으면 부분 결과 대신 실패한다.
+  const manyShortRoots = Array.from({ length: 6_400 }, (_, id) => routeDeclaration(id, `/r${id}/{}`));
+  assert.throws(() => new RouteIndex(manyShortRoots, { remaining: 50 }).match(routeProbe('/a/b/c/{}', 'base')),
     /RouteSuffixBudgetError/);
+});
+
+test('suffix 후보는 catch-all·접두사·부분 세그먼트·대소문자 무시 선언에서도 가장 긴 꼬리로 맞춘다', () => {
+  const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
+  const scope = joinRoutes(
+    document('js', ['server'], [
+      decl('GET', '/api/files/{**}', { symbol }), decl('GET', '/api/files', { symbol, catchAllPrefix: true }),
+      decl('GET', '/{}/files/{}'), decl('GET', '/p/docs/{**}'), decl('GET', '/x/{}/a'),
+      decl('GET', '/api/v1/Users/{}', { caseInsensitive: true }), decl('GET', '/api/v1/items/item-{}.json'),
+      decl('GET', '/api/v1/items/{}'),
+      decl('GET', '/exports/{**}', { pathAnchor: 'base' }), decl('GET', '/reports/{}', { pathAnchor: 'base' }),
+    ]),
+    document('kotlin', ['client'], [
+      ...['/api/files/x', '/docs/a', '/zz/yy', '/files', '/v1/users/{}', '/items/item-{}.json']
+        .map((template) => call('GET', template, { pathAnchor: 'base' })),
+      ...['/svc/reports/7', '/api/exports/x', '/exports/x'].map((template) => call('GET', template)),
+    ]),
+  ).scopes[0]!;
+  assert.deepEqual(scope.calls.map(({ anchor, template, decl: outcome }) => `${anchor} ${template} ${describe(outcome)}`), [
+    // {**} 선언이 호출보다 짧거나 같으면 오프셋 0부터, 길면 남는 앞자리만큼 건너뛴 오프셋부터 맞춘다.
+    'base /api/files/x matched:suffix:GET /api/files/{**}',
+    'base /docs/a matched:suffix:GET /p/docs/{**}',
+    // 다른 후보가 없으면 {**} 하나만 남은 마지막 오프셋이 받는다.
+    'base /zz/yy ambiguous:/api/files/{**},/p/docs/{**}',
+    'base /files matched:suffix:GET /api/files',
+    'base /v1/users/{} matched:suffix:GET /api/v1/Users/{}',
+    'base /items/item-{}.json matched:suffix:GET /api/v1/items/item-{}.json',
+    'root /svc/reports/7 matched:suffix:GET /reports/{}',
+    'root /api/exports/x matched:suffix:GET /exports/{**}',
+    'root /exports/x matched:suffix:GET /exports/{**}',
+  ]);
+  assert.deepEqual(scope.decls.map(({ declaration, called }) => `${declaration.template}:${called}`), [
+    '/api/files/{**}:true', '/api/files:true', '/{}/files/{}:false', '/p/docs/{**}:true', '/x/{}/a:false',
+    '/api/v1/Users/{}:true', '/api/v1/items/item-{}.json:true', '/api/v1/items/{}:false', '/exports/{**}:true',
+    '/reports/{}:true',
+  ]);
 });
 
 /** project가 다른 합성 http 문서다(workspace member 흉내). */

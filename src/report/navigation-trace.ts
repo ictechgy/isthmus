@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { compareStrings } from '../compare.ts';
-import { traversalWitness, traversalGraphFromDocument, type LanguageTraversal, type TraversalEvidence } from '../exchange/language-traversal.ts';
+import { traversalWitness, traversalGraphFromDocument, type LanguageTraversal, type TraversalEvidence, type TraversalGraph,
+  type TraversalReached } from '../exchange/language-traversal.ts';
 import type { NavigationFactsDocument, ScreenRouteFact } from '../exchange/navigation.ts';
 import type { BridgeFactsDocument, BridgeLocation, BridgeSymbol } from '../exchange/parse.ts';
-import { joinBridgeDocuments, type JoinLimitation } from '../join/join.ts';
+import { isBridgeJoinDeferred, joinBridgeDocuments, type JoinLimitation } from '../join/join.ts';
 import { canonicalJsonKey, uniqueByCanonicalJson } from './sorted-json.ts';
 import { createHttpMatches, type HttpMatch } from './pairs.ts';
 
@@ -49,6 +50,20 @@ export class NavigationTraceInputError extends Error {
   constructor(message: string) { super(message); this.name = 'NavigationTraceInputError'; }
 }
 
+/** 같은 발생으로 합친 JS HTTP 호출 하나와 그 호출이 닿는 backend 매치다. */
+interface RecordedCall { endpoint: HttpMatch['uses'][number]; routes: HttpMatch[] }
+
+/** 한 분석에서 화면 usr 하나가 root로 잇는 범위다. */
+interface ScreenReach {
+  readonly analysis: LanguageTraversal;
+  /** 같은 분석의 화면들이 공유하는 순회 숲이다. 같은 객체여야 usr별 행 색인을 분석마다 한 번만 만든다. */
+  readonly graph: TraversalGraph;
+  /** 그 화면 usr을 symbol로 가진 root 인덱스다(원래 순서). */
+  readonly roots: number[];
+  /** 그 root 중 하나에서 닿은 행이다(원래 순서, 행마다 한 번). */
+  readonly rows: TraversalReached[];
+}
+
 /** 검증된 입력에서 같은 root의 정방향 도달과 HTTP 조인만 사용한다. */
 export function createNavigationTrace(navigation: NavigationFactsDocument, documents: readonly BridgeFactsDocument[],
   analyses: readonly LanguageTraversal[]): NavigationTraceReport {
@@ -59,12 +74,16 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
   if (analyses.length > 256) throw new NavigationTraceInputError('Navigation trace exceeds its analysis limit.');
   const provenance = new Map(analyses.map((analysis) => [analysis, analysisProvenance(analysis)]));
   const joined = joinBridgeDocuments(documents, { composition: 'trace' });
+  // mixed-targets 보류를 빈 결과나 쌍 생성기의 미분류 예외로 흘리지 않고 trace와 같은 입력 오류로 거부한다.
+  if (isBridgeJoinDeferred(joined)) {
+    throw new NavigationTraceInputError('Navigation trace cannot use documents with mixed bridge targets; split them by target.');
+  }
   const matches = createHttpMatches(joined);
   let work = 0;
   const charge = (): void => {
     if (++work > 1_000_000) throw new NavigationTraceInputError('Navigation linking exceeds its work limit; narrow screen or analysis inputs.');
   };
-  const byCall = new Map<string, { endpoint: HttpMatch['uses'][number]; routes: HttpMatch[] }>();
+  const byCall = new Map<string, RecordedCall>();
   const recordCall = (endpoint: HttpMatch['uses'][number], routes: readonly HttpMatch[] = []): void => {
     const key = callKey(endpoint);
     const value = byCall.get(key);
@@ -92,6 +111,10 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
       recordCall(endpoint);
     }
   }
+  // 화면마다 분석·호출 전체를 다시 훑지 않게 한 번만 색인한다. 예산은 화면이 실제로 잇는 작업에만 쓴다.
+  const reaches = screenReaches(navigation, analyses);
+  const callsByUsr = new Map<string, RecordedCall[]>();
+  for (const call of byCall.values()) appendTo(callsByUsr, call.endpoint.symbol!.usr!, call);
   const gaps: { code: string; screen?: string }[] = [];
   if (navigation.limitations.length > 0) gaps.push({ code: 'navigation-analysis-limitations' });
   if (joined.limitations.length > 0) gaps.push({ code: 'http-analysis-limitations' });
@@ -104,23 +127,20 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
     const reached = new Map<string, NavigationWitness[]>([[fact.screen.usr, [{ depth: 0, evidence: 'direct', path: [fact.screen.usr] }]]]);
     const selectedAnalyses: LanguageTraversal[] = [];
     let found = false;
-    for (const analysis of analyses) {
-      const roots = analysis.roots.flatMap((root, index) => { charge(); return root.symbol?.usr === fact.screen!.usr ? [index] : []; });
-      if (roots.length === 0) continue;
+    for (const { analysis, graph: certainty, roots, rows } of reaches.get(fact.screen.usr) ?? []) {
+      for (const _ of roots) charge();
       found = true;
       selectedAnalyses.push(analysis);
       if (analysis.limitations.length > 0) gaps.push({ code: 'screen-analysis-limitations', screen: fact.screen.usr });
       if (analysis.truncated) gaps.push({ code: 'screen-analysis-truncated', screen: fact.screen.usr });
       if (analysis.rootsTruncated) gaps.push({ code: 'screen-analysis-roots-truncated', screen: fact.screen.usr });
-      const certainty = traversalGraphFromDocument(analysis);
       const graded = certainty.evidenceReported;
       if (!graded) gaps.push({ code: 'screen-analysis-evidence-unreported', screen: fact.screen.usr });
       if (!certainty.unresolvedCallsReported) gaps.push({ code: 'screen-unresolved-calls-unreported', screen: fact.screen.usr });
       if (roots.some((root) => (analysis.roots[root]?.unresolvedCalls ?? 0) > 0)) gaps.push({ code: 'screen-unresolved-calls', screen: fact.screen.usr });
       const analysisId = provenance.get(analysis)!.id;
-      for (const row of analysis.reached) {
+      for (const row of rows) {
         charge();
-        if (!roots.some((root) => row.roots.includes(root))) continue;
         const evidence = row.evidence ?? (graded ? 'direct' : 'unknown');
         if ((row.unresolvedCalls ?? 0) > 0) gaps.push({ code: 'screen-unresolved-calls', screen: fact.screen.usr });
         if (evidence === 'candidate') gaps.push({ code: 'screen-candidate-dispatch', screen: fact.screen.usr });
@@ -147,10 +167,9 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
     }
     if (!found) gaps.push({ code: 'screen-analysis-missing', screen: fact.screen.usr });
     const calls: NavigationChain['calls'][number][] = [];
-    for (const { endpoint, routes } of byCall.values()) {
+    // 호출은 화면이 닿은 심볼로만 찾는다. 출력은 아래에서 정렬하므로 처리 순서는 바이트에 영향이 없다.
+    for (const [usr, observations] of reached) for (const { endpoint, routes } of callsByUsr.get(usr) ?? []) {
       charge();
-      const observations = reached.get(endpoint.symbol!.usr!);
-      if (observations === undefined) continue;
       // 거대한 목록으로 합치기 전에 각 관찰을 제한하고 중복 제거한다.
       const distinct = new Map<string, NavigationWitness>();
       for (const observation of observations) {
@@ -182,6 +201,51 @@ export function createNavigationTrace(navigation: NavigationFactsDocument, docum
     httpLimitations: uniqueByCanonicalJson(joined.limitations),
     limitations: uniqueByCanonicalJson([...(missingCallSymbols === 0 ? [] : [`navigation-http-caller-coverage: ${missingCallSymbols} HTTP call(s) have no caller symbol; screen reach cannot assess them`]), ...navigation.limitations, ...analyses.flatMap((item) => item.limitations),
       'navigation-freshness-unmeasured: navigation mappings and analysis source freshness are not attested by this report']) };
+}
+
+/**
+ * 화면 usr마다 그 화면을 root로 가진 분석(입력 순서)과 그 root에서 닿은 행을 한 번에 모은다.
+ *
+ * 화면마다 모든 분석의 root·행과 모든 호출을 다시 훑으면 1,000,000 link-work 예산이 연결이 아니라 스캔에 쓰여,
+ * 문서대로 화면 수십 개를 root로 넣은 분석 하나도 거부된다. 색인 비용은 입력 크기에 비례하고, 분석·행 순서를
+ * 그대로 지키므로 화면마다 처리하는 관찰과 출력은 같다.
+ */
+function screenReaches(navigation: NavigationFactsDocument, analyses: readonly LanguageTraversal[]): Map<string, ScreenReach[]> {
+  const screens = new Set(navigation.facts.flatMap(({ screen }) => screen === undefined ? [] : [screen.usr]));
+  const reaches = new Map<string, ScreenReach[]>();
+  for (const analysis of analyses) {
+    for (const [usr, reach] of analysisScreenReaches(analysis, screens)) appendTo(reaches, usr, reach);
+  }
+  return reaches;
+}
+
+/** 분석 하나의 화면 usr별 root와 닿은 행이다. 화면 root가 없는 분석은 그래프와 행 목록을 만들지 않는다. */
+function analysisScreenReaches(analysis: LanguageTraversal, screens: ReadonlySet<string>): Map<string, ScreenReach> {
+  const own = new Map<string, ScreenReach>();
+  let graph: TraversalGraph | undefined;
+  for (const [index, root] of analysis.roots.entries()) {
+    const usr = root.symbol?.usr;
+    if (usr === undefined || !screens.has(usr)) continue;
+    graph ??= traversalGraphFromDocument(analysis);
+    const reach = own.get(usr);
+    if (reach === undefined) own.set(usr, { analysis, graph, roots: [index], rows: [] });
+    else reach.roots.push(index);
+  }
+  if (own.size === 0) return own;
+  for (const row of analysis.reached) for (const root of row.roots) {
+    const usr = analysis.roots[root]?.symbol?.usr;
+    const reach = usr === undefined ? undefined : own.get(usr);
+    // 같은 화면 usr의 root 여럿이 같은 행에 닿아도 한 번만 싣는다(화면 root 중 하나라도 닿으면 싣는 판정과 같다).
+    if (reach !== undefined && reach.rows[reach.rows.length - 1] !== row) reach.rows.push(row);
+  }
+  return own;
+}
+
+/** 키의 목록 끝에 값을 더한다(추가 순서 유지). */
+function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list === undefined) map.set(key, [value]);
+  else list.push(value);
 }
 
 /** 실제로 관찰된 근거만 결정적으로 고른다. */

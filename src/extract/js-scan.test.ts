@@ -1,6 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { scanJsSource } from './js-scan.ts';
+import {
+  createBraceClauseTracker,
+  findMatching,
+  type ParamShadow,
+  ParamShadowIndex,
+  scanJsSource,
+} from './js-scan.ts';
+import type { JsToken } from './lexer.ts';
+import { tokenizeJsSource } from './lexer.ts';
+
+/** 배열의 숫자 인덱스 읽기를 세는 Proxy다 — 스캔 작업량을 시간 대신 읽은 원소 수로 잰다. */
+function countingArray<T>(items: readonly T[]): { readonly items: readonly T[]; readonly reads: () => number } {
+  let reads = 0;
+  const proxy = new Proxy(items, {
+    get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) reads++;
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  return { items: proxy, reads: () => reads };
+}
+
+/** 여는 위치부터 같은 종류만 세는 선형 탐색이다 — 짝 표가 지켜야 할 기준 판정이다. */
+function linearMatching(tokens: readonly JsToken[], open: number, openText: string, closeText: string) {
+  let depth = 0;
+  for (let index = open; index < tokens.length; index++) {
+    if (tokens[index]!.text === openText) depth++;
+    else if (tokens[index]!.text === closeText && --depth === 0) return index;
+  }
+  return undefined;
+}
+
+/** 시드가 같으면 같은 수열을 내는 의사 난수다. */
+function seededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2 ** 31;
+    return state / 2 ** 31;
+  };
+}
 
 /** 스캔 결과에서 사실만 종류·채널·메서드·동적 여부로 평탄화한다. */
 function flatten(source: string) {
@@ -506,4 +545,137 @@ test('별칭 import의 optional은 원본 export 이름으로 판정한다', () 
     { channel: 'Opt', optional: true },
     { channel: 'Req', optional: undefined },
   ]);
+});
+
+test('괄호 짝은 토큰 열마다 한 번 만든 표로 찾아 닫히지 않은 괄호가 많아도 토큰을 다시 훑지 않는다', () => {
+  const size = 3_000;
+  const { items: tokens, reads } = countingArray(tokenizeJsSource(`${'('.repeat(size)})`));
+  for (let open = 0; open < size; open++) {
+    assert.equal(findMatching(tokens, open, '(', ')'), open === size - 1 ? size : undefined);
+  }
+  // 표를 만들 때 한 번, 호출마다 여는 토큰 한 번 읽는다(약 6,000번). 여는 괄호마다 끝까지 훑으면 약 450만 번이다.
+  assert.ok(reads() <= 3 * (size + 1), `token reads ${reads()}`);
+});
+
+test('괄호 짝 표는 다른 종류·짝 없는 닫는 괄호가 섞여도 같은 종류만 세는 선형 탐색과 같다', () => {
+  const random = seededRandom(7);
+  const pieces = ['(', ')', '[', ']', '{', '}', 'a', ','];
+  for (let round = 0; round < 300; round++) {
+    const source = Array.from({ length: 40 }, () => pieces[Math.floor(random() * pieces.length)]).join(' ');
+    const tokens = tokenizeJsSource(source);
+    for (const [openText, closeText] of [['(', ')'], ['[', ']'], ['{', '}']] as const) {
+      tokens.forEach((token, open) => {
+        if (token.text !== openText) return;
+        assert.equal(findMatching(tokens, open, openText, closeText),
+          linearMatching(tokens, open, openText, closeText), source);
+      });
+    }
+  }
+  // 표에 없는 짝이나 여는 토큰이 아닌 시작점은 지금처럼 그 위치부터 선형으로 센다.
+  const angle = tokenizeJsSource('f<a<b> >(x)');
+  assert.equal(findMatching(angle, 1, '<', '>'), 6);
+  assert.equal(findMatching(angle, 0, '(', ')'), 9);
+});
+
+test('매개변수 가림 색인은 구간 전체를 훑는 판정과 같고 판정마다 구간 목록을 다시 읽지 않는다', () => {
+  // 중첩·인접·부분 겹침·같은 시작점·정렬되지 않은 입력 순서를 섞는다.
+  const fixed: ParamShadow[] = [
+    { from: 30, to: 40, names: new Set(['M']) },
+    { from: 2, to: 20, names: new Set(['M']) },
+    { from: 5, to: 10, names: new Set(['M', 'N']) },
+    { from: 20, to: 25, names: new Set(['M']) },
+    { from: 30, to: 31, names: new Set(['N']) },
+    { from: 12, to: 33, names: new Set(['N']) },
+  ];
+  const random = seededRandom(11);
+  const generated = Array.from({ length: 50 }, (): ParamShadow[] => Array.from({ length: 30 }, () => {
+    const from = Math.floor(random() * 100);
+    return {
+      from,
+      to: from + 1 + Math.floor(random() * 30),
+      names: new Set(['a', 'b', 'c'].filter(() => random() < 0.5)),
+    };
+  }));
+  for (const shadows of [fixed, ...generated]) {
+    const { items, reads } = countingArray(shadows);
+    const index = new ParamShadowIndex(items);
+    const built = reads();
+    for (const name of ['M', 'N', 'a', 'b', 'c', 'Z']) {
+      for (let position = 0; position < 135; position++) {
+        const expected = shadows.some((shadow) =>
+          position >= shadow.from && position < shadow.to && shadow.names.has(name));
+        assert.equal(index.has(name, position), expected, `${name}@${position}`);
+      }
+    }
+    assert.equal(reads(), built);
+  }
+});
+
+test('중첩·인접 함수의 같은 이름 매개변수는 각자의 본문만 가린다', () => {
+  const scan = scanJsSource([
+    "const M = requireNativeModule('A');",
+    'function outer(M) { function inner(M) { M.a(); } M.b(); }',
+    'M.c();',
+    'function next(M) { M.d(); }',
+    'const arrow = (N, M) => { M.e(); };',
+    'M.f();',
+    'function other(N) { M.g(); }',
+  ].join('\n'));
+  assert.deepEqual(scan.memberCalls.map((call) => call.method), ['c', 'f', 'g']);
+});
+
+test('import 절 중괄호 판정은 앞 위치까지 센 깊이를 이어 써 절 길이에 선형이다', () => {
+  const size = 3_000;
+  const { items: tokens, reads } = countingArray(tokenizeJsSource(`import { ${'a '.repeat(size)}} from 'x'`));
+  const inBraceClause = createBraceClauseTracker(tokens, 1);
+  for (let index = 1; index < tokens.length; index++) {
+    assert.equal(inBraceClause(index), index >= 2 && index <= size + 2, String(index));
+  }
+  // 위치마다 절 처음부터 다시 세면 약 450만 번 읽는다.
+  assert.ok(reads() <= tokens.length, `token reads ${reads()}`);
+});
+
+test('import 절은 named·default·인라인 type·as 뒤 중괄호를 지금처럼 구분한다', () => {
+  const scan = scanJsSource([
+    "import D, { a, type T, b as c, default as e } from './x';",
+    "import g as { h } from './z';",
+  ].join('\n'));
+  assert.deepEqual(
+    scan.imports.map((entry) => [entry.localName, entry.specifier, entry.exportedName]),
+    [
+      ['D', './x', 'default'],
+      ['a', './x', 'a'],
+      ['c', './x', 'b'],
+      ['e', './x', 'default'],
+      ['g', './z', 'default'],
+      ['h', './z', 'h'],
+    ],
+  );
+});
+
+test('import 색인은 수집된 순서대로 조회해 같은 이름 import의 바인딩·별칭·mechanism 판정을 유지한다', () => {
+  const scan = scanJsSource([
+    // 바인딩 수집은 앞에서부터라, 별칭 import보다 앞선 초기값은 아직 Expo 별칭으로 보지 않는다.
+    "const Early = loadModule('Early');",
+    "import { requireNativeModule as loadModule } from 'expo';",
+    "const Late = loadModule('Late');",
+    "import { requireNativeComponent as view } from './a';",
+    "import { requireNativeModule as view } from 'expo';",
+    "view('First');",
+    "import { requireNativeModule } from './helper';",
+    "import { requireNativeModule } from 'expo-modules-core';",
+    "requireNativeModule('Mixed');",
+    'Early.go(); Late.go();',
+  ].join('\n'));
+  assert.deepEqual([...scan.bindings.keys()], ['Late']);
+  assert.deepEqual(
+    scan.facts.map((fact) => [fact.kind, fact.channel, fact.mechanism ?? null]),
+    [
+      ['module-import', 'Early', 'expo'],
+      ['module-import', 'Late', 'expo'],
+      ['component-require', 'First', null],
+      ['module-import', 'Mixed', 'expo'],
+    ],
+  );
+  assert.deepEqual(scan.memberCalls.map((call) => call.ident), ['Late']);
 });

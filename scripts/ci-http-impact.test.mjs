@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -203,6 +203,69 @@ test('입력 오류와 비어 있지 않은 출력 디렉터리는 출력 없이
   const busy = runCiHttpImpact(actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'b.json', ISTHMUS_CI_AFTER: 'a.json', ISTHMUS_CI_OUTPUT_DIR: out }),
     { log: () => {} });
   assert.equal(busy.meta.errors[0].step, 'output');
+}));
+
+test('잘못된 comment-key는 설치·capture·diff 전에 입력 오류로 끝나고 출력을 쓰지 않는다', () => withTemporaryDirectory((directory) => {
+  const base = { GITHUB_WORKSPACE: '/w', ISTHMUS_CI_BEFORE: 'b.json', ISTHMUS_CI_AFTER: 'a.json' };
+  assert.equal(parseInputs(base).commentKey, 'default');
+  assert.equal(parseInputs({ ...base, ISTHMUS_CI_COMMENT_KEY: 'mobile.v2_x-1' }).commentKey, 'mobile.v2_x-1');
+  for (const key of ['pr 123', 'x'.repeat(65), 'a/b', '-->']) {
+    assert.throws(() => parseInputs({ ...base, ISTHMUS_CI_COMMENT_KEY: key }),
+      (error) => error instanceof CiStepError && error.step === 'inputs', key);
+  }
+  const calls = [];
+  const lines = [];
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_COMMENT_KEY: 'pr 123' });
+  const result = runCiHttpImpact(env, { log: (line) => lines.push(line),
+    execute: (command, args, options) => { calls.push(args); return runChild(command, args, options); } });
+  assert.equal(calls.length, 0, '설치·capture·diff를 돌리기 전에 실패한다');
+  assert.equal(result.failed, true);
+  assert.equal(result.outputs, undefined);
+  assert.deepEqual(result.meta.errors, [{ step: 'inputs',
+    message: 'The comment key must be 1 to 64 letters, digits, dots, underscores or hyphens.' }]);
+  assert.equal(readFileSync(env.GITHUB_OUTPUT, 'utf8'), '', '입력 오류는 출력 없이 분석 단계가 실패한다(docs/CI.md)');
+  assert.match(lines.join(''), /^isthmus: inputs: The comment key must be/u);
+}));
+
+test('댓글 렌더링이 실패해도 render 오류를 meta에 싣고 댓글 없이 failed=true를 남긴다', () => withTemporaryDirectory((directory) => {
+  // diff 보고서의 형식이 틀리면 렌더러 입력 오류, JSON이 아니면 읽기 오류다. 둘 다 댓글을 만들 수 없다.
+  for (const [name, stdout] of [['format', '{"format":"isthmus-http-diff","version":2}\n'], ['json', 'not json\n']]) {
+    const scenario = join(directory, name);
+    mkdirSync(scenario);
+    const lines = [];
+    const env = actionEnvironment(scenario, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+      ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_FAIL_ON: '' });
+    const result = runCiHttpImpact(env, { log: (line) => lines.push(line), execute: () => ({ status: 0, stdout }) });
+    const expectedErrors = [{ step: 'render', message: 'The comment could not be rendered from the diff or trace report; see the step log.' }];
+    assert.equal(result.failed, true, name);
+    assert.deepEqual(result.meta.errors, expectedErrors, name);
+    assert.deepEqual(JSON.parse(readFileSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'meta.json'), 'utf8')).errors, expectedErrors, name);
+    // fail-on이 없고 diff가 0이어도 렌더 실패로 failed=true다. 댓글 파일이 없으므로 comment-file을 빼 게시 단계를 건너뛴다.
+    assert.deepEqual(readOutputs(env), { failed: 'true', 'diff-exit-code': '0', 'output-dir': env.ISTHMUS_CI_OUTPUT_DIR }, name);
+    assert.equal(result.outputs['comment-file'], undefined, name);
+    assert.equal(existsSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'comment.md')), false, name);
+    assert.equal(readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'), '', name);
+    assert.match(lines.join(''), /isthmus: render failure:\n::stop-commands::[0-9a-f]{32}\n[^]*(?:RenderInputError|CiStepError)/u, name);
+  }
+}));
+
+test('comment.md를 쓴 뒤 job summary 쓰기가 실패해도 댓글 파일을 남기지 않고 render 오류와 failed=true로 끝낸다', () => withTemporaryDirectory((directory) => {
+  // summary 경로가 디렉터리면 렌더링과 comment.md 쓰기가 끝난 뒤 append가 EISDIR로 실패한다. 게시 단계는 건너뛰는데
+  // comment.md가 artifact에 남으면 docs/CI.md의 "댓글·summary는 없다"와 어긋나고, 다 끝난 실행의 댓글처럼 읽힌다.
+  const summaryDirectory = join(directory, 'summary-directory');
+  mkdirSync(summaryDirectory);
+  const lines = [];
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_FAIL_ON: '', GITHUB_STEP_SUMMARY: summaryDirectory });
+  const result = runCiHttpImpact(env, { log: (line) => lines.push(line) });
+  assert.equal(result.failed, true);
+  assert.deepEqual(result.meta.errors, [{ step: 'render',
+    message: 'The comment could not be rendered from the diff or trace report; see the step log.' }]);
+  assert.equal(readOutputs(env).failed, 'true');
+  assert.equal(result.outputs['comment-file'], undefined);
+  assert.equal(existsSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'comment.md')), false);
+  assert.match(lines.join(''), /isthmus: render failure:\n::stop-commands::[0-9a-f]{32}\n[^]*EISDIR/u);
 }));
 
 test('parseInputs: 모드·SHA·버전·fail-on·정수 입력을 검증한다', () => {

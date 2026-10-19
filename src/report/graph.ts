@@ -82,7 +82,7 @@ function renderMermaid(graph: BridgeGraphDocument): string {
   );
   const lines = ['flowchart LR'];
   for (const limitation of graph.limitations) {
-    lines.push(`  %% limitation: ${limitationComment(limitation)}`);
+    lines.push(`  %% limitation: ${mermaidComment(limitation)}`);
   }
   for (const node of graph.nodes) {
     const label = node.location === undefined
@@ -98,7 +98,13 @@ function renderMermaid(graph: BridgeGraphDocument): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** Mermaid 인용 라벨에서 제어 문자를 HTML 엔터티로 바꾼다. */
+/**
+ * Mermaid 인용 라벨에서 문법 제어 문자를 엔터티로 바꾼다.
+ *
+ * Mermaid는 렌더 전에 텍스트 전체(따옴표 라벨 안 포함)에서 `%%{...}%%` 지시문을 찾아 설정으로
+ * 적용하고 지운다. 그래서 `%`는 Mermaid 엔터티 `#37;`로 바꾼다. 엔터티는 지시문 처리 뒤에 풀리므로
+ * 화면에는 `%`가 그대로 보인다. `&`를 먼저 바꾸므로 `#37;`와 겹치지 않는다.
+ */
 function mermaidText(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -107,7 +113,19 @@ function mermaidText(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('|', '&#124;')
     .replaceAll('\r', '&#13;')
-    .replaceAll('\n', '&#10;');
+    .replaceAll('\n', '&#10;')
+    .replaceAll('%', '#37;');
+}
+
+/**
+ * 분석 한계를 Mermaid 한 줄 주석으로 만든다.
+ *
+ * 주석은 화면에 나오지 않지만 Mermaid는 주석을 지우기 전에 지시문부터 찾는다. 닫는 `}%%`가 없는
+ * `%%{`는 텍스트 끝까지 지워 노드·간선이 사라지므로 `%`를 `%25`로 바꿔 `%%`가 생기지 않게 한다.
+ * DOT 주석에는 이런 해석이 없어 {@link limitationComment} 결과를 그대로 쓴다.
+ */
+function mermaidComment(limitation: JoinLimitation): string {
+  return limitationComment(limitation).replaceAll('%', '%25');
 }
 
 /** Graphviz DOT 문법으로 경계 그래프를 렌더링한다. */

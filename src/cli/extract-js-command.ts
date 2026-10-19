@@ -8,6 +8,7 @@
  */
 
 import { sep } from 'node:path';
+import { compareStrings } from '../compare.ts';
 import {
   createJsFactsDocument,
   JS_SOURCE_EXTENSIONS,
@@ -15,6 +16,7 @@ import {
 import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
   inputFailure,
+  internalError,
   MAX_INPUT_TEXT_LENGTH,
   MAX_TOTAL_INPUT_TEXT_LENGTH,
   type Clock,
@@ -59,7 +61,8 @@ const MAX_SCANNED_FILES = 10_000;
  * extract-js 인자를 실행해 프로세스에 독립적인 결과를 반환한다.
  *
  * 성공 시 정렬된 bridge-facts JSON을 stdout에 쓴다. 입력 실패는 원인 종류와
- * 해결 방향을 담은 코드 2, 잘못된 호출은 사용법과 코드 64다.
+ * 해결 방향을 담은 코드 2, 잘못된 호출은 사용법과 코드 64다. 문서 생성 중 분류하지
+ * 못한 예외는 입력 원문·경로 없는 내부 오류 코드 2다.
  */
 export async function runExtractJsCommand(
   arguments_: readonly string[],
@@ -150,9 +153,10 @@ export async function runExtractJsCommand(
     }
   }
 
-  // 같은 파일이 여러 입력에서 발견돼도 한 번만 스캔한다.
+  // 같은 파일이 여러 입력에서 발견돼도 한 번만 스캔한다. --events 문서는 이 순서를
+  // 그대로 쓰므로 로캘과 무관한 코드 단위 순서로 정렬한다.
   const ordered = [...new Map(discovered.map((f) => [f.path, f])).values()]
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) => compareStrings(left.path, right.path));
   let totalLength = 0;
   for (const file of ordered) {
     let text: string;
@@ -184,10 +188,16 @@ export async function runExtractJsCommand(
       exitCode: 2,
     };
   }
-  const document = (options.booleanFlags.has('--events') ? createJsEventFactsDocument : createJsFactsDocument)(
-    ordered, version, now().toISOString(), projectRoot,
-  );
-  return { standardOutput: encodeSortedJson(document), standardError: '', exitCode: 0 };
+  try {
+    const document = (options.booleanFlags.has('--events') ? createJsEventFactsDocument : createJsFactsDocument)(
+      ordered, version, now().toISOString(), projectRoot,
+    );
+    return { standardOutput: encodeSortedJson(document), standardError: '', exitCode: 0 };
+  } catch {
+    // 스캔 결함이 그대로 던져지면 Node가 설치 경로가 든 스택을 쓰고 문서화되지 않은
+    // 코드 1로 끝난다. 다른 명령처럼 원문·경로 없는 내부 오류 코드 2로 바꾼다.
+    return internalError();
+  }
 }
 
 /**
@@ -212,7 +222,7 @@ async function walkDirectory(
       throw new Error(`listDirectory failed: ${current}`, { cause: error });
     }
     for (const entry of [...entries]
-      .sort((left, right) => left.name.localeCompare(right.name))) {
+      .sort((left, right) => compareStrings(left.name, right.name))) {
       const child = `${current}/${entry.name}`;
       if (entry.isDirectory) {
         if (SKIPPED_DIRECTORIES.has(entry.name) || entry.name.startsWith('.')) {

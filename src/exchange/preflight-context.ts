@@ -20,7 +20,6 @@ import {
 } from './language-impact.ts';
 import type { ImpactSymbol, LanguageImpact } from './language-impact.ts';
 import type { ImpactSelection } from './impact-selection.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
 import { compareStrings } from '../compare.ts';
 import { parseMessageBridgeDocument, validateMessageDocuments } from './messages.ts';
 import type { BridgeMessageDocument } from './messages.ts';
@@ -143,13 +142,8 @@ function parseBridges(input: unknown, project: string): BridgeFactsDocument[] {
       fail('Invalid preflight bridge document.');
     }
   });
-  try {
-    const joined = joinBridgeDocuments(bridges);
-    if (joined.deferred) fail('Mixed bridge targets cannot be used in preflight context.');
-  } catch (error) {
-    if (error instanceof PreflightValidationError) throw error;
-    fail('Bridge documents cannot be joined for preflight.');
-  }
+  // 조인(호출·수신 측 구성, mixed-targets 보류)은 createPreflightReport가 맡는다. 여기서 조인하면 join의
+  // 해결 안내가 일반 문구로 가려지고, 같은 조인을 두 번 실행한다.
   return bridges;
 }
 

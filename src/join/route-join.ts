@@ -176,9 +176,9 @@ export function joinRouteFacts(
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const shadowBudget = { remaining: MAX_ROUTE_SHADOW_COMPARISONS };
-  const unattributed = collectUnattributedCalls(http, services);
+  const inputs = partitionScopes(http, services, scopeNames);
   const scopes = scopeNames.map((scope) =>
-    buildScope(http, services, scope, unattributed, budget, scopeBudget, shadowBudget, compareEndpoints));
+    buildScope(scope, inputs.get(scope)!, budget, scopeBudget, shadowBudget, compareEndpoints));
   return {
     driftOnly: !http.some(isClientDocument),
     scopes,
@@ -251,9 +251,9 @@ function buildLinkScope(
   attributed: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
-  const included = rule.includesDeclaration;
-  const decls = collectDeclarations(servers, 'route-decl', included, compareEndpoints);
-  const contracts = collectDeclarations(servers, 'route-contract', included, compareEndpoints);
+  const declarations = positionedDeclarations(servers, rule.includesDeclaration);
+  const decls = collectDeclarations(declarations, 'route-decl', compareEndpoints);
+  const contracts = collectDeclarations(declarations, 'route-contract', compareEndpoints);
   const declScanned = servers.some((document) =>
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = servers.filter(({ platform }) => platform === 'openapi').length;
@@ -264,7 +264,7 @@ function buildLinkScope(
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const serverScopes = new RouteLimitationScopeIndex(servers, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clients, scopeBudget);
-  const dynamic = dynamicGaps(servers, included, scopeBudget);
+  const dynamic = dynamicGaps(declarations, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
@@ -383,60 +383,129 @@ function attributedScope(service: string | undefined, services: Set<string> | un
 }
 
 /**
- * 한 문서·호출이 scope에 닿을 수 있는지다. 둘 다 service가 있고 다를 때만 닿지 않는다.
+ * service가 `service`인 문서·호출이 닿을 수 있는 scope다. 둘 다 service가 있고 다를 때만 닿지 않는다.
  *
  * 귀속되지 않은 호출이 어느 scope의 호출 측 공백이 되는지, 호출 측 문서의 한계가 어느
- * scope에 적용되는지를 같은 규칙으로 정한다.
+ * scope에 적용되는지를 같은 규칙으로 정한다. 단일 서비스 입력의 scope는 service가 없어 모두 닿는다.
  */
-function mayReach(service: string | undefined, scopeService: string | undefined): boolean {
-  return service === undefined || scopeService === undefined || service === scopeService;
+function reachableScopes(
+  service: string | undefined,
+  services: Set<string> | undefined,
+  inputs: ReadonlyMap<string, ScopeInputs>,
+): ScopeInputs[] {
+  if (services === undefined || service === undefined) return [...inputs.values()];
+  const scope = inputs.get(service);
+  return scope === undefined ? [] : [scope];
 }
 
-/** 귀속되지 않은 호출(dynamic 포함)의 유효 service 목록이다. */
-function collectUnattributedCalls(
+/** 문서 순번과 함께 둔 사실이다. registration-order decl의 group 키가 입력 순번으로 문서를 구분한다. */
+interface PositionedFact {
+  readonly documentIndex: number;
+  readonly document: BridgeFactsDocument;
+  readonly fact: BridgeFact;
+}
+
+/** scope 하나가 쓰는 문서·사실이다. 목록마다 입력 순서(문서 순서, 문서 안 순서)를 지킨다. */
+interface ScopeInputs {
+  /**
+   * 서버 측 문서: 유효 service가 이 scope인 선언 측 사실을 담았거나, 선언 측 사실이 없고 문서 service가 이 scope인
+   * 문서다. 파서가 문서·사실 service 불일치를 거부하므로 둘은 겹치지 않는다.
+   */
+  readonly serverDocuments: BridgeFactsDocument[];
+  /** 이 scope에 귀속될 수 있는 client roles 문서다: 문서 service로 닿거나(`reachableScopes`) 이 scope에 귀속된 호출이 있다. */
+  readonly clientDocuments: BridgeFactsDocument[];
+  /** 유효 service가 이 scope인(단일 서비스 입력이면 모든) 선언 측 사실이다. 정적·dynamic을 함께 둔다. */
+  readonly declarations: PositionedFact[];
+  /** 이 scope에 귀속된 호출이다. 정적·dynamic을 함께 둔다. */
+  readonly calls: PositionedFact[];
+  /** 귀속되지 않았지만 이 scope를 불렀을 수 있는 호출(dynamic 포함) 수다. */
+  unboundCalls: number;
+}
+
+/**
+ * 문서·사실을 한 번만 훑어 scope마다 쓸 입력으로 나눈다.
+ *
+ * scope마다 입력 전체를 다시 거르면 비용이 service 수 × 사실 수가 된다(service가 수백 개인 모노레포 문서). 귀속 규칙은
+ * scope마다 거르던 것과 같아서 각 scope가 받는 문서·사실 집합과 입력 순서가 그대로다. 단일 서비스 입력(`services`
+ * 없음)은 scope가 `default` 하나이고 모든 선언 측 문서·사실과 client 문서가 그 scope다.
+ */
+function partitionScopes(
   documents: readonly BridgeFactsDocument[],
   services: Set<string> | undefined,
-): Array<string | undefined> {
-  const found: Array<string | undefined> = [];
-  for (const document of documents) {
+  scopeNames: readonly string[],
+): Map<string, ScopeInputs> {
+  const inputs = new Map(scopeNames.map((scope): [string, ScopeInputs] =>
+    [scope, { serverDocuments: [], clientDocuments: [], declarations: [], calls: [], unboundCalls: 0 }]));
+  // 선언 측 사실·문서가 속한 scope다. 단일 서비스 입력은 모두 `default`다.
+  const ownerOf = (service: string | undefined): ScopeInputs | undefined => {
+    if (services === undefined) return inputs.get(DEFAULT_ROUTE_SCOPE);
+    return service === undefined ? undefined : inputs.get(service);
+  };
+  // 귀속되지 않은 호출은 service별 개수만 모은다. scope마다 목록을 다시 거르지 않기 위해서다.
+  const unattributed = new Map<string | undefined, number>();
+  for (const [documentIndex, document] of documents.entries()) {
+    const owners = new Set<ScopeInputs>();
+    const callScopes = new Set<ScopeInputs>();
+    let declares = false;
     for (const fact of document.facts) {
-      if (fact.kind !== 'route-call') continue;
       const service = effectiveService(document, fact);
-      if (attributedScope(service, services) === undefined) found.push(service);
+      if (isDeclarationFact(fact)) {
+        declares = true;
+        const owner = ownerOf(service);
+        owner?.declarations.push({ documentIndex, document, fact });
+        if (owner !== undefined) owners.add(owner);
+      } else if (fact.kind === 'route-call') {
+        const scope = attributedScope(service, services);
+        if (scope === undefined) {
+          unattributed.set(service, (unattributed.get(service) ?? 0) + 1);
+          continue;
+        }
+        const owner = inputs.get(scope)!;
+        owner.calls.push({ documentIndex, document, fact });
+        callScopes.add(owner);
+      }
+    }
+    if (isDeclarationDocument(document)) {
+      for (const owner of declares ? owners : [ownerOf(document.service)]) owner?.serverDocuments.push(document);
+    }
+    if (isClientDocument(document)) {
+      for (const owner of new Set([...reachableScopes(document.service, services, inputs), ...callScopes])) {
+        owner.clientDocuments.push(document);
+      }
+    }
+  }
+  for (const [service, count] of unattributed) {
+    for (const owner of reachableScopes(service, services, inputs)) owner.unboundCalls += count;
+  }
+  return inputs;
+}
+
+/** 문서들의 선언 측 사실 중 `includes`가 받는 것을 문서 순번과 함께 입력 순서대로 모은다. */
+function positionedDeclarations(
+  documents: readonly BridgeFactsDocument[],
+  includes: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
+): PositionedFact[] {
+  const found: PositionedFact[] = [];
+  for (const [documentIndex, document] of documents.entries()) {
+    for (const fact of document.facts) {
+      if (isDeclarationFact(fact) && includes(document, fact)) found.push({ documentIndex, document, fact });
     }
   }
   return found;
 }
 
-/** 한 scope의 선언·호출을 모으고 호출마다 양쪽 결과를 계산한다. */
+/** 한 scope의 선언·호출을 모으고 호출마다 양쪽 결과를 계산한다. 입력은 `partitionScopes`가 이 scope 몫으로 나눴다. */
 function buildScope(
-  documents: readonly BridgeFactsDocument[],
-  services: Set<string> | undefined,
   scope: string,
-  unattributed: ReadonlyArray<string | undefined>,
+  inputs: ScopeInputs,
   budget: { remaining: number },
   scopeBudget: { remaining: number },
   shadowBudget: { remaining: number },
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
-  const scopeService = services === undefined ? undefined : scope;
-  // 서버 측 문서: 유효 service가 이 scope인 선언 측 사실을 담았거나, 선언 측 사실이 없고 문서
-  // service가 이 scope인 문서다. 파서가 문서·사실 service 불일치를 거부하므로 둘은 겹치지 않는다.
-  const serverDocuments = documents.filter((document) => {
-    if (!isDeclarationDocument(document)) return false;
-    if (scopeService === undefined) return true;
-    const facts = document.facts.filter(isDeclarationFact);
-    return facts.length === 0
-      ? document.service === scopeService
-      : facts.some((fact) => effectiveService(document, fact) === scopeService);
-  });
-  const clientDocuments = documents.filter((document) => isClientDocument(document) &&
-    (mayReach(document.service, scopeService) || document.facts.some((fact) =>
-      fact.kind === 'route-call' && effectiveService(document, fact) === scopeService)));
-  const inScope = (document: BridgeFactsDocument, fact: BridgeFact): boolean =>
-    scopeService === undefined || effectiveService(document, fact) === scopeService;
-  const decls = collectDeclarations(documents, 'route-decl', inScope, compareEndpoints);
-  const contracts = collectDeclarations(documents, 'route-contract', inScope, compareEndpoints);
+  const { serverDocuments, clientDocuments } = inputs;
+  const decls = collectDeclarations(inputs.declarations, 'route-decl', compareEndpoints);
+  const contracts = collectDeclarations(inputs.declarations, 'route-contract', compareEndpoints);
   // (f): platform이 openapi가 아니고 roles에 server가 있는 문서다. 파서가 server 역할 없는
   // route-decl을 거부하지만, 계약 문장을 그대로 검사해 판정이 파서 규칙에 기대지 않게 한다.
   const declScanned = serverDocuments.some((document) =>
@@ -447,24 +516,21 @@ function buildScope(
   const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
   const serverScopes = new RouteLimitationScopeIndex(serverDocuments, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clientDocuments, scopeBudget);
-  const dynamic = dynamicGaps(documents, inScope, scopeBudget);
+  const dynamic = dynamicGaps(inputs.declarations, scopeBudget);
   const calls: RouteCallResult[] = [];
   const prefixCalls: RoutePrefixCall[] = [];
   let dynamicCalls = 0;
-  for (const document of documents) {
-    for (const fact of document.facts) {
-      if (fact.kind !== 'route-call' || attributedScope(effectiveService(document, fact), services) !== scope) continue;
-      const endpoint = routeEndpoint(document.platform, fact);
-      if (fact.dynamic || fact.channel === null) {
-        dynamicCalls += 1;
-        if (fact.channelPrefix !== undefined) {
-          prefixCalls.push({ endpoint, channelPrefix: fact.channelPrefix, ...methodField(fact) });
-        }
-        continue;
+  for (const { document, fact } of inputs.calls) {
+    const endpoint = routeEndpoint(document.platform, fact);
+    if (fact.dynamic || fact.channel === null) {
+      dynamicCalls += 1;
+      if (fact.channelPrefix !== undefined) {
+        prefixCalls.push({ endpoint, channelPrefix: fact.channelPrefix, ...methodField(fact) });
       }
-      calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
-        contractDocuments > 0 ? contractIndex : undefined, serverScopes, dynamic));
+      continue;
     }
+    calls.push(matchCall(fact, endpoint, declScanned ? declIndex : undefined,
+      contractDocuments > 0 ? contractIndex : undefined, serverScopes, dynamic));
   }
   return {
     scope,
@@ -475,7 +541,7 @@ function buildScope(
     clientLimitations: clientScopes.limitations,
     ...dynamic.summary,
     dynamicCalls,
-    unboundCalls: unattributed.filter((service) => mayReach(service, scopeService)).length,
+    unboundCalls: inputs.unboundCalls,
     decls: withShadows(markCalled(decls, calls, 'decl', clientScopes), shadows),
     contracts: markCalled(contracts, calls, 'contract', clientScopes),
     calls: uniqueCalls(calls, compareEndpoints),
@@ -536,49 +602,46 @@ function methodField(fact: BridgeFact): { method?: HttpMethod } {
  * registration-order 문서의 decl은 `registration`을 단다. group 키는 입력 순번의 문서까지 구분한다 — 순서는 한
  * 생산자 실행(한 라우터 체인) 안에서만 뜻이 있어, 다른 문서의 같은 group 문자열(모노레포의 두 Django 앱 등)과 섞으면
  * 다른 앱의 decl이 먼저 등록한 것처럼 보인다. 중복 증거는 `order`까지 같아야 합친다(같은 위치를 두 번 등록한
- * 목록의 앞 순번이 사라지지 않게).
+ * 목록의 앞 순번이 사라지지 않게). `facts`는 이 scope의 선언 측 사실이고 입력 순서를 지킨다.
  */
 function collectDeclarations(
-  documents: readonly BridgeFactsDocument[],
+  facts: readonly PositionedFact[],
   kind: 'route-decl' | 'route-contract',
-  inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
   compareEndpoints: CompareEndpoints,
 ): Array<Omit<RouteDeclarationFact, 'called' | 'clientLimitations'>> {
   const collected = new Map<string, Omit<RouteDeclarationFact, 'called' | 'clientLimitations' | 'declaration'> & {
     readonly declaration: Omit<RouteDeclaration, 'id'>;
   }>();
-  for (const [documentIndex, document] of documents.entries()) {
-    for (const fact of document.facts) {
-      if (fact.kind !== kind || fact.dynamic || fact.channel === null || !inScope(document, fact)) continue;
-      const parsed = parseRouteTemplate(fact.channel);
-      if (!parsed.ok) throw new Error('Validated route template failed to parse.');
-      const endpoint = routeEndpoint(document.platform, fact);
-      const constraints = new Map<number, RouteParamConstraint['kind']>(
-        (fact.paramConstraints ?? []).map(({ segment, kind: constraintKind }) => [segment, constraintKind]));
-      const entry = {
-        kind,
-        declaration: {
-          template: fact.channel,
-          segments: parsed.segments,
-          method: fact.method as RouteMethod,
-          anchor: fact.pathAnchor!,
-          ...(fact.trailingSlash === undefined ? {} : { trailingSlash: fact.trailingSlash }),
-          caseInsensitive: fact.caseInsensitive === true,
-          catchAllPrefix: fact.catchAllPrefix === true,
-          constraints,
-          ...registrationField(document, documentIndex, fact),
-          ...(fact.narrowed === true ? { narrowed: true as const } : {}),
-        },
-        endpoint,
-        narrowed: fact.narrowed === true,
-        testSource: fact.testSource === true,
-        constraintsKey: JSON.stringify(fact.paramConstraints ?? []),
-      };
-      // 같은 위치·심볼·route 정보의 사실은 증거 하나다. 매칭 속성까지 같아야 합친다.
-      collected.set(JSON.stringify([endpointKey(endpoint), entry.declaration.trailingSlash ?? null,
-        entry.declaration.caseInsensitive, entry.narrowed, entry.constraintsKey,
-        fact.order === undefined ? null : [fact.order.group, fact.order.index]]), entry);
-    }
+  for (const { documentIndex, document, fact } of facts) {
+    if (fact.kind !== kind || fact.dynamic || fact.channel === null) continue;
+    const parsed = parseRouteTemplate(fact.channel);
+    if (!parsed.ok) throw new Error('Validated route template failed to parse.');
+    const endpoint = routeEndpoint(document.platform, fact);
+    const constraints = new Map<number, RouteParamConstraint['kind']>(
+      (fact.paramConstraints ?? []).map(({ segment, kind: constraintKind }) => [segment, constraintKind]));
+    const entry = {
+      kind,
+      declaration: {
+        template: fact.channel,
+        segments: parsed.segments,
+        method: fact.method as RouteMethod,
+        anchor: fact.pathAnchor!,
+        ...(fact.trailingSlash === undefined ? {} : { trailingSlash: fact.trailingSlash }),
+        caseInsensitive: fact.caseInsensitive === true,
+        catchAllPrefix: fact.catchAllPrefix === true,
+        constraints,
+        ...registrationField(document, documentIndex, fact),
+        ...(fact.narrowed === true ? { narrowed: true as const } : {}),
+      },
+      endpoint,
+      narrowed: fact.narrowed === true,
+      testSource: fact.testSource === true,
+      constraintsKey: JSON.stringify(fact.paramConstraints ?? []),
+    };
+    // 같은 위치·심볼·route 정보의 사실은 증거 하나다. 매칭 속성까지 같아야 합친다.
+    collected.set(JSON.stringify([endpointKey(endpoint), entry.declaration.trailingSlash ?? null,
+      entry.declaration.caseInsensitive, entry.narrowed, entry.constraintsKey,
+      fact.order === undefined ? null : [fact.order.group, fact.order.index]]), entry);
   }
   return [...collected.values()]
     .sort((left, right) => compareEndpoints(left.endpoint, right.endpoint) ||
@@ -666,12 +729,11 @@ interface DynamicGaps {
 
 /** scope의 dynamic decl·contract를 모아 공백 색인을 만든다. 비교 예산은 한계 스코프 색인과 공유한다. */
 function dynamicGaps(
-  documents: readonly BridgeFactsDocument[],
-  inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
+  facts: readonly PositionedFact[],
   scopeBudget: { remaining: number },
 ): DynamicGaps {
-  const decls = collectDynamic(documents, 'route-decl', inScope);
-  const contracts = collectDynamic(documents, 'route-contract', inScope);
+  const decls = collectDynamic(facts, 'route-decl');
+  const contracts = collectDynamic(facts, 'route-contract');
   return {
     decls: new RouteLimitationScopeIndex(decls.entries, scopeBudget),
     contracts: new RouteLimitationScopeIndex(contracts.entries, scopeBudget),
@@ -691,27 +753,24 @@ function dynamicGaps(
  * 스코프마다 항목을 둔다 — 어느 사본이 맞는지 고르지 않고 모두 공백으로 본다.
  */
 function collectDynamic(
-  documents: readonly BridgeFactsDocument[],
+  facts: readonly PositionedFact[],
   kind: 'route-decl' | 'route-contract',
-  inScope: (document: BridgeFactsDocument, fact: BridgeFact) => boolean,
 ): { count: number; entries: RouteScopeEntry[] } {
   const ranges = new Map<string, Map<string, RouteScopeEntry> | null>();
-  for (const document of documents) {
-    for (const fact of document.facts) {
-      if (fact.kind !== kind || !(fact.dynamic || fact.channel === null) || !inScope(document, fact)) continue;
-      const key = factKey(document.platform, fact);
-      const range = dynamicDeclarationRange(fact);
-      const known = ranges.get(key);
-      if (known === null) continue;
-      if (range === undefined) {
-        ranges.set(key, null);
-        continue;
-      }
-      const group = known ?? new Map<string, RouteScopeEntry>();
-      // 문구는 사실 키다 — 한 사실의 여러 스코프 사본이 겹쳐도 trace가 사실 하나로 세게 한다(출력에는 싣지 않는다).
-      group.set(JSON.stringify(range), { message: key, range });
-      ranges.set(key, group);
+  for (const { document, fact } of facts) {
+    if (fact.kind !== kind || !(fact.dynamic || fact.channel === null)) continue;
+    const key = factKey(document.platform, fact);
+    const range = dynamicDeclarationRange(fact);
+    const known = ranges.get(key);
+    if (known === null) continue;
+    if (range === undefined) {
+      ranges.set(key, null);
+      continue;
     }
+    const group = known ?? new Map<string, RouteScopeEntry>();
+    // 문구는 사실 키다 — 한 사실의 여러 스코프 사본이 겹쳐도 trace가 사실 하나로 세게 한다(출력에는 싣지 않는다).
+    group.set(JSON.stringify(range), { message: key, range });
+    ranges.set(key, group);
   }
   const entries = [...ranges.entries()].sort(([left], [right]) => compareStrings(left, right))
     .flatMap(([key, group]): RouteScopeEntry[] => group === null ? [{ message: key }]
