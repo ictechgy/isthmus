@@ -12,8 +12,10 @@
 
 ### Fixed
 
-- MCP 도구의 경로·`query` 이름 인자가 `-`로 시작하면 CLI 플래그로 읽혀, `check`가 `--update-baseline`으로
-  파일을 덮어쓰거나 `--baseline`·`--format sarif`·`--pairs`가 열리던 결함을 고쳤다. 이제 경로·이름으로만 다룬다.
+- MCP 도구의 `documents`·`context`·`runtime[]` 경로와 `query` 이름이 `-`로 시작하면 CLI 플래그로 읽혀, `check`가
+  `--update-baseline`으로 파일을 덮어쓰거나 `--baseline`·`--format sarif`·`--pairs`가 열리던 결함을 고쳤다. 이제 이
+  인자들은 `--` 뒤 위치 인수로 넘겨 경로·이름으로만 다룬다. 값으로 받는 인자와 `diff`의 before·after는 전처럼 CLI
+  인수 규칙을 따른다([MCP](docs/MCP.md#도구)).
 - `isthmus serve`가 FIFO 경로에서 열기를 끝내지 못해 세션 전체가 멈추고, 장치 경로는 문자열 상한까지 읽은
   뒤에야 실패하던 결함을 고쳤다. 도구는 일반 파일만 읽고 그 밖의 경로는 바로 읽기 실패(`isError`)로 답한다.
 - bridge `diff`가 before·after에 입력 합계 상한(UTF-16 64Mi)을 따로 적용하고, after 쪽 입력 오류를 before

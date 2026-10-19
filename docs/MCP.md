@@ -38,8 +38,11 @@ isthmus serve --verbose  # usage 64 — 플래그는 없다
 내고, 나머지 도구는 http 문서를 CLI와 같은 원인 문구로 거부한다. 귀속되지 않은 호출의 경로·host는
 어떤 응답에도 싣지 않는다.
 경로는 서버 프로세스의 작업 디렉터리 기준으로 해석된다 — 클라이언트는 읽을 수 있는
-경로만 넘겨야 한다. 경로와 `query`의 `name`은 `-`로 시작해도 CLI 플래그로 읽지 않고 경로·이름으로만
-넘긴다(`diff`의 경로는 CLI와 같이 `-`로 시작할 수 없다).
+경로만 넘겨야 한다. `documents`·`context`·`runtime[]`(`preflight`) 경로와 `query`의 `name`은 `--` 뒤 위치 인수로
+넘기므로 `-`로 시작해도 CLI 플래그로 읽지 않고 경로·이름으로 읽는다. 값으로 넘기는 인자(`impact`의 `file`·`symbol`·
+`changes`·`runtime`·`revision`, `preflight`의 `expectations`·`revision`·`explain`)는 CLI처럼 `-`로 시작하면 사용법
+오류(`isError`)다. `diff`의 `before`·`after` 원소는 CLI의 diff 인수와 같은 규칙으로 읽는다(`-`로 시작하면 사용법
+오류, `--strict`는 strict 플래그).
 
 | 도구 | 대응 명령 | 선택 인자 |
 |---|---|---|
