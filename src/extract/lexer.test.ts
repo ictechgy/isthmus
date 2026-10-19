@@ -2,6 +2,43 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { tokenizeJsSource } from './lexer.ts';
 
+/**
+ * 렉서가 쓰는 문자열 연산(첨자·length·slice·codePointAt·startsWith·indexOf)만 흉내 내는 대역이다 — 토큰화 작업량을
+ * 시간 대신 읽은 글자 수로 잰다. 첨자 읽기와 codePointAt은 1, startsWith는 비교한 길이, indexOf는 훑은 거리로 센다.
+ * 렉서가 다른 문자열 속성을 쓰기 시작하면 대역에 없어 바로 실패한다(조용히 덜 세지 않는다).
+ */
+function countingSource(text: string): { readonly source: string; readonly reads: () => number } {
+  let reads = 0;
+  const methods: Readonly<Record<string, unknown>> = {
+    slice: (start?: number, end?: number) => text.slice(start, end),
+    codePointAt: (position: number) => {
+      reads++;
+      return text.codePointAt(position);
+    },
+    startsWith: (search: string, position = 0) => {
+      reads += search.length;
+      return text.startsWith(search, position);
+    },
+    indexOf: (search: string, position = 0) => {
+      const found = text.indexOf(search, position);
+      reads += (found === -1 ? text.length : found + search.length) - position;
+      return found;
+    },
+  };
+  const source = new Proxy(methods, {
+    get(target, key) {
+      if (key === 'length') return text.length;
+      if (typeof key === 'string' && /^\d+$/.test(key)) {
+        reads++;
+        return text[Number(key)];
+      }
+      if (typeof key === 'string' && Object.hasOwn(target, key)) return target[key];
+      throw new Error(`countingSource does not support ${String(key)}`);
+    },
+  });
+  return { source: source as unknown as string, reads: () => reads };
+}
+
 test('토큰 열은 UTF-8 바이트이고 원문 offset은 UTF-16을 유지한다', () => {
   const prefix = "'한글😀'; ";
   const source = prefix + 'NativeModules.Camera.open();\n/*é*/ emitter();\n😀 receiver';
@@ -134,6 +171,41 @@ test('중괄호 유니코드 이스케이프는 범위 안의 16진수만 코드
     tokens.filter((token) => token.kind === 'string').map((token) => token.value),
     ['A', '😀', 'u{}', 'u{110000}', 'u{4G}'],
   );
+});
+
+test('중괄호 유니코드 이스케이프는 16진수 구간 바로 뒤의 }만 닫는 괄호로 본다', () => {
+  // 뒤 리터럴·다음 줄의 `}`는 이 이스케이프를 닫지 않는다 — 16진수가 아닌 첫 글자에서 판정이 끝난다.
+  const cases: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string, string | null]>]> = [
+    ["'\\u{41' + '}'", [['string', "'\\u{41'", 'u{41'], ['punct', '+', null], ['string', "'}'", '}']]],
+    ["'\\u{\\u{41}'", [['string', "'\\u{\\u{41}'", 'u{A']]],
+    ["'\\u{41 }'", [['string', "'\\u{41 }'", 'u{41 }']]],
+    ["'\\u{0000000041}'", [['string', "'\\u{0000000041}'", 'A']]],
+    ['`\\u{1F600}` + `\\u{1F600`;\n}', [
+      ['template', '`\\u{1F600}`', '😀'], ['punct', '+', null], ['template', '`\\u{1F600`', 'u{1F600'],
+      ['punct', ';', null], ['punct', '}', null],
+    ]],
+  ];
+  for (const [source, expected] of cases) {
+    const tokens = tokenizeJsSource(source);
+    assert.deepEqual(tokens.map((token) => [token.kind, token.text, token.value ?? null]), expected, source);
+  }
+});
+
+test('닫히지 않은 \\u{ 이스케이프가 많아도 이스케이프마다 소스 끝까지 훑지 않는다', () => {
+  // 닫는 `}`를 첫 `}`까지 찾으면 이스케이프마다 파일 끝의 `}`까지 훑어, 토큰화가 입력 크기의 이차였다.
+  const size = 1_000;
+  const unit = "'\\u{'" + '"\\u{41"' + '`\\u{1F`';
+  const text = `${unit.repeat(size)}\n}`;
+  const { source, reads } = countingSource(text);
+  const tokens = tokenizeJsSource(source);
+  assert.equal(tokens.length, 3 * size + 1);
+  assert.deepEqual(
+    [...new Set(tokens.map((token) => [token.kind, token.value ?? null].join(':')))],
+    ['string:u{', 'string:u{41', 'template:u{1F', 'punct:'],
+  );
+  // 글자마다 위치 계산과 리터럴·이스케이프 판정으로 몇 번씩 읽는다(약 3.7배, 크기와 무관). 이스케이프마다 파일 끝까지
+  // 훑으면 약 2,860만 번(약 1,500배)이다.
+  assert.ok(reads() <= 8 * text.length, `character reads ${reads()} for ${text.length} characters`);
 });
 
 test('보간 안의 문자열·주석·이스케이프·중첩 템플릿을 건너뛰어 종료 백틱을 찾는다', () => {

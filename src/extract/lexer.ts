@@ -336,10 +336,10 @@ function cookEscape(
     }
   }
   if (char === 'u') {
-    // 닫는 `}`가 없는 `\u{`는 알 수 없는 이스케이프다 — indexOf의 -1로 끝 위치를
+    // 닫는 `}`가 없는 `\u{`는 알 수 없는 이스케이프다 — 없음(-1)으로 끝 위치를
     // 계산하면 커서가 소스 앞쪽으로 돌아가 같은 리터럴을 끝없이 다시 읽는다.
     const isBraced = source[start + 2] === '{';
-    const close = isBraced ? source.indexOf('}', start + 3) : start + 6;
+    const close = isBraced ? bracedEscapeClose(source, start + 3) : start + 6;
     const digits = close === -1 ? '' : source.slice(isBraced ? start + 3 : start + 2, close);
     if (/^[0-9A-Fa-f]+$/.test(digits)) {
       const code = parseInt(digits, 16);
@@ -353,4 +353,21 @@ function cookEscape(
   }
   // 알려지지 않은 이스케이프는 문자 그대로다(ES에서 '\'는 사라진다).
   return { end: start + 2, text: char };
+}
+
+/**
+ * `\u{` 뒤 `from`부터 16진수 구간을 읽고, 바로 다음 글자가 `}`면 그 위치를, 아니면 -1을 돌려준다.
+ *
+ * 첫 `}`를 소스 끝까지 찾지 않는다 — 닫히지 않은 `\u{`마다 나머지 소스를 훑으면 토큰화가 입력 크기의
+ * 이차가 된다. `}`는 16진수가 아니므로 "첫 `}`까지가 모두 16진수"라는 판정과 결과가 같다.
+ */
+function bracedEscapeClose(source: string, from: number): number {
+  let cursor = from;
+  while (cursor < source.length && isHexDigit(source[cursor]!)) cursor++;
+  return source[cursor] === '}' ? cursor : -1;
+}
+
+/** 16진수 숫자 한 글자다. */
+function isHexDigit(char: string): boolean {
+  return /[0-9A-Fa-f]/.test(char);
 }
