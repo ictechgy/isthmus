@@ -599,8 +599,15 @@ node scripts/capture-trace.mjs capture.json
   출력 디렉터리의 `logs/`에만 저장한다(경로·비밀이 섞일 수 있다). 실패해도 `capture-manifest.json`에 `status: "failed"`와
   실패 단계가 남는다. 종료 코드는 성공 0, 실패 2다.
 - **revision**: member `revision`은 문자열 또는 `{"git": true}`(`git rev-parse --verify HEAD`, workspace member는 필수).
-  git 조회는 `GIT_OPTIONAL_LOCKS=0`과 `core.fsmonitor=false`로 저장소의 index를 고치지 않고, 작업 트리가 더러운지를
-  manifest `dirty`에 적는다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
+  git 조회(이것과 도구 `source`)는 `GIT_OPTIONAL_LOCKS=0`으로 저장소의 index를 고치지 않고, 작업 트리가 더러운지를
+  manifest `dirty`에 적는다. 조회는 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한다(`scripts/git-isolation.mjs`):
+  조회마다 바로 앞의 `<단계>:config` 단계에서 `git config -z --name-only --list`(키 이름만)로 그 순간 설정된 filter 드라이버를
+  모아 `-c filter.<이름>.clean=`·`smudge=`·`process=`·`required=false`로 덮고(전역 설정의 git-lfs도 포함)
+  `core.fsmonitor`·서명 표시를 끄며, `status`는 서브모듈에서 git을 띄우지 않는다(`--ignore-submodules=dirty`). 그래서
+  git-lfs처럼 filter로 정규화되던 파일은 stat 정보가 낡았으면 `dirty: true`로 보일 수 있고(깨끗하다고 주장하지 않는 쪽),
+  서브모듈은 기록된 commit과 다를 때만 `dirty`에 들어가며 서브모듈 안의 커밋하지 않은 변경은 보지 않는다. 이름에 `=`가
+  들었거나 UTF-8이 아닌 filter 드라이버는 명령줄로 덮을 수 없어 조회하지 않고 그 단계 실패로 끝낸다 — 그 드라이버를 설정에서
+  지우거나 이름을 바꾼다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
   둘 다 없는 옛 형식 artifact(`change-impact` 등)는 받지 않는다.
 - **catalog**(workspace member만): `catalog.graph`의 파일 sha256을 `catalog.graphSha`로 싣는다(schemagraph
   `graphRevision`과 같은 규칙).

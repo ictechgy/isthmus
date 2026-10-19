@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureTrace, CaptureTraceError } from './capture-trace.mjs';
+import {
+  fixtureEnvironment, initHostileRepository, initSuperprojectWithHostileSubmodule, markerKit,
+} from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
 // 가짜 생산자(node 스크립트)가 합성 fixture를 내보낸다. Swift·JVM 없이 capture의 모든 단계를 실제 자식 실행으로 검사한다.
@@ -425,6 +428,68 @@ test('심볼 선택의 usr는 역방향 root에 더해지고 git revision은 man
   assert.deepEqual(JSON.parse(await readFile(android[6], 'utf8')), ['kt:Extra.symbol', 'kt:UsersApi.create', 'kt:UsersApi.get']);
   const context = JSON.parse(await readFile(join(work, 'out/trace-context.json'), 'utf8'));
   assert.equal(context.revision, head);
+});
+
+/** git만 전역·시스템 설정 없이 실행한다(fixture 저장소가 개발자 설정에 흔들리지 않게). 나머지 자식은 그대로다. */
+function fixtureExecute(command, args, options) {
+  return runChild(command, args, command === 'git' ? { ...options, env: fixtureEnvironment(options.env) } : options);
+}
+
+test('git revision과 도구 source 조회는 분석 대상 저장소의 filter·fsmonitor·hook 설정을 실행하지 않는다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  const appHead = await initHostileRepository(project, kit, { attributes: 'tree', stale: ['main.dart'] });
+  const source = join(work, 'tool-src');
+  await mkdir(source);
+  await writeFile(join(source, 'Tool.swift'), 'struct Tool {}');
+  const toolHead = await initHostileRepository(source, kit, { attributes: 'info', stale: ['Tool.swift'] });
+  config.members[0].revision = { git: true };
+  config.tools.tsograph.source = { root: 'work', path: 'tool-src' };
+  config.trace = false;
+  await captureTrace(config, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.members[0], { name: 'app', project, revision: appHead, revisionSource: 'git', dirty: false });
+  assert.deepEqual(manifest.tools.tsograph.source, { revision: toolHead, dirty: false });
+  // 조회마다 바로 앞에서 설정 키를 다시 읽고 그 순간의 드라이버를 빈 명령으로 덮는다.
+  const steps = manifest.steps.filter(({ step }) => step.startsWith('revision:app'));
+  assert.deepEqual(steps.map(({ step }) => step),
+    ['revision:app:config', 'revision:app', 'revision:app:status:config', 'revision:app:status']);
+  for (const argument of ['core.fsmonitor=false', 'filter.evil.name.clean=', 'filter.evil.name.required=false',
+    'filter.Proc.process=', '--ignore-submodules=dirty']) {
+    assert.ok(steps[3].command.includes(argument), argument);
+  }
+});
+
+test('git revision은 명령줄로 덮을 수 없는 filter 드라이버 이름이 있으면 조회하지 않고 그 단계에서 실패한다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  await initHostileRepository(project, kit, { driver: 'a=b', stale: ['main.dart'] });
+  config.members[0].revision = { git: true };
+  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), 'revision:app', /git cannot override a configured filter driver/u);
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.failure.step, 'revision:app');
+  assert.ok(!manifest.steps.some(({ step }) => step === 'revision:app'), 'The query that cannot be isolated never runs.');
+});
+
+test('git revision은 서브모듈에서 git을 띄우지 않고 기록된 commit과 다른 서브모듈만 dirty로 본다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  const moveSubmodule = await initSuperprojectWithHostileSubmodule(project, join(kit.scratch, 'origin'), kit);
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  const dirty = async (path) => JSON.parse(await readFile(join(work, path, 'capture-manifest.json'), 'utf8')).members[0].dirty;
+  await captureTrace(config, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  assert.equal(await dirty('out'), false);
+  moveSubmodule();
+  await captureTrace({ ...config, output: { root: 'work', path: 'moved' } }, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  assert.equal(await dirty('moved'), true);
 });
 
 test('CLI는 사용법·설정 오류를 종료 코드 2와 단계 문구로 알린다', async (t) => {

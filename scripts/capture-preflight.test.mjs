@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { capturePreflight } from './capture-preflight.mjs';
+import {
+  fixtureEnvironment, initHostileRepository, initSuperprojectWithHostileSubmodule, markerKit,
+} from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
 const fixture = JSON.parse(await readFile(new URL('../fixtures/preflight/context.json', import.meta.url), 'utf8'));
@@ -267,20 +270,31 @@ test('CI git 선택은 rename 양쪽·추적되지 않은 소스를 포함하고
   const f = await setup(t);
   const { selection: _selection, ...rest } = f.config;
   const config = { ...rest, since: 'HEAD~1' };
+  const gitCalls = [];
+  // 하위 명령은 격리 설정(`-c` 쌍) 뒤에 온다.
+  const subcommand = (args) => args.find((argument, index) => argument !== '-c' && args[index - 1] !== '-c');
   const execute = (command, args, options) => {
     if (command !== 'git') return f.execute(command, args, options);
-    if (args[0] === 'rev-parse') {
+    gitCalls.push(args);
+    if (subcommand(args) === 'config') return { status: 0, stdout: 'core.bare\0filter.lfs.clean\0filter.lfs.required\0' };
+    if (subcommand(args) === 'rev-parse') {
       assert.ok(args.includes('--end-of-options'));
       return { status: 0, stdout: `${'a'.repeat(40)}\n` };
     }
-    if (args[0] === 'diff') return { status: 0, stdout: 'M\0ios/Helper.swift\0R100\0lib/old.dart\0lib/bridge.dart\0M\0README.md\0' };
-    if (args[0] === 'ls-files') return { status: 0, stdout: 'lib/new.dart\0' };
+    if (subcommand(args) === 'diff') return { status: 0, stdout: 'M\0ios/Helper.swift\0R100\0lib/old.dart\0lib/bridge.dart\0M\0README.md\0' };
+    if (subcommand(args) === 'ls-files') return { status: 0, stdout: 'lib/new.dart\0' };
     assert.fail('unexpected git call');
   };
   const result = await capturePreflight(config, { execute });
   assert.deepEqual(result.context.selection.dart.files, ['lib/bridge.dart', 'lib/new.dart', 'lib/old.dart']);
   assert.deepEqual(result.context.selection.swift.files, ['ios/Helper.swift']);
   assert.ok(result.report.limitations.some(({ message }) => message.includes('unmodeled-changes')));
+  // 조회마다 바로 앞에서 설정 키를 다시 읽고, 그 순간의 드라이버를 빈 명령으로 덮는다.
+  assert.deepEqual(gitCalls.map(subcommand), ['config', 'rev-parse', 'config', 'diff', 'config', 'ls-files']);
+  for (const argument of ['core.fsmonitor=false', 'filter.lfs.clean=', 'filter.lfs.process=', 'filter.lfs.required=false',
+    'diff.autoRefreshIndex=false', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty']) {
+    assert.ok(gitCalls[3].includes(argument), argument);
+  }
 });
 
 test('실제 Git 작업 트리의 변경 목록을 CI 수집 선택으로 사용한다', async (t) => {
@@ -308,6 +322,57 @@ test('실제 Git 작업 트리의 변경 목록을 CI 수집 선택으로 사용
   assert.deepEqual(result.context.selection.swift.files, ['ios/Helper.swift']);
   assert.equal(result.context.selection.kotlin, undefined);
   assert.ok(result.context.limitations.some((value) => value.startsWith('unconfigured-platform-changes: 2 kotlin')));
+});
+
+/** git만 전역·시스템 설정 없이 실제로 실행하고 나머지 명령은 가짜 producer에 넘긴다. */
+function realGit(f) {
+  return (command, args, options) => (command === 'git'
+    ? runChild(command, args, { ...options, env: fixtureEnvironment(options.env) }) : f.execute(command, args, options));
+}
+
+test('since의 git 조회는 분석 대상 저장소의 filter·fsmonitor·hook 설정을 실행하지 않는다', async (t) => {
+  for (const attributes of ['tree', 'info']) {
+    const f = await setup(t);
+    const kit = await markerKit(t);
+    await initHostileRepository(f.root, kit, { attributes, stale: ['lib/bridge.dart'] });
+    await writeFile(join(f.root, 'ios/Helper.swift'), 'changed native');
+    const { selection: _selection, ...rest } = f.config;
+    const result = await capturePreflight({ ...rest, since: 'HEAD' }, { execute: realGit(f) });
+    assert.deepEqual(await kit.found(), [], `${attributes} attributes`);
+    assert.deepEqual(result.context.selection.swift.files, ['ios/Helper.swift']);
+    // 격리한 diff는 index를 고쳐 쓰지 않으므로 stat만 바뀐 파일도 변경으로 고른다(빠뜨리지 않는 쪽).
+    assert.deepEqual(result.context.selection.dart.files, ['lib/bridge.dart']);
+  }
+});
+
+test('since는 명령줄로 덮을 수 없는 filter 드라이버 이름이 있으면 분석 조회 없이 실패한다', async (t) => {
+  // '='는 git이 -c 값을 첫 '='에서 나누고, 잘못된 UTF-8은 같은 바이트로 인자에 되돌릴 수 없다.
+  for (const driver of ['a=b', Buffer.from([0xff, 0xfe])]) {
+    const f = await setup(t);
+    const kit = await markerKit(t);
+    await initHostileRepository(f.root, kit, { driver, stale: ['lib/bridge.dart'] });
+    const { selection: _selection, ...rest } = f.config;
+    await assert.rejects(capturePreflight({ ...rest, since: 'HEAD' }, { execute: realGit(f) }),
+      /git cannot override a configured filter driver/u);
+    assert.deepEqual(await kit.found(), []);
+    assert.deepEqual(f.calls, [], 'No producer runs after the isolation failure.');
+  }
+});
+
+test('since는 서브모듈에서 git을 띄우지 않고 기록된 commit 차이만 설정 변경으로 남긴다', async (t) => {
+  const f = await setup(t);
+  const kit = await markerKit(t);
+  const moveSubmodule = await initSuperprojectWithHostileSubmodule(f.root, join(kit.scratch, 'origin'), kit);
+  await writeFile(join(f.root, 'ios/Helper.swift'), 'changed native');
+  const { selection: _selection, ...rest } = f.config;
+  const first = await capturePreflight({ ...rest, since: 'HEAD' }, { execute: realGit(f) });
+  assert.deepEqual(await kit.found(), []);
+  assert.deepEqual(first.context.selection.swift.files, ['ios/Helper.swift']);
+  assert.ok(!first.context.limitations.some((value) => value.startsWith('unmodeled-changes')));
+  moveSubmodule();
+  const second = await capturePreflight({ ...rest, since: 'HEAD' }, { execute: realGit(f) });
+  assert.deepEqual(await kit.found(), []);
+  assert.ok(second.context.limitations.includes('unmodeled-changes: 1 tracked configuration/resource change(s) require separate review'));
 });
 
 test('선택한 v2 message producer는 같은 capture에 포함되고 캐시 설정을 구분한다', async (t) => {

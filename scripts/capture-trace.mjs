@@ -39,6 +39,7 @@ import {
   analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
 } from '../dist/exchange/trace-context.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
+import { CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /**
@@ -295,16 +296,35 @@ function oneLine(text) {
   return text.split(/\r?\n/u)[0].replace(/[\u0000-\u001f\u007f-\u009f]/gu, '').trim().slice(0, 200);
 }
 
-/** git 조회(revision·dirty)다. index를 고치지 않도록 optional lock을 끄고 fsmonitor를 쓰지 않는다. */
+/**
+ * git 조회(revision·dirty)다. index를 고치지 않도록 optional lock을 끄고(run의 환경), 조회마다 분석 대상 설정의
+ * filter·fsmonitor를 막고 서브모듈에서 git을 띄우지 않는다({@link isolatedGit}). 서브모듈은 기록된 commit과 다를 때만
+ * dirty로 본다.
+ */
 async function gitState(session, directory, step) {
-  const head = await run(session, { step, label: 'git rev-parse', command: ['git'],
-    args: ['-C', directory, 'rev-parse', '--verify', 'HEAD'], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  const head = await isolatedGit(session, directory, step, 'rev-parse', ['--verify', 'HEAD']);
   const revision = head.stdout.trim();
   if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(revision)) throw new CaptureTraceError(step, 'git did not return a commit hash.');
-  const status = await run(session, { step: `${step}:status`, label: 'git status', command: ['git'],
-    args: ['-C', directory, '-c', 'core.fsmonitor=false', 'status', '--porcelain', '-z', '--untracked-files=normal'],
-    timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  const status = await isolatedGit(session, directory, `${step}:status`, 'status', ['--porcelain', '-z', '--untracked-files=normal']);
   return { revision, dirty: status.stdout.length > 0 };
+}
+
+/**
+ * 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한 git 하위 명령 하나다(scripts/git-isolation.mjs). 바로 앞의
+ * `<step>:config` 단계로 그 순간 설정된 filter 드라이버를 다시 읽어 덮는다 — 사이에 실행된 생산자가 설정을 바꿔도 따라간다.
+ * 덮을 수 없는 이름이면 그 조회를 실행하지 않고 `step`의 오류로 끝낸다.
+ */
+async function isolatedGit(session, directory, step, subcommand, args) {
+  const listing = await run(session, { step: `${step}:config`, label: 'git config', command: ['git'],
+    args: ['-C', directory, ...CONFIG_NAMES_QUERY], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  let drivers;
+  try { drivers = filterDriverNames(listing.stdout); }
+  catch (error) {
+    if (error instanceof GitIsolationError) throw new CaptureTraceError(step, error.message);
+    throw error;
+  }
+  return run(session, { step, label: `git ${subcommand}`, command: ['git'],
+    args: ['-C', directory, ...isolatedGitArguments(drivers, subcommand, args)], timeoutSeconds: GIT_TIMEOUT_SECONDS });
 }
 
 /** 쓰는 도구마다 `--version`과(선언했으면) 소스 checkout revision을 기록한다. */

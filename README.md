@@ -394,7 +394,10 @@ traversals rooted at the handler, call-site, relation-use, and schema vertex ids
 (`--roots-from` where the producer supports it), copies precomputed artifacts with their `sha256`, and
 writes a single-project or workspace trace context, a manifest of producer versions and revisions, and
 optionally `trace.json`. Children run from argument arrays without a shell, with a timeout per step, and
-every path must stay inside the declared roots. For a file selection it collects in two stages: forward
+every path must stay inside the declared roots. Its git queries (`revision: {"git": true}` and tool `source`, like
+the preflight collector's `since`) override the analysed repository's filter drivers and fsmonitor, use no external
+diff or textconv, and do not run git inside submodules, so repository settings never run commands
+([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). For a file selection it collects in two stages: forward
 traversals and optional producer symbol listings first (tsograph `graph`, kartograph `snapshot`, cartograph
 `graph`), then the reverse traversals rooted also at the symbols located in the selected files, so helpers
 without facts no longer fall back to fact locations; listed symbols reach trace through the optional

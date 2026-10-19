@@ -14,6 +14,7 @@ import { adaptKartographImpact } from '../dist/exchange/kartograph-impact.js';
 import { createPreflightReport, hasPreflightBlockers } from '../dist/report/preflight.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
 import { writeTextAtomically } from '../dist/cli/atomic-write.js';
+import { CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /** workflow 실패는 자식 출력·입력 경로를 오류 본문에 싣지 않는다. */
@@ -56,13 +57,28 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
     try { return JSON.parse(text); }
     catch { throw new CaptureError(`Preflight producer did not return JSON: ${step}.`); }
   }
+  /**
+   * 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한 git 조회 하나다(scripts/git-isolation.mjs). 바로 앞의
+   * `<step>-config` 단계로 그 순간 설정된 filter 드라이버를 다시 읽어 덮고, 덮을 수 없는 이름이면 조회하지 않고 실패한다.
+   */
+  async function git(subcommand, args, step) {
+    let drivers;
+    try { drivers = filterDriverNames(await run(['git'], CONFIG_NAMES_QUERY, `${step}-config`)); }
+    catch (error) {
+      if (error instanceof GitIsolationError) throw new CaptureError(error.message);
+      throw error;
+    }
+    return run(['git'], isolatedGitArguments(drivers, subcommand, args), step);
+  }
   const limitations = [];
   let selectionBase = null;
   if (config.since !== undefined) {
-    selectionBase = (await run(['git'], ['rev-parse', '--verify', '--end-of-options', `${config.since}^{commit}`], 'git-base')).trim();
+    // 격리한 diff는 index를 고쳐 쓰지 않아 stat만 바뀐 파일도 변경으로 고르고(빠뜨리지 않는 쪽), 서브모듈은 기록된
+    // commit과 다를 때만 변경으로 본다.
+    selectionBase = (await git('rev-parse', ['--verify', '--end-of-options', `${config.since}^{commit}`], 'git-base')).trim();
     if (!/^[a-f0-9]{40,64}$/.test(selectionBase)) throw new CaptureError('Git did not resolve a commit for the selection.');
-    const diff = await run(['git'], ['diff', '--name-status', '-z', '--find-renames', selectionBase, '--'], 'git-changes');
-    const untracked = await run(['git'], ['ls-files', '--others', '--exclude-standard', '-z'], 'git-untracked');
+    const diff = await git('diff', ['--name-status', '-z', '--find-renames', selectionBase, '--'], 'git-changes');
+    const untracked = await git('ls-files', ['--others', '--exclude-standard', '-z'], 'git-untracked');
     const paths = gitChangePaths(diff);
     for (const path of nulFields(untracked)) if (/\.(dart|swift|m|mm|kt|java)$/.test(path)) paths.add(path);
     const files = { dart: [], swift: [], kotlin: [] };
