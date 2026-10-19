@@ -358,7 +358,9 @@ workspace trace context, 생산자 버전·revision manifest, 선택적으로 `t
 git 조회(preflight 수집기의 `since`도 같다)는 분석 대상 저장소의 filter 드라이버·fsmonitor를 덮고 외부 diff·textconv를 쓰지
 않으며 서브모듈에서 git을 띄우지 않고 promisor remote의 lazy fetch도 꺼, 그 설정들이 수집 중에 명령을 실행하지 않는다 —
 부분 clone이 필요한 객체를 로컬에 두지 않으면 내려받는 대신 실패한다([TRACE](docs/TRACE.md)·
-[PREFLIGHT](docs/PREFLIGHT.md)). 파일 선택이면 두 단계로 모은다 — 정방향 순회와
+[PREFLIGHT](docs/PREFLIGHT.md)). 그 결과 git-lfs처럼 filter로 정규화되던 파일은 stat 정보가 낡았을 때 깨끗하다고
+주장하지 않고 변경으로(그리고 capture `dirty`로) 보일 수 있고, 서브모듈 안의 커밋하지 않은 변경은 보지 않는다.
+낡은 stat 경우는 신뢰하는 checkout에서 수집 전에 `git update-index --refresh`를 실행하면 피한다. 파일 선택이면 두 단계로 모은다 — 정방향 순회와
 선택적 생산자 심볼 목록(tsograph `graph`·kartograph `snapshot`·cartograph `graph`)을 먼저, 선택한 파일에 놓인 심볼까지
 root로 한 역방향 순회를 나중에 실행해 사실 없는 헬퍼도 사실 위치 fallback 없이 잇는다. 목록의 심볼은 context의 선택 필드
 `fileSymbols`로 trace에 전한다.

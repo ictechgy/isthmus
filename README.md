@@ -398,7 +398,10 @@ every path must stay inside the declared roots. Its git queries (`revision: {"gi
 the preflight collector's `since`) override the analysed repository's filter drivers and fsmonitor, use no external
 diff or textconv, do not run git inside submodules, and disable promisor lazy fetch, so those settings do not run
 commands during collection — a partial clone missing a needed object then fails instead of fetching it
-([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). For a file selection it collects in two stages: forward
+([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). As a result, a file that git-lfs or another filter
+normalizes can appear changed — and set the capture's `dirty` — when its stat data is stale, rather than being
+claimed clean, and uncommitted changes inside a submodule are not seen; run `git update-index --refresh` on a
+trusted checkout before collecting to avoid the stale-stat case. For a file selection it collects in two stages: forward
 traversals and optional producer symbol listings first (tsograph `graph`, kartograph `snapshot`, cartograph
 `graph`), then the reverse traversals rooted also at the symbols located in the selected files, so helpers
 without facts no longer fall back to fact locations; listed symbols reach trace through the optional
