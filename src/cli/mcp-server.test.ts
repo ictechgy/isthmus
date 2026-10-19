@@ -4,6 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { createMcpSession } from './mcp-server.ts';
+import { runPreflightCommand } from './preflight-command.ts';
 
 const dartPath = fileURLToPath(
   new URL('../../experiments/phase-0/expected/dart.json', import.meta.url),
@@ -396,6 +397,28 @@ test('도구의 경로 인자가 `-`로 시작해도 경로로만 읽고 스키�
   })))!);
   assert.equal(query.result.isError, false);
   assert.equal(JSON.parse(query.result.content[0].text).status, 'notFound');
+});
+
+test('tools/call preflight는 runtime 경로도 context 뒤의 위치 인수로만 넘긴다', async () => {
+  // runtime 배열도 `--` 뒤에 둔다. 정상 경로는 CLI와 같은 문서이고, `-`로 시작하는 원소는 `--compact` 같은 플래그로
+  // 소비되지 않고 runtime 경로로 읽혀 실패한다. 기대 파일을 먼저 읽으므로 첫 runtime 경로는 runtime 입력 2번이다.
+  const fixture = (name: string) => fileURLToPath(new URL(`../../fixtures/preflight/${name}`, import.meta.url));
+  const contextFile = fixture('context.json');
+  const expectationsFile = fixture('expectations.json');
+  const runtimeFile = fixture('runtime.json');
+  const call = async (id: number, runtime: readonly string[]) => JSON.parse((await session.handleLine(request(id,
+    'tools/call', { name: 'preflight', arguments: { context: contextFile, expectations: expectationsFile, runtime,
+      compact: true } })))!);
+  const cli = await runPreflightCommand(['preflight', contextFile, runtimeFile, '--expectations', expectationsFile,
+    '--compact'], (path) => readFile(path, 'utf8'));
+  assert.equal(cli.exitCode, 0);
+  const observed = await call(255, [runtimeFile]);
+  assert.equal(observed.result.isError, false);
+  assert.equal(observed.result.content[0].text, cli.standardOutput);
+  assert.equal(JSON.parse(observed.result.content[0].text).runtime.verification.status, 'passed');
+  const injected = await call(256, ['--compact']);
+  assert.equal(injected.result.isError, true);
+  assert.match(injected.result.content[0].text, /Unable to read runtime input 2;/u);
 });
 
 test('tools/call diff는 before·after에 합계 상한 하나와 전체 입력 순번을 적용해 isError로 알린다', async () => {
