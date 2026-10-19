@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -638,8 +638,11 @@ function renderOutputs(options, meta, env) {
  * 댓글을 렌더링하지 못했을 때의 출력이다(형식이 다르거나 깨진 diff·trace 보고서 등). 출력이 비면
  * `continue-on-error`로 `failed`만 보는 workflow가 통과하므로 render 오류를 meta에 싣고 `failed=true`를 남긴다.
  * 댓글 파일이 없으므로 `comment-file`을 빼 게시 단계를 건너뛰게 한다. 상세(경로가 섞일 수 있음)는 로그에만 싣는다.
+ * comment.md를 쓴 뒤 job summary 쓰기가 실패했으면 그 파일도 지운다 — 게시하지 않는 댓글이 artifact에 남으면 끝난
+ * 실행의 댓글처럼 읽힌다.
  */
 function renderFailureOutputs(options, meta, error, log) {
+  rmSync(join(options.outputDir, 'comment.md'), { force: true });
   meta.errors.push({ step: 'render', message: 'The comment could not be rendered from the diff or trace report; see the step log.' });
   writeFileSync(join(options.outputDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
   logUntrusted(log, 'isthmus: render failure:', error?.stack ?? String(error));

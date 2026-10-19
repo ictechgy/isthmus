@@ -250,6 +250,24 @@ test('댓글 렌더링이 실패해도 render 오류를 meta에 싣고 댓글 �
   }
 }));
 
+test('comment.md를 쓴 뒤 job summary 쓰기가 실패해도 댓글 파일을 남기지 않고 render 오류와 failed=true로 끝낸다', () => withTemporaryDirectory((directory) => {
+  // summary 경로가 디렉터리면 렌더링과 comment.md 쓰기가 끝난 뒤 append가 EISDIR로 실패한다. 게시 단계는 건너뛰는데
+  // comment.md가 artifact에 남으면 docs/CI.md의 "댓글·summary는 없다"와 어긋나고, 다 끝난 실행의 댓글처럼 읽힌다.
+  const summaryDirectory = join(directory, 'summary-directory');
+  mkdirSync(summaryDirectory);
+  const lines = [];
+  const env = actionEnvironment(directory, { ISTHMUS_CI_BEFORE: 'fixtures/http-diff/surface/before.server.json',
+    ISTHMUS_CI_AFTER: 'fixtures/http-diff/surface/after.server.json', ISTHMUS_CI_FAIL_ON: '', GITHUB_STEP_SUMMARY: summaryDirectory });
+  const result = runCiHttpImpact(env, { log: (line) => lines.push(line) });
+  assert.equal(result.failed, true);
+  assert.deepEqual(result.meta.errors, [{ step: 'render',
+    message: 'The comment could not be rendered from the diff or trace report; see the step log.' }]);
+  assert.equal(readOutputs(env).failed, 'true');
+  assert.equal(result.outputs['comment-file'], undefined);
+  assert.equal(existsSync(join(env.ISTHMUS_CI_OUTPUT_DIR, 'comment.md')), false);
+  assert.match(lines.join(''), /isthmus: render failure:\n::stop-commands::[0-9a-f]{32}\n[^]*EISDIR/u);
+}));
+
 test('parseInputs: 모드·SHA·버전·fail-on·정수 입력을 검증한다', () => {
   const base = { GITHUB_WORKSPACE: '/w', ISTHMUS_CI_BEFORE: 'b.json', ISTHMUS_CI_AFTER: 'a.json' };
   const parsed = parseInputs({ ...base, ISTHMUS_CI_FAIL_ON: ' error , incomplete ', ISTHMUS_CI_CLIENTS: 'c1.json\n c2.json' });
