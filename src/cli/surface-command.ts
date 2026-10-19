@@ -10,6 +10,7 @@ import {
   inputFailure,
   inputFailureResult,
   internalError,
+  isInputSizeRejection,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   readBridgeDocuments,
@@ -70,13 +71,15 @@ interface ExportSource {
  * sql·호출 측 전용 문서는 표면이 아니므로 건너뛴다. 상대 경로는 매니페스트 디렉터리 기준이다.
  */
 async function readWorkspaceMember(path: string, name: string, readTextFile: ReadTextFile): Promise<ExportSource> {
+  const tooLarge = 'The workspace manifest exceeds the input size limit.';
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    if (isInputSizeRejection(error)) throw new HttpSurfaceExportError(tooLarge);
     throw new HttpSurfaceExportError('Unable to read the workspace manifest; check that the file exists and is readable.');
   }
-  if (text.length > MAX_INPUT_TEXT_LENGTH) throw new HttpSurfaceExportError('The workspace manifest exceeds the input size limit.');
+  if (text.length > MAX_INPUT_TEXT_LENGTH) throw new HttpSurfaceExportError(tooLarge);
   let value: unknown;
   try {
     value = JSON.parse(text);

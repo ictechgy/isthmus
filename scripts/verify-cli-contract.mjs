@@ -20,6 +20,7 @@ verifyUsageError();
 verifyHelp();
 verifyVersion();
 verifyInputError();
+verifyBoundedInputReads();
 verifyCompositionError();
 verifySuccessfulCheck();
 verifyStrictFindings();
@@ -280,6 +281,33 @@ function verifyInputError() {
     result.stderr.startsWith('Unable to read bridge facts input 1'),
     'input stderr',
   );
+}
+
+/**
+ * CLI 입력은 일반 파일만 상한 안에서 읽는지 검증한다.
+ *
+ * FIFO는 열어 기다리지 않고 읽기 실패 2로 끝나야 한다(막히면 runChild 시간 제한에 걸린다). 상한의 3배 바이트를 넘는
+ * 일반 파일(디스크를 쓰지 않는 희소 파일)은 읽지 않고 크기 상한 2로 끝나야 한다 — 32 MiB 힙에서 통째로 읽으면
+ * 메모리 부족으로 죽는다.
+ */
+function verifyBoundedInputReads() {
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-cli-inputs-'));
+  try {
+    const fifo = join(directory, 'pipe.json');
+    verify(runChild('mkfifo', [fifo]).status === 0, 'input FIFO fixture');
+    const special = runChild(process.execPath, [binaryPath, 'check', fifo, swiftPath], { timeout: 20_000 });
+    verify(special.status === 2 && special.stdout === ''
+      && special.stderr.startsWith('Unable to read bridge facts input 1;'), 'input FIFO refused without opening');
+    const large = join(directory, 'large.json');
+    writeFileSync(large, '');
+    truncateSync(large, 3 * 16 * 1024 * 1024 + 1);
+    const oversized = runChild(process.execPath, ['--max-old-space-size=32', binaryPath, 'check', large, swiftPath],
+      { timeout: 20_000 });
+    verify(oversized.status === 2 && oversized.stdout === ''
+      && oversized.stderr.startsWith('Bridge facts input 1 exceeds the input size limits;'), 'input oversized file refused before reading');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 /** 호출 측 문서만 있는 입력이 조인 거부 2인지 검증한다. */

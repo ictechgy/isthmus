@@ -5,6 +5,7 @@ import { isJsonObject, isSafeNonEmptyString } from '../exchange/parse.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
   inputFailure,
+  isInputSizeRejection,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   type CaptureFileSystem,
@@ -50,11 +51,11 @@ export async function runDoctorCommand(
 
   let text: string;
   try {
-    text = await readTextFile(configPath);
-  } catch {
-    return inputFailure(
-      'Unable to read the capture config; check that the file exists and is readable.\n',
-    );
+    text = await readTextFile(configPath, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    return inputFailure(isInputSizeRejection(error)
+      ? 'The capture config exceeds the input size limits.\n'
+      : 'Unable to read the capture config; check that the file exists and is readable.\n');
   }
   if (text.length > MAX_INPUT_TEXT_LENGTH) {
     return inputFailure('The capture config exceeds the input size limits.\n');

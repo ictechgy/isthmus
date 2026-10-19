@@ -475,6 +475,13 @@ failure, JSON error, exchange contract violation, project mismatch, missing plat
 composition, size limit), the input position, and how to resolve it, and never expose input
 bodies or paths.
 
+Input paths must name regular files. FIFOs, devices, and directories, including process
+substitution `<(...)` and a piped `/dev/stdin`, are refused as a read failure (exit code 2)
+without being opened; save such input to a file first. A file larger in bytes than three times
+the text size limit for that input ([input limits](docs/GRAPH-EXCHANGE.md#입력-자원-상한)) is
+refused with the same size-limit message without being read, and a file that grows while it is
+read stops one byte past that bound.
+
 To verify the whole path from production to consumption on a real public Flutter plugin, run
 this from the repository root. The script does a sparse checkout of a pinned `plus_plugins`
 commit, confirms the retention evidence for three methods in the battery plugin's original

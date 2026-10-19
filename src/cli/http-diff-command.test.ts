@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { runDiffCommand } from './diff-command.ts';
 import { httpDiffUsage, parseHttpDiffArguments, runHttpDiffCommand } from './http-diff-command.ts';
 
@@ -103,6 +105,26 @@ test('입력 구성 오류는 원인 문구와 코드 2이고 stdout을 비운�
     assert.equal(result.exitCode, 2, `${args.join(' ')}: ${result.standardError}`);
     assert.equal(result.standardOutput, '');
     assert.match(result.standardError, message);
+  }
+});
+
+test('before·after 리더가 읽기 전에 크기 상한으로 거부하면 그 시점의 크기 상한 문구로, 그 밖의 거부는 읽기 실패로 답한다', async () => {
+  for (const snapshot of ['before', 'after'] as const) {
+    const rejected = `/fx/surface/${snapshot}.server.json`;
+    for (const [reason, message] of [['limit', `The ${snapshot} input exceeds the input size limit.`],
+      ['read', `Unable to read the ${snapshot} input; check that the file exists and is readable.`]] as const) {
+      const reads: Array<[string, number]> = [];
+      const fixtures = reader();
+      const result = await runHttpDiffCommand(surface, async (path, maximumLength) => {
+        reads.push([path, maximumLength]);
+        if (path === rejected) throw new BoundedTextReadError(reason);
+        return fixtures(path);
+      });
+      assert.deepEqual(result, { standardOutput: '', standardError: `Http diff input violates its contract: ${message}\n`, exitCode: 2 },
+        `${snapshot} ${reason}`);
+      // 모드를 가리는 첫 읽기도 문서 하나의 상한을 리더에 넘긴다.
+      assert.deepEqual(reads.find(([path]) => path === rejected), [rejected, MAX_INPUT_TEXT_LENGTH]);
+    }
   }
 });
 
