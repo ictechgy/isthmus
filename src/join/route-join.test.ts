@@ -445,6 +445,28 @@ test('suffix 비교 예산은 선언과 호출의 길이로 맞을 수 있는 �
   }
 });
 
+test('맞을 오프셋이 없는 (호출, 선언) 방문도 일정 비율로 suffix 예산을 쓴다', () => {
+  // 비교하지 않는 방문을 공짜로 두면 짧은 선언 대량 × 긴 호출 대량 문서가 예산 밖에서 호출×선언만큼 돈다.
+  // base 호출(4세그먼트)보다 짧은 root 선언 640개와, root 호출(2세그먼트)보다 긴 base 선언 640개는 모두 비교 대상이 아니다.
+  const shortRoots = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, `/r${id}/{}`));
+  const rootBudget = { remaining: 100 };
+  const rootOutcome = new RouteIndex(shortRoots, rootBudget).match(routeProbe('/a/b/c/{}', 'base'));
+  assert.deepEqual([100 - rootBudget.remaining, rootOutcome.status], [10, 'missing']);
+  const longBases = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, `/b${id}/c/d/e`, { anchor: 'base' }));
+  const baseBudget = { remaining: 100 };
+  const baseOutcome = new RouteIndex(longBases, baseBudget).match(routeProbe('/p/q', 'root'));
+  assert.deepEqual([100 - baseBudget.remaining, baseOutcome.status], [10, 'missing']);
+  // 리터럴이 없는 base 선언은 suffix 후보가 될 수 없어 방문하지 않는다.
+  const literalFree = Array.from({ length: 640 }, (_, id) => routeDeclaration(id, '/{}/{}/{}', { anchor: 'base' }));
+  const literalFreeBudget = { remaining: 100 };
+  new RouteIndex(literalFree, literalFreeBudget).match(routeProbe('/p/q', 'root'));
+  assert.equal(100 - literalFreeBudget.remaining, 0);
+  // 방문 비용도 공유 예산을 넘으면 부분 결과 대신 실패한다.
+  const manyShortRoots = Array.from({ length: 6_400 }, (_, id) => routeDeclaration(id, `/r${id}/{}`));
+  assert.throws(() => new RouteIndex(manyShortRoots, { remaining: 50 }).match(routeProbe('/a/b/c/{}', 'base')),
+    /RouteSuffixBudgetError/);
+});
+
 test('suffix 후보는 catch-all·접두사·부분 세그먼트·대소문자 무시 선언에서도 가장 긴 꼬리로 맞춘다', () => {
   const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
   const scope = joinRoutes(

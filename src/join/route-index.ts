@@ -126,9 +126,19 @@ export const MAX_ROUTE_SUFFIX_CANDIDATES = 64;
 /**
  * 한 조인에서 suffix 후보 계산이 비교할 수 있는 (호출, 선언, 오프셋) 조합의 상한이다.
  * 넘으면 부분 결과 대신 실패한다 — 상한 없는 Cartesian 곱을 피한다. 길이로 맞을 수 없는 오프셋은
- * 비교하지 않으므로 세지 않는다(`declarationOffsets`·`callOffsets`).
+ * 비교하지 않으므로 세지 않는다(`declarationOffsets`·`callOffsets`). 다만 맞을 오프셋이 하나도 없는
+ * (호출, 선언) 방문은 [INFEASIBLE_VISITS_PER_COMPARISON]번마다 하나로 센다.
  */
 export const MAX_ROUTE_SUFFIX_COMPARISONS = 5_000_000;
+
+/**
+ * 맞을 오프셋이 없는 (호출, 선언) 방문 몇 번을 비교 한 번으로 셀지다.
+ *
+ * 그런 방문은 길이 확인만 하므로 비교보다 훨씬 싸지만 공짜는 아니다. 세지 않으면 짧은 선언과 긴 호출을 대량으로 넣은
+ * 문서가 예산 밖에서 호출×선언만큼 돈다. 비율로 세면 현실 규모의 예산 여유는 거의 그대로 두면서 최악의 방문 수를
+ * 예산 × 이 값으로 묶는다.
+ */
+const INFEASIBLE_VISITS_PER_COMPARISON = 64;
 
 /** suffix 비교 예산을 넘었음을 나타낸다. 조인 층이 입력 오류로 바꾼다. */
 export class RouteSuffixBudgetError extends Error {
@@ -160,15 +170,21 @@ export class RouteIndex {
    * 호출마다 펼치지 않고 한 번 만든다.
    */
   readonly #rootSuffixPool: readonly RouteDeclaration[];
-  readonly #base: RouteDeclaration[] = [];
+  /**
+   * 리터럴 세그먼트가 있는 base 선언이다. 리터럴이 없는 base 선언은 suffix 후보가 될 수 없어 호출마다 방문하지 않도록
+   * 생성할 때 한 번 거른다. 순서는 입력 순서다.
+   */
+  readonly #baseSuffixPool: RouteDeclaration[] = [];
   readonly #budget: { remaining: number };
+  /** 맞을 오프셋이 없어 비교하지 않은 (호출, 선언) 방문 수다. */
+  #infeasibleVisits = 0;
 
   /** 선언을 색인한다. 예산은 같은 조인의 모든 색인이 공유한다. */
   constructor(declarations: readonly RouteDeclaration[], budget: { remaining: number }) {
     this.#budget = budget;
     for (const declaration of declarations) {
       if (declaration.anchor === 'base') {
-        this.#base.push(declaration);
+        if (hasLiteral(declaration.segments)) this.#baseSuffixPool.push(declaration);
         continue;
       }
       for (const segments of trailingVariants(declaration)) {
@@ -258,6 +274,10 @@ export class RouteIndex {
     for (const pool of pools) {
       for (const declaration of pool) {
         const [from, to] = declarationOffsets(declaration.segments, probe.segments.length);
+        if (from > to) {
+          this.#visitInfeasible();
+          continue;
+        }
         for (let offset = from; offset <= to; offset++) {
           this.#spend();
           const candidate = evaluateSegments(declaration, declaration.segments.slice(offset), probe.segments,
@@ -279,9 +299,12 @@ export class RouteIndex {
    */
   #baseSuffixCandidates(probe: RouteProbe): SuffixCollection {
     const collection: SuffixCollection = { candidates: [], capped: false };
-    for (const declaration of this.#base) {
-      if (!hasLiteral(declaration.segments)) continue;
+    for (const declaration of this.#baseSuffixPool) {
       const [from, to] = callOffsets(declaration.segments, probe.segments.length);
+      if (from > to) {
+        this.#visitInfeasible();
+        continue;
+      }
       for (let offset = from; offset <= to; offset++) {
         this.#spend();
         const candidate = evaluateSegments(declaration, declaration.segments, probe.segments.slice(offset),
@@ -296,6 +319,12 @@ export class RouteIndex {
       if (collection.capped) break;
     }
     return collection;
+  }
+
+  /** 맞을 오프셋이 없는 방문을 센다. [INFEASIBLE_VISITS_PER_COMPARISON]번마다 공유 예산을 하나 쓴다. */
+  #visitInfeasible(): void {
+    this.#infeasibleVisits += 1;
+    if (this.#infeasibleVisits % INFEASIBLE_VISITS_PER_COMPARISON === 0) this.#spend();
   }
 
   /** 공유 비교 예산을 하나 쓴다. 다 쓰면 실패한다. */
