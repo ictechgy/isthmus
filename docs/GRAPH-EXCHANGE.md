@@ -352,6 +352,35 @@ Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 
   문서를 "참조 없음"으로 읽으면 모든 선언이 거짓 미사용으로 보고된다.
   bridge 도메인 문서가 함께 들어오면 두 도메인의 구성 요건을 각각 검사한다.
 
+#### SQL 텍스트의 관계 이름
+
+호출 측 생산자가 코드 안의 SQL 텍스트에서 `relation-use`를 읽을 때 따르는
+공통 규칙이다. 아래 세 경우의 이름은 관계 이름이 아니므로 `relation-use`로
+내지 않는다 — 소비자는 이런 이름을 선언과 잇지 못해 거짓
+`relation-use-without-decl` error를 낸다. 여기서 토큰은 생산자 SQL 스캐너의
+어휘 단위(이름·인용 식별자·기호)이고, 주석과 문자열 리터럴은 건너뛴다.
+
+- **R1 함수 인자 안의 `FROM`**: `(` 바로 앞 토큰이 식별자(함수 이름)이고 그
+  괄호 그룹의 첫 토큰이 `SELECT`·`WITH`·`VALUES`가 아니면, 그 괄호 깊이의
+  `FROM`은 관계를 내지 않는다 — `EXTRACT(YEAR FROM created_at)`,
+  `TRIM(BOTH ' ' FROM name)`, `SUBSTRING(name FROM 2 FOR 3)`, `OVERLAY`·
+  `POSITION` 등. 하위 질의 그룹(`FROM (SELECT …)`, `(SELECT … FROM users)`,
+  `IN (SELECT …)`) 안의 `FROM`은 그대로 관계를 낸다.
+- **R2 CTE 이름**: 문장(`;`로 나뉜 구간)마다
+  `WITH [RECURSIVE] name [(cols)] AS [NOT] [MATERIALIZED] (`와
+  `, name [(cols)] AS [NOT] [MATERIALIZED] (`의 `name`을 모은다. 같은 문장
+  안에서 한정자 없는 피연산자(관계 자리의 이름)가 그 이름이면 관계를 내지
+  않는다. CTE 본문이 참조하는 관계는 그대로 내고, 다른 문장에는 영향이 없다.
+- **R3 `IS [NOT] DISTINCT FROM`**: `FROM` 바로 앞의 인용되지 않은 토큰이
+  `distinct`이고 그 앞이 `is` 또는 `is not`이면 그 `FROM`은 관계를 내지
+  않는다 — 비교 연산자의 일부다.
+
+이 규칙은 형식과 버전을 바꾸지 않는다 — `relation-use`가 관계 이름 참조라는
+기존 뜻을 SQL 텍스트에 적용한 것이다. 그 밖의 판독(어떤 키워드 뒤를 관계
+이름으로 읽는지, 한정 이름·인용 부호, GRANT/REVOKE, 자리표시자, 내는 순서·
+중복)은 각 생산자의 기존 규칙을 따른다. CTE 이름과 피연산자를 다른 대소문자로
+쓴 경우의 비교는 방언마다 달라 이 규칙이 정하지 않는다.
+
 ### 종류별 의미
 
 | kind | 누가 내는가 | 뜻 |
