@@ -71,6 +71,8 @@ export function createTaskReport(trace: TraceReport, check: CheckReport, evidenc
     format: 'isthmus-task' as const, version: 1, complete: false as const, requiresReview: true as const,
     evidence: { ...evidence, artifacts: bounded(evidence.artifacts, limit),
       ...(evidence.kartograph === undefined ? {} : { kartograph: { ...evidence.kartograph,
+        nativeBefore: { ...evidence.kartograph.nativeBefore, reasons: bounded(evidence.kartograph.nativeBefore.reasons, limit) },
+        nativeAfter: { ...evidence.kartograph.nativeAfter, reasons: bounded(evidence.kartograph.nativeAfter.reasons, limit) },
         artifacts: bounded(evidence.kartograph.artifacts, limit), reasons: bounded(evidence.kartograph.reasons, limit) } }) },
     trace: limitTraceReport(trace, { maxChains: limit, maxRows: limit }),
     rules: { scope: 'all-input-bridge-facts' as const, summary: check.summary, issues: bounded(check.issues, limit),

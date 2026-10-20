@@ -94,7 +94,7 @@ passed 순이며 이름으로 테스트나 호출 관계를 추측하지 않는�
 
 ### 다음 최소 단위: Kartograph native verification binding
 
-2026-10-20 후속 설계. 참조 생산자 main은 `7b3acbbad87184992b39d948844318ba37fb153e`다.
+2026-10-20 후속 설계. 참조 생산자 main은 `7b3acbbad87184992b39d948844318ba37fb153e`(VERSION 0.25.0)다.
 `BuildWitnessCodec`의 witness v1/v2와 `ProvenanceVerifier`의 source/config/classes membership 검사를
 다시 구현하지 않는다. 별도 수집 스크립트가 **같은 snapshot 바이트**에 대해 실제 Kartograph의
 `verify-snapshot`을 facts/traversal 생성 전후에 실행하고, snapshot·실행 파일/명시적 runtime 파일 및
@@ -106,6 +106,9 @@ receipt를 만들지 않는다. snapshot/producer 바이트가 중간에 바뀌�
 이 receipt는 **수집 당시의 native 판독**이다. 오프라인 task가 파일 해시를 대조해도 현재 source/config를
 다시 읽었다고 주장하지 않는다. 수동 manifest의 `verification: unverified`는 유지한다. 악의적인 생산자나
 pre/post 사이의 변경 후 원복을 배제한다는 인증도 아니다.
+`nativeBefore`·`nativeAfter`는 원래 native 판독이고, `nativeAtCapture`는 collector의 artifact/USR 공백까지
+반영한 보수적 수집 상태다. 현재 생산자의 Java `throws` 선언은 native 입력 검증이 matched여도
+USR 부착이 빠질 수 있으므로 실제 음성 대조군에서 unverified로 남기는지 확인한다.
 
 manifest의 선택적 `kartographReceipt: {path, sha256}`는 그 receipt 바이트를 지정한다. 소비자는
 실제 소비한 artifact id·해시·역할·생산자 버전과 대조하고 native 수집 상태와 오프라인 일치를 따로 낸다.
@@ -139,7 +142,7 @@ manifest artifact id는 각각 `kartograph-persistence`, `kartograph-reverse`를
 Node 테스트의 fake producer는 프로세스·해시·오류 경계만 검증하며
 실제 컴파일 증거로 세지 않는다. 실제 fixture는 지원 JDK와 공식 생산자에서 compile → witness/snapshot →
 capture를 실행하고, 동일 크기/mtime 소스 변경·build config 변경·class 변경·missing binding·legacy snapshot을
-native 결과와 대조해야 한다. 실행 경로가 승인·확인되기 전에는 이 실제 fixture를 통과했다고 보고하지 않는다.
+native 결과와 대조한다. 실제 fixture의 성공은 해당 CI job 결과로 확인하며 Node double 통과로 대신하지 않는다.
 
 Swift compiler index·Kotlin/JVM bytecode는 소스 해시만으로 그 소스에서 빌드됐다고 할 수 없다.
 Kartograph의 지원 compiler lifecycle receipt 및 bytes/membership 비교를 재사용해야 한다.

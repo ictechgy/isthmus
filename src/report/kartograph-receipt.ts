@@ -20,6 +20,7 @@ export function compareKartographReceipt(receipt: KartographReceipt, integrity: 
     return { id: artifact.id, alignment };
   });
   return { nativeAtCapture: integrity ? nativeAtCapture : 'unverified', integrity: integrity ? 'matched' : 'stale', currentVerification: 'unverified' as const,
+    nativeBefore: receipt.before, nativeAfter: receipt.after,
     scope: receipt.scope, snapshotSha256: receipt.snapshotSha256, producerSha256: receipt.producerSha256,
     reasons: [...new Set(reasons)], artifacts };
 }

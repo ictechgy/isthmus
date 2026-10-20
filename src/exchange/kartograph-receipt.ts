@@ -34,8 +34,8 @@ const digest = (value: unknown): string => {
 /** matched와 실패 원인이 동시에 있는 모순을 허용하지 않는다. */
 export function parseKartographFreshness(value: unknown): KartographFreshness {
   const raw = guard.object(value, 'Invalid Kartograph freshness report.');
-  if (raw.format !== 'kartograph-freshness' || raw.version !== 1 ||
-    !['matched', 'stale', 'unverified'].includes(String(raw.status))) fail('Unsupported Kartograph freshness report.');
+  if (raw.format !== 'kartograph-freshness' || raw.version !== 1 || typeof raw.status !== 'string' ||
+    !['matched', 'stale', 'unverified'].includes(raw.status)) fail('Unsupported Kartograph freshness report.');
   const reasons = guard.array(raw.reasons, 100, 'Too many Kartograph freshness reasons.').map(safe);
   if ((raw.status === 'matched') !== (reasons.length === 0)) fail('Contradictory Kartograph freshness status and reasons.');
   return { status: raw.status as KartographFreshness['status'], reasons };

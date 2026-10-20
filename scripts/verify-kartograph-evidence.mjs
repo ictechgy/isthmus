@@ -43,8 +43,10 @@ kartograph { snapshotsEnabled = true; includeSourcePaths = true }
 `;
 await writeFile(configPath, buildConfig);
 const sourcePath = join(project, 'src/main/java/p/Repository.java');
-const sourceBefore = 'package p; import java.sql.Connection; import java.sql.PreparedStatement; import java.sql.SQLException;\n'
-  + 'public class Repository { public PreparedStatement load(Connection c) throws SQLException { return c.prepareStatement("SELECT id FROM users"); } }\n';
+const sourceBefore = 'package p;\nimport java.sql.Connection;\nimport java.sql.PreparedStatement;\nimport java.sql.SQLException;\n'
+  + 'public class Repository {\n  public PreparedStatement load(Connection c) {\n'
+  + '    try { return c.prepareStatement("SELECT id FROM users"); }\n'
+  + '    catch (SQLException e) { throw new IllegalStateException(e); }\n  }\n}\n';
 await writeFile(sourcePath, sourceBefore);
 await writeFile(join(project, 'src/test/java/p/RepositoryCheck.java'), 'package p; public class RepositoryCheck { public void check(java.sql.Connection c) throws Exception { new Repository().load(c); } }\n');
 const revision = process.env.GITHUB_SHA ?? 'a'.repeat(40);
@@ -142,6 +144,16 @@ try {
   assert.equal(taskReport.evidence.verification, 'unverified');
   assert.equal(taskReport.requiresReview, true);
   await writeFile(join(output, 'task.json'), task.standardOutput);
+  // 현재 생산자가 throws 선언에 USR을 붙이지 못하는 실제 음성 대조군도 보존한다.
+  const unsupported = sourceBefore.replace('load(Connection c) {', 'load(Connection c) throws SQLException {');
+  await writeFile(sourcePath, unsupported);
+  await writeFile(join(output, 'inputs/Repository.unsupported.java'), unsupported);
+  compile('actual-compile-missing-symbol-control');
+  const noUsrs = await capture('native-matched-missing-symbols');
+  assert.equal(noUsrs.receipt.before.status, 'matched');
+  assert.equal(noUsrs.receipt.after.status, 'matched');
+  assert.equal(noUsrs.nativeAtCapture, 'unverified');
+  assert.ok(noUsrs.receipt.limitations.includes('no-persistence-symbol-roots'));
   console.log('Actual Kartograph receipt/source/config/class binding verified; offline current state remains unverified.');
 } finally {
   await writeFile(join(output, 'verification.json'), JSON.stringify({ producerCommit: PRODUCER, version,

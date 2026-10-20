@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseKartographReceipt } from './kartograph-receipt.ts';
+import { parseKartographReceipt, parseKartographFreshness } from './kartograph-receipt.ts';
 import { compareKartographReceipt } from '../report/kartograph-receipt.ts';
 
 const freshness = { format: 'kartograph-freshness', version: 1, status: 'matched', reasons: [] };
@@ -53,5 +53,11 @@ test('unsupported or contradictory receipts fail closed without accepting a matc
     { ...receipt, after: { ...freshness, status: 'clean' } },
     { ...receipt, after: { ...freshness, reasons: ['changed-sources'] } }]) {
     assert.throws(() => parseKartographReceipt(value));
+  }
+});
+
+test('native status must be a string; arrays cannot demote stale to unverified through coercion', () => {
+  for (const status of [['stale'], ['unverified'], 1, 0, null, {}, true]) {
+    assert.throws(() => parseKartographFreshness({ ...freshness, status, reasons: ['changed-sources'] }));
   }
 });
