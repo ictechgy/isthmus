@@ -79,3 +79,36 @@ jobs:
             build/kartograph-evidence/task.json
           if-no-files-found: warn
           retention-days: 7
+
+  aidlc-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:aidlc
+      - name: Fetch pinned official portable AI-DLC assets
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/aidlc-assets"
+          curl --fail --location --retry 2 https://github.com/awslabs/aidlc-workflows/releases/download/v2.11.1/aidlc-linux-x64 -o "$RUNNER_TEMP/aidlc-assets/aidlc-linux-x64"
+          curl --fail --location --retry 2 https://github.com/awslabs/aidlc-workflows/releases/download/v2.11.1/aidlc-runtime-2.11.1.tar.gz -o "$RUNNER_TEMP/aidlc-assets/aidlc-runtime-2.11.1.tar.gz"
+      - name: Verify real plugin composition and advisory versus blocking gates
+        run: node scripts/verify-aidlc-adapter.mjs "$RUNNER_TEMP/aidlc-assets" "$RUNNER_TEMP/aidlc-smoke"
+      - name: Preserve bounded public adapter evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidlc-adapter-evidence
+          path: |
+            ${{ runner.temp }}/aidlc-smoke/verification.json
+            ${{ runner.temp }}/aidlc-smoke/logs/
+            ${{ runner.temp }}/aidlc-smoke/task.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -6,6 +6,9 @@
 
 ### Added
 
+- 선택적 AI-DLC plugin adapter가 `delivery-planning`·`build-and-test`에 기존 task 근거를 전달한다.
+  원본 bounded task·해시와 stale/unknown/unverified/잘림을 보존하며 현재 checkout의 pass로
+  승격하지 않는다. 기본 advisory와 명시적 blocking의 실제 gate 경계는 고정 v2.11.1로 검사한다.
 - 선택적 Kartograph capture receipt가 동일 snapshot의 native `verify-snapshot` 전후 결과와
   생성 facts/traversal 바이트를 묶는다. task는 수집 당시 판독·오프라인 무결성·현재 재검증 부재를
   구분하며 수동 manifest의 unverified는 유지한다. 고정 생산자/JDK의 실제 compiler fixture를 CI에 둔다.

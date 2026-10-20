@@ -31,6 +31,8 @@
     "scripts/capture-preflight.mjs",
     "scripts/capture-trace.mjs",
     "scripts/capture-kartograph-evidence.mjs",
+    "scripts/build-aidlc-plugin.mjs",
+    "integrations/aidlc",
     "scripts/git-isolation.mjs",
     "scripts/render-pr-comment.mjs",
     "scripts/run-child.mjs",
@@ -44,6 +46,7 @@
     "docs/LANGUAGE-TRAVERSAL.md",
     "docs/TRACE.md",
     "docs/TASK-EVIDENCE.md",
+    "docs/AI-DLC-ADAPTER.md",
     "docs/NAVIGATION.md",
     "docs/HTTP-DIFF.md",
     "docs/CI.md",
@@ -64,6 +67,7 @@
     "access": "public"
   },
   "scripts": {
+    "test:aidlc": "node --test scripts/aidlc-adapter.test.mjs",
     "test:kartograph-evidence": "node --test scripts/capture-kartograph-evidence.test.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
@@ -73,7 +77,7 @@
     "verify:conformance": "node scripts/verify-conformance.mjs",
     "verify:cli": "npm run verify:build && node scripts/verify-cli-contract.mjs",
     "verify:package": "npm run verify:build && node scripts/verify-package-contract.mjs",
-    "verify": "npm run typecheck && node scripts/verify-compatibility.mjs && node scripts/verify-conformance.mjs && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/capture-trace.test.mjs scripts/git-isolation.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs scripts/runtime-harness-failures.test.mjs scripts/runtime-evidence-manifest.test.mjs scripts/verify-installed-compatibility.test.mjs scripts/verify-python-producer.test.mjs scripts/verify-public-flutter-plugin.test.mjs scripts/retention-producer-workflow.test.mjs scripts/cold-cache-workflow.test.mjs scripts/render-pr-comment.test.mjs scripts/ci-http-impact.test.mjs scripts/post-pr-comment.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
+    "verify": "npm run typecheck && node scripts/verify-compatibility.mjs && node scripts/verify-conformance.mjs && npm test && npm run test:phase0:join && npm run verify:build && node --test scripts/capture-preflight.test.mjs scripts/capture-trace.test.mjs scripts/git-isolation.test.mjs scripts/build-preflight-toolchain.test.mjs scripts/stop-detached-process.test.mjs scripts/runtime-harness-failures.test.mjs scripts/runtime-evidence-manifest.test.mjs scripts/verify-installed-compatibility.test.mjs scripts/verify-python-producer.test.mjs scripts/verify-public-flutter-plugin.test.mjs scripts/retention-producer-workflow.test.mjs scripts/cold-cache-workflow.test.mjs scripts/render-pr-comment.test.mjs scripts/ci-http-impact.test.mjs scripts/post-pr-comment.test.mjs scripts/aidlc-adapter.test.mjs && node scripts/verify-cli-contract.mjs && node scripts/verify-package-contract.mjs",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
