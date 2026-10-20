@@ -113,6 +113,9 @@ function runCase(suite, testCase) {
     'compose.mask': runMask,
     'wrapper.method': runWrapperMethod,
     'wrapper.location': runWrapperLocation,
+    'relations.function-from': runSqlRelations,
+    'relations.cte': runSqlRelations,
+    'relations.distinct-from': runSqlRelations,
   };
   const runner = testCase.ruleId.startsWith('match.') ? runMatch : runners[testCase.ruleId];
   if (runner === undefined) {
@@ -765,6 +768,222 @@ function runWrapperMethod({ declaration, call }) {
 /** 여러 줄 호출의 보고 줄은 호출식 시작 줄이다. */
 function runWrapperLocation({ callStartLine }) {
   return { line: callStartLine };
+}
+
+/**
+ * SQL 텍스트에서 relation-use로 낼 관계 이름 집합의 참조 구현이다(GRAPH-EXCHANGE "SQL 텍스트의 관계 이름" R1~R3).
+ * 생산자 스캐너를 옮긴 것이 아니라 세 규칙을 확인하는 데 필요한 만큼만 읽는다.
+ *
+ * 1) 어휘: 인용하지 않은 이름, 인용 식별자(`"…"`·`` `…` ``·`[…]`), 기호 `. , ( ) ;`만 토큰이다. 주석과 문자열은
+ *    건너뛰고, 숫자·연산자는 생산자 스캐너처럼 토큰을 만들지 않는다. `;`로 문장을 나눈다.
+ * 2) `FROM`·`JOIN`·`INTO` 뒤의 (한정) 이름과 별칭 뒤 쉼표로 이어지는 이름을 관계로 읽는다. 이름 대신 `(`가 오면
+ *    하위 질의라 아무것도 내지 않고, 그 안은 바깥 순회가 계속 읽는다.
+ * 3) R1은 괄호 스택, R2는 문장의 CTE 이름 집합, R3는 `FROM` 앞 토큰으로 판정한다.
+ * GRANT/REVOKE, 다른 관계 키워드(UPDATE·TRUNCATE 등), 절 키워드 거르기, 테이블 값 함수, 자리표시자, 이름 escape,
+ * 컬럼 참조는 각 생산자의 기존 규칙이라 다루지 않는다. 비교기는 배열을 정렬해 비교하지만 중복은 다르게 보므로
+ * 중복 없는 집합을 돌려준다.
+ */
+function runSqlRelations({ sql }) {
+  const relations = new Set();
+  for (const statement of sqlStatements(lexSql(sql))) {
+    for (const name of statementRelations(statement)) relations.add(name);
+  }
+  return { relations: [...relations] };
+}
+
+/**
+ * SQL 텍스트를 `{ text, quoted }` 토큰으로 나눈다. 인용 식별자는 내용만 담고, 문자열의 `''`는 escape다.
+ * 닫히지 않은 인용·주석·문자열은 텍스트 끝까지다.
+ */
+function lexSql(text) {
+  const tokens = [];
+  const namePattern = /[\p{L}_][\p{L}\p{N}_$]*/uy;
+  let index = 0;
+  while (index < text.length) {
+    const character = text[index];
+    namePattern.lastIndex = index;
+    const name = namePattern.exec(text)?.[0];
+    if (name !== undefined) {
+      tokens.push({ text: name, quoted: false });
+      index += name.length;
+    } else if (character === '"' || character === '`' || character === '[') {
+      const end = indexOrEnd(text, character === '[' ? ']' : character, index + 1);
+      tokens.push({ text: text.slice(index + 1, end), quoted: true });
+      index = end + 1;
+    } else if (text.startsWith('--', index)) {
+      index = indexOrEnd(text, '\n', index);
+    } else if (text.startsWith('/*', index)) {
+      index = indexOrEnd(text, '*/', index + 2) + 2;
+    } else if (character === "'") {
+      index = stringLiteralEnd(text, index + 1);
+    } else {
+      if ('.,();'.includes(character)) tokens.push({ text: character, quoted: false });
+      index += 1;
+    }
+  }
+  return tokens;
+}
+
+/** `from`부터 찾은 `needle`의 위치다. 없으면 텍스트 끝이다. */
+function indexOrEnd(text, needle, from) {
+  const found = text.indexOf(needle, from);
+  return found < 0 ? text.length : found;
+}
+
+/** 문자열 리터럴 본문 시작 `from`에서 닫는 따옴표 다음 위치를 찾는다. `''`는 따옴표 하나다. */
+function stringLiteralEnd(text, from) {
+  let index = from;
+  for (;;) {
+    const quote = indexOrEnd(text, "'", index);
+    if (text[quote + 1] !== "'") return Math.min(quote + 1, text.length);
+    index = quote + 2;
+  }
+}
+
+/** 토큰을 `;` 문장 단위로 나눈다. R2의 CTE 이름은 문장 안에서만 유효하다. */
+function sqlStatements(tokens) {
+  const statements = [[]];
+  for (const token of tokens) {
+    if (isSqlSymbol(token, ';')) statements.push([]);
+    else statements.at(-1).push(token);
+  }
+  return statements;
+}
+
+/**
+ * 한 문장의 관계 이름이다. CTE 이름(R2)은 문장 전체에서 먼저 모으고, 괄호마다 함수 인자 그룹인지(R1)를 쌓아
+ * 가장 안쪽 그룹으로 `FROM`을 판정한다.
+ */
+function statementRelations(statement) {
+  const cteNames = statementCteNames(statement);
+  const functionGroups = [];
+  const relations = [];
+  for (const [index, token] of statement.entries()) {
+    if (isSqlSymbol(token, '(')) functionGroups.push(isFunctionArgumentGroup(statement, index));
+    else if (isSqlSymbol(token, ')')) functionGroups.pop();
+    else if (isRelationKeyword(token) && !isSuppressedFrom(statement, index, functionGroups.at(-1) === true)) {
+      relations.push(...relationOperands(statement, index + 1, cteNames));
+    }
+  }
+  return relations;
+}
+
+/** 뒤에 관계 이름이 오는 키워드(`FROM`·`JOIN`·`INTO`)인지 본다. */
+function isRelationKeyword(token) {
+  return ['from', 'join', 'into'].some((word) => isSqlWord(token, word));
+}
+
+/** 관계를 내지 않는 `FROM`인지 본다: 함수 인자 그룹 안(R1)이거나 `IS [NOT] DISTINCT FROM`(R3)이다. */
+function isSuppressedFrom(statement, index, insideFunctionArguments) {
+  return isSqlWord(statement[index], 'from') && (insideFunctionArguments || isDistinctFromOperator(statement, index));
+}
+
+/**
+ * R1: `(` 바로 앞 토큰이 식별자(함수 이름)이고 그룹의 첫 토큰이 SELECT·WITH·VALUES가 아니면 함수 인자 그룹이다.
+ * 하위 질의 그룹(`(SELECT …)`, `IN (SELECT …)`)은 첫 토큰으로 가려져 그 안의 `FROM`은 관계를 낸다.
+ */
+function isFunctionArgumentGroup(statement, openIndex) {
+  const subquery = ['select', 'with', 'values'].some((word) => isSqlWord(statement[openIndex + 1], word));
+  return isSqlName(statement[openIndex - 1]) && !subquery;
+}
+
+/** R3: `FROM` 바로 앞이 인용하지 않은 `distinct`이고 그 앞이 `is` 또는 `is not`이면 비교 연산자의 일부다. */
+function isDistinctFromOperator(statement, fromIndex) {
+  if (!isSqlWord(statement[fromIndex - 1], 'distinct')) return false;
+  const before = statement[fromIndex - 2];
+  return isSqlWord(before, 'is') || (isSqlWord(before, 'not') && isSqlWord(statement[fromIndex - 3], 'is'));
+}
+
+/**
+ * R2: 문장의 CTE 이름 비교 키 집합이다. `WITH [RECURSIVE] name …`와 `, name …` 뒤가
+ * `[(cols)] AS [NOT] [MATERIALIZED] (`인 name을 모은다.
+ */
+function statementCteNames(statement) {
+  const names = new Set();
+  for (const [index, token] of statement.entries()) {
+    const withClause = isSqlWord(token, 'with');
+    if (!withClause && !isSqlSymbol(token, ',')) continue;
+    const nameIndex = withClause && isSqlWord(statement[index + 1], 'recursive') ? index + 2 : index + 1;
+    if (isCteDefinition(statement, nameIndex)) names.add(cteKey(statement[nameIndex]));
+  }
+  return names;
+}
+
+/** `nameIndex`에서 `name [(cols)] AS [NOT] [MATERIALIZED] (`가 시작하는지 본다. */
+function isCteDefinition(statement, nameIndex) {
+  if (!isSqlName(statement[nameIndex])) return false;
+  let cursor = nameIndex + 1;
+  if (isSqlSymbol(statement[cursor], '(')) cursor = closingParenIndex(statement, cursor) + 1;
+  if (!isSqlWord(statement[cursor], 'as')) return false;
+  cursor += 1;
+  if (isSqlWord(statement[cursor], 'not')) cursor += 1;
+  if (isSqlWord(statement[cursor], 'materialized')) cursor += 1;
+  return isSqlSymbol(statement[cursor], '(');
+}
+
+/** `openIndex`의 여는 괄호와 짝인 닫는 괄호 위치다. 닫히지 않으면 문장 끝이다. */
+function closingParenIndex(statement, openIndex) {
+  let depth = 0;
+  for (let index = openIndex; index < statement.length; index++) {
+    if (isSqlSymbol(statement[index], '(')) depth += 1;
+    else if (isSqlSymbol(statement[index], ')') && --depth === 0) return index;
+  }
+  return statement.length;
+}
+
+/**
+ * CTE 이름과 한정자 없는 피연산자의 비교 키다. 인용하지 않은 이름만 소문자로 접고 인용한 이름은 그대로 둔다.
+ * 계약이 정하지 않은 부분이라 SQL 표준·Postgres의 식별자 규칙을 골랐다(공유 사례는 같은 표기만 쓴다).
+ */
+function cteKey(token) {
+  return token.quoted ? token.text : token.text.toLowerCase();
+}
+
+/**
+ * 관계 키워드 뒤의 이름을 읽는다. (한정) 이름 하나를 읽고, 별칭 뒤에 쉼표가 오면 다음 이름을 잇는다.
+ * 이름이 아닌 토큰(`(` 등)에서 멈춘다. 한정자 없는 이름이 같은 문장의 CTE 이름이면 내지 않는다(R2).
+ */
+function relationOperands(statement, start, cteNames) {
+  const names = [];
+  let cursor = start;
+  while (isSqlName(statement[cursor])) {
+    const parts = [statement[cursor]];
+    cursor += 1;
+    while (isSqlSymbol(statement[cursor], '.') && isSqlName(statement[cursor + 1])) {
+      parts.push(statement[cursor + 1]);
+      cursor += 2;
+    }
+    if (parts.length > 1 || !cteNames.has(cteKey(parts[0]))) names.push(parts.map(({ text }) => text).join('.'));
+    cursor = skipSqlAlias(statement, cursor);
+    if (!isSqlSymbol(statement[cursor], ',')) break;
+    cursor += 1;
+  }
+  return names;
+}
+
+/**
+ * 관계 이름 뒤의 별칭을 건너뛴다. 별칭은 내지 않으므로 쉼표 목록을 잇는 데 필요한 꼴(`AS 이름`, 쉼표 바로 앞의
+ * 이름 하나)만 본다 — 절 키워드를 별칭으로 잘못 넘겨도 뒤에 쉼표가 없으면 목록을 잇지 않는다.
+ */
+function skipSqlAlias(statement, cursor) {
+  if (isSqlWord(statement[cursor], 'as') && isSqlName(statement[cursor + 1])) return cursor + 2;
+  if (isSqlName(statement[cursor]) && isSqlSymbol(statement[cursor + 1], ',')) return cursor + 1;
+  return cursor;
+}
+
+/** 인용하지 않은 키워드 토큰인지 본다(대소문자 무시). 인용 식별자는 키워드가 아니다. */
+function isSqlWord(token, word) {
+  return token !== undefined && !token.quoted && token.text.toLowerCase() === word;
+}
+
+/** 기호 토큰인지 본다. */
+function isSqlSymbol(token, symbol) {
+  return token !== undefined && !token.quoted && token.text === symbol;
+}
+
+/** 이름 토큰(인용하지 않은 이름, 또는 비어 있지 않은 인용 식별자)인지 본다. */
+function isSqlName(token) {
+  return token !== undefined && (token.quoted ? token.text !== '' : /^[\p{L}_]/u.test(token.text));
 }
 
 /**

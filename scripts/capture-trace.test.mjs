@@ -7,6 +7,10 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureTrace, CaptureTraceError } from './capture-trace.mjs';
+import {
+  fixtureEnvironment, fixtureGit, initHostileRepository, initPartialCloneWithPromisorMarker,
+  initSuperprojectWithHostileSubmodule, markerKit, runGitWithoutLazyFetchControl,
+} from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
 // 가짜 생산자(node 스크립트)가 합성 fixture를 내보낸다. Swift·JVM 없이 capture의 모든 단계를 실제 자식 실행으로 검사한다.
@@ -425,6 +429,116 @@ test('심볼 선택의 usr는 역방향 root에 더해지고 git revision은 man
   assert.deepEqual(JSON.parse(await readFile(android[6], 'utf8')), ['kt:Extra.symbol', 'kt:UsersApi.create', 'kt:UsersApi.get']);
   const context = JSON.parse(await readFile(join(work, 'out/trace-context.json'), 'utf8'));
   assert.equal(context.revision, head);
+});
+
+/** git만 전역·시스템 설정 없이 실행한다(fixture 저장소가 개발자 설정에 흔들리지 않게). 나머지 자식은 그대로다. */
+function fixtureExecute(command, args, options) {
+  return runChild(command, args, command === 'git' ? { ...options, env: fixtureEnvironment(options.env) } : options);
+}
+
+test('git revision과 도구 source 조회는 분석 대상 저장소의 filter·fsmonitor·hook 설정을 실행하지 않는다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  const appHead = await initHostileRepository(project, kit, { attributes: 'tree', stale: ['main.dart'] });
+  const source = join(work, 'tool-src');
+  await mkdir(source);
+  await writeFile(join(source, 'Tool.swift'), 'struct Tool {}');
+  const toolHead = await initHostileRepository(source, kit, { attributes: 'info', stale: ['Tool.swift'] });
+  config.members[0].revision = { git: true };
+  config.tools.tsograph.source = { root: 'work', path: 'tool-src' };
+  config.trace = false;
+  await captureTrace(config, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.members[0], { name: 'app', project, revision: appHead, revisionSource: 'git', dirty: false });
+  assert.deepEqual(manifest.tools.tsograph.source, { revision: toolHead, dirty: false });
+  // 조회마다 바로 앞에서 설정 키를 다시 읽고 그 순간의 드라이버를 빈 명령으로 덮는다.
+  const steps = manifest.steps.filter(({ step }) => step.startsWith('revision:app'));
+  assert.deepEqual(steps.map(({ step }) => step),
+    ['revision:app:config', 'revision:app', 'revision:app:status:config', 'revision:app:status']);
+  for (const argument of ['core.fsmonitor=false', 'filter.evil.name.clean=', 'filter.evil.name.required=false',
+    'filter.Proc.process=', '--ignore-submodules=dirty']) {
+    assert.ok(steps[3].command.includes(argument), argument);
+  }
+});
+
+test('git revision은 명령줄로 덮을 수 없는 filter 드라이버 이름이 있으면 조회하지 않고 그 단계에서 실패한다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  await initHostileRepository(project, kit, { driver: 'a=b', stale: ['main.dart'] });
+  config.members[0].revision = { git: true };
+  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), 'revision:app', /git cannot override a configured filter driver/u);
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.failure.step, 'revision:app');
+  assert.ok(!manifest.steps.some(({ step }) => step === 'revision:app'), 'The query that cannot be isolated never runs.');
+});
+
+test('git revision은 서브모듈에서 git을 띄우지 않고 기록된 commit과 다른 서브모듈만 dirty로 본다', async (t) => {
+  const { work, project, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  await writeFile(join(project, 'main.dart'), 'void main() {}');
+  const moveSubmodule = await initSuperprojectWithHostileSubmodule(project, join(kit.scratch, 'origin'), kit);
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  const dirty = async (path) => JSON.parse(await readFile(join(work, path, 'capture-manifest.json'), 'utf8')).members[0].dirty;
+  await captureTrace(config, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  assert.equal(await dirty('out'), false);
+  moveSubmodule();
+  await captureTrace({ ...config, output: { root: 'work', path: 'moved' } }, { execute: fixtureExecute });
+  assert.deepEqual(await kit.found(), []);
+  assert.equal(await dirty('moved'), true);
+});
+
+test('git revision 조회는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령을 실행하지 않고 실패한다', async (t) => {
+  const { work, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  const project = join(work, 'clone');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  // HEAD↔index에 rename을 만들어 status 조회가 빠진 base blob을 읽게 한다. 격리가 없으면 lazy fetch가 clone의
+  // remote.origin.uploadpack(마커)을 실행하지만, 격리는 fetch 자체를 막아 조회가 그 단계에서 실패한다.
+  fixtureGit(project, ['reset', '--soft', base]);
+  config.members[0].project = { root: 'work', path: 'clone' };
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), 'revision:app:status', /git status exited with status 128/u);
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  assert.equal(manifest.failure.step, 'revision:app:status');
+});
+
+test('git revision은 lazy fetch를 끄지 못하는 git(2.45 미만)에서 부분 clone이면 조회를 시작하지 않고, 아니면 그대로 조회한다', async (t) => {
+  // git 2.45 미만은 GIT_NO_LAZY_FETCH를 무시한다. promisor 설정이 보이는 저장소는 --no-lazy-fetch를 붙여 그 git이 모르는
+  // 옵션으로 바로 끝나게 하므로, 환경 변수만으로는 막히지 않던 lazy fetch(uploadpack 마커)가 돌지 않는다.
+  const execute = (command, args, options) => (command === 'git'
+    ? runGitWithoutLazyFetchControl(command, args, options) : runChild(command, args, options));
+  const { work, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  const project = join(work, 'clone');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  fixtureGit(project, ['reset', '--soft', base]);
+  config.members[0].project = { root: 'work', path: 'clone' };
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  await rejectsAt(captureTrace(config, { execute }), 'revision:app', /git rev-parse exited with status 129/u);
+  assert.deepEqual(await kit.found(), []);
+  const failed = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  const query = failed.steps.find(({ step }) => step === 'revision:app');
+  assert.ok(query.command.indexOf('--no-lazy-fetch') > 0 && query.command.indexOf('--no-lazy-fetch') < query.command.indexOf('rev-parse'));
+  // promisor 설정이 없는 저장소에는 옵션을 붙이지 않아 같은 git에서도 revision과 dirty를 읽는다.
+  const plain = await singleProjectConfig(t);
+  await writeFile(join(plain.project, 'main.dart'), 'void main() {}');
+  const head = await initHostileRepository(plain.project, kit, { stale: ['main.dart'] });
+  plain.config.members[0].revision = { git: true };
+  plain.config.trace = false;
+  await captureTrace(plain.config, { execute });
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(plain.work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.members[0], { name: 'app', project: plain.project, revision: head, revisionSource: 'git', dirty: false });
+  assert.ok(!manifest.steps.some(({ command }) => command.includes('--no-lazy-fetch')));
 });
 
 test('CLI는 사용법·설정 오류를 종료 코드 2와 단계 문구로 알린다', async (t) => {

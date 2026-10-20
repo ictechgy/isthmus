@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CaptureFileSystem } from './command-support.ts';
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH, type CaptureFileSystem } from './command-support.ts';
 import { runInitCommand } from './init-command.ts';
 
 /** project만 정규화하고 나머지 경로는 없는 것으로 보는 가짜 파일시스템이다. */
@@ -98,6 +99,28 @@ test('잘못된 toolchain과 사용법을 구분한다', async () => {
   );
   assert.equal(invalid.exitCode, 2);
   assert.match(invalid.standardError, /toolchain manifest/u);
+
+  // 리더의 크기 상한 거부와 읽기 거부는 지금처럼 같은 toolchain 문구다. 리더에는 문서 하나의 상한을 넘긴다.
+  const limits: number[] = [];
+  for (const reason of ['limit', 'read'] as const) {
+    const rejected = await runInitCommand(
+      ['init', '--toolchain', 'toolchain.json'],
+      async (_path, maximumLength) => {
+        limits.push(maximumLength);
+        throw new BoundedTextReadError(reason);
+      },
+      async () => { throw new Error('should not write'); },
+      fileSystem(),
+      '/app',
+    );
+    assert.deepEqual(rejected, {
+      standardOutput: '',
+      standardError: 'The toolchain manifest is missing or invalid; build one with '
+        + 'scripts/build-preflight-toolchain.mjs first.\n',
+      exitCode: 2,
+    }, reason);
+  }
+  assert.deepEqual(limits, [MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH]);
 
   assert.equal(
     (await runInitCommand(['init', 'a.json', 'b.json'], async () => '', async () => {}, fileSystem(), '/app')).exitCode,

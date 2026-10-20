@@ -20,15 +20,16 @@ import { BoundedTextReadError } from './bounded-text-file.ts';
 /**
  * 파일 경로를 받아 UTF-8 텍스트를 읽는 주입 경계다.
  *
- * `maximumLength`는 호출부가 그 입력에 허용하는 최대 UTF-16 길이다. 리더는 디코딩해도 그 길이를 넘을 수밖에 없는
- * 파일을 읽기 전에 `BoundedTextReadError('limit')`로 거부할 수 있다(MCP serve의 일반 파일 리더). 길이를 넘기는
- * 호출부는 그 오류를 {@link isInputSizeRejection}으로 가려 읽기 실패가 아니라 크기 상한 실패로 답한다. CLI 리더는
- * 길이를 무시하고 파일 전체를 읽는다.
+ * `maximumLength`는 호출부가 그 입력에 허용하는 최대 UTF-16 길이다. 모든 입력 읽기가 상한을 넘기도록 필수다 — 상한
+ * 없는 읽기는 큰 파일을 통째로 메모리에 올린다. CLI와 MCP serve의 리더(`readRegularTextFile`)는 일반 파일이 아닌
+ * 경로를 열지 않고 거부하고, 디코딩해도 그 길이를 넘을 수밖에 없는 파일을 읽기 전에(읽는 중 커지면 그 시점에)
+ * `BoundedTextReadError('limit')`로 거부한다. 호출부는 그 오류를 {@link isInputSizeRejection}으로 가려 읽기 실패가
+ * 아니라 크기 상한 실패로 답한다.
  */
-export type ReadTextFile = (path: string, maximumLength?: number) => Promise<string>;
+export type ReadTextFile = (path: string, maximumLength: number) => Promise<string>;
 
 /**
- * 리더가 파일을 읽기 전에 크기 상한으로 거부했는지 판정한다.
+ * 리더가 크기 상한으로 거부했는지(읽기 전, 또는 읽는 중 커진 파일) 판정한다.
  *
  * 그런 파일은 다 읽었어도 호출부의 길이 검사에 걸렸을 것이다. 읽기 실패("Unable to read …")로 답하면 원인 안내가
  * 틀어지므로, 호출부는 다 읽은 뒤 길이 검사에 걸렸을 때와 같은 크기 상한 문구로 답한다.

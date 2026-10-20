@@ -401,7 +401,15 @@ traversals rooted at the handler, call-site, relation-use, and schema vertex ids
 (`--roots-from` where the producer supports it), copies precomputed artifacts with their `sha256`, and
 writes a single-project or workspace trace context, a manifest of producer versions and revisions, and
 optionally `trace.json`. Children run from argument arrays without a shell, with a timeout per step, and
-every path must stay inside the declared roots. For a file selection it collects in two stages: forward
+every path must stay inside the declared roots. Its git queries (`revision: {"git": true}` and tool `source`, like
+the preflight collector's `since`) override the analysed repository's filter drivers and fsmonitor, use no external
+diff or textconv, do not run git inside submodules, and disable promisor lazy fetch, so those settings do not run
+commands during collection — a partial clone missing a needed object then fails instead of fetching it, and git older
+than 2.45, which cannot turn lazy fetch off, fails before querying a repository with partial-clone settings
+([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). As a result, a file that git-lfs or another filter
+normalizes can appear changed — and set the capture's `dirty` — when its stat data is stale, rather than being
+claimed clean, and uncommitted changes inside a submodule are not seen; run `git update-index --refresh` on a
+trusted checkout before collecting to avoid the stale-stat case. For a file selection it collects in two stages: forward
 traversals and optional producer symbol listings first (tsograph `graph`, kartograph `snapshot`, cartograph
 `graph`), then the reverse traversals rooted also at the symbols located in the selected files, so helpers
 without facts no longer fall back to fact locations; listed symbols reach trace through the optional
@@ -478,6 +486,13 @@ one-sided observation as a boundary mismatch. Input failure messages state the c
 failure, JSON error, exchange contract violation, project mismatch, missing platform
 composition, size limit), the input position, and how to resolve it, and never expose input
 bodies or paths.
+
+Input paths must name regular files. FIFOs, devices, and directories, including process
+substitution `<(...)` and a piped `/dev/stdin`, are refused as a read failure (exit code 2)
+without being opened; save such input to a file first. A file larger in bytes than three times
+the text size limit for that input ([input limits](docs/GRAPH-EXCHANGE.md#입력-자원-상한)) is
+refused with the same size-limit message without being read, and a file that grows while it is
+read stops one byte past that bound.
 
 To verify the whole path from production to consumption on a real public Flutter plugin, run
 this from the repository root. The script does a sparse checkout of a pinned `plus_plugins`

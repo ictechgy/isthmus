@@ -5,7 +5,7 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { readBoundedTextFile, readRegularTextFile } from './bounded-text-file.ts';
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
-import type { CaptureFileSystem, CommandResult } from './command-support.ts';
+import type { CaptureFileSystem, CommandResult, ReadTextFile } from './command-support.ts';
 import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { doctorUsage, runDoctorCommand } from './doctor-command.ts';
 import { initUsage, runInitCommand } from './init-command.ts';
@@ -79,7 +79,13 @@ Options:
 `;
 
 const arguments_ = process.argv.slice(2);
-const readTextFile = (path: string) => readFile(path, 'utf8');
+/**
+ * 모든 명령의 입력 읽기 경계다. MCP serve와 같은 일반 파일 리더를 쓴다.
+ *
+ * FIFO·장치·디렉터리(프로세스 치환 `<(...)`, 파이프에 연결된 `/dev/stdin` 포함)는 열지 않고 읽기 실패로, 호출부 상한의
+ * 3배 바이트를 넘는 파일은 읽지 않고 크기 상한 실패로 끝낸다. 일반 파일은 readFile(path, 'utf8')과 같은 문자열이다.
+ */
+const readTextFile: ReadTextFile = readRegularTextFile;
 const writeTextFile = (path: string, text: string) =>
   writeTextAtomically(path, text);
 
@@ -218,10 +224,10 @@ async function dispatchCommand(
         process.cwd(),
       );
     case 'serve':
-      // 세션은 요청을 하나씩 처리한다. FIFO·장치 경로 하나가 이후 모든 요청을 막지 않게 일반 파일만 읽는다.
+      // 세션은 요청을 하나씩 처리한다. CLI와 같은 일반 파일 리더라 FIFO·장치 경로 하나가 이후 모든 요청을 막지 않는다.
       return runServeCommand(
         commandArguments,
-        readRegularTextFile,
+        readTextFile,
         writeTextFile,
         await readPackageVersion(),
       );

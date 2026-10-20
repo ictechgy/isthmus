@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { runHttpDiffCommand } from './http-diff-command.ts';
 import { runSurfaceCommand, surfaceUsage } from './surface-command.ts';
 import { runTraceCommand } from './trace-command.ts';
@@ -108,6 +110,21 @@ test('surface export 사용 오류는 64, 입력 오류는 경로 없는 원인 
   }
   assert.match((await runSurfaceCommand(['surface', 'export', '--workspace', '/fx/none.json', '--member', 'm'], reader(), '0.9.0'))
     .standardError, /Unable to read the workspace manifest/u);
+});
+
+test('workspace 매니페스트 리더가 읽기 전에 크기 상한으로 거부하면 크기 상한 문구로, 그 밖의 거부는 읽기 실패로 답한다', async () => {
+  const limits: number[] = [];
+  for (const [reason, message] of [['limit', 'The workspace manifest exceeds the input size limit.'],
+    ['read', 'Unable to read the workspace manifest; check that the file exists and is readable.']] as const) {
+    const result = await runSurfaceCommand(['surface', 'export', '--workspace', '/fx/w.json', '--member', 'm'],
+      async (_path, maximumLength) => {
+        limits.push(maximumLength);
+        throw new BoundedTextReadError(reason);
+      }, '0.9.0');
+    assert.deepEqual(result, { standardOutput: '', standardError: `Surface export input violates its contract: ${message}\n`,
+      exitCode: 2 }, reason);
+  }
+  assert.deepEqual(limits, [MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH]);
 });
 
 test('trace는 surface 파일을 고정한 sha256과 대조하고, 다르면 부분 결과 없이 2다', async () => {

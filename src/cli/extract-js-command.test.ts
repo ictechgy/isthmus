@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseMessageBridgeDocument } from '../exchange/messages.ts';
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH } from './command-support.ts';
 import {
   type ExtractJsFileSystem,
   runExtractJsCommand,
@@ -141,6 +143,29 @@ test('읽기 실패는 입력 본문 없이 코드 2다', async () => {
   assert.equal(result.exitCode, 2);
   assert.ok(result.standardError.includes('readable'));
   assert.ok(!result.standardError.includes('denied'));
+});
+
+test('소스 리더에 파일 상한과 남은 합계 중 작은 값을 넘기고, 크기 상한 거부는 크기 문구·그 밖은 읽기 실패로 답한다', async () => {
+  const names = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'];
+  const files = new Map(names.map((name) => [`/p/${name}`, '']));
+  const dirs = new Map<string, readonly string[]>([['/p', names]]);
+  // 앞 네 파일이 63Mi를 쓰면 다섯째 파일에는 합계 상한(64Mi)의 남은 1Mi만 넘긴다. 큰 문자열 하나를 나눠 쓴다.
+  const full = ' '.repeat(MAX_INPUT_TEXT_LENGTH);
+  const texts = new Map([['/p/a.ts', full], ['/p/b.ts', full], ['/p/c.ts', full],
+    ['/p/d.ts', full.slice(0, MAX_INPUT_TEXT_LENGTH - 1024 * 1024)]]);
+  for (const [reason, message] of [['limit', 'extract-js input set exceeds the source size limits; narrow the scanned directories.\n'],
+    ['read', 'Unable to read extract-js source e.ts; check that the file exists and is readable.\n']] as const) {
+    const limits: number[] = [];
+    const result = await runExtractJsCommand(['extract-js', '/p'], fakeFs(files, dirs), async (path, maximumLength) => {
+      limits.push(maximumLength);
+      const text = texts.get(path);
+      if (text === undefined) throw new BoundedTextReadError(reason);
+      return text;
+    }, fixedNow, '1.0.0');
+    assert.deepEqual(result, { standardOutput: '', standardError: message, exitCode: 2 }, reason);
+    assert.deepEqual(limits, [MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH,
+      MAX_TOTAL_INPUT_TEXT_LENGTH - (4 * MAX_INPUT_TEXT_LENGTH - 1024 * 1024)], reason);
+  }
 });
 
 test('realpath 실패·비디렉터리 --project·버전 부재를 코드 2로 분류한다', async () => {

@@ -20,6 +20,7 @@ import {
   inputFailure,
   inputFailureResult,
   internalError,
+  isInputSizeRejection,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   readBridgeDocuments,
@@ -238,13 +239,15 @@ function parseManifest(value: unknown, snapshot: 'before' | 'after'): TraceWorks
 async function readJsonFile(path: string, snapshot: 'before' | 'after', readTextFile: ReadTextFile): Promise<{
   value: unknown; length: number;
 }> {
+  const tooLarge = `The ${snapshot} input exceeds the input size limit.`;
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    if (isInputSizeRejection(error)) throw new HttpDiffInputError(tooLarge);
     throw new HttpDiffInputError(`Unable to read the ${snapshot} input; check that the file exists and is readable.`);
   }
-  if (text.length > MAX_INPUT_TEXT_LENGTH) throw new HttpDiffInputError(`The ${snapshot} input exceeds the input size limit.`);
+  if (text.length > MAX_INPUT_TEXT_LENGTH) throw new HttpDiffInputError(tooLarge);
   try {
     return { value: JSON.parse(text), length: text.length };
   } catch (error) {

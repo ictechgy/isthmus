@@ -39,6 +39,7 @@ import {
   inputFailure,
   inputFailureResult,
   internalError,
+  isInputSizeRejection,
   isJsonParseFailure,
   MAX_INPUT_TEXT_LENGTH,
   readBridgeInputs,
@@ -178,8 +179,9 @@ async function readBaselineDocument(
 ): Promise<BaselineDocument> {
   let text: string;
   try {
-    text = await readTextFile(path);
-  } catch {
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
+  } catch (error) {
+    if (isInputSizeRejection(error)) throw new BridgeBaselineLimitError();
     throw new BridgeBaselineReadError();
   }
   if (text.length > MAX_INPUT_TEXT_LENGTH) {

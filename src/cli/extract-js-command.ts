@@ -17,6 +17,7 @@ import { encodeSortedJson } from '../report/sorted-json.ts';
 import {
   inputFailure,
   internalError,
+  isInputSizeRejection,
   MAX_INPUT_TEXT_LENGTH,
   MAX_TOTAL_INPUT_TEXT_LENGTH,
   type Clock,
@@ -157,12 +158,19 @@ export async function runExtractJsCommand(
   // 그대로 쓰므로 로캘과 무관한 코드 단위 순서로 정렬한다.
   const ordered = [...new Map(discovered.map((f) => [f.path, f])).values()]
     .sort((left, right) => compareStrings(left.path, right.path));
+  const sourceSizeFailure = inputFailure(
+    'extract-js input set exceeds the source size limits; '
+    + 'narrow the scanned directories.\n',
+  );
   let totalLength = 0;
   for (const file of ordered) {
     let text: string;
     try {
-      text = await readSource(`${projectRoot}/${file.path}`);
-    } catch {
+      // 파일 하나의 상한과 남은 합계 예산 중 작은 값이다. 그 길이를 넘을 수밖에 없는 파일은 읽지 않고 거부된다.
+      text = await readSource(`${projectRoot}/${file.path}`,
+        Math.min(MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH - totalLength));
+    } catch (error) {
+      if (isInputSizeRejection(error)) return sourceSizeFailure;
       return inputFailure(
         `Unable to read extract-js source ${file.path}; `
         + 'check that the file exists and is readable.\n',
@@ -173,10 +181,7 @@ export async function runExtractJsCommand(
       text.length > MAX_INPUT_TEXT_LENGTH ||
       totalLength > MAX_TOTAL_INPUT_TEXT_LENGTH
     ) {
-      return inputFailure(
-        'extract-js input set exceeds the source size limits; '
-        + 'narrow the scanned directories.\n',
-      );
+      return sourceSizeFailure;
     }
     file.text = text;
   }

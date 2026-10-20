@@ -39,6 +39,9 @@ import {
   analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
 } from '../dist/exchange/trace-context.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
+import {
+  CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments, lazyFetchArguments,
+} from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /**
@@ -247,7 +250,9 @@ async function run(session, { step, label, command, args, timeoutSeconds, accept
   const result = await session.execute(command[0], [...command.slice(1), ...args], {
     // SIGTERM을 무시하는 자식이 있어도 시간 제한이 지켜지도록 SIGKILL로 끝낸다.
     cwd: cwd ?? session.output, timeout: timeoutSeconds * 1000, killSignal: 'SIGKILL', maxBuffer: MAX_CHILD_OUTPUT_BYTES,
-    env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0' },
+    // git 조회에는 부분 clone의 promisor lazy fetch가 분석 대상 설정의 명령을 실행하지 못하게 끄는 환경을 더한다.
+    env: { ...process.env, CI: 'true', GIT_OPTIONAL_LOCKS: '0',
+      ...(command[0] === 'git' ? GIT_ISOLATION_ENVIRONMENT : {}) },
   });
   const milliseconds = Math.round(performance.now() - begin);
   const entry = { step, command: [...command, ...args], exitCode: result.status ?? null, milliseconds };
@@ -295,16 +300,37 @@ function oneLine(text) {
   return text.split(/\r?\n/u)[0].replace(/[\u0000-\u001f\u007f-\u009f]/gu, '').trim().slice(0, 200);
 }
 
-/** git 조회(revision·dirty)다. index를 고치지 않도록 optional lock을 끄고 fsmonitor를 쓰지 않는다. */
+/**
+ * git 조회(revision·dirty)다. index를 고치지 않도록 optional lock을 끄고(run의 환경), 조회마다 분석 대상 설정의
+ * filter·fsmonitor를 막고 서브모듈에서 git을 띄우지 않는다({@link isolatedGit}). 서브모듈은 기록된 commit과 다를 때만
+ * dirty로 본다.
+ */
 async function gitState(session, directory, step) {
-  const head = await run(session, { step, label: 'git rev-parse', command: ['git'],
-    args: ['-C', directory, 'rev-parse', '--verify', 'HEAD'], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  const head = await isolatedGit(session, directory, step, 'rev-parse', ['--verify', 'HEAD']);
   const revision = head.stdout.trim();
   if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(revision)) throw new CaptureTraceError(step, 'git did not return a commit hash.');
-  const status = await run(session, { step: `${step}:status`, label: 'git status', command: ['git'],
-    args: ['-C', directory, '-c', 'core.fsmonitor=false', 'status', '--porcelain', '-z', '--untracked-files=normal'],
-    timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  const status = await isolatedGit(session, directory, `${step}:status`, 'status', ['--porcelain', '-z', '--untracked-files=normal']);
   return { revision, dirty: status.stdout.length > 0 };
+}
+
+/**
+ * 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한 git 하위 명령 하나다(scripts/git-isolation.mjs). 바로 앞의
+ * `<step>:config` 단계로 그 순간 설정된 filter 드라이버를 다시 읽어 덮는다 — 사이에 실행된 생산자가 설정을 바꿔도 따라간다.
+ * 덮을 수 없는 이름이면 그 조회를 실행하지 않고 `step`의 오류로 끝낸다. promisor 설정이 보이면 lazy fetch를 끄는 전역
+ * 옵션도 붙인다(그 옵션을 모르는 git 2.45 미만은 조회 전에 `step`에서 실패한다).
+ */
+async function isolatedGit(session, directory, step, subcommand, args) {
+  const listing = await run(session, { step: `${step}:config`, label: 'git config', command: ['git'],
+    args: ['-C', directory, ...CONFIG_NAMES_QUERY], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+  let drivers;
+  try { drivers = filterDriverNames(listing.stdout); }
+  catch (error) {
+    if (error instanceof GitIsolationError) throw new CaptureTraceError(step, error.message);
+    throw error;
+  }
+  return run(session, { step, label: `git ${subcommand}`, command: ['git'],
+    args: ['-C', directory, ...lazyFetchArguments(listing.stdout), ...isolatedGitArguments(drivers, subcommand, args)],
+    timeoutSeconds: GIT_TIMEOUT_SECONDS });
 }
 
 /** 쓰는 도구마다 `--version`과(선언했으면) 소스 checkout revision을 기록한다. */
