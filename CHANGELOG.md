@@ -70,7 +70,8 @@
   [TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
 - 같은 `since`와 git 판독의 git 조회가, 분석 대상이 부분 clone이고 조회에 필요한 객체가 로컬에 없으면 promisor remote의
   lazy fetch를 띄워 저장소 설정의 `remote.<이름>.uploadpack`(로컬 경로 전송은 셸로 실행)·`core.sshCommand`·
-  `credential.helper`를 실행하던 결함도 고쳤다. 이제 그 조회에 `GIT_NO_LAZY_FETCH=1`을 주어 빠진 객체를 내려받지 않는다
+  `credential.helper`를 실행하던 결함도 고쳤다. 이제 그 조회에 `GIT_NO_LAZY_FETCH=1`을 주어 빠진 객체를 내려받지 않고,
+  이 변수를 모르는 git 2.45 미만도 막도록 promisor 설정이 보이는 저장소에는 `--no-lazy-fetch`도 붙인다
   ([PREFLIGHT](docs/PREFLIGHT.md#자동-수집과-ci)·[TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
 
 ### Changed
@@ -91,7 +92,9 @@
   명령줄로 덮을 수 없어, git을 조회하지 않고 `since` 수집과 git 판독을 쓰는 capture-trace가 실패(종료 코드 2)한다.
   그 드라이버를 설정에서 지우거나 이름을 바꾼다.
 - 업그레이드 전에 확인: 분석 대상이 부분 clone(promisor remote)이고 `since` 수집이나 git 판독의 조회에 필요한 객체가 로컬에
-  없으면, 이제 그 객체를 내려받지 않고 수집이 실패(종료 코드 2)한다. 수집 전에 필요한 commit을 fetch해 둔다.
+  없으면, 이제 그 객체를 내려받지 않고 수집이 실패(종료 코드 2)한다. git 2.45 미만은 lazy fetch를 끌 수 없어 promisor 설정이
+  있는 저장소면 조회 전에 실패한다. 부분 clone은 git 2.45 이상으로, 부분 clone이 아닌 checkout이나 빠진 객체를 미리 받아 둔
+  신뢰하는 checkout(예: git 2.49 이상의 `git backfill`)에서 수집한다 — commit만 fetch해서는 빠진 blob이 들어오지 않는다.
 
 ## [0.13.1] - Unreleased
 
