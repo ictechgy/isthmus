@@ -397,7 +397,8 @@ optionally `trace.json`. Children run from argument arrays without a shell, with
 every path must stay inside the declared roots. Its git queries (`revision: {"git": true}` and tool `source`, like
 the preflight collector's `since`) override the analysed repository's filter drivers and fsmonitor, use no external
 diff or textconv, do not run git inside submodules, and disable promisor lazy fetch, so those settings do not run
-commands during collection — a partial clone missing a needed object then fails instead of fetching it
+commands during collection — a partial clone missing a needed object then fails instead of fetching it, and git older
+than 2.45, which cannot turn lazy fetch off, fails before querying a repository with partial-clone settings
 ([TRACE](docs/TRACE.md), [PREFLIGHT](docs/PREFLIGHT.md)). As a result, a file that git-lfs or another filter
 normalizes can appear changed — and set the capture's `dirty` — when its stat data is stale, rather than being
 claimed clean, and uncommitted changes inside a submodule are not seen; run `git update-index --refresh` on a

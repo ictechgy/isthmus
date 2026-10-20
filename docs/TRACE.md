@@ -609,8 +609,12 @@ node scripts/capture-trace.mjs capture.json
   들었거나 UTF-8이 아닌 filter 드라이버는 명령줄로 덮을 수 없어 조회하지 않고 그 단계 실패로 끝낸다 — 그 드라이버를 설정에서
   지우거나 이름을 바꾼다. 조회는 `GIT_NO_LAZY_FETCH=1`로 promisor remote의 lazy fetch도 꺼(저장소 설정의
   `remote.<이름>.uploadpack`·`core.sshCommand`·`credential.helper`가 실행되지 않게), 분석 대상이 부분 clone이고 조회에
-  필요한 객체가 로컬에 없으면 내려받지 않고 그 단계 실패로 끝낸다 — 수집 전에 필요한 commit을 fetch해 두면 로컬 객체만으로
-  끝난다. 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
+  필요한 객체가 로컬에 없으면 내려받지 않고 그 단계 실패로 끝낸다. 이 변수를 모르는 git 2.45 미만을 위해 키 목록에
+  promisor 설정(`extensions.partialClone`, `remote.<이름>.promisor`·`partialCloneFilter`)이 보이면 `--no-lazy-fetch`도 붙이므로,
+  그 git은 부분 clone에서 조회를 시작하지 않고 그 단계 실패로 끝난다(부분 clone이 아닌 저장소는 그대로 조회한다). 그래서
+  부분 clone은 git 2.45 이상으로, 필요한 객체가 로컬에 있는 checkout에서 수집한다 — 부분 clone이 아닌 checkout을 쓰거나
+  신뢰하는 checkout이면 수집 전에 빠진 객체를 받아 둔다(예: git 2.49 이상의 `git backfill`, commit만 fetch해서는 빠진
+  blob이 들어오지 않는다). 사전 계산 분석의 revision 증언은 `precomputed.revision`, 없으면 문서의 `revision`이다.
   둘 다 없는 옛 형식 artifact(`change-impact` 등)는 받지 않는다.
 - **catalog**(workspace member만): `catalog.graph`의 파일 sha256을 `catalog.graphSha`로 싣는다(schemagraph
   `graphRevision`과 같은 규칙).
