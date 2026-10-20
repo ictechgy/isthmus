@@ -34,6 +34,7 @@ export interface EvidenceArtifact {
 export interface EvidenceManifest {
   readonly expected: EvidenceInput;
   readonly artifacts: readonly EvidenceArtifact[];
+  readonly kartographReceipt?: Readonly<{ path: string; sha256: string }>;
 }
 
 /** 테스트 실행기가 관찰했다고 신고한 결과다. 실행 진위는 별도로 검증해야 한다. */
@@ -108,7 +109,14 @@ export function parseEvidenceManifest(value: unknown): EvidenceManifest {
       ...(item.input === undefined ? {} : { input: input(item.input) }),
       ...(item.producer === undefined ? {} : { producer: producer(item.producer) }) };
   });
-  return { expected: input(raw.expected), artifacts };
+  let kartographReceipt;
+  if (raw.kartographReceipt !== undefined) {
+    const reference = guards.object(raw.kartographReceipt, 'Kartograph receipt reference must be an object.');
+    const path = identifier(reference.path);
+    if (!isProjectRelativePath(path)) fail('Kartograph receipt path must be project-relative.');
+    kartographReceipt = { path, sha256: digest(reference.sha256) };
+  }
+  return { expected: input(raw.expected), artifacts, ...(kartographReceipt === undefined ? {} : { kartographReceipt }) };
 }
 
 /** 정확한 심볼 신원과 관찰 상태만 받아 이름 휴리스틱으로 테스트를 만들지 않는다. */

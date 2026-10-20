@@ -6,6 +6,9 @@
 
 ### Added
 
+- 선택적 Kartograph capture receipt가 동일 snapshot의 native `verify-snapshot` 전후 결과와
+  생성 facts/traversal 바이트를 묶는다. task는 수집 당시 판독·오프라인 무결성·현재 재검증 부재를
+  구분하며 수동 manifest의 unverified는 유지한다. 고정 생산자/JDK의 실제 compiler fixture를 CI에 둔다.
 - 실험적 `task` 명령이 단일 project의 trace 경로·기존 check 규칙·명시적 심볼별 테스트 관찰을
   bounded summary로 묶는다. 선택적 `isthmus-evidence-manifest` v1은 capture/repository/commit,
   dirty 소스 내용·membership 지문, 도구 체인·build configuration 및 실제 입력 artifact 해시를
@@ -17,6 +20,8 @@
 
 ### Fixed
 
+- task가 legacy 영향 어댑터가 무시한 원시 `tool` 필드를 다시 신뢰해 `tool: null`에서 내부 오류를
+  만들던 문제를 고쳤다. 기존 정규화 결과를 재사용하고 미신고 생산자 메타데이터는 unverified로 남긴다.
 - MCP 도구의 `documents`·`context`·`runtime[]` 경로와 `query` 이름이 `-`로 시작하면 CLI 플래그로 읽혀, `check`가
   `--update-baseline`으로 파일을 덮어쓰거나 `--baseline`·`--format sarif`·`--pairs`가 열리던 결함을 고쳤다. 이제 이
   인자들은 `--` 뒤 위치 인수로 넘겨 경로·이름으로만 다룬다. 값으로 받는 인자와 `diff`의 before·after는 전처럼 CLI

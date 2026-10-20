@@ -31,6 +31,15 @@ export function createTaskReport(trace: TraceReport, check: CheckReport, evidenc
   validations: readonly TaskValidationInput[], limit: number) {
   const unknown: TaskUnknown[] = [{ code: 'input-binding-unverified',
     detail: 'Manual manifests compare bytes and declared inputs; current source, compiler lifecycle and execution are unverified.' }];
+  if (evidence.kartograph !== undefined) {
+    unknown.push({ code: 'kartograph-live-inputs-not-rechecked',
+      detail: 'Receipt preserves native verification at capture; this offline task did not recheck current source/config inputs.' });
+    for (const reason of evidence.kartograph.reasons) unknown.push({ code: 'kartograph-native-gap', detail: reason });
+    if (evidence.kartograph.integrity !== 'matched') unknown.push({ code: 'kartograph-receipt-stale', detail: 'Receipt bytes do not match the manifest.' });
+    for (const entry of evidence.kartograph.artifacts) if (entry.alignment !== 'matched') {
+      unknown.push({ code: `kartograph-artifact-${entry.alignment}`, detail: entry.id });
+    }
+  }
   for (const entry of evidence.artifacts) {
     if (entry.alignment !== 'matched') unknown.push({ code: `evidence-${entry.alignment}`,
       detail: `${entry.id}: ${entry.reasons.join(', ')}` });
@@ -60,7 +69,9 @@ export function createTaskReport(trace: TraceReport, check: CheckReport, evidenc
   for (const entry of tests) testSummary[entry.observedOutcome]++;
   return {
     format: 'isthmus-task' as const, version: 1, complete: false as const, requiresReview: true as const,
-    evidence: { ...evidence, artifacts: bounded(evidence.artifacts, limit) },
+    evidence: { ...evidence, artifacts: bounded(evidence.artifacts, limit),
+      ...(evidence.kartograph === undefined ? {} : { kartograph: { ...evidence.kartograph,
+        artifacts: bounded(evidence.kartograph.artifacts, limit), reasons: bounded(evidence.kartograph.reasons, limit) } }) },
     trace: limitTraceReport(trace, { maxChains: limit, maxRows: limit }),
     rules: { scope: 'all-input-bridge-facts' as const, summary: check.summary, issues: bounded(check.issues, limit),
       limitations: bounded(check.limitations, limit) },

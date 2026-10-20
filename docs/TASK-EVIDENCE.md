@@ -92,6 +92,55 @@ passed 순이며 이름으로 테스트나 호출 관계를 추측하지 않는�
 
 ## 증명 수준과 후속 조건
 
+### 다음 최소 단위: Kartograph native verification binding
+
+2026-10-20 후속 설계. 참조 생산자 main은 `7b3acbbad87184992b39d948844318ba37fb153e`다.
+`BuildWitnessCodec`의 witness v1/v2와 `ProvenanceVerifier`의 source/config/classes membership 검사를
+다시 구현하지 않는다. 별도 수집 스크립트가 **같은 snapshot 바이트**에 대해 실제 Kartograph의
+`verify-snapshot`을 facts/traversal 생성 전후에 실행하고, snapshot·실행 파일/명시적 runtime 파일 및
+생성 artifact의 해시를 `isthmus-kartograph-receipt` v1으로 묶는다. 첫 지원은 persistence facts와
+그 facts의 실제 USR을 roots로 한 역방향 language-traversal이다.
+
+native 결과 `matched`/`stale`/`unverified`와 원인을 그대로 보존한다. 실행 실패·형식/버전 오류는
+receipt를 만들지 않는다. snapshot/producer 바이트가 중간에 바뀌면 stale이며 생성 시각은 쓰지 않는다.
+이 receipt는 **수집 당시의 native 판독**이다. 오프라인 task가 파일 해시를 대조해도 현재 source/config를
+다시 읽었다고 주장하지 않는다. 수동 manifest의 `verification: unverified`는 유지한다. 악의적인 생산자나
+pre/post 사이의 변경 후 원복을 배제한다는 인증도 아니다.
+
+manifest의 선택적 `kartographReceipt: {path, sha256}`는 그 receipt 바이트를 지정한다. 소비자는
+실제 소비한 artifact id·해시·역할·생산자 버전과 대조하고 native 수집 상태와 오프라인 일치를 따로 낸다.
+receipt에 없는 artifact, missing/unknown native 근거를 clean으로 승격하지 않는다.
+
+수집은 사용자가 신뢰하는 producer/config에서만 실행한다. 제품 CLI는 producer를 실행하지 않는다.
+먼저 해당 프로젝트의 지원 Gradle compiler task로 witness/snapshot과 checkout-local input bindings를
+만든 뒤 `node scripts/capture-kartograph-evidence.mjs capture.json`을 실행한다.
+
+```json
+{
+  "format": "isthmus-kartograph-capture", "version": 1,
+  "command": ["/work/tools/kartograph/bin/kartograph"],
+  "runtimeFiles": ["/work/tools/kartograph/lib/each-actual-runtime.jar"],
+  "project": "/work/project", "snapshot": "/work/project/build/reports/kartograph/jvm-snapshot.json",
+  "scope": "selected-project-scope", "inputBindings": "/work/project/build/kartograph/jvm-input-bindings.json",
+  "output": "/work/new-capture-directory"
+}
+```
+
+`command`는 절대 경로 실행 파일과 명시적 prefix 인자 배열이며 셸로 해석하지 않는다. `runtimeFiles`에는
+실제로 쓰는 CLI JAR 전체를 선택한다. 옵션/credential/environment 파일을 자동 수집하지 않는다.
+output은 새 디렉터리여야 한다. 생성 파일은 `snapshot.json`, `persistence.json`, `roots.json`,
+`reverse.json`과 `receipt.json`이며, facts에 USR이 없으면 roots/traversal을 만들지 않고 한계로 남긴다.
+manifest artifact id는 각각 `kartograph-persistence`, `kartograph-reverse`를 사용한다.
+
+검증 경계: 현재 Windows에는 Java/Javac/Gradle/Kartograph 실행 파일이 없어 실제 receipt 생성은
+차단되어 있다. 새 로컬 설치를 하지 않는다. 승인된 GitHub CI는 고정 Kartograph source, Temurin
+17.0.17+10, checksum이 고정된 생산자 Gradle 9.7.1 wrapper를 사용한다. JDK 배포 식별자는
+[공식 Temurin 발표](https://adoptium.net/news/2025/11/eclipse-temurin-8u472-11029-17017-2109-2501-available)에서 확인했다.
+Node 테스트의 fake producer는 프로세스·해시·오류 경계만 검증하며
+실제 컴파일 증거로 세지 않는다. 실제 fixture는 지원 JDK와 공식 생산자에서 compile → witness/snapshot →
+capture를 실행하고, 동일 크기/mtime 소스 변경·build config 변경·class 변경·missing binding·legacy snapshot을
+native 결과와 대조해야 한다. 실행 경로가 승인·확인되기 전에는 이 실제 fixture를 통과했다고 보고하지 않는다.
+
 Swift compiler index·Kotlin/JVM bytecode는 소스 해시만으로 그 소스에서 빌드됐다고 할 수 없다.
 Kartograph의 지원 compiler lifecycle receipt 및 bytes/membership 비교를 재사용해야 한다.
 소스를 직접 읽는 생산자도 읽은 파일의 pre/post membership·내용과 도구/설정의 결합을 증명해야 한다.

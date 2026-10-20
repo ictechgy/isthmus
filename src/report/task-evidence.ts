@@ -1,4 +1,5 @@
 import type { EvidenceArtifact, EvidenceInput, EvidenceManifest, EvidenceProducer, EvidenceRole } from '../exchange/task-evidence.ts';
+import type { compareKartographReceipt } from './kartograph-receipt.ts';
 
 /** 내용 불일치와 확인 불가능·누락을 구분한다. matched는 선언/바이트 일치만 뜻한다. */
 export type EvidenceAlignment = 'matched' | 'stale' | 'missing' | 'unverified';
@@ -30,6 +31,7 @@ export interface TaskEvidenceReport {
   readonly expected?: EvidenceInput;
   readonly summary: Readonly<Record<EvidenceAlignment, number>>;
   readonly artifacts: readonly EvidenceResult[];
+  readonly kartograph?: ReturnType<typeof compareKartographReceipt>;
 }
 
 const stateFields: readonly (keyof EvidenceInput)[] = ['captureId', 'repository', 'commit', 'dirty', 'toolchainDigest',

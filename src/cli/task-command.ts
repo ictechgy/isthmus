@@ -3,8 +3,10 @@ import { dirname, resolve } from 'node:path';
 
 import { parseBridgeFactsDocument } from '../exchange/parse.ts';
 import { parseTraceContext } from '../exchange/trace-context.ts';
+import { parseKartographReceipt } from '../exchange/kartograph-receipt.ts';
+import { compareKartographReceipt } from '../report/kartograph-receipt.ts';
 import { parseEvidenceManifest, parseTaskValidation, TaskEvidenceError } from '../exchange/task-evidence.ts';
-import type { EvidenceArtifact, EvidenceManifest, EvidenceRole } from '../exchange/task-evidence.ts';
+import type { EvidenceArtifact, EvidenceManifest, EvidenceProducer, EvidenceRole } from '../exchange/task-evidence.ts';
 import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
 import { createCheckReport } from '../report/check-report.ts';
 import { compareTaskEvidence } from '../report/task-evidence.ts';
@@ -48,10 +50,21 @@ export async function runTaskCommand(arguments_: readonly string[], readTextFile
     // trace가 이미 검증한 같은 바이트만 사용한다. 별도 판독으로 입력 경합을 만들지 않는다.
     const context = parseTraceContext(JSON.parse(cache.get(pathKey(contextPath))!));
     if (context.workspace !== undefined) return inputFailure('Task v1 supports single-project trace contexts; use trace for workspace inputs.\n');
-    const descriptions: Array<{ path: string; role: EvidenceRole }> = [
-      { path: contextPath, role: 'trace-context' },
-      ...context.documents.map((path) => ({ path: resolve(dirname(contextPath), path), role: 'bridge-facts' as const })),
-      ...context.analyses.map(({ path }) => ({ path: resolve(dirname(contextPath), path), role: 'traversal' as const })),
+    const trace = JSON.parse(traceResult.standardOutput) as TraceReport;
+    const summaries = new Map(trace.analyses.map((analysis) => [analysis.id, analysis]));
+    const documents = context.documents.map((path) =>
+      parseBridgeFactsDocument(JSON.parse(cache.get(pathKey(resolve(dirname(contextPath), path)))!)));
+    // 기존 어댑터가 버린 legacy 추가 필드를 다시 신뢰하지 않고 같은 정규화 결과만 사용한다.
+    const descriptions: Array<{ path: string; role: EvidenceRole; producer?: EvidenceProducer; revision?: string }> = [
+      { path: contextPath, role: 'trace-context', ...(context.revision === undefined ? {} : { revision: context.revision }) },
+      ...context.documents.map((path, index) => ({ path: resolve(dirname(contextPath), path), role: 'bridge-facts' as const,
+        producer: documents[index]!.tool })),
+      ...context.analyses.map(({ path, id }) => {
+        const summary = summaries.get(id)!;
+        return { path: resolve(dirname(contextPath), path), role: 'traversal' as const,
+          ...(summary.tool === undefined ? {} : { producer: summary.tool }),
+          ...(summary.revision === undefined ? {} : { revision: summary.revision }) };
+      }),
     ];
     const evidencePath = options.valueFlags.get('--evidence');
     let manifest: EvidenceManifest | undefined;
@@ -77,31 +90,40 @@ export async function runTaskCommand(arguments_: readonly string[], readTextFile
             throw new TaskEvidenceError('Unable to read a validation input; check the selected artifact.');
           }
           const value: unknown = JSON.parse(text);
-          validations.push({ artifact: `artifact:${entry.id}`, validation: parseTaskValidation(value) });
-          descriptions.push({ path, role: 'validation' });
+          const validation = parseTaskValidation(value);
+          validations.push({ artifact: `artifact:${entry.id}`, validation });
+          descriptions.push({ path, role: 'validation', producer: validation.tool });
         }
       }
     }
     const observed = new Set<string>();
-    const observations: EvidenceObservation[] = descriptions.map(({ path, role }, index) => {
+    const observations: EvidenceObservation[] = descriptions.map(({ path, role, producer, revision }, index) => {
       const key = pathKey(path);
       observed.add(key);
       const text = cache.get(key)!;
-      const raw = JSON.parse(text);
       const artifact = entries.get(key);
       return { id: artifact === undefined ? `input:${index + 1}` : `artifact:${artifact.id}`, role,
         sha256: createHash('sha256').update(text, 'utf8').digest('hex'),
         ...(artifact === undefined ? {} : { artifact }),
-        ...(raw.tool === undefined ? {} : { producer: raw.tool }),
-        ...(typeof raw.revision !== 'string' ? {} : { revision: raw.revision }) };
+        ...(producer === undefined ? {} : { producer }),
+        ...(revision === undefined ? {} : { revision }) };
     });
-    const evidence = compareTaskEvidence(manifest, observations,
+    let evidence = compareTaskEvidence(manifest, observations,
       [...entries].filter(([path]) => !observed.has(path)).map(([, entry]) => entry));
-    const documents = context.documents.map((path) =>
-      parseBridgeFactsDocument(JSON.parse(cache.get(pathKey(resolve(dirname(contextPath), path)))!)));
+    if (manifest?.kartographReceipt !== undefined) {
+      const reference = manifest.kartographReceipt;
+      const path = resolve(dirname(resolve(evidencePath!)), reference.path);
+      const input = await readContextInput(path, read, MAX_INPUT_TEXT_LENGTH, {
+        unreadable: 'Unable to read Kartograph receipt; check the selected capture.\n',
+        invalidJson: 'Kartograph receipt is not valid JSON.\n', tooLarge: 'Kartograph receipt exceeds the size limits.\n',
+      });
+      if ('failure' in input) return input.failure;
+      evidence = { ...evidence, kartograph: compareKartographReceipt(parseKartographReceipt(input.value),
+        createHash('sha256').update(input.text, 'utf8').digest('hex') === reference.sha256, observations) };
+    }
     const joined = joinBridgeDocuments(documents);
     if (isBridgeJoinDeferred(joined)) return inputFailure('Task bridge facts could not be joined; split mixed targets and retry.\n');
-    const report = createTaskReport(JSON.parse(traceResult.standardOutput) as TraceReport, createCheckReport(joined), evidence,
+    const report = createTaskReport(trace, createCheckReport(joined), evidence,
       validations, limit);
     const blocked = options.booleanFlags.has('--strict') && report.requiresReview;
     return { standardOutput: encodeSortedJson(report, options.booleanFlags.has('--compact')),

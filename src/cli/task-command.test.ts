@@ -224,3 +224,54 @@ test('native CLI hashes exactly the artifact bytes it analyzed and detects repla
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('legacy Kartograph extra tool metadata is ignored consistently with the existing adapter', async () => {
+  for (const tool of [null, 1, 'unvalidated', {}, { name: 'spoof', version: '9' }]) {
+    const data = setup();
+    const path = 'android-reverse.json';
+    const raw = { format: 'kartograph-impact', version: 1, status: 'found', tool,
+      inputs: { current: {} }, changed: [{ usr: 'kt:UsersApi.get', qualifiedName: 'UsersApi.get',
+        presentIn: ['current'], location: null }], affected: [], unresolved: [], limitations: [],
+      truncated: { results: false, depth: false, budget: false } };
+    data.files.set(path, JSON.stringify(raw));
+    const artifact = data.manifest.artifacts.find((entry) => entry.path === path)!;
+    artifact.sha256 = digest(data.files.get(path)!);
+    const result = await runTaskCommand(args, data.read);
+    assert.equal(result.exitCode, 0, JSON.stringify(tool));
+    const report = JSON.parse(result.standardOutput);
+    const evidence = report.evidence.artifacts.items.find((entry: { id: string }) => entry.id === `artifact:${artifact.id}`);
+    assert.equal(evidence.alignment, 'unverified');
+    assert.equal(evidence.observed.producer, undefined);
+    assert.ok(evidence.reasons.includes('producer-unverified'));
+  }
+});
+
+test('optional receipt preserves recorded native state, checks actual bytes, and never verifies current manual claims', async () => {
+  const data = setup();
+  const target = data.manifest.artifacts.find(entry => entry.path === 'android-reverse.json')!;
+  const raw = JSON.parse(data.files.get(target.path)!);
+  raw.tool = { name: 'kartograph', version: '0.25.1' };
+  data.files.set(target.path, JSON.stringify(raw));
+  target.producer = raw.tool;
+  target.sha256 = digest(data.files.get(target.path)!);
+  const native = { format: 'kartograph-freshness', version: 1, status: 'matched', reasons: [] };
+  const receipt = { format: 'isthmus-kartograph-receipt', version: 1, producer: raw.tool,
+    scope: 'fixture:main', snapshotSha256: 'a'.repeat(64), producerSha256: 'b'.repeat(64), witnessCount: 1,
+    stableSnapshot: true, stableProducer: true, before: native, after: native, limitations: [],
+    artifacts: [{ id: target.id, role: 'traversal', sha256: target.sha256 }] };
+  data.files.set('receipt.json', JSON.stringify(receipt));
+  const reference = { path: 'receipt.json', sha256: digest(data.files.get('receipt.json')!) };
+  Object.assign(data.manifest, { kartographReceipt: reference });
+  const invoke = async () => JSON.parse((await runTaskCommand(args, data.read)).standardOutput);
+  const matched = await invoke();
+  assert.equal(matched.evidence.kartograph.nativeAtCapture, 'matched');
+  assert.equal(matched.evidence.kartograph.artifacts.items[0].alignment, 'matched');
+  assert.equal(matched.evidence.kartograph.currentVerification, 'unverified');
+  assert.equal(matched.evidence.verification, 'unverified');
+  data.files.set(target.path, data.files.get(target.path)! + '\n');
+  assert.equal((await invoke()).evidence.kartograph.artifacts.items[0].alignment, 'stale');
+  reference.sha256 = '0'.repeat(64);
+  assert.equal((await invoke()).evidence.kartograph.integrity, 'stale');
+  data.files.delete('receipt.json');
+  assert.equal((await runTaskCommand(args, data.read)).exitCode, 2);
+});
