@@ -14,7 +14,9 @@ import { adaptKartographImpact } from '../dist/exchange/kartograph-impact.js';
 import { createPreflightReport, hasPreflightBlockers } from '../dist/report/preflight.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
 import { writeTextAtomically } from '../dist/cli/atomic-write.js';
-import { CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
+import {
+  CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments, lazyFetchArguments,
+} from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /** workflow 실패는 자식 출력·입력 경로를 오류 본문에 싣지 않는다. */
@@ -62,15 +64,17 @@ export async function capturePreflight(config, { execute = runChild } = {}) {
   /**
    * 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한 git 조회 하나다(scripts/git-isolation.mjs). 바로 앞의
    * `<step>-config` 단계로 그 순간 설정된 filter 드라이버를 다시 읽어 덮고, 덮을 수 없는 이름이면 조회하지 않고 실패한다.
+   * promisor 설정이 보이면 lazy fetch를 끄는 전역 옵션도 붙인다(그 옵션을 모르는 git 2.45 미만은 조회 전에 실패한다).
    */
   async function git(subcommand, args, step) {
+    const listing = await run(['git'], CONFIG_NAMES_QUERY, `${step}-config`);
     let drivers;
-    try { drivers = filterDriverNames(await run(['git'], CONFIG_NAMES_QUERY, `${step}-config`)); }
+    try { drivers = filterDriverNames(listing); }
     catch (error) {
       if (error instanceof GitIsolationError) throw new CaptureError(error.message);
       throw error;
     }
-    return run(['git'], isolatedGitArguments(drivers, subcommand, args), step);
+    return run(['git'], [...lazyFetchArguments(listing), ...isolatedGitArguments(drivers, subcommand, args)], step);
   }
   const limitations = [];
   let selectionBase = null;

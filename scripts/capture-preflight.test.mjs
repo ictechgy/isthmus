@@ -6,7 +6,7 @@ import test from 'node:test';
 import { capturePreflight } from './capture-preflight.mjs';
 import {
   fixtureEnvironment, initHostileRepository, initPartialCloneWithPromisorMarker,
-  initSuperprojectWithHostileSubmodule, markerKit,
+  initSuperprojectWithHostileSubmodule, markerKit, runGitWithoutLazyFetchControl,
 } from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
@@ -389,6 +389,39 @@ test('since는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령
   await assert.rejects(capturePreflight(config, { execute: realGit(f) }), /Preflight producer step failed: git-changes\./u);
   assert.deepEqual(await kit.found(), []);
   assert.deepEqual(f.calls, [], 'No producer runs after the isolation failure.');
+});
+
+test('since는 lazy fetch를 끄지 못하는 git(2.45 미만)에서 부분 clone이면 조회를 시작하지 않고, 아니면 그대로 조회한다', async (t) => {
+  // git 2.45 미만은 GIT_NO_LAZY_FETCH를 무시한다. promisor 설정이 보이는 저장소는 --no-lazy-fetch를 붙여 그 git이 모르는
+  // 옵션으로 바로 끝나게 하므로, 환경 변수만으로는 막히지 않던 lazy fetch(uploadpack 마커)가 돌지 않는다.
+  const oldGit = (f, gitCalls) => (command, args, options) => {
+    if (command !== 'git') return f.execute(command, args, options);
+    gitCalls.push(args);
+    return runGitWithoutLazyFetchControl(command, args, options);
+  };
+  const f = await setup(t);
+  const kit = await markerKit(t);
+  const project = join(kit.scratch, 'project');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  const { selection: _selection, ...rest } = f.config;
+  const config = { ...rest, project, since: base, output: join(project, 'context.json'),
+    cache: join(project, 'cache.json'), toolInputs: [join(project, 'producer.txt')] };
+  const partialCalls = [];
+  await assert.rejects(capturePreflight(config, { execute: oldGit(f, partialCalls) }),
+    /Preflight producer step failed: git-base\./u);
+  assert.deepEqual(await kit.found(), []);
+  assert.deepEqual(f.calls, [], 'No producer runs after the isolation failure.');
+  assert.deepEqual(partialCalls.map((args) => args[0]), ['config', '--no-lazy-fetch']);
+  // promisor 설정이 없는 저장소에는 옵션을 붙이지 않아 같은 git에서도 수집한다.
+  const plain = await setup(t);
+  await initHostileRepository(plain.root, kit, { stale: ['lib/bridge.dart'] });
+  await writeFile(join(plain.root, 'ios/Helper.swift'), 'changed native');
+  const { selection: _plainSelection, ...plainRest } = plain.config;
+  const plainCalls = [];
+  const result = await capturePreflight({ ...plainRest, since: 'HEAD' }, { execute: oldGit(plain, plainCalls) });
+  assert.deepEqual(await kit.found(), []);
+  assert.deepEqual(result.context.selection.swift.files, ['ios/Helper.swift']);
+  assert.ok(plainCalls.length === 6 && !plainCalls.some((args) => args.includes('--no-lazy-fetch')));
 });
 
 test('선택한 v2 message producer는 같은 capture에 포함되고 캐시 설정을 구분한다', async (t) => {

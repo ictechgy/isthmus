@@ -39,7 +39,9 @@ import {
   analysisProject, MAX_FILE_SYMBOL_TOTAL, MAX_FILE_SYMBOL_USRS, normalizeTraceAnalysis, parseTraceContext,
 } from '../dist/exchange/trace-context.js';
 import { encodeSortedJson } from '../dist/report/sorted-json.js';
-import { CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
+import {
+  CONFIG_NAMES_QUERY, filterDriverNames, GIT_ISOLATION_ENVIRONMENT, GitIsolationError, isolatedGitArguments, lazyFetchArguments,
+} from './git-isolation.mjs';
 import { runChild } from './run-child.mjs';
 
 /**
@@ -314,7 +316,8 @@ async function gitState(session, directory, step) {
 /**
  * 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한 git 하위 명령 하나다(scripts/git-isolation.mjs). 바로 앞의
  * `<step>:config` 단계로 그 순간 설정된 filter 드라이버를 다시 읽어 덮는다 — 사이에 실행된 생산자가 설정을 바꿔도 따라간다.
- * 덮을 수 없는 이름이면 그 조회를 실행하지 않고 `step`의 오류로 끝낸다.
+ * 덮을 수 없는 이름이면 그 조회를 실행하지 않고 `step`의 오류로 끝낸다. promisor 설정이 보이면 lazy fetch를 끄는 전역
+ * 옵션도 붙인다(그 옵션을 모르는 git 2.45 미만은 조회 전에 `step`에서 실패한다).
  */
 async function isolatedGit(session, directory, step, subcommand, args) {
   const listing = await run(session, { step: `${step}:config`, label: 'git config', command: ['git'],
@@ -326,7 +329,8 @@ async function isolatedGit(session, directory, step, subcommand, args) {
     throw error;
   }
   return run(session, { step, label: `git ${subcommand}`, command: ['git'],
-    args: ['-C', directory, ...isolatedGitArguments(drivers, subcommand, args)], timeoutSeconds: GIT_TIMEOUT_SECONDS });
+    args: ['-C', directory, ...lazyFetchArguments(listing.stdout), ...isolatedGitArguments(drivers, subcommand, args)],
+    timeoutSeconds: GIT_TIMEOUT_SECONDS });
 }
 
 /** 쓰는 도구마다 `--version`과(선언했으면) 소스 checkout revision을 기록한다. */

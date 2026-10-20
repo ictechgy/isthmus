@@ -31,6 +31,17 @@ export function fixtureEnvironment(environment = process.env) {
   return { ...environment, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 }
 
+/**
+ * lazy fetch를 끄는 수단이 없는 git(2.45 미만)처럼 git 자식 하나를 실행한다. 그 git은 `GIT_NO_LAZY_FETCH`를 몰라 환경에서
+ * 지운 채 실제 git을 실행하고, `--no-lazy-fetch`는 모르는 전역 옵션이라 하위 명령을 시작하기 전에 사용 오류(129)로 끝난다
+ * (git.c handle_options의 "unknown option"). capture의 execute 자리에 git 호출만 넘긴다.
+ */
+export function runGitWithoutLazyFetchControl(command, args, options) {
+  if (args.includes('--no-lazy-fetch')) return { status: 129, signal: null, stdout: '', stderr: 'unknown option: --no-lazy-fetch\n' };
+  const { GIT_NO_LAZY_FETCH: _unknownToOldGit, ...environment } = fixtureEnvironment(options.env);
+  return runChild(command, args, { ...options, env: environment });
+}
+
 /** fixture를 만드는 git이다. hook·서명을 끄고 작성자를 고정하며, 실패하면 종료 코드와 stderr로 throw한다. */
 export function fixtureGit(directory, args) {
   const result = runChild('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false',

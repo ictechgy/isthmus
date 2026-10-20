@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments } from './git-isolation.mjs';
+import {
+  CONFIG_NAMES_QUERY, filterDriverNames, GitIsolationError, isolatedGitArguments, lazyFetchArguments,
+} from './git-isolation.mjs';
 
 /** `git config -z --name-only --list` 출력 모양(키마다 NUL로 끝난다)이다. */
 const listing = (...keys) => keys.map((key) => `${key}\0`).join('');
@@ -42,5 +44,16 @@ test('하위 명령마다 정한 격리 인자를 하위 명령 앞뒤에 붙이
   assert.deepEqual(isolatedGitArguments([], 'ls-files', ['--others']), [...common, 'ls-files', '--others']);
   for (const subcommand of ['log', 'toString', '__proto__']) {
     assert.throws(() => isolatedGitArguments([], subcommand, []), TypeError, subcommand);
+  }
+});
+
+test('promisor remote를 만드는 설정 키가 있을 때만 lazy fetch를 끄는 전역 옵션을 붙인다', () => {
+  // git 2.45 미만은 이 옵션을 몰라 조회를 시작하지 않고 실패한다. 부분 clone이 아닌 저장소에는 붙이지 않아 그 git에서도 조회한다.
+  assert.deepEqual(lazyFetchArguments(''), []);
+  assert.deepEqual(lazyFetchArguments(listing('core.bare', 'remote.origin.url', 'remote.origin.fetch', 'filter.lfs.clean',
+    'remote.origin.promisorx', 'remote.origin.partialclonefilters', 'xremote.origin.promisor', 'core.partialclone')), []);
+  for (const key of ['extensions.partialclone', 'remote.origin.promisor', 'remote.origin.partialclonefilter',
+    'remote.my.mirror.promisor', 'remote..promisor', 'remote.promisor', 'remote.partialclonefilter', 'remote.�.promisor']) {
+    assert.deepEqual(lazyFetchArguments(listing('core.bare', key)), ['--no-lazy-fetch'], key);
   }
 });

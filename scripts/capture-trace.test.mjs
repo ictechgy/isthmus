@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureTrace, CaptureTraceError } from './capture-trace.mjs';
 import {
   fixtureEnvironment, fixtureGit, initHostileRepository, initPartialCloneWithPromisorMarker,
-  initSuperprojectWithHostileSubmodule, markerKit,
+  initSuperprojectWithHostileSubmodule, markerKit, runGitWithoutLazyFetchControl,
 } from './fixtures/git-isolation/hostile-repository.mjs';
 import { runChild } from './run-child.mjs';
 
@@ -508,6 +508,37 @@ test('git revision 조회는 부분 clone의 promisor lazy fetch로 저장소 �
   assert.deepEqual(await kit.found(), []);
   const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
   assert.equal(manifest.failure.step, 'revision:app:status');
+});
+
+test('git revision은 lazy fetch를 끄지 못하는 git(2.45 미만)에서 부분 clone이면 조회를 시작하지 않고, 아니면 그대로 조회한다', async (t) => {
+  // git 2.45 미만은 GIT_NO_LAZY_FETCH를 무시한다. promisor 설정이 보이는 저장소는 --no-lazy-fetch를 붙여 그 git이 모르는
+  // 옵션으로 바로 끝나게 하므로, 환경 변수만으로는 막히지 않던 lazy fetch(uploadpack 마커)가 돌지 않는다.
+  const execute = (command, args, options) => (command === 'git'
+    ? runGitWithoutLazyFetchControl(command, args, options) : runChild(command, args, options));
+  const { work, config } = await singleProjectConfig(t);
+  const kit = await markerKit(t);
+  const project = join(work, 'clone');
+  const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
+  fixtureGit(project, ['reset', '--soft', base]);
+  config.members[0].project = { root: 'work', path: 'clone' };
+  config.members[0].revision = { git: true };
+  config.trace = false;
+  await rejectsAt(captureTrace(config, { execute }), 'revision:app', /git rev-parse exited with status 129/u);
+  assert.deepEqual(await kit.found(), []);
+  const failed = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
+  const query = failed.steps.find(({ step }) => step === 'revision:app');
+  assert.ok(query.command.indexOf('--no-lazy-fetch') > 0 && query.command.indexOf('--no-lazy-fetch') < query.command.indexOf('rev-parse'));
+  // promisor 설정이 없는 저장소에는 옵션을 붙이지 않아 같은 git에서도 revision과 dirty를 읽는다.
+  const plain = await singleProjectConfig(t);
+  await writeFile(join(plain.project, 'main.dart'), 'void main() {}');
+  const head = await initHostileRepository(plain.project, kit, { stale: ['main.dart'] });
+  plain.config.members[0].revision = { git: true };
+  plain.config.trace = false;
+  await captureTrace(plain.config, { execute });
+  assert.deepEqual(await kit.found(), []);
+  const manifest = JSON.parse(await readFile(join(plain.work, 'out/capture-manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.members[0], { name: 'app', project: plain.project, revision: head, revisionSource: 'git', dirty: false });
+  assert.ok(!manifest.steps.some(({ command }) => command.includes('--no-lazy-fetch')));
 });
 
 test('CLI는 사용법·설정 오류를 종료 코드 2와 단계 문구로 알린다', async (t) => {
