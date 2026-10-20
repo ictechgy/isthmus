@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { chmod, copyFile, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -78,15 +79,16 @@ async function gateCase(name, stage, severity, mode = 'task', pass = false) {
   await writeFile(document, '# Review\n');
   if (mode === 'task') await writeFile(`${document}.isthmus-task.json`, taskText);
   let nearTask;
-  if (mode === 'output-budget' || mode === 'output-budget-unsafe') {
+  if (mode.startsWith('output-budget') || mode === 'input-over-budget') {
     nearTask = structuredClone(task);
     nearTask.trace.limitations = [{ platform: 'js', target: 'http', tool: 'fixture', message: '' }];
     nearTask.unknown.total++; nearTask.unknown.omitted++;
-    const available = 1024 * 1024 - 64 - Buffer.byteLength(JSON.stringify(nearTask));
+    const headroom = mode === 'output-budget' || mode === 'output-budget-unsafe' ? 64 : 0;
+    const available = 1024 * 1024 - headroom - Buffer.byteLength(JSON.stringify(nearTask));
     nearTask.trace.limitations[0].message = '한🙂'.repeat(Math.floor(available / 7)) + 'x'.repeat(available % 7);
     const text = JSON.stringify(nearTask);
-    assert.equal(Buffer.byteLength(text), 1024 * 1024 - 64);
-    await writeFile(`${document}.isthmus-task.json`, text);
+    assert.equal(Buffer.byteLength(text), 1024 * 1024 - headroom);
+    await writeFile(`${document}.isthmus-task.json`, text + (mode === 'input-over-budget' ? '\n' : ''));
   }
   if (mode === 'malformed') await writeFile(`${document}.isthmus-task.json`, '{');
   if (mode === 'upstream-timeout') await writeFile(`${document}.isthmus-task.json`, JSON.stringify({
@@ -118,15 +120,24 @@ async function gateCase(name, stage, severity, mode = 'task', pass = false) {
     + `- **Scope**: feature\n- **Phase**: ${phase}\n- **Current Stage**: ${stage}\n\n- [-] ${stage} — EXECUTE\n`);
   const gateEnv = { AIDLC_STAGE_GRAPH: graphFile, AIDLC_DISABLE_SENSORS: '0', AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: '1',
     AIDLC_SKIP_HUMAN_PRESENCE_GUARD: '1', AIDLC_GATE_SENSOR_DISPATCH_TIMEOUT_MS: '15000' };
-  if (mode.startsWith('output-budget') || mode === 'pass-control') {
-    const direct = await native(`${name}-worker`, ['__sensor-script-file', 'isthmus-task', '--stage', stage,
-      '--output-path', document], fixture, 0, gateEnv);
+  if (mode.startsWith('output-budget') || mode === 'input-over-budget' || mode === 'pass-control') {
+    const workerArgs = ['__sensor-script-file', 'isthmus-task', '--stage', stage, '--output-path', document];
+    const direct = await native(`${name}-worker`, workerArgs, fixture, 0, gateEnv);
     const bytes = Buffer.byteLength(direct), verdict = JSON.parse(direct);
-    measurements.push({ name, stdoutBytes: bytes,
-      ...(nearTask === undefined ? {} : { inputBytes: Buffer.byteLength(JSON.stringify(nearTask)) }),
-      ...(verdict.runtimeVersion === undefined ? {} : { bunVersion: verdict.runtimeVersion }) });
+    const measured = { name, stdoutBytes: bytes,
+      ...(nearTask === undefined ? {} : { inputBytes: Buffer.byteLength(JSON.stringify(nearTask)) + (mode === 'input-over-budget' ? 1 : 0) }),
+      ...(verdict.runtimeVersion === undefined ? {} : { bunVersion: verdict.runtimeVersion }) };
+    if (mode.startsWith('output-budget')) {
+      // Node 기본 캡처와 native Bun dispatcher를 구분한다. upstream의 maxBuffer는 바꾸지 않는다.
+      const captured = spawnSync(executable, ['engine', ...workerArgs], { cwd: fixture, env: { ...env, ...gateEnv },
+        encoding: 'utf8', timeout: 60_000 });
+      measured.nodeDefaultCaptureError = captured.error?.code ?? null;
+      if (mode === 'output-budget-unsafe') assert.equal(captured.error?.code, 'ENOBUFS');
+      else { assert.equal(captured.error, undefined); assert.equal(JSON.parse(captured.stdout).pass, false); }
+    }
+    measurements.push(measured);
     if (mode === 'output-budget-unsafe') assert.ok(bytes > 1024 * 1024, 'pre-fix wrapper crosses the actual dispatcher budget');
-    if (mode === 'output-budget') {
+    if (mode === 'output-budget' || mode === 'output-budget-at-limit') {
       assert.ok(bytes <= 256 * 1024);
       assert.equal(verdict.pass, false);
       assert.ok(verdict.states.includes('unknown')); assert.ok(verdict.states.includes('truncated'));
@@ -134,28 +145,35 @@ async function gateCase(name, stage, severity, mode = 'task', pass = false) {
       assert.equal(verdict.taskSummary.unknown.sourceOmitted, nearTask.unknown.omitted);
       assert.equal(verdict.taskSummary.limitations.trace.reportedTotal, 1);
     }
+    if (mode === 'input-over-budget') {
+      assert.deepEqual(verdict.states, ['truncated']); assert.equal(verdict.pass, false);
+      assert.ok(bytes <= 256 * 1024);
+    }
   }
   await native(name, ['state', 'gate-start', stage, '--project-dir', fixture], fixture, pass ? 0 : 1, gateEnv);
   const files = await readdir(join(record, 'audit'));
   const audit = (await Promise.all(files.filter(file => file.endsWith('.md')).map(file => readFile(join(record, 'audit', file), 'utf8')))).join('\n');
+  if (mode.startsWith('output-budget') || mode === 'input-over-budget') await writeFile(join(output, 'logs', `${name}-audit.log`), audit);
   assert.equal(audit.includes('**Event**: STAGE_AWAITING_APPROVAL'), pass, `${name} gate transition`);
   assert.ok(audit.includes(mode === 'timeout' ? 'SENSOR_BUDGET_OVERRIDE'
-    : mode === 'pass-control' || mode === 'output-budget-unsafe' ? 'SENSOR_PASSED' : 'SENSOR_FAILED'), `${name} audit result`);
+    : mode === 'pass-control' ? 'SENSOR_PASSED' : 'SENSOR_FAILED'), `${name} audit result`);
   if (mode === 'output-budget-unsafe') {
-    assert.ok(audit.includes('script-error'), 'actual dispatcher lost the oversized worker verdict');
-    assert.ok(!audit.includes('SENSOR_FAILED'), 'unsafe output must not be counted as evaluated findings');
-    await writeFile(join(output, 'logs', `${name}-audit.log`), audit);
+    assert.ok(!audit.includes('script-error'), 'pinned native dispatcher preserves evaluated findings at this size');
   }
-  if (mode === 'task' || mode === 'output-budget') {
+  if (mode === 'task' || mode.startsWith('output-budget')) {
     const detailDir = join(record, '.aidlc-engine/sensors', stage);
     const detail = (await Promise.all((await readdir(detailDir)).filter(file => file.endsWith('.md')).map(file => readFile(join(detailDir, file), 'utf8')))).join('\n');
     assert.ok(detail.includes('"currentCheckout": "unverified"'));
     assert.ok(detail.includes('"truncated"'));
-    if (mode === 'output-budget') {
+    if (mode === 'output-budget' || mode === 'output-budget-at-limit') {
       assert.ok(detail.includes('sensor-output-byte-budget'));
       assert.ok(detail.includes('"sourceOmitted"'));
       await writeFile(join(output, 'logs', `${name}-detail.log`), detail);
       await writeFile(join(output, 'logs', `${name}-audit.log`), audit);
+    }
+    if (mode === 'output-budget-unsafe') {
+      assert.ok(detail.includes('"task"'), 'pinned native dispatcher retained the pre-fix task detail');
+      await writeFile(join(output, 'logs', `${name}-detail.log`), detail);
     }
   }
 }
@@ -164,7 +182,9 @@ for (const stage of ['delivery-planning', 'build-and-test']) {
   await gateCase(`${stage}-blocking`, stage, 'blocking');
 }
 for (const mode of ['missing', 'malformed', 'upstream-timeout', 'timeout']) await gateCase(mode, 'delivery-planning', 'blocking', mode);
+await gateCase('verified-pass-control', 'delivery-planning', 'blocking', 'pass-control', true);
 await gateCase('stdout-pre-fix-control', 'delivery-planning', 'blocking', 'output-budget-unsafe');
 await gateCase('stdout-byte-budget', 'delivery-planning', 'blocking', 'output-budget');
-await gateCase('verified-pass-control', 'delivery-planning', 'blocking', 'pass-control', true);
+await gateCase('stdout-byte-budget-at-input-limit', 'delivery-planning', 'blocking', 'output-budget-at-limit');
+await gateCase('stdout-input-over-limit', 'delivery-planning', 'blocking', 'input-over-budget');
 console.log('Pinned AI-DLC plugin composition, native sensor and advisory/blocking gates verified.');

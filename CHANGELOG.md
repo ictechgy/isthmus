@@ -29,7 +29,7 @@
 ### Fixed
 
 - AI-DLC adapter가 capture matched인 receipt의 현재 artifact stale/missing을 normalized 상태에서
-  누락하던 문제를 고쳤다. 입력 1 MiB 근처의 task에 wrapper가 붙으며 native stdout 버퍼를 넘는
+  누락하던 문제를 고쳤다. 입력 1 MiB 근처의 task에 wrapper가 붙으며 1 MiB 캡처 예산을 넘는
   경우도 256 KiB 출력 예산과 명시적 truncated summary로 바꿔 unknown·limitations 계수를 보존한다.
 - task가 legacy 영향 어댑터가 무시한 원시 `tool` 필드를 다시 신뢰해 `tool: null`에서 내부 오류를
   만들던 문제를 고쳤다. 기존 정규화 결과를 재사용하고 미신고 생산자 메타데이터는 unverified로 남긴다.

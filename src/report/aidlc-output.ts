@@ -1,6 +1,6 @@
 import type { AidlcTaskVerdict } from './aidlc-task.ts';
 
-/** 고정 native dispatcher의 기본 1 MiB보다 작은 stdout 예산이다. 개행·wrapper도 포함한다. */
+/** Node 기본 1 MiB 캡처에도 여유를 두는 stdout 예산이다. 개행·wrapper도 포함한다. */
 export const MAX_SENSOR_OUTPUT_BYTES = 256 * 1024;
 const HEAD = 8;
 type RecordValue = Record<string, unknown>;

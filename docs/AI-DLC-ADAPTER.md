@@ -85,11 +85,14 @@ nativeAtCapture matched와 현재 artifact binding은 별개다. receipt의 실�
 `artifacts.items[].alignment`에 stale/missing/unverified가 있으면 normalized states에도 남긴다.
 목록이 이미 잘렸으면 해당 unknown·truncated를 보존하고 안 보이는 상태를 추측하지 않는다.
 
-입력 상한은 1 MiB이며, **출력은 JSON wrapper·개행·UTF-8을 포함해 256 KiB**다. 고정 dispatcher의
-기본 1 MiB stdout 버퍼보다 여유를 둔다. 원본 task가 들어간 출력이 예산을 넘으면 `task` 대신
+입력 상한은 1 MiB이며, **출력은 JSON wrapper·개행·UTF-8을 포함해 256 KiB**다. Node 기본
+1 MiB stdout 캡처에도 여유를 둔다. 원본 task가 들어간 출력이 예산을 넘으면 `task` 대신
 `taskSummary`를 내고 `outputTruncation.reason: sensor-output-byte-budget`을 명시한다.
 sourceSha256, states, unknown의 total/sourceOmitted/추가 omitted, limitations의 계수·일부 상세,
 native capture/current 상태를 유지한다. 상세 문자열도 JSON escape 바이트로 제한하며 잘림을 표시한다.
 요약은 원본 task를 대체하는 새 증거가 아니므로 전체 상세는 같은 해시의 sidecar에서 확인해야 한다.
-실제 runtime smoke는 같은 근접 입력에 대해 수정 전 무제한 wrapper의 noted-pass/상세 소실을
-음성 대조군으로 재현하고, 수정 출력은 SENSOR_FAILED의 명시적 truncated 근거로 남는지 대조한다.
+실제 고정 native runtime은 1,049,162-byte 수정 전 출력을 SENSOR_FAILED와 상세로 보존했다.
+따라서 이 배포물에서 1 MiB 초과로 noted-pass/상세 소실이 생긴다는 가설은 재현되지 않았다.
+Node 기본 캡처의 ENOBUFS 대조군과 native dispatcher의 실제 결과를 따로 기록한다.
+출력 예산은 소비자별 버퍼 기본값에 기대지 않는 보수적 전달 계약이다. native smoke는 입력
+상한 직전·정확히 상한·상한 초과와 수정 출력의 명시적 truncated 근거를 검사한다.

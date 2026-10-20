@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { resolve, basename } from 'node:path';
 import test from 'node:test';
 import { runTaskCommand } from '../cli/task-command.ts';
 import { adaptAidlcTask, aidlcFailure } from './aidlc-task.ts';
@@ -89,25 +91,43 @@ test('upstream execution gaps are explicit observations and never sensor passes'
   assert.deepEqual(aidlcFailure('unavailable', 'delivery-planning').states, ['unavailable']);
 });
 
-test('actual receipt comparison preserves stale and missing current artifact bindings despite matched capture', () => {
+test('actual receipt comparison preserves stale and missing current artifact bindings despite matched capture', async () => {
   const freshness = { format: 'kartograph-freshness', version: 1, status: 'matched', reasons: [] };
-  const receipt = parseKartographReceipt({ format: 'isthmus-kartograph-receipt', version: 1,
+  const rawReceipt = { format: 'isthmus-kartograph-receipt', version: 1,
     producer: { name: 'kartograph', version: '0.25.0' }, scope: '::jvm', witnessCount: 2,
     snapshotSha256: 'a'.repeat(64), producerSha256: 'b'.repeat(64), before: freshness, after: freshness,
     stableSnapshot: true, stableProducer: true, limitations: [], artifacts: [
       { id: 'facts', role: 'bridge-facts', sha256: 'c'.repeat(64) },
-      { id: 'reverse', role: 'traversal', sha256: 'd'.repeat(64) }] });
+      { id: 'reverse', role: 'traversal', sha256: 'd'.repeat(64) }] };
+  const receipt = parseKartographReceipt(rawReceipt);
   const compared = compareKartographReceipt(receipt, true, [{ id: 'artifact:facts', role: 'bridge-facts',
     sha256: 'e'.repeat(64), producer: receipt.producer }]);
   assert.equal(compared.nativeAtCapture, 'matched');
   assert.deepEqual(compared.artifacts.map(row => row.alignment), ['stale', 'missing']);
-  const list = (items: readonly unknown[]) => ({ total: items.length, items, omitted: 0 });
-  const input = structuredClone(task);
-  input.evidence.alignment = 'matched';
-  input.evidence.summary = { matched: input.evidence.artifacts.total, stale: 0, missing: 0, unverified: 0 };
-  input.evidence.kartograph = { ...compared, artifacts: list(compared.artifacts), reasons: list(compared.reasons),
-    nativeBefore: { ...compared.nativeBefore, reasons: list(compared.nativeBefore.reasons) },
-    nativeAfter: { ...compared.nativeAfter, reasons: list(compared.nativeAfter.reasons) } };
+  const fixture = new URL('../../fixtures/trace/', import.meta.url), commit = 'a'.repeat(40);
+  const context = JSON.parse((await readFile(new URL('context-relation.json', fixture), 'utf8')).replaceAll('"rev-1"', JSON.stringify(commit)));
+  const files = new Map<string, string>([['context.json', JSON.stringify(context)]]);
+  for (const name of [...context.documents, ...context.analyses.map((row: any) => row.path)]) {
+    files.set(name, (await readFile(new URL(name, fixture), 'utf8')).replaceAll('"rev-1"', JSON.stringify(commit)));
+  }
+  const sha = (value: string) => createHash('sha256').update(value).digest('hex');
+  const expected = { captureId: 'receipt-current-binding', repository: 'https://github.com/example/app', commit,
+    dirty: true, sourceDigest: 'a'.repeat(64), sourceDigestScheme: 'fixture-files-v1',
+    toolchainDigest: 'b'.repeat(64), buildConfigurationDigest: 'c'.repeat(64) };
+  const artifacts = [...files].map(([path, value], index) => ({ id: path === context.documents[0] ? 'facts' : `fixture-${index}`,
+    path, sha256: sha(value), input: expected,
+    role: path === 'context.json' ? 'trace-context' : context.documents.includes(path) ? 'bridge-facts' : 'traversal',
+    ...(JSON.parse(value).tool === undefined ? {} : { producer: JSON.parse(value).tool }) }));
+  files.set('receipt.json', JSON.stringify(rawReceipt));
+  files.set('manifest.json', JSON.stringify({ format: 'isthmus-evidence-manifest', version: 1, expected, artifacts,
+    kartographReceipt: { path: 'receipt.json', sha256: sha(files.get('receipt.json')!) } }));
+  const command = await runTaskCommand(['task', resolve('receipt-fixture/context.json'), '--evidence', resolve('receipt-fixture/manifest.json')],
+    async path => { const found = files.get(basename(path)); assert.notEqual(found, undefined); return found!; });
+  assert.equal(command.exitCode, 0, command.standardError);
+  const input = JSON.parse(command.standardOutput);
+  assert.equal(input.evidence.alignment, 'matched');
+  assert.equal(input.evidence.kartograph.nativeAtCapture, 'matched');
+  assert.deepEqual(input.evidence.kartograph.artifacts.items.map((row: any) => row.alignment), ['stale', 'missing']);
   const result = adaptAidlcTask(input, 'build-and-test');
   assert.ok(result.states.includes('stale'));
   assert.ok(result.states.includes('missing'));
