@@ -62,6 +62,29 @@ function growingFile(statSize: number, contentBytes: number) {
   return { fileSystem, requested, closed: () => closed };
 }
 
+/**
+ * 읽기마다 정해진 바이트 수만 주는 가짜 핸들이다. 요청보다 짧게 읽혀도 아직 끝이 아닌 파일 — 크기 0으로 알리는 가상
+ * 파일(procfs 등)과 끝 전에 짧게 돌려주는 파일시스템 — 을 흉내 낸다. 조각을 다 주면 0바이트(끝)다.
+ *
+ * @param statSize fstat이 알리는 크기다.
+ * @param pieces 읽기마다 돌려줄 바이트 수다('b', 요청보다 크면 요청만큼).
+ */
+function shortReadFile(statSize: number, pieces: readonly number[]) {
+  const requested: number[] = [];
+  const handle: BoundedReadHandle = {
+    stat: async () => ({ isFile: () => true, size: statSize }),
+    read: async (buffer, offset, length) => {
+      const count = Math.min(length, pieces[requested.length] ?? 0);
+      requested.push(length);
+      buffer.fill(0x62, offset, offset + count);
+      return { bytesRead: count };
+    },
+    close: async () => {},
+  };
+  const fileSystem: BoundedFileSystem = { stat: async () => ({ isFile: () => true }), open: async () => handle };
+  return { fileSystem, requested };
+}
+
 test('bounded UTF-8 file reads accept exact cap and reject cap+1, malformed bytes and directories', async () => {
   const root = await mkdtemp(join(tmpdir(), 'isthmus-text-'));
   try {
@@ -188,6 +211,25 @@ test('the shared reader stops at cap+1 bytes when the file grows after fstat and
     read: async () => { throw new Error('must not read'); }, close: async () => {} };
   await assert.rejects(readRegularFileBytes('/virtual/swapped.json', maximumBytes,
     { stat: async () => ({ isFile: () => true }), open: async () => swapped }), rejectsWith('read'));
+});
+
+test('the shared reader does not stop at a short read before the fstat size or, for a size-0 file, before an empty read', async () => {
+  // 크기 0으로 알리는 파일은 readFile(path, 'utf8')처럼 0바이트 읽기까지 읽는다 — 첫 짧은 읽기에서 앞부분만 내지 않는다.
+  const virtual = shortReadFile(0, [10, 5]);
+  assert.equal((await readRegularFileBytes('/virtual/proc.json', 1024, virtual.fileSystem)).length, 15);
+  assert.equal(virtual.requested.length, 3);
+  // 크기를 아는 파일이 끝 전에 짧게 읽혀도 fstat 크기까지는 이어 읽는다(예전 navigation 리더도 빈 읽기까지 읽었다).
+  const interrupted = shortReadFile(15, [10, 5]);
+  assert.equal((await readRegularFileBytes('/virtual/short.json', 1024, interrupted.fileSystem)).length, 15);
+  assert.equal(interrupted.requested.length, 2);
+  // 보통 파일은 첫 읽기가 fstat 크기를 채우면 끝을 확인하는 빈 읽기를 더 하지 않는다(작은 파일이 많은 입력의 비용).
+  const regular = shortReadFile(15, [15]);
+  assert.equal((await readRegularFileBytes('/virtual/regular.json', 1024, regular.fileSystem)).length, 15);
+  assert.equal(regular.requested.length, 1);
+  // 크기 0 파일이 계속 짧게 이어져도 상한+1 바이트째에서 멈춘다.
+  const endless = shortReadFile(0, Array.from({ length: 100 }, () => 10));
+  await assert.rejects(readRegularFileBytes('/virtual/endless.json', 95, endless.fileSystem), rejectsWith('limit'));
+  assert.equal(endless.requested.reduce((sum, length) => sum + Math.min(length, 10), 0), 96);
 });
 
 test('the shared reader reports open and read errors as read failures without their messages and closes the handle', async () => {

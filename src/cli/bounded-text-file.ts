@@ -73,8 +73,10 @@ async function requireRegularPath(path: string, fileSystem: BoundedFileSystem): 
 /**
  * 연 핸들이 일반 파일인지 다시 보고, 상한+1 바이트에 닿기 전까지 청크로 모은다.
  *
- * 요청보다 적게 읽히면 그 시점의 파일 끝이다(일반 파일에서 readFile과 같은 판정). 작은 파일마다 끝을 확인하는 빈 읽기를
- * 한 번 더 하지 않는다. 청크는 읽힌 앞부분만 쓰므로 0으로 채우지 않는다.
+ * 0바이트 읽기는 파일 끝이다. 요청보다 적게 읽힌 것은 fstat 크기만큼 읽은 뒤에만 끝으로 본다 — 작은 파일은 첫 읽기가
+ * 크기를 채우므로 끝을 확인하는 빈 읽기를 한 번 더 하지 않고, 크기 0으로 알리는 파일(procfs 같은 가상 파일)은 readFile처럼
+ * 빈 읽기까지 읽으며, 끝 전에 짧게 돌려주는 파일시스템에서도 앞부분만 읽고 멈추지 않는다. 청크는 읽힌 앞부분만 쓰므로
+ * 0으로 채우지 않는다.
  */
 async function readOpenedRegularFile(handle: BoundedReadHandle, maximumBytes: number): Promise<Buffer> {
   const entry = await handle.stat();
@@ -89,7 +91,7 @@ async function readOpenedRegularFile(handle: BoundedReadHandle, maximumBytes: nu
     bytes += bytesRead;
     if (bytes > maximumBytes) throw new BoundedTextReadError('limit');
     chunks.push(chunk.subarray(0, bytesRead));
-    if (bytesRead < request) break;
+    if (bytesRead === 0 || (bytesRead < request && entry.size > 0 && bytes >= entry.size)) break;
   }
   return Buffer.concat(chunks, bytes);
 }
