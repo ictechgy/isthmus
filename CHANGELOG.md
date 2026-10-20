@@ -6,6 +6,11 @@
 
 ### Added
 
+- 실험적 `task` 명령이 단일 project의 trace 경로·기존 check 규칙·명시적 심볼별 테스트 관찰을
+  bounded summary로 묶는다. 선택적 `isthmus-evidence-manifest` v1은 capture/repository/commit,
+  dirty 소스 내용·membership 지문, 도구 체인·build configuration 및 실제 입력 artifact 해시를
+  대조한다. 수동 선언 일치는 compiler receipt나 테스트 실행 증명이 아니며 `unverified`와
+  unknown을 유지한다. 기존 교환 문서·명령·종료 코드는 그대로다([계약·범위](docs/TASK-EVIDENCE.md)).
 - 외부 보존 문서에 원본 v1/v2 입력 헤더와 조인 한계를 제한된 `provenance` v1로 보존한다.
   빈 보존 목록에서도 문맥을 남기며 기존 root 선택은 유지한다. Cartograph/Kartograph 실제
   소비·snapshot 조합 검증은 발행 전 게이트이며, 현재 배포본 지원을 뜻하지 않는다.
