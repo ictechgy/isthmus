@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adaptAidlcTask, aidlcFailure } from './aidlc-task.js';
+import { encodeAidlcVerdict } from './aidlc-output.js';
+export { MAX_SENSOR_OUTPUT_BYTES } from './aidlc-output.js';
 import { BoundedTextReadError, readBoundedTextFile } from './bounded-text-file.js';
 
 /** 원본 task 상한이다. 넘친 파일을 부분 JSON이나 빈 정상 결과로 바꾸지 않는다. */
@@ -33,7 +35,7 @@ export async function evaluate(argv, read = readBoundedTextFile) {
 
 /** native AI-DLC가 import 후 await하는 worker 진입점이다. 실패 관찰도 JSON 한 줄·종료 코드 0이다. */
 export async function main(argv) {
-  process.stdout.write(JSON.stringify(await evaluate(argv)) + '\n');
+  process.stdout.write(encodeAidlcVerdict(await evaluate(argv)));
 }
 
 if (import.meta.main || process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

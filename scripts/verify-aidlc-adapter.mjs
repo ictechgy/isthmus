@@ -12,7 +12,7 @@ const upstream = JSON.parse(await readFile(join(root, 'integrations/aidlc/upstre
 const assets = resolve(process.argv[2]), output = resolve(process.argv[3]);
 const executableName = process.platform === 'win32' ? 'aidlc-windows-x64.exe' : 'aidlc-linux-x64';
 const archiveName = `aidlc-runtime-${upstream.version}.tar.gz`;
-const steps = [];
+const steps = [], measurements = [];
 await mkdir(output);
 await mkdir(join(output, 'logs'));
 for (const name of [executableName, archiveName]) {
@@ -29,7 +29,7 @@ const run = async (label, command, args, cwd = output, expected = 0, extraEnv = 
   const result = runChild(command, args, { cwd, env: { ...env, ...extraEnv }, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
   await writeFile(join(output, 'logs', `${label}.log`), (result.stdout ?? '') + (result.stderr ?? ''));
   steps.push({ label, status: result.status });
-  await writeFile(join(output, 'verification.json'), JSON.stringify({ upstream, steps }, null, 2));
+  await writeFile(join(output, 'verification.json'), JSON.stringify({ upstream, steps, measurements }, null, 2));
   assert.equal(result.error, undefined, `${label} process execution`);
   assert.equal(result.status, expected, `${label}: ${(result.stderr ?? '').slice(0, 400)}`);
   return result.stdout;
@@ -77,18 +77,35 @@ async function gateCase(name, stage, severity, mode = 'task', pass = false) {
   await mkdir(dirname(document), { recursive: true });
   await writeFile(document, '# Review\n');
   if (mode === 'task') await writeFile(`${document}.isthmus-task.json`, taskText);
+  let nearTask;
+  if (mode === 'output-budget' || mode === 'output-budget-unsafe') {
+    nearTask = structuredClone(task);
+    nearTask.trace.limitations = [{ platform: 'js', target: 'http', tool: 'fixture', message: '' }];
+    nearTask.unknown.total++; nearTask.unknown.omitted++;
+    const available = 1024 * 1024 - 64 - Buffer.byteLength(JSON.stringify(nearTask));
+    nearTask.trace.limitations[0].message = '한🙂'.repeat(Math.floor(available / 7)) + 'x'.repeat(available % 7);
+    const text = JSON.stringify(nearTask);
+    assert.equal(Buffer.byteLength(text), 1024 * 1024 - 64);
+    await writeFile(`${document}.isthmus-task.json`, text);
+  }
   if (mode === 'malformed') await writeFile(`${document}.isthmus-task.json`, '{');
   if (mode === 'upstream-timeout') await writeFile(`${document}.isthmus-task.json`, JSON.stringify({
     format: 'isthmus-aidlc-input', version: 1, status: 'timeout', reason: 'upstream capture timed out' }));
   const sensor = join(fixture, '.claude/sensors/aidlc-isthmus-task.md');
   let manifest = (await readFile(sensor, 'utf8')).replace('default_severity: advisory', `default_severity: ${severity}`);
   const worker = join(fixture, '.claude/tools/aidlc-sensor-isthmus-task.ts');
+  if (mode === 'output-budget-unsafe') {
+    await copyFile(worker, join(fixture, '.claude/tools/isthmus-evaluation.ts'));
+    // 수정 전 main과 같은 무제한 JSON 출력을 음성 대조군에서만 실행한다.
+    await writeFile(worker, "import { evaluate } from './isthmus-evaluation.ts';\n"
+      + "export async function main(argv) { process.stdout.write(JSON.stringify(await evaluate(argv)) + '\\n'); }\n");
+  }
   if (mode === 'timeout') {
     manifest = manifest.replace('timeout_seconds: 10', 'timeout_seconds: 1');
     await writeFile(worker, 'export async function main() { await new Promise(resolve => setTimeout(resolve, 10000)); }\n');
   }
   if (mode === 'pass-control') await writeFile(worker,
-    'export function main() { console.log(JSON.stringify({pass:true,findings_count:0})); }\n');
+    'export function main() { console.log(JSON.stringify({pass:true,findings_count:0,runtimeVersion:Bun.version})); }\n');
   await writeFile(sensor, manifest);
   const graphFile = join(fixture, 'gate-graph.json');
   await writeFile(graphFile, JSON.stringify([{ slug: stage, number: '2.9', name: 'Evidence smoke', phase,
@@ -101,16 +118,45 @@ async function gateCase(name, stage, severity, mode = 'task', pass = false) {
     + `- **Scope**: feature\n- **Phase**: ${phase}\n- **Current Stage**: ${stage}\n\n- [-] ${stage} — EXECUTE\n`);
   const gateEnv = { AIDLC_STAGE_GRAPH: graphFile, AIDLC_DISABLE_SENSORS: '0', AIDLC_ALLOW_DIRECT_STATE_TRANSITIONS: '1',
     AIDLC_SKIP_HUMAN_PRESENCE_GUARD: '1', AIDLC_GATE_SENSOR_DISPATCH_TIMEOUT_MS: '15000' };
+  if (mode.startsWith('output-budget') || mode === 'pass-control') {
+    const direct = await native(`${name}-worker`, ['__sensor-script-file', 'isthmus-task', '--stage', stage,
+      '--output-path', document], fixture, 0, gateEnv);
+    const bytes = Buffer.byteLength(direct), verdict = JSON.parse(direct);
+    measurements.push({ name, stdoutBytes: bytes,
+      ...(nearTask === undefined ? {} : { inputBytes: Buffer.byteLength(JSON.stringify(nearTask)) }),
+      ...(verdict.runtimeVersion === undefined ? {} : { bunVersion: verdict.runtimeVersion }) });
+    if (mode === 'output-budget-unsafe') assert.ok(bytes > 1024 * 1024, 'pre-fix wrapper crosses the actual dispatcher budget');
+    if (mode === 'output-budget') {
+      assert.ok(bytes <= 256 * 1024);
+      assert.equal(verdict.pass, false);
+      assert.ok(verdict.states.includes('unknown')); assert.ok(verdict.states.includes('truncated'));
+      assert.equal(verdict.taskSummary.unknown.total, nearTask.unknown.total);
+      assert.equal(verdict.taskSummary.unknown.sourceOmitted, nearTask.unknown.omitted);
+      assert.equal(verdict.taskSummary.limitations.trace.reportedTotal, 1);
+    }
+  }
   await native(name, ['state', 'gate-start', stage, '--project-dir', fixture], fixture, pass ? 0 : 1, gateEnv);
   const files = await readdir(join(record, 'audit'));
   const audit = (await Promise.all(files.filter(file => file.endsWith('.md')).map(file => readFile(join(record, 'audit', file), 'utf8')))).join('\n');
   assert.equal(audit.includes('**Event**: STAGE_AWAITING_APPROVAL'), pass, `${name} gate transition`);
-  assert.ok(audit.includes(mode === 'timeout' ? 'SENSOR_BUDGET_OVERRIDE' : mode === 'pass-control' ? 'SENSOR_PASSED' : 'SENSOR_FAILED'), `${name} audit result`);
-  if (mode === 'task') {
+  assert.ok(audit.includes(mode === 'timeout' ? 'SENSOR_BUDGET_OVERRIDE'
+    : mode === 'pass-control' || mode === 'output-budget-unsafe' ? 'SENSOR_PASSED' : 'SENSOR_FAILED'), `${name} audit result`);
+  if (mode === 'output-budget-unsafe') {
+    assert.ok(audit.includes('script-error'), 'actual dispatcher lost the oversized worker verdict');
+    assert.ok(!audit.includes('SENSOR_FAILED'), 'unsafe output must not be counted as evaluated findings');
+    await writeFile(join(output, 'logs', `${name}-audit.log`), audit);
+  }
+  if (mode === 'task' || mode === 'output-budget') {
     const detailDir = join(record, '.aidlc-engine/sensors', stage);
     const detail = (await Promise.all((await readdir(detailDir)).filter(file => file.endsWith('.md')).map(file => readFile(join(detailDir, file), 'utf8')))).join('\n');
     assert.ok(detail.includes('"currentCheckout": "unverified"'));
     assert.ok(detail.includes('"truncated"'));
+    if (mode === 'output-budget') {
+      assert.ok(detail.includes('sensor-output-byte-budget'));
+      assert.ok(detail.includes('"sourceOmitted"'));
+      await writeFile(join(output, 'logs', `${name}-detail.log`), detail);
+      await writeFile(join(output, 'logs', `${name}-audit.log`), audit);
+    }
   }
 }
 for (const stage of ['delivery-planning', 'build-and-test']) {
@@ -118,5 +164,7 @@ for (const stage of ['delivery-planning', 'build-and-test']) {
   await gateCase(`${stage}-blocking`, stage, 'blocking');
 }
 for (const mode of ['missing', 'malformed', 'upstream-timeout', 'timeout']) await gateCase(mode, 'delivery-planning', 'blocking', mode);
+await gateCase('stdout-pre-fix-control', 'delivery-planning', 'blocking', 'output-budget-unsafe');
+await gateCase('stdout-byte-budget', 'delivery-planning', 'blocking', 'output-budget');
 await gateCase('verified-pass-control', 'delivery-planning', 'blocking', 'pass-control', true);
 console.log('Pinned AI-DLC plugin composition, native sensor and advisory/blocking gates verified.');

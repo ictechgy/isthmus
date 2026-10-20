@@ -48,6 +48,7 @@ for (const requiredPath of [
   'dist/report/task-evidence.js',
   'dist/report/task.js',
   'dist/report/aidlc-task.js',
+  'dist/report/aidlc-output.js',
   'scripts/build-aidlc-plugin.mjs',
   'integrations/aidlc/.aidlc-plugin/plugin.json',
   'integrations/aidlc/sensors/aidlc-isthmus-task.md',

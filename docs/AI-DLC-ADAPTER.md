@@ -16,7 +16,7 @@ plugin은 별도로 빌드·명시적으로 compose/select해야 활성화되는
 
 각 stage deliverable 옆 `<output-path>.isthmus-task.json` 한 파일을 읽는다. 다른 intent·Unit·stage를
 자동 탐색하거나 최근 생성 시각의 파일을 고르지 않는다. 파일은 기존 `isthmus task ... --compact`의
-결과 그대로이며, 원본의 해시와 bounded task 전체를 sensor detail로 전달한다. 파일 읽기는 #155의
+결과 그대로이며, 원본의 해시와 예산 안의 bounded task를 sensor detail로 전달한다. 파일 읽기는 #155의
 기존 일반 파일/바이트 상한 리더를 재사용한다. adapter는 graph·규칙·테스트 결과를 다시 계산하지 않는다.
 
 일부 수집 실패를 전달할 때만 `isthmus-aidlc-input` v1의 `status`와 `reason`을 쓴다.
@@ -78,3 +78,18 @@ isthmus task trace-context.json --evidence evidence.json --limit 20 --compact > 
 PowerShell 5의 기본 `>` UTF-16 출력은 이 UTF-8 계약에 맞지 않는다. UTF-8로 저장해야 한다.
 수집 실패 전달 예시는 `{"format":"isthmus-aidlc-input","version":1,"status":"timeout","reason":"capture timed out"}`다.
 없는 파일을 빈 task로 대체하거나, strict 종료 코드 1을 통과로 기록하지 않는다.
+
+## stdout 예산과 receipt의 현재 바인딩
+
+nativeAtCapture matched와 현재 artifact binding은 별개다. receipt의 실제
+`artifacts.items[].alignment`에 stale/missing/unverified가 있으면 normalized states에도 남긴다.
+목록이 이미 잘렸으면 해당 unknown·truncated를 보존하고 안 보이는 상태를 추측하지 않는다.
+
+입력 상한은 1 MiB이며, **출력은 JSON wrapper·개행·UTF-8을 포함해 256 KiB**다. 고정 dispatcher의
+기본 1 MiB stdout 버퍼보다 여유를 둔다. 원본 task가 들어간 출력이 예산을 넘으면 `task` 대신
+`taskSummary`를 내고 `outputTruncation.reason: sensor-output-byte-budget`을 명시한다.
+sourceSha256, states, unknown의 total/sourceOmitted/추가 omitted, limitations의 계수·일부 상세,
+native capture/current 상태를 유지한다. 상세 문자열도 JSON escape 바이트로 제한하며 잘림을 표시한다.
+요약은 원본 task를 대체하는 새 증거가 아니므로 전체 상세는 같은 해시의 sidecar에서 확인해야 한다.
+실제 runtime smoke는 같은 근접 입력에 대해 수정 전 무제한 wrapper의 noted-pass/상세 소실을
+음성 대조군으로 재현하고, 수정 출력은 SENSOR_FAILED의 명시적 truncated 근거로 남는지 대조한다.

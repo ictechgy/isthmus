@@ -106,6 +106,10 @@ export function adaptAidlcTask(value: unknown, stage: string, sourceSha256?: str
         if (status(value, ['matched', 'stale', 'unverified']) === 'stale') states.add('stale');
       }
       if (status(native.integrity, ['matched', 'stale']) === 'stale') states.add('stale');
+      for (const row of bounded(native.artifacts).items) {
+        const alignment = status(object(row).alignment, ['matched', 'stale', 'missing', 'unverified']);
+        if (alignment !== 'matched') states.add(alignment as AidlcGap);
+      }
       for (const list of [native.artifacts, native.reasons, object(native.nativeBefore).reasons, object(native.nativeAfter).reasons]) {
         if (bounded(list).omitted > 0) states.add('truncated');
       }

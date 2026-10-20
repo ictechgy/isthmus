@@ -10,7 +10,7 @@ const assets = ['.aidlc-plugin/plugin.json', 'sensors/aidlc-isthmus-task.md',
 /** 배포 빌드의 기존 bounded reader와 adapter만 새 plugin 디렉터리에 복사한다. 기존 설치는 수정하지 않는다. */
 export async function buildAidlcPlugin(output) {
   const target = resolve(output);
-  const modules = ['report/aidlc-task', 'cli/bounded-text-file'];
+  const modules = ['report/aidlc-task', 'report/aidlc-output', 'cli/bounded-text-file'];
   for (const name of modules) await readFile(join(root, `dist/${name}.js`));
   await mkdir(target);
   for (const path of assets) {

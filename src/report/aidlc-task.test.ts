@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runTaskCommand } from '../cli/task-command.ts';
 import { adaptAidlcTask, aidlcFailure } from './aidlc-task.ts';
+import { parseKartographReceipt } from '../exchange/kartograph-receipt.ts';
+import { compareKartographReceipt } from './kartograph-receipt.ts';
 
 const generated = await runTaskCommand(['task', 'fixtures/trace/context-relation.json', '--limit', '1'],
   path => readFile(path, 'utf8'));
@@ -85,4 +87,31 @@ test('upstream execution gaps are explicit observations and never sensor passes'
       reason: 'gap' }, 'build-and-test').states, ['malformed']);
   }
   assert.deepEqual(aidlcFailure('unavailable', 'delivery-planning').states, ['unavailable']);
+});
+
+test('actual receipt comparison preserves stale and missing current artifact bindings despite matched capture', () => {
+  const freshness = { format: 'kartograph-freshness', version: 1, status: 'matched', reasons: [] };
+  const receipt = parseKartographReceipt({ format: 'isthmus-kartograph-receipt', version: 1,
+    producer: { name: 'kartograph', version: '0.25.0' }, scope: '::jvm', witnessCount: 2,
+    snapshotSha256: 'a'.repeat(64), producerSha256: 'b'.repeat(64), before: freshness, after: freshness,
+    stableSnapshot: true, stableProducer: true, limitations: [], artifacts: [
+      { id: 'facts', role: 'bridge-facts', sha256: 'c'.repeat(64) },
+      { id: 'reverse', role: 'traversal', sha256: 'd'.repeat(64) }] });
+  const compared = compareKartographReceipt(receipt, true, [{ id: 'artifact:facts', role: 'bridge-facts',
+    sha256: 'e'.repeat(64), producer: receipt.producer }]);
+  assert.equal(compared.nativeAtCapture, 'matched');
+  assert.deepEqual(compared.artifacts.map(row => row.alignment), ['stale', 'missing']);
+  const list = (items: readonly unknown[]) => ({ total: items.length, items, omitted: 0 });
+  const input = structuredClone(task);
+  input.evidence.alignment = 'matched';
+  input.evidence.summary = { matched: input.evidence.artifacts.total, stale: 0, missing: 0, unverified: 0 };
+  input.evidence.kartograph = { ...compared, artifacts: list(compared.artifacts), reasons: list(compared.reasons),
+    nativeBefore: { ...compared.nativeBefore, reasons: list(compared.nativeBefore.reasons) },
+    nativeAfter: { ...compared.nativeAfter, reasons: list(compared.nativeAfter.reasons) } };
+  const result = adaptAidlcTask(input, 'build-and-test');
+  assert.ok(result.states.includes('stale'));
+  assert.ok(result.states.includes('missing'));
+  assert.equal(result.pass, false);
+  input.evidence.kartograph.artifacts.items[0].alignment = ['stale'];
+  assert.deepEqual(adaptAidlcTask(input, 'build-and-test').states, ['malformed']);
 });

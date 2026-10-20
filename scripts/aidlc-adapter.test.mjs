@@ -22,7 +22,7 @@ test.after(async () => {
 });
 
 test('assembled plugin reuses exact compiled adapter and existing bounded reader', async () => {
-  for (const name of ['report/aidlc-task', 'cli/bounded-text-file']) {
+  for (const name of ['report/aidlc-task', 'report/aidlc-output', 'cli/bounded-text-file']) {
     assert.deepEqual(await readFile(join(plugin, 'tools', `${name.split('/').pop()}.js`)), await readFile(`dist/${name}.js`));
   }
   await assert.rejects(buildAidlcPlugin(plugin));
@@ -61,4 +61,27 @@ test('invalid flags, custom reader bounds and upstream timeout never silently pa
   assert.deepEqual((await worker.evaluate(args, async () => { throw timeout; })).states, ['timeout']);
   assert.deepEqual((await worker.evaluate(args, async () => 'x'.repeat(worker.MAX_TASK_BYTES + 1))).states, ['truncated']);
   assert.deepEqual((await worker.evaluate(args, async () => undefined)).states, ['truncated']);
+});
+
+test('near-limit UTF-8 input cannot overflow dispatcher stdout or erase unknown/limitations', async () => {
+  const input = JSON.parse(task);
+  input.trace.limitations = [{ platform: 'js', target: 'http', tool: 'fixture', message: '' }];
+  input.unknown.total++; input.unknown.omitted++;
+  const available = worker.MAX_TASK_BYTES - 64 - Buffer.byteLength(JSON.stringify(input));
+  input.trace.limitations[0].message = '한🙂'.repeat(Math.floor(available / 7)) + 'x'.repeat(available % 7);
+  const text = JSON.stringify(input);
+  assert.equal(Buffer.byteLength(text), worker.MAX_TASK_BYTES - 64);
+  await writeFile(sidecar, text);
+  const output = execFileSync(process.execPath, [workerPath, ...args], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  assert.ok(Buffer.byteLength(output) <= 1024 * 1024, `dispatcher output was ${Buffer.byteLength(output)} bytes`);
+  assert.ok(Buffer.byteLength(output) <= worker.MAX_SENSOR_OUTPUT_BYTES);
+  const result = JSON.parse(output);
+  assert.equal(result.pass, false);
+  assert.ok(result.states.includes('unknown')); assert.ok(result.states.includes('truncated'));
+  assert.equal(result.sourceSha256, createHash('sha256').update(text).digest('hex'));
+  assert.equal(result.taskSummary.unknown.total, input.unknown.total);
+  assert.equal(result.taskSummary.unknown.sourceOmitted, input.unknown.omitted);
+  assert.equal(result.taskSummary.limitations.trace.reportedTotal, 1);
+  assert.equal(result.taskSummary.limitations.trace.items[0].detailTruncated, true);
+  assert.equal(result.outputTruncation.reason, 'sensor-output-byte-budget');
 });
