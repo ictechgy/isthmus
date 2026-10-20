@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { BoundedTextReadError } from './bounded-text-file.ts';
 import { runCheckCommand } from './check-command.ts';
+import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
 
 const dartPath = fileURLToPath(
@@ -930,6 +932,30 @@ test('읽지 못한 베이스라인 파일은 경로 없이 원인으로 보고�
     'Unable to read the baseline file; check that it exists and is readable.\n',
   );
   assert.equal(result.standardError.includes('missing.json'), false);
+});
+
+test('베이스라인 리더가 읽기 전에 크기 상한으로 거부하면 크기 상한 문구로, 그 밖의 거부는 읽기 실패 문구로 답한다', async () => {
+  // 리더는 상한의 3배 바이트를 넘는 파일을 읽지 않고 limit으로 거부한다. 다 읽었다면 걸렸을 길이 검사와 같은 문구여야 한다.
+  const reads: Array<[string, number]> = [];
+  const rejecting = (reason: 'limit' | 'read') => async (path: string, maximumLength: number) => {
+    reads.push([path, maximumLength]);
+    if (path === 'baseline.json') throw new BoundedTextReadError(reason);
+    return readFile(path, 'utf8');
+  };
+  const args = ['check', dartPath, swiftPath, '--baseline', 'baseline.json'];
+  assert.deepEqual(await runCheckCommand(args, rejecting('limit')), {
+    standardOutput: '',
+    standardError: 'The baseline file exceeds the input size limits; regenerate it with check --update-baseline.\n',
+    exitCode: 2,
+  });
+  assert.deepEqual(await runCheckCommand(args, rejecting('read')), {
+    standardOutput: '',
+    standardError: 'Unable to read the baseline file; check that it exists and is readable.\n',
+    exitCode: 2,
+  });
+  // 베이스라인도 문서 하나의 상한을 리더에 넘긴다. 상한 없는 읽기는 큰 파일을 통째로 메모리에 올린다.
+  assert.deepEqual(reads.filter(([path]) => path === 'baseline.json'),
+    [['baseline.json', MAX_INPUT_TEXT_LENGTH], ['baseline.json', MAX_INPUT_TEXT_LENGTH]]);
 });
 
 test('잘못된 베이스라인 파일은 정적 원인으로 코드 2 거부한다', async () => {

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CaptureFileSystem } from './command-support.ts';
+import { BoundedTextReadError } from './bounded-text-file.ts';
+import { MAX_INPUT_TEXT_LENGTH, type CaptureFileSystem } from './command-support.ts';
 import { runDoctorCommand } from './doctor-command.ts';
 
 /** 존재하는 파일 집합을 가진 가짜 파일시스템이다. */
@@ -97,6 +98,31 @@ test('설정 계약 위반과 읽기·JSON 실패를 코드 2로 구분한다', 
   );
   assert.equal(invalidJson.exitCode, 2);
   assert.match(invalidJson.standardError, /not valid JSON/u);
+});
+
+test('설정 리더가 읽기 전에 크기 상한으로 거부하면 크기 상한 문구로, 그 밖의 거부는 읽기 실패 문구로 답한다', async () => {
+  const limits: number[] = [];
+  const run = (reason: 'limit' | 'read') => runDoctorCommand(
+    ['doctor', 'capture.json'],
+    async (_path, maximumLength) => {
+      limits.push(maximumLength);
+      throw new BoundedTextReadError(reason);
+    },
+    fileSystem([]),
+    '/',
+    '',
+  );
+  assert.deepEqual(await run('limit'), {
+    standardOutput: '',
+    standardError: 'The capture config exceeds the input size limits.\n',
+    exitCode: 2,
+  });
+  assert.deepEqual(await run('read'), {
+    standardOutput: '',
+    standardError: 'Unable to read the capture config; check that the file exists and is readable.\n',
+    exitCode: 2,
+  });
+  assert.deepEqual(limits, [MAX_INPUT_TEXT_LENGTH, MAX_INPUT_TEXT_LENGTH]);
 });
 
 test('없는 project와 잘못된 사용법을 구분한다', async () => {

@@ -100,14 +100,19 @@ export async function runInitCommand(
   };
 }
 
-/** `isthmus-built-toolchain` JSON에서 실제 producer 명령을 읽는다. */
+/**
+ * `isthmus-built-toolchain` JSON에서 실제 producer 명령을 읽는다.
+ *
+ * 읽기 실패와 크기 상한 거부(리더가 읽기 전에 거부한 경우 포함)는 잘못된 manifest와 같이 undefined다 — 호출부는 셋을
+ * 같은 "missing or invalid" 문구로 답한다.
+ */
 async function readToolchain(
   path: string,
   readTextFile: ReadTextFile,
 ): Promise<InitProducers | undefined> {
   let text: string;
   try {
-    text = await readTextFile(path);
+    text = await readTextFile(path, MAX_INPUT_TEXT_LENGTH);
   } catch {
     return undefined;
   }

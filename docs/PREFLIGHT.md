@@ -242,6 +242,24 @@ PATH나 지정 경로에 실제로 있는지만 확인한다 — 제품은 produ
 base commit SHA를 since에 넣고 해당 commit을 fetch해 둔다. Git의 rename 양쪽·삭제·변경
 파일과 미추적 Dart/Swift 소스를 선택한다. 추적된 설정·리소스 변경은 별도 검토 공백으로 남긴다.
 
+`since`의 git 조회(`rev-parse`·`diff`·`ls-files`)는 분석 대상 저장소의 설정이 명령을 실행하지 않게 격리한다
+(`scripts/git-isolation.mjs`). 조회마다 바로 앞에서 `git config -z --name-only --list`(키 이름만)로 그 순간 설정된 filter
+드라이버를 모아 `-c filter.<이름>.clean=`·`smudge=`·`process=`·`required=false`로 덮고(전역 설정의 git-lfs도 포함),
+`core.fsmonitor`·서명 표시·외부 diff·textconv를 끈다. diff는 index를 고쳐 쓰지 않고(`diff.autoRefreshIndex=false` —
+post-index-change hook도 돌지 않는다) 서브모듈에서 git을 띄우지 않는다(`--ignore-submodules=dirty`). 그래서 stat 정보만
+바뀐 파일과 git-lfs처럼 filter로 정규화되던 파일도 변경으로 고를 수 있다(빠뜨리지 않는 쪽이다. 신뢰하는 checkout이면 수집
+전에 `git update-index --refresh`를 실행하면 줄어든다). 서브모듈은 기록된 commit과 다를 때만 설정 변경으로 남기고 서브모듈
+안의 커밋하지 않은 변경은 보지 않는다. 이름에 `=`가 들었거나 UTF-8이 아닌 filter 드라이버는 명령줄로 덮을 수 없어 조회하지
+않고 수집 실패(코드 2)로 끝낸다 — 그 드라이버를 설정에서 지우거나 이름을 바꾼다. 조회는 `GIT_NO_LAZY_FETCH=1`로 promisor
+remote의 lazy fetch도 끈다(저장소 설정의 `remote.<이름>.uploadpack`·`core.sshCommand`·`credential.helper`가 실행되지 않게).
+그래서 분석 대상이 부분 clone이고 조회에 필요한 객체가 로컬에 없으면, 그 객체를 내려받지 않고 수집 실패(코드 2)로 끝낸다.
+이 환경 변수는 git 2.45부터 있어 그보다 오래된 git은 무시하므로, 키 목록에 promisor 설정(`extensions.partialClone`,
+`remote.<이름>.promisor`·`partialCloneFilter`)이 보이면 `--no-lazy-fetch`도 붙인다 — 그 옵션을 모르는 git 2.45 미만은 조회를
+시작하지 않고 수집 실패(코드 2)로 끝난다(부분 clone이 아닌 저장소는 어느 git에서나 그대로 수집한다). 그래서 부분 clone은
+git 2.45 이상으로, 필요한 객체가 로컬에 있는 checkout에서 수집한다. base commit을 fetch해도 blob이 빠진 부분 clone에는
+그 blob이 들어오지 않으므로, 부분 clone이 아닌 checkout을 쓰거나 신뢰하는 checkout이면 수집 전에 빠진 객체를 받아 둔다
+(예: git 2.49 이상의 `git backfill`).
+
 Flutter 의존성을 준비한 후 수집기를 실행하고 생성된 JSON을 `isthmus preflight`에 전달한다.
 수집기 코드 1은 보고서가 생성됐지만 검토가 필요하다는 뜻이고, 2는 수집 실패다. CI 스크립트는
 1일 때도 context 보고서를 보존해야 한다. 외부로 올릴 artifact에 개인 경로가 있는지 검토한다.

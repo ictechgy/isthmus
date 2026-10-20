@@ -354,7 +354,13 @@ http가 선언한 link에서만 이어지므로 테이블 변경이 다른 저�
 조인을 검증하는 `isthmus check --pairs`, 사실에서 뽑은 핸들러·호출부·relation-use·스키마 정점 id를 root로 한 생산자
 순회(`--roots-from`을 지원하면 그것으로)를 실행하고, 사전 계산 artifact는 `sha256`과 함께 복사해 단일 project 또는
 workspace trace context, 생산자 버전·revision manifest, 선택적으로 `trace.json`을 쓴다. 자식은 셸 없이 인자 배열로
-단계별 시간 제한 안에서 실행하고, 모든 경로는 선언한 root 안에 있어야 한다. 파일 선택이면 두 단계로 모은다 — 정방향 순회와
+단계별 시간 제한 안에서 실행하고, 모든 경로는 선언한 root 안에 있어야 한다. `revision: {"git": true}`·도구 `source`의
+git 조회(preflight 수집기의 `since`도 같다)는 분석 대상 저장소의 filter 드라이버·fsmonitor를 덮고 외부 diff·textconv를 쓰지
+않으며 서브모듈에서 git을 띄우지 않고 promisor remote의 lazy fetch도 꺼, 그 설정들이 수집 중에 명령을 실행하지 않는다 —
+부분 clone이 필요한 객체를 로컬에 두지 않으면 내려받는 대신 실패하고, lazy fetch를 끌 수 없는 git 2.45 미만은 부분 clone
+설정이 있는 저장소를 조회하기 전에 실패한다([TRACE](docs/TRACE.md)·[PREFLIGHT](docs/PREFLIGHT.md)). 그 결과 git-lfs처럼 filter로 정규화되던 파일은 stat 정보가 낡았을 때 깨끗하다고
+주장하지 않고 변경으로(그리고 capture `dirty`로) 보일 수 있고, 서브모듈 안의 커밋하지 않은 변경은 보지 않는다.
+낡은 stat 경우는 신뢰하는 checkout에서 수집 전에 `git update-index --refresh`를 실행하면 피한다. 파일 선택이면 두 단계로 모은다 — 정방향 순회와
 선택적 생산자 심볼 목록(tsograph `graph`·kartograph `snapshot`·cartograph `graph`)을 먼저, 선택한 파일에 놓인 심볼까지
 root로 한 역방향 순회를 나중에 실행해 사실 없는 헬퍼도 사실 위치 fallback 없이 잇는다. 목록의 심볼은 context의 선택 필드
 `fileSymbols`로 trace에 전한다.
@@ -422,6 +428,12 @@ isthmus retentions dart.json kotlin.json --for kartograph > kotlin-retentions.js
 실패 메시지는 원인(읽기 실패, JSON 오류, 교환 계약 위반, project 불일치, 플랫폼 구성
 누락, 크기 상한)과 입력 순서, 해결 방향을 구분해 전달하며 입력 본문과 경로는 노출하지
 않는다.
+
+입력 경로는 일반 파일이어야 한다. FIFO·장치·디렉터리(프로세스 치환 `<(...)`, 파이프에
+연결된 `/dev/stdin` 포함)는 열지 않고 읽기 실패(종료 코드 2)로 끝나므로, 이런 입력은 파일로
+저장해 넘긴다. 바이트 수가 그 입력의 텍스트 크기 상한([입력 자원 상한](docs/GRAPH-EXCHANGE.md#입력-자원-상한))의
+3배를 넘는 파일은 읽지 않고 같은 크기 상한 문구로 거부하며, 읽는 중 커지는 파일도 그
+바이트+1에서 읽기를 멈춘다.
 
 실제 공개 Flutter 플러그인에서 생산부터 소비까지 확인하려면 저장소 루트에서 다음
 검증을 실행한다. 스크립트는 `plus_plugins`의 고정 커밋을 sparse checkout으로
