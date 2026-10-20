@@ -7,12 +7,12 @@ import { parseKartographReceipt } from '../exchange/kartograph-receipt.ts';
 import { compareKartographReceipt } from '../report/kartograph-receipt.ts';
 import { parseEvidenceManifest, parseTaskValidation, TaskEvidenceError } from '../exchange/task-evidence.ts';
 import type { EvidenceArtifact, EvidenceManifest, EvidenceProducer, EvidenceRole } from '../exchange/task-evidence.ts';
-import { isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
+import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments } from '../join/join.ts';
 import { createCheckReport } from '../report/check-report.ts';
 import { compareTaskEvidence } from '../report/task-evidence.ts';
 import type { EvidenceObservation } from '../report/task-evidence.ts';
 import { createTaskReport } from '../report/task.ts';
-import type { TaskValidationInput } from '../report/task.ts';
+import type { TaskRules, TaskValidationInput } from '../report/task.ts';
 import type { TraceReport } from '../report/trace.ts';
 import { encodeSortedJson } from '../report/sorted-json.ts';
 import { inputFailure, internalError, isJsonParseFailure, MAX_INPUT_TEXT_LENGTH, MAX_TOTAL_INPUT_TEXT_LENGTH, readContextInput } from './command-support.ts';
@@ -121,9 +121,16 @@ export async function runTaskCommand(arguments_: readonly string[], readTextFile
       evidence = { ...evidence, kartograph: compareKartographReceipt(parseKartographReceipt(input.value),
         createHash('sha256').update(input.text, 'utf8').digest('hex') === reference.sha256, observations) };
     }
-    const joined = joinBridgeDocuments(documents);
-    if (isBridgeJoinDeferred(joined)) return inputFailure('Task bridge facts could not be joined; split mixed targets and retry.\n');
-    const report = createTaskReport(trace, createCheckReport(joined), evidence,
+    let rules: TaskRules;
+    try {
+      const joined = joinBridgeDocuments(documents);
+      if (isBridgeJoinDeferred(joined)) return inputFailure('Task bridge facts could not be joined; split mixed targets and retry.\n');
+      rules = createCheckReport(joined);
+    } catch (error) {
+      if (!(error instanceof BridgeJoinValidationError)) throw error;
+      rules = { unavailable: error.message };
+    }
+    const report = createTaskReport(trace, rules, evidence,
       validations, limit);
     const blocked = options.booleanFlags.has('--strict') && report.requiresReview;
     return { standardOutput: encodeSortedJson(report, options.booleanFlags.has('--compact')),

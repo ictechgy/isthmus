@@ -143,6 +143,8 @@ Node 테스트의 fake producer는 프로세스·해시·오류 경계만 검증
 실제 컴파일 증거로 세지 않는다. 실제 fixture는 지원 JDK와 공식 생산자에서 compile → witness/snapshot →
 capture를 실행하고, 동일 크기/mtime 소스 변경·build config 변경·class 변경·missing binding·legacy snapshot을
 native 결과와 대조한다. 실제 fixture의 성공은 해당 CI job 결과로 확인하며 Node double 통과로 대신하지 않는다.
+SQL 선언 등 check의 반대편 입력이 빠진 유효한 partial trace는 `rules.status: unverified`와 원래
+조합 오류 이유를 남긴다. 규칙 summary를 만들지 않으며 trace의 gap·artifact 근거는 그대로 보존한다.
 
 Swift compiler index·Kotlin/JVM bytecode는 소스 해시만으로 그 소스에서 빌드됐다고 할 수 없다.
 Kartograph의 지원 compiler lifecycle receipt 및 bytes/membership 비교를 재사용해야 한다.

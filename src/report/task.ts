@@ -8,6 +8,9 @@ import { limitTraceReport } from './trace-view.ts';
 /** 관련 검증 결과가 어느 파일 바이트에 속하는지 id로 보존한다. */
 export interface TaskValidationInput { readonly artifact: string; readonly validation: TaskValidation }
 
+/** check가 요구하는 반대편 입력이 없으면 규칙 결과를 빈 정상 요약으로 만들지 않는다. */
+export type TaskRules = CheckReport | { readonly unavailable: string };
+
 /** 작업에서 확인하지 못한 사실이다. 빈 목록을 완전성으로 읽지 않게 별도 계수한다. */
 interface TaskUnknown { readonly code: string; readonly detail: string }
 
@@ -27,7 +30,7 @@ function bounded<T>(items: readonly T[], limit: number) {
  *
  * 모든 판단과 우선순위는 자르기 전에 계산하며, 수동 manifest의 검증 공백은 항상 남긴다.
  */
-export function createTaskReport(trace: TraceReport, check: CheckReport, evidence: TaskEvidenceReport,
+export function createTaskReport(trace: TraceReport, check: TaskRules, evidence: TaskEvidenceReport,
   validations: readonly TaskValidationInput[], limit: number) {
   const unknown: TaskUnknown[] = [{ code: 'input-binding-unverified',
     detail: 'Manual manifests compare bytes and declared inputs; current source, compiler lifecycle and execution are unverified.' }];
@@ -48,6 +51,7 @@ export function createTaskReport(trace: TraceReport, check: CheckReport, evidenc
   for (const entry of trace.limitations) unknown.push({ code: 'trace-limitation', detail: entry.message });
   for (const entry of trace.analysisLimitations) unknown.push({ code: 'analysis-limitation', detail: entry.message });
   const subjects = traceSubjects(trace);
+  if ('unavailable' in check) unknown.push({ code: 'rules-unverified', detail: check.unavailable });
   const evidenceById = new Map(evidence.artifacts.map((entry) => [entry.id, entry.alignment]));
   const tests = validations.flatMap(({ artifact, validation }) => {
     for (const detail of validation.limitations) unknown.push({ code: 'validation-limitation', detail });
@@ -75,8 +79,11 @@ export function createTaskReport(trace: TraceReport, check: CheckReport, evidenc
         nativeAfter: { ...evidence.kartograph.nativeAfter, reasons: bounded(evidence.kartograph.nativeAfter.reasons, limit) },
         artifacts: bounded(evidence.kartograph.artifacts, limit), reasons: bounded(evidence.kartograph.reasons, limit) } }) },
     trace: limitTraceReport(trace, { maxChains: limit, maxRows: limit }),
-    rules: { scope: 'all-input-bridge-facts' as const, summary: check.summary, issues: bounded(check.issues, limit),
-      limitations: bounded(check.limitations, limit) },
+    rules: 'unavailable' in check
+      ? { scope: 'all-input-bridge-facts' as const, status: 'unverified' as const, reason: check.unavailable,
+        issues: bounded([], limit), limitations: bounded([], limit) }
+      : { scope: 'all-input-bridge-facts' as const, status: 'observed' as const, summary: check.summary,
+        issues: bounded(check.issues, limit), limitations: bounded(check.limitations, limit) },
     tests: { ...bounded(tests, limit), observedSummary: testSummary },
     unknown: bounded(unknown, limit),
   };

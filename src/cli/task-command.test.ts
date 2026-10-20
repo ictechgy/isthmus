@@ -275,3 +275,19 @@ test('optional receipt preserves recorded native state, checks actual bytes, and
   data.files.delete('receipt.json');
   assert.equal((await runTaskCommand(args, data.read)).exitCode, 2);
 });
+
+test('partial trace keeps rule composition unavailable as unknown instead of an internal error', async () => {
+  const data = setup();
+  const partial = JSON.parse(data.files.get('context.json')!);
+  partial.documents = ['server.persistence.json'];
+  data.files.set('context.json', JSON.stringify(partial));
+  data.manifest.artifacts[0]!.sha256 = digest(data.files.get('context.json')!);
+  const result = await runTaskCommand(args, data.read);
+  assert.equal(result.exitCode, 0, result.standardError);
+  const report = JSON.parse(result.standardOutput);
+  assert.equal(report.rules.status, 'unverified');
+  assert.equal(report.rules.summary, undefined);
+  assert.ok(report.unknown.items.some((entry: { code: string }) => entry.code === 'rules-unverified'));
+  assert.ok(report.trace.gaps.length > 0);
+  assert.equal(report.requiresReview, true);
+});
