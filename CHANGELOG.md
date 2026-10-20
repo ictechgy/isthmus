@@ -68,10 +68,10 @@
   설정된 filter 드라이버를 빈 명령으로 덮고 fsmonitor·서명 표시·외부 diff·textconv를 끄며, index를 고쳐 쓰지 않고
   서브모듈에서 git을 띄우지 않는다([PREFLIGHT](docs/PREFLIGHT.md#자동-수집과-ci)·
   [TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
-- 위 capture git 격리가 promisor remote의 lazy fetch는 막지 않아, 분석 대상이 부분 clone이고 조회에 필요한 객체가 로컬에
-  없으면 git이 조회 도중 저장소 설정의 `remote.<이름>.uploadpack`(로컬 경로 전송은 셸로 실행)·`core.sshCommand`·
-  `credential.helper`를 실행하던 결함을 고쳤다. 이제 `since` 수집과 git 판독의 git 조회에 `GIT_NO_LAZY_FETCH=1`을 주어
-  빠진 객체를 내려받지 않는다([PREFLIGHT](docs/PREFLIGHT.md#자동-수집과-ci)·[TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
+- 같은 `since`와 git 판독의 git 조회가, 분석 대상이 부분 clone이고 조회에 필요한 객체가 로컬에 없으면 promisor remote의
+  lazy fetch를 띄워 저장소 설정의 `remote.<이름>.uploadpack`(로컬 경로 전송은 셸로 실행)·`core.sshCommand`·
+  `credential.helper`를 실행하던 결함도 고쳤다. 이제 그 조회에 `GIT_NO_LAZY_FETCH=1`을 주어 빠진 객체를 내려받지 않는다
+  ([PREFLIGHT](docs/PREFLIGHT.md#자동-수집과-ci)·[TRACE](docs/TRACE.md#설정-isthmus-trace-capture-v1)).
 
 ### Changed
 
