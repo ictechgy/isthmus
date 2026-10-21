@@ -32,6 +32,13 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
+Development builds add an experimental, read-only
+[`task` summary and optional evidence manifest](docs/TASK-EVIDENCE.md):
+`isthmus task trace-context.json --evidence evidence.json --limit 20`.
+It reuses trace paths and check rules, prioritizes explicitly mapped recorded tests,
+and preserves unknowns when output is bounded. Manual input claims remain unverified,
+including when artifact bytes match; this is not compiler or execution attestation.
+
 **0.13.1** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
 Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
 It adds `impact --file`/`--symbol`/`--changes` (with lossless `--compact` JSON and a

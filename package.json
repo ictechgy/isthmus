@@ -30,6 +30,7 @@
     "Skills",
     "scripts/capture-preflight.mjs",
     "scripts/capture-trace.mjs",
+    "scripts/capture-kartograph-evidence.mjs",
     "scripts/git-isolation.mjs",
     "scripts/render-pr-comment.mjs",
     "scripts/run-child.mjs",
@@ -42,6 +43,7 @@
     "docs/PERSISTENCE-TRACE.md",
     "docs/LANGUAGE-TRAVERSAL.md",
     "docs/TRACE.md",
+    "docs/TASK-EVIDENCE.md",
     "docs/NAVIGATION.md",
     "docs/HTTP-DIFF.md",
     "docs/CI.md",
@@ -62,6 +64,7 @@
     "access": "public"
   },
   "scripts": {
+    "test:kartograph-evidence": "node --test scripts/capture-kartograph-evidence.test.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",

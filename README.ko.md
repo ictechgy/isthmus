@@ -1,5 +1,11 @@
 # isthmus
 
+개발 빌드의 실험적 [`task` 조회·선택적 evidence manifest](docs/TASK-EVIDENCE.md)는
+`isthmus task trace-context.json --evidence evidence.json --limit 20`으로 사용한다.
+기존 trace 경로와 check 규칙을 재사용하고, 명시적으로 연결된 검증 결과의 테스트 우선순위와
+unknown을 제한된 목록으로 묶는다. 파일 바이트가 같아도 수동 입력 선언은 `unverified`이며
+컴파일·실행 증명이 아니다.
+
 <img src="https://raw.githubusercontent.com/ictechgy/isthmus/main/icon.png" alt="isthmus의 왜가리 마스코트" width="112" height="112" align="right">
 
 크로스플랫폼 앱에서 **언어 경계를 넘는 호출**을 그래프로 잇는 도구.

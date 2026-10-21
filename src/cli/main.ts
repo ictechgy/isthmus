@@ -6,6 +6,7 @@ import { readBoundedTextFile, readRegularTextFile } from './bounded-text-file.ts
 import { writeTextAtomically } from './atomic-write.ts';
 import { checkUsage, runCheckCommand } from './check-command.ts';
 import type { CaptureFileSystem, CommandResult, ReadTextFile } from './command-support.ts';
+import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 import { doctorUsage, runDoctorCommand } from './doctor-command.ts';
 import { initUsage, runInitCommand } from './init-command.ts';
 import {
@@ -20,6 +21,7 @@ import { impactUsage, runImpactCommand } from './impact-command.ts';
 import { runtimeUsage, runRuntimeCommand } from './runtime-command.ts';
 import { preflightUsage, runPreflightCommand } from './preflight-command.ts';
 import { runTraceCommand, traceUsage } from './trace-command.ts';
+import { runTaskCommand, taskUsage } from './task-command.ts';
 import { navigationTraceUsage, runNavigationTraceCommand } from './navigation-trace-command.ts';
 import {
   retentionUsage,
@@ -39,6 +41,7 @@ const commandUsages = new Map([
   ['impact', impactUsage],
   ['preflight', preflightUsage],
   ['trace', traceUsage],
+  ['task', taskUsage],
   ['trace-navigation', navigationTraceUsage],
   ['surface', surfaceUsage],
   ['verify-runtime', runtimeUsage],
@@ -57,6 +60,7 @@ Commands:
   impact       Inspect bridge dependencies before changing files or symbols
   preflight    Trace cross-language impact from producer analysis context
   trace        Follow a route, relation, symbol, or file to DB and client impact candidates
+  task         Summarize one trace task with optional input evidence and recorded tests
   trace-navigation  Follow screen URL mappings through JS forward reach into HTTP calls
   surface      Export a server http surface for clients in another organization
   verify-runtime  Verify recorded calls against scenario expectations
@@ -187,6 +191,8 @@ async function dispatchCommand(
       return runPreflightCommand(commandArguments, readTextFile);
     case 'trace':
       return runTraceCommand(commandArguments, readTextFile);
+    case 'task':
+      return runTaskCommand(commandArguments, (path, maximum = MAX_INPUT_TEXT_LENGTH) => readBoundedTextFile(path, maximum));
     case 'trace-navigation':
       return runNavigationTraceCommand(commandArguments, readBoundedTextFile);
     case 'surface':

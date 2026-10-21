@@ -40,6 +40,7 @@ verifyImpact();
 verifyRuntime();
 verifyPreflight();
 verifyTrace();
+verifyTask();
 verifyNavigationTrace();
 verifyTraceEntryPoints();
 verifyWorkspaceTrace();
@@ -51,6 +52,22 @@ verifyDoctorInit();
 verifyMessageViews();
 verifyReactNativeEvents();
 process.stdout.write('CLI contract verified: 0/1/2/64\n');
+
+/** task의 unknown·출력 상한·strict와 기존 trace의 보고 계수를 빌드된 CLI로 대조한다. */
+function verifyTask() {
+  const fixture = fileURLToPath(new URL('../fixtures/trace/context-relation.json', import.meta.url));
+  const result = run(['task', fixture, '--limit', '1', '--compact']);
+  verify(result.status === 0, 'task report exit code');
+  const report = JSON.parse(result.stdout);
+  verify(report.format === 'isthmus-task' && report.complete === false, 'task report scope');
+  verify(report.evidence.alignment === 'missing' && report.evidence.verification === 'unverified', 'task missing evidence');
+  verify(report.requiresReview && report.unknown.total > 0 && report.unknown.items.length === 1, 'task bounded unknown');
+  const trace = JSON.parse(run(['trace', fixture, '--compact']).stdout);
+  verify(JSON.stringify(report.trace.summary) === JSON.stringify(trace.summary), 'task reuses trace summary');
+  verify(run(['task', fixture, '--strict']).status === 1, 'task strict unknown exit code');
+  verify(run(['task', fixture, '--limit', '0']).status === 64, 'task invalid limit exit code');
+  verify(run(['task', fixture, '--evidence', 'missing-evidence.json']).status === 2, 'task unreadable evidence exit code');
+}
 
 /** 합성 언어 영향 입력이 빌드된 CLI에서 브리지 너머 화면까지 연결되는지 확인한다. */
 function verifyPreflight() {
