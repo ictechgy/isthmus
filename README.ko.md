@@ -1,5 +1,8 @@
 # isthmus
 
+선택적 [AI-DLC adapter](docs/AI-DLC-ADAPTER.md)는 기존 `task` 결과를 계획·검증 단계에 전달한다.
+별도로 compose하는 실험적 plugin이며 기록 당시의 근거와 현재 checkout 검증을 구분한다.
+
 개발 빌드의 실험적 [`task` 조회·선택적 evidence manifest](docs/TASK-EVIDENCE.md)는
 `isthmus task trace-context.json --evidence evidence.json --limit 20`으로 사용한다.
 기존 trace 경로와 check 규칙을 재사용하고, 명시적으로 연결된 검증 결과의 테스트 우선순위와

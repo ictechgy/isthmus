@@ -1,0 +1,10 @@
+{
+  "name": "isthmus-evidence",
+  "version": "0.1.0",
+  "description": "Opt-in recorded Isthmus task evidence for delivery planning and build/test review.",
+  "author": { "name": "ictechgy" },
+  "dependencies": ["core"],
+  "aidlc": {
+    "contributes": { "overlays": "contributions/", "sensors": "sensors/", "tools": "tools/" }
+  }
+}

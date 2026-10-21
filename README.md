@@ -1,5 +1,9 @@
 # isthmus
 
+The optional [AI-DLC adapter](docs/AI-DLC-ADAPTER.md) forwards existing `task` results
+to planning and validation through a separately composed experimental plugin.
+Recorded capture evidence does not verify the current checkout.
+
 <img src="https://raw.githubusercontent.com/ictechgy/isthmus/main/icon.png" alt="isthmus's heron mascot" width="112" height="112" align="right">
 
 **Cross-language bridge calls in cross-platform apps, joined into one graph.**

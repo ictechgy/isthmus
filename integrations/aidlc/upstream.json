@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/awslabs/aidlc-workflows",
+  "version": "2.11.1",
+  "commit": "895a35d86d20336d9b7bc4aedc9440e4a12c83ab",
+  "assets": {
+    "aidlc-runtime-2.11.1.tar.gz": "9f213c8254e646123b3f4bcefe347a61c95c72fee9fda4bf9afab42ccb20f44a",
+    "aidlc-windows-x64.exe": "26b88478b593e32ec9bc63ca5e352bd0205a88451104a3aca7cd83e5987f0e36",
+    "aidlc-linux-x64": "25e81caf009dd3b8977f9fbe215b88bdfe14aa66c1298c511a3b15b24f38f9c1"
+  }
+}

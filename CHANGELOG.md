@@ -6,6 +6,9 @@
 
 ### Added
 
+- 선택적 AI-DLC plugin adapter가 `delivery-planning`·`build-and-test`에 기존 task 근거를 전달한다.
+  원본 bounded task·해시와 stale/unknown/unverified/잘림을 보존하며 현재 checkout의 pass로
+  승격하지 않는다. 기본 advisory와 명시적 blocking의 실제 gate 경계는 고정 v2.11.1로 검사한다.
 - 선택적 Kartograph capture receipt가 동일 snapshot의 native `verify-snapshot` 전후 결과와
   생성 facts/traversal 바이트를 묶는다. task는 수집 당시 판독·오프라인 무결성·현재 재검증 부재를
   구분하며 수동 manifest의 unverified는 유지한다. 고정 생산자/JDK의 실제 compiler fixture를 CI에 둔다.
@@ -25,6 +28,9 @@
 
 ### Fixed
 
+- AI-DLC adapter가 capture matched인 receipt의 현재 artifact stale/missing을 normalized 상태에서
+  누락하던 문제를 고쳤다. 입력 1 MiB 근처의 task에 wrapper가 붙으며 1 MiB 캡처 예산을 넘는
+  경우도 256 KiB 출력 예산과 명시적 truncated summary로 바꿔 unknown·limitations 계수를 보존한다.
 - task가 legacy 영향 어댑터가 무시한 원시 `tool` 필드를 다시 신뢰해 `tool: null`에서 내부 오류를
   만들던 문제를 고쳤다. 기존 정규화 결과를 재사용하고 미신고 생산자 메타데이터는 unverified로 남긴다.
 - MCP 도구의 `documents`·`context`·`runtime[]` 경로와 `query` 이름이 `-`로 시작하면 CLI 플래그로 읽혀, `check`가
