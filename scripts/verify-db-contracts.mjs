@@ -132,9 +132,9 @@ try {
     generatedAt: '2026-10-22T00:00:00Z', project, platform: 'go', target: 'persistence',
     facts: [
       { kind: 'relation-use', channel: 'main.users', dynamic: false,
-        location: { path: 'db/client.go', line: 1, column: 1 }, symbol: { usr: 'fixture::loadUsers' } },
+        location: { path: 'db/client.go', line: 1, column: 1 }, symbol: { qualifiedName: 'fixture.loadUsers', usr: 'fixture::loadUsers' } },
       { kind: 'relation-use', channel: 'main.users', method: 'email', dynamic: false,
-        location: { path: 'db/client.go', line: 2, column: 1 }, symbol: { usr: 'fixture::loadEmail' } },
+        location: { path: 'db/client.go', line: 2, column: 1 }, symbol: { qualifiedName: 'fixture.loadEmail', usr: 'fixture::loadEmail' } },
     ], limitations: ['Declared client fixture only; no Go source extraction or runtime query coverage is claimed.'] };
   const clients = save('client.facts.json', client);
   const prepared = performance.now();
