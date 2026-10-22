@@ -58,6 +58,15 @@ const MCP_TRACE_DEFAULT_ROWS = 25;
 
 const TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
   {
+    name: 'contract_diff',
+    description: 'Compare explicit HTTP or DB fields across declaration snapshots and fixed clients. Preserves unknown freshness and incomplete coverage; callers are review candidates, never predicted test failures.',
+    inputSchema: { type: 'object', properties: {
+      before: { ...DOCUMENTS_PROPERTY, minItems: 1 }, after: { ...DOCUMENTS_PROPERTY, minItems: 1 },
+      clients: { ...DOCUMENTS_PROPERTY, minItems: 1 }, limit: { type: 'integer', minimum: 1, maximum: 1000 },
+      strict: { type: 'boolean' }, compact: { type: 'boolean' },
+    }, required: ['before', 'after'], additionalProperties: false },
+  },
+  {
     name: 'check',
     description:
       'Join bridge fact documents and report unmatched calls and handlers. '
@@ -506,6 +515,14 @@ function buildToolArgv(
   args: Record<string, unknown>,
 ): readonly string[] | undefined {
   switch (toolName) {
+    case 'contract_diff': {
+      const before = stringArray(args.before), after = stringArray(args.after);
+      const clients = args.clients === undefined ? [] : stringArray(args.clients);
+      if (before === undefined || after === undefined || clients === undefined) return undefined;
+      return ['diff', '--contracts', '--before', ...before, '--after', ...after,
+        ...(clients.length === 0 ? [] : ['--clients', ...clients]), '--limit', String(args.limit ?? 100),
+        ...booleanFlag('--strict', args.strict), ...booleanFlag('--compact', args.compact)];
+    }
     case 'check':
       return withDocuments('check', args, (documents) => [
         ...booleanFlag('--strict', args.strict),

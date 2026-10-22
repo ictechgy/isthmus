@@ -9,6 +9,7 @@ import {
   type ReadTextFile,
 } from './command-support.ts';
 import { httpDiffUsage, runHttpDiffCommand } from './http-diff-command.ts';
+import { contractDiffUsage, runContractDiffCommand } from './contract-diff-command.ts';
 
 /**
  * 전후 교환 파일을 하나의 입력 예산으로 읽어 새 경계 오류만 CI 실패로 표시한다.
@@ -20,6 +21,7 @@ export async function runDiffCommand(
   arguments_: readonly string[],
   readTextFile: ReadTextFile,
 ): Promise<CommandResult> {
+  if (arguments_[1] === '--contracts') return runContractDiffCommand(arguments_, readTextFile);
   if (arguments_[1] === '--http') return runHttpDiffCommand(arguments_, readTextFile);
   const strictFlags = arguments_.filter((argument) => argument === '--strict');
   const args = arguments_.filter((argument) => argument !== '--strict');
@@ -63,4 +65,4 @@ export async function runDiffCommand(
 export const diffUsage =
   'Usage: isthmus diff --before <dart.json> <swift.json> [more...] '
   + '--after <dart.json> <swift.json> [more...] [--strict]\n'
-  + httpDiffUsage.replace('Usage: ', '       ');
+  + httpDiffUsage.replace('Usage: ', '       ') + '\n' + contractDiffUsage.replace('Usage: ', '       ');

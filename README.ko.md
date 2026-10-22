@@ -1,5 +1,8 @@
 # isthmus
 
+같은 HTTP route/DB relation의 명시 필드 변경은 새 [`diff --contracts`](docs/CONTRACT-DIFF.md)로
+비교한다. 전후 호출 근거·미확인 신선도·분석/출력 범위는 분리해 보존한다.
+
 선택적 [AI-DLC adapter](docs/AI-DLC-ADAPTER.md)는 기존 `task` 결과를 계획·검증 단계에 전달한다.
 별도로 compose하는 실험적 plugin이며 기록 당시의 근거와 현재 checkout 검증을 구분한다.
 

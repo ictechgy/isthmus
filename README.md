@@ -1,5 +1,9 @@
 # isthmus
 
+For explicit HTTP/DB field changes at the same route or relation, use the additive
+[`diff --contracts` workflow](docs/CONTRACT-DIFF.md). It preserves independent
+before/after caller evidence, unknown freshness and bounded coverage.
+
 The optional [AI-DLC adapter](docs/AI-DLC-ADAPTER.md) forwards existing `task` results
 to planning and validation through a separately composed experimental plugin.
 Recorded capture evidence does not verify the current checkout.

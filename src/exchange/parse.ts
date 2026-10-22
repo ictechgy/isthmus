@@ -1,3 +1,4 @@
+import { dataContractProblem, normalizeDataContract, type DataContract } from './data-contract.ts';
 import {
   httpMethods,
   MAX_ROUTE_TEMPLATE_LENGTH,
@@ -153,6 +154,8 @@ export const MAX_SCOPE_DEPENDENCIES_PER_DOCUMENT = 1_000_000;
 
 /** 생산 도구 하나가 관찰한 언어 경계 사실이다. */
 export interface BridgeFact {
+  /** 선택적 명시 계약 근거다. 누락은 미수집이며 완전성 주장이 아니다. */
+  readonly dataContract?: DataContract;
   readonly kind: BridgeFactKind;
   readonly channel: string | null;
   readonly method?: string;
@@ -328,6 +331,7 @@ function normalizeFact(fact: BridgeFact): BridgeFact {
       };
   return {
     kind: fact.kind,
+    ...(fact.dataContract === undefined ? {} : { dataContract: normalizeDataContract(fact.dataContract) }),
     channel: fact.channel,
     ...(fact.method === undefined ? {} : { method: fact.method }),
     ...(fact.mechanism === undefined ? {} : { mechanism: fact.mechanism }),
@@ -519,6 +523,13 @@ function validateFact(value: unknown, index: number, document: Record<string, un
   if (!bridgeFactKinds.has(value.kind)) fail(`Invalid fact kind at index ${index}.`);
   if (!isFactKindForPlatformTarget(platform, target, value.kind)) {
     fail(`Fact kind is not valid for platform at index ${index}.`);
+  }
+  if (value.dataContract !== undefined) {
+    if (!['route-decl', 'route-contract', 'relation-decl'].includes(value.kind as string)) {
+      fail(`Data contract requires a declaration fact at index ${index}.`);
+    }
+    const problem = dataContractProblem(value.dataContract, value.kind === 'relation-decl');
+    if (problem !== undefined) fail(problem);
   }
   if (routeFactKinds.has(value.kind)) {
     validateRouteFact(value, index, document);
