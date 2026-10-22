@@ -1,6 +1,6 @@
 # 공개 호환 버전 세트
 
-2026-10-12 준비한 isthmus 0.13.1의 호환 대상 세트다. source 구현·CI와 패키지 후보 검증,
+2026-10-22 준비 중인 isthmus 0.14.0의 호환 대상 세트다. source 구현·CI와 패키지 후보 검증,
 registry 발행·독립 설치 확인은 각각 기록한다. 새 버전의 발행 전에는 아래 표가 릴리스 후보이며
 발행 완료를 뜻하지 않는다. 이전 조합의 검증 이력은 아래 절에 보존한다.
 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이 필요할 때의 대안이다.
@@ -19,6 +19,19 @@ isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
 `npm run verify`의 `scripts/verify-compatibility.mjs`가 이 문서·README·README.ko의
 버전 표기가 정본과 일치하는지 검사하므로, 버전을 올릴 때 한 곳만 고치면 drift가 실패로
 드러난다. 이 문서의 산문이 서술하는 기능 범위와 실측 이력은 정본이 아니다.
+
+## 0.14.0 변경 계약 후보 검증 (2026-10-22)
+
+`diff --contracts`는 명시된 HTTP 필드와 DB column/constraint 계약을 비교하고,
+전후 호출자·알려진 계약·미수집/모호한 근거를 각각 보존한다. runtime 호환성은
+`not-assessed`이며 `complete: false`를 유지한다. 작은 fixture의 정적 후보를 전체 앱의
+실패 예측이나 테스트 생략 허가로 확대하지 않는다.
+
+`.github/workflows/data-contracts.yml`은 고정 소스의 Tsograph와 Schemagraph를 빌드하고,
+격리 설치한 npm 후보로 실제 OpenAPI 및 SQLite 입력을 비교한다. 이 검사는 source 후보
+통합이며 registry 발행 증거가 아니다. 아래 producer 표는 아직 기존 고정 세트다.
+새 producer의 공식 설치·호환 검증 후 표와 `compatibility.json`을 함께 갱신해야 하며,
+그 전에는 0.14.0 공개 배포 완료로 표시하지 않는다.
 
 ## Python 생산자 왕복 검증 (2026-10-11)
 
@@ -73,7 +86,7 @@ registry 설치본과 cold-cache CI의 실제 버전을 대조한다. 과거 발
 
 | 도구 | 호환 버전 | 설치 | 이 세트가 제공하는 기능 |
 | --- | --- | --- | --- |
-| isthmus-cli | **0.13.1** | `npm install --global isthmus-cli@0.13.1` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`·`trace-navigation`, GitHub Action `ictechgy/isthmus@v0.13.1` |
+| isthmus-cli | **0.14.0** | `npm install --global isthmus-cli@0.14.0` (Node 22.18.0 이상) | `check`·`query`·`graph`·`diff`(`--http` 포함)·`retentions`·`impact`·`preflight`·`trace`·`surface export`·`verify-runtime`·`extract-js`·`trace-navigation`, GitHub Action `ictechgy/isthmus@v0.14.0` |
 | cartograph | **0.25.0** | GitHub Release 아카이브(`cartograph-0.25.0-macos-universal.tar.gz`), `brew install ictechgy/tap/cartograph`(tap의 최신판) | `bridges --target flutter`, `bridges --messages`·`--events`(v2), Expo Modules DSL(`mechanism`), `impact`, `dead --external-retentions`, `schema`(persistence), `routes`(http `route-call`: URLSession·Alamofire·Moya), `impact --format language-traversal`(`--roots-from`) |
 | kartograph | **0.20.0** | GitHub Release 아카이브(`kartograph-0.20.0.tar`/`.zip`), Gradle plugin `io.github.ictechgy.kartograph` | `impact --graph-file`, `bridges --target flutter --messages --graph-file`, `bridges --target flutter --events`, Expo Modules DSL(`mechanism`), `schema`(persistence), `routes --role client`(Retrofit·RestTemplate·RestClient·WebClient·`@HttpExchange`)·`--role server`(Spring MVC·WebFlux), `impact --format language-traversal`, `reach` |
 | dartograph | **0.16.1** | `dart pub global activate dartograph 0.16.1` | `bridges --format json`, `bridges --messages`·`--events --format json`(v2), `impact`, `schema`(persistence, `symbol.usr`), `routes --role client`(http·dio·retrofit.dart·chopper), `impact --format language-traversal` |

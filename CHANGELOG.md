@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-22
+
 ### Added
 
 - `diff --contracts`와 MCP `contract_diff`가 같은 HTTP route/DB relation의 명시 필드 변경을
