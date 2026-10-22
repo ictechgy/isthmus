@@ -101,6 +101,7 @@ test('tools/list는 모든 도구와 입력 스키마를 나열한다', async ()
     (tool: { name: string }) => tool.name,
   );
   assert.deepEqual(names, [
+    'contract_diff',
     'check',
     'query',
     'graph',

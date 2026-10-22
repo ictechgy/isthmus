@@ -1,0 +1,78 @@
+name: Data contract producer integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ictechgy/tsograph
+          ref: a214c4f1eead305fb7299933dc646ef94bd06d5b
+          path: .producer/tsograph
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ictechgy/schemagraph
+          ref: bfe841ea9375a3d398d72b870be3bc84a2f2f285
+          path: .producer/schemagraph
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - name: Build and install the exact npm candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm pack --ignore-scripts --json > "$RUNNER_TEMP/isthmus-pack.json"
+          consumer_archive="$PWD/$(node -p "require(process.argv[1])[0].filename" "$RUNNER_TEMP/isthmus-pack.json")"
+          npm install --prefix "$RUNNER_TEMP/consumer" --ignore-scripts "$consumer_archive"
+          cd .producer/tsograph
+          npm ci
+          npm run build
+          npm pack --ignore-scripts --json > "$RUNNER_TEMP/tsograph-pack.json"
+          producer_archive="$PWD/$(node -p "require(process.argv[1])[0].filename" "$RUNNER_TEMP/tsograph-pack.json")"
+          npm install --prefix "$RUNNER_TEMP/producer" --ignore-scripts "$producer_archive"
+      - name: Build the pinned database producer
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          cargo +1.96.0 build --manifest-path .producer/schemagraph/engine/Cargo.toml --locked -p schemagraph-cli
+      - name: Compare actual HTTP and database contracts through installed consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/data-contracts
+          node scripts/verify-data-contracts.mjs \
+            "$RUNNER_TEMP/producer/node_modules/tsograph/dist/cli/main.js" \
+            "$RUNNER_TEMP/consumer/node_modules/isthmus-cli/dist/cli/main.js" \
+            | tee build/data-contracts/http.json
+          node scripts/verify-db-contracts.mjs \
+            .producer/schemagraph/engine/target/debug/schemagraph \
+            "$RUNNER_TEMP/consumer/node_modules/isthmus-cli/dist/cli/main.js" \
+            | tee build/data-contracts/sql.json
+      - name: Preserve candidate integration evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: data-contract-candidate-evidence
+          path: build/data-contracts/
+          if-no-files-found: warn
+          retention-days: 7
