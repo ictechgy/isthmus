@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { DataContract, DataContractField } from '../exchange/data-contract.ts';
 import type { BridgeFact, BridgeFactsDocument } from '../exchange/parse.ts';
-import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments, type BridgeEndpoint } from '../join/join.ts';
+import { BridgeJoinValidationError, isBridgeJoinDeferred, joinBridgeDocuments, relationDeclKey, type BridgeEndpoint } from '../join/join.ts';
 
 /** 계약 비교의 준비/출력 상한이다. 예산 초과는 부분적인 성공으로 바꾸지 않는다. */
 export const MAX_CONTRACT_DECLARATIONS = 2000;
 export const MAX_CONTRACT_COMPARISON_FIELDS = 100_000;
 const MAX_CALLERS = 50;
 interface Declaration { fact: BridgeFact; document: BridgeFactsDocument }
+interface ContractObservation { readonly declaration: BridgeEndpoint; readonly contract: DataContract | null }
 /** 필드의 관찰 차이다. 방향만 보고 실제 클라이언트 실패를 추측하지 않는다. */
 export interface ContractFieldChange {
   readonly reason: 'field-added' | 'field-removed' | 'field-changed';
@@ -20,6 +21,7 @@ export interface ContractChange {
   readonly reason: 'declaration-added' | 'declaration-removed' | 'contract-changed' | 'contract-unavailable' | 'contract-ambiguous';
   readonly changes: readonly ContractFieldChange[];
   readonly evidence: { readonly before: readonly BridgeEndpoint[]; readonly after: readonly BridgeEndpoint[] };
+  readonly contractObservations: { readonly before: readonly ContractObservation[]; readonly after: readonly ContractObservation[] };
   readonly reviewCallers: { readonly before: readonly BridgeEndpoint[]; readonly after: readonly BridgeEndpoint[] };
   readonly callersOmitted: { readonly before: number; readonly after: number };
   readonly limitations: readonly string[];
@@ -42,10 +44,16 @@ export function createContractDiff(before: readonly BridgeFactsDocument[], after
       : left[0]!.fact.dataContract === undefined || right[0]!.fact.dataContract === undefined ? 'contract-unavailable'
       : a[0] !== b[0] ? 'contract-changed' : undefined;
     if (reason === undefined) continue;
+    const empty: DataContract = { version: 1, fields: [], limitations: [] };
     const changes = reason === 'contract-changed'
-      ? compareFields(left[0]!.fact.dataContract!, right[0]!.fact.dataContract!) : [];
+      ? compareFields(left[0]!.fact.dataContract!, right[0]!.fact.dataContract!)
+      : reason === 'declaration-removed' && a.length === 1 && left[0]!.fact.dataContract !== undefined
+        ? compareFields(left[0]!.fact.dataContract!, empty)
+        : reason === 'declaration-added' && b.length === 1 && right[0]!.fact.dataContract !== undefined
+          ? compareFields(empty, right[0]!.fact.dataContract!) : [];
     const beforeCalls = calls.before.callers.get(key) ?? [], afterCalls = calls.after.callers.get(key) ?? [];
     rows.push({ key, reason, changes, evidence: { before: left.map(endpoint), after: right.map(endpoint) },
+      contractObservations: { before: left.map(observation), after: right.map(observation) },
       reviewCallers: { before: beforeCalls.slice(0, MAX_CALLERS), after: afterCalls.slice(0, MAX_CALLERS) },
       callersOmitted: { before: Math.max(0, beforeCalls.length - MAX_CALLERS), after: Math.max(0, afterCalls.length - MAX_CALLERS) },
       limitations: [...new Set([...left, ...right].flatMap(({ fact }) => fact.dataContract?.limitations ?? ['contract-not-collected']))].sort() });
@@ -56,18 +64,22 @@ export function createContractDiff(before: readonly BridgeFactsDocument[], after
     complete: false, status: rows.length > 0 ? 'review-required' : 'no-changes-observed',
     scope: { granularity: 'explicit-fields', languageTraversal: 'not-assessed', runtimeCompatibility: 'not-assessed',
       testPrediction: 'not-assessed', freshness: 'unknown-source-build-alignment',
+      unresolvedCallerBindings: { before: calls.before.ambiguousTotal, after: calls.after.ambiguousTotal },
       unresolvedDynamicDeclarations: { before: before.reduce((n, doc) => n + doc.facts.filter((fact) => isDeclaration(fact) && fact.dynamic).length, 0),
         after: after.reduce((n, doc) => n + doc.facts.filter((fact) => isDeclaration(fact) && fact.dynamic).length, 0) } },
     summary: { total: rows.length, shown: Math.min(rows.length, limit), omitted: Math.max(0, rows.length - limit),
       comparedDeclarations: keys.length, fieldChanges: rows.reduce((sum, row) => sum + row.changes.length, 0) },
     changes: rows.slice(0, limit),
-    limits: { declarations: MAX_CONTRACT_DECLARATIONS, fields: MAX_CONTRACT_COMPARISON_FIELDS, output: limit, callersPerSnapshot: MAX_CALLERS },
-    truncated: rows.length > limit || rows.some((row) => row.callersOmitted.before + row.callersOmitted.after > 0),
+    unresolvedCallers: { before: calls.before.ambiguous, after: calls.after.ambiguous },
+    limits: { declarations: MAX_CONTRACT_DECLARATIONS, fields: MAX_CONTRACT_COMPARISON_FIELDS, output: limit,
+      callersPerSnapshot: MAX_CALLERS, unresolvedBindings: MAX_CALLERS, candidatesPerBinding: MAX_CALLERS },
+    truncated: rows.length > limit || calls.before.truncated || calls.after.truncated || rows.some((row) => row.callersOmitted.before + row.callersOmitted.after > 0),
     limitations: { before: before.flatMap((doc) => doc.limitations), after: after.flatMap((doc) => doc.limitations),
       clients: clients.flatMap((doc) => doc.limitations), contracts: [...new Set(incomplete)].sort(),
       joins: { before: calls.before.limitations, after: calls.after.limitations },
       analysis: ['Explicit producer fields only; omitted fields and dynamic paths are unknown.',
         'Caller matches, including ambiguous route bindings, are review candidates, not observed failures or permission to skip tests.',
+        ...(calls.before.ambiguousTotal + calls.after.ambiguousTotal > 0 ? ['Ambiguous SQL caller bindings remain unresolved; inspect unresolvedCallers and candidate declarations.'] : []),
         ...(clients.length === 0 ? ['Client sources were not supplied.'] : [])] },
     inputs: { before: before.map(identity), after: after.map(identity), clients: clients.map(identity) } };
 }
@@ -112,6 +124,7 @@ function endpoint({ fact, document }: Declaration): BridgeEndpoint {
   return { platform: document.platform, ...(fact.location === undefined ? {} : { location: fact.location }),
     ...(fact.symbol === undefined ? {} : { symbol: fact.symbol }) };
 }
+function observation(item: Declaration): ContractObservation { return { declaration: endpoint(item), contract: item.fact.dataContract ?? null }; }
 function identity(document: BridgeFactsDocument) {
   return { platform: document.platform, tool: document.tool, generatedAt: document.generatedAt,
     project: document.project, target: document.target,
@@ -143,8 +156,18 @@ function connectedCallers(declarations_: readonly BridgeFactsDocument[], clients
     facts: doc.facts.filter((fact) => !isDeclaration(fact)), ...(doc.target === 'http' ? { roles: ['client'] } : {}) }));
   const joined = joinBridgeDocuments([...docs, ...clientDocs], { composition: 'trace' });
   if (isBridgeJoinDeferred(joined)) throw new BridgeJoinValidationError('Contract caller join is deferred; split input domains.');
-  for (const relation of joined.matchedRelations) result.set(JSON.stringify(['default', 'relation-decl', null, null, relation.channel]), [...relation.uses]);
-  for (const column of joined.matchedColumns) result.set(JSON.stringify(['default', 'relation-decl', null, column.column, column.channel]), [...column.uses]);
+  // SQL join의 정규 신원을 재사용한다. 위치·symbol은 없거나 공유될 수 있어 식별 키가 아니다.
+  const sqlIdentities = new Map<string, Set<string>>();
+  for (const document of declarations_) for (const fact of document.facts) if (fact.kind === 'relation-decl' && fact.channel !== null) {
+    const key = relationDeclKey(fact.channel, fact.method);
+    const identities = sqlIdentities.get(key) ?? new Set<string>();
+    identities.add(keyFor(fact, document));
+    sqlIdentities.set(key, identities);
+  }
+  for (const match of [...joined.matchedRelations, ...joined.matchedColumns]) {
+    const identity = relationDeclKey(match.channel, 'column' in match && typeof match.column === 'string' ? match.column : undefined);
+    for (const key of sqlIdentities.get(identity) ?? []) result.set(key, [...(result.get(key) ?? []), ...match.uses]);
+  }
   for (const scope of joined.routes?.scopes ?? []) {
     const callIndex = { decl: new Map<number, BridgeEndpoint[]>(), contract: new Map<number, BridgeEndpoint[]>() };
     for (const call of scope.calls) for (const side of ['decl', 'contract'] as const) {
@@ -165,5 +188,10 @@ function connectedCallers(declarations_: readonly BridgeFactsDocument[], clients
   }
   for (const [key, items] of result) result.set(key, [...new Map(items.map((item) => [JSON.stringify(item), item])).entries()]
     .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, item]) => item));
-  return { callers: result, limitations: joined.limitations };
+  const ambiguous = joined.ambiguousRelationUses.slice(0, MAX_CALLERS).map((binding) => ({
+    channel: binding.channel, candidates: binding.candidates.slice(0, MAX_CALLERS),
+    candidatesOmitted: Math.max(0, binding.candidates.length - MAX_CALLERS), uses: binding.uses.slice(0, MAX_CALLERS),
+    callersOmitted: Math.max(0, binding.uses.length - MAX_CALLERS) }));
+  return { callers: result, limitations: joined.limitations, ambiguous, ambiguousTotal: joined.ambiguousRelationUses.length,
+    truncated: joined.ambiguousRelationUses.length > MAX_CALLERS || ambiguous.some((row) => row.candidatesOmitted + row.callersOmitted > 0) };
 }

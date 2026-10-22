@@ -55,6 +55,51 @@ test('unchanged HTTP route still exposes changed response field and connected cl
   assert.equal(report.changes[0]!.reviewCallers.after[0]!.location!.path, 'client.ts');
 });
 
+test('SQL case-normalized joins keep the exact declaration caller identity', () => {
+  const column = (type: string) => ({ ...sql(contract(type)), method: 'Email', symbol: { qualifiedName: 'public.users.Email', usr: 'public.users.Email' } });
+  const client = doc('js', 'persistence', [{ kind: 'relation-use', channel: 'PUBLIC.USERS', method: 'email', dynamic: false,
+    location: { path: 'client.ts', line: 1, column: 1 },
+    symbol: { qualifiedName: 'readEmail', usr: 'app:readEmail' } }]);
+  const report = createContractDiff([catalog([sql(), column('text')])], [catalog([sql(), column('int')])], [client]);
+  assert.equal(report.changes[0]!.reviewCallers.after[0]?.symbol?.usr, 'app:readEmail');
+  const bare = (channel: string, type: string) => ({ kind: 'relation-decl', channel, dynamic: false,
+    symbol: { qualifiedName: 'sharedCatalogCollector' }, dataContract: contract(type) });
+  const separate = createContractDiff([catalog([bare('public.users', 'text'), bare('public.audit', 'text')])],
+    [catalog([bare('public.users', 'int'), bare('public.audit', 'int')])], [users]);
+  assert.equal(separate.changes.find((row) => row.key.includes('public.users'))!.reviewCallers.after.length, 1);
+  assert.equal(separate.changes.find((row) => row.key.includes('public.audit'))!.reviewCallers.after.length, 0);
+});
+
+test('added and removed declarations retain field deltas; unknown counterparts retain known observations only', () => {
+  const removed = createContractDiff([spec([route('/users')])], [spec([])], []);
+  assert.equal(removed.changes[0]!.changes[0]?.reason, 'field-removed');
+  assert.equal(removed.changes[0]!.contractObservations.before[0]!.contract!.fields[0]!.type, 'string');
+  const added = createContractDiff([spec([])], [spec([route('/users')])], []);
+  assert.equal(added.changes[0]!.changes[0]?.reason, 'field-added');
+  const unknown = createContractDiff([catalog([sql()])], [catalog([sql(null)])], []);
+  assert.deepEqual(unknown.changes[0]!.changes, []);
+  assert.equal(unknown.changes[0]!.contractObservations.before[0]!.contract!.fields[0]!.type, 'text');
+  assert.equal(unknown.changes[0]!.contractObservations.after[0]!.contract, null);
+});
+
+test('ambiguous SQL callers remain explicit unresolved evidence instead of zero observed callers', () => {
+  const before = catalog([sql(contract(), 'public.users'), sql(contract(), 'archive.users')]);
+  const after = catalog([sql(contract('int'), 'public.users'), sql(contract('int'), 'archive.users')]);
+  const client = doc('js', 'persistence', [{ kind: 'relation-use', channel: 'users', dynamic: false,
+    location: { path: 'client.ts', line: 1, column: 1 },
+    symbol: { qualifiedName: 'loadUsers', usr: 'app:loadUsers' } }]);
+  const report = createContractDiff([before], [after], [client]);
+  assert.equal(report.scope.unresolvedCallerBindings.after, 1);
+  assert.deepEqual(report.unresolvedCallers.after[0]!.candidates, ['archive.users', 'public.users']);
+  assert.equal(report.unresolvedCallers.after[0]!.uses[0]!.symbol!.usr, 'app:loadUsers');
+  const many = catalog(Array.from({ length: 61 }, (_, i) => sql(contract(), `schema${i}.users`)));
+  const limited = createContractDiff([many], [many], [client]);
+  assert.equal(limited.summary.total, 0);
+  assert.equal(limited.unresolvedCallers.after[0]!.candidates.length, 50);
+  assert.equal(limited.unresolvedCallers.after[0]!.candidatesOmitted, 11);
+  assert.equal(limited.truncated, true);
+});
+
 test('empty legacy OpenAPI snapshot reports deletion and retains historical caller', () => {
   const report = createContractDiff([spec([route('/users')])], [spec([])], [callers]);
   assert.equal(report.changes[0]!.reason, 'declaration-removed');

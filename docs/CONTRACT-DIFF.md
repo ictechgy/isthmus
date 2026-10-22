@@ -24,6 +24,14 @@ does not run full producer traversal; use those exact IDs with producer impact o
 the existing trace context for continuation. It does not claim test failures or
 authorize skipping tests. Equal fields and empty changes do not establish safety.
 
+`contractObservations` preserves every known contract, including the known side
+of unavailable or ambiguous comparisons. `null` means unknown, never an empty
+schema. A genuine declaration addition/removal compares against an empty side.
+SQL callers are keyed through matched declaration identities, preserving
+case-normalized matches. Ambiguous SQL relation bindings remain separately in
+`unresolvedCallers`; totals and omissions are explicit and strict mode flags them.
+At most 50 unresolved bindings, candidates and callers per binding are shown.
+
 `complete` remains false. Missing contracts, dynamic declarations, producer and
 join limitations, capture scope, 2,000 declaration/100,000 field preparation caps,
 output limits, and caller omissions remain visible. Each change shows at most 50

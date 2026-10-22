@@ -32,6 +32,7 @@ export async function runContractDiffCommand(args: readonly string[], readTextFi
     return { standardOutput: encodeSortedJson({ ...report, provenance: { inputTextSha256,
       order: 'before-then-after-then-clients', sourceBuildAlignment: 'unknown' } }, parsed.compact), standardError: '',
     exitCode: values.includes('--strict') && (report.summary.total > 0 || report.limitations.contracts.length > 0 ||
+      report.scope.unresolvedCallerBindings.before + report.scope.unresolvedCallerBindings.after > 0 ||
       report.limitations.before.length + report.limitations.after.length + report.limitations.clients.length +
       report.limitations.joins.before.length + report.limitations.joins.after.length > 0) ? 1 : 0 };
   } catch (error) { return inputFailureResult(error) ?? internalError(); }
