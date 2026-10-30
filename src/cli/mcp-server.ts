@@ -519,6 +519,13 @@ function buildToolArgv(
       const before = stringArray(args.before), after = stringArray(args.after);
       const clients = args.clients === undefined ? [] : stringArray(args.clients);
       if (before === undefined || after === undefined || clients === undefined) return undefined;
+      if (before.length === 0 || after.length === 0
+          || (args.clients !== undefined && clients.length === 0)) return undefined;
+      // These arrays delimit CLI argument groups: an option-looking path would
+      // change the requested input roles or strictness instead of naming a file.
+      if ([...before, ...after, ...clients].some((path) => path.length === 0 || path.startsWith('-'))) {
+        return undefined;
+      }
       return ['diff', '--contracts', '--before', ...before, '--after', ...after,
         ...(clients.length === 0 ? [] : ['--clients', ...clients]), '--limit', String(args.limit ?? 100),
         ...booleanFlag('--strict', args.strict), ...booleanFlag('--compact', args.compact)];

@@ -25,6 +25,68 @@ const spec = (facts: unknown[]) => doc('openapi', facts.length ? 'http' : null, 
 const callers = doc('js', 'http', [{ kind: 'route-call', method: 'GET', channel: '/users', dynamic: false, pathAnchor: 'root',
   location: { path: 'client.ts', line: 4, column: 1 }, symbol: { qualifiedName: 'fetchUsers', usr: 'client:fetchUsers' } }], { roles: ['client'] });
 
+test('MCP contract_diff path arrays cannot introduce CLI options before any input read', async () => {
+  const reads: string[] = [];
+  const local = createMcpSession({ readTextFile: async (path) => {
+    reads.push(path);
+    return JSON.stringify(path === 'client.json' ? callers : spec([route('/users')]));
+  } });
+  for (const key of ['before', 'after', 'clients']) {
+    for (const paths of [['old.json', '--clients', 'client.json'], ['--strict'], ['--'], ['']]) {
+      const args = { before: ['old.json'], after: ['new.json'], strict: false, [key]: paths };
+      const response = JSON.parse((await local.handleLine(JSON.stringify({
+        jsonrpc: '2.0', id: 101, method: 'tools/call',
+        params: { name: 'contract_diff', arguments: args },
+      })))!);
+      assert.equal(response.error?.code, -32602, JSON.stringify({ key, paths, response }));
+      assert.deepEqual(reads, [], 'invalid MCP paths must be rejected before file IO');
+    }
+  }
+});
+
+test('MCP contract_diff enforces every advertised path-array minItems before input reads', async () => {
+  const reads: string[] = [];
+  const local = createMcpSession({ readTextFile: async (path) => {
+    reads.push(path);
+    return JSON.stringify(spec([route('/users')]));
+  } });
+  for (const key of ['before', 'after', 'clients']) {
+    const response = JSON.parse((await local.handleLine(JSON.stringify({
+      jsonrpc: '2.0', id: 102, method: 'tools/call', params: {
+        name: 'contract_diff', arguments: { before: ['old.json'], after: ['new.json'], [key]: [] },
+      },
+    })))!);
+    assert.equal(response.error?.code, -32602, JSON.stringify({ key, response }));
+    assert.deepEqual(reads, []);
+  }
+});
+
+test('MCP contract_diff retains optional clients and literal non-option path spellings', async () => {
+  for (const withClients of [false, true]) {
+    const reads: string[] = [];
+    const local = createMcpSession({ readTextFile: async (path) => {
+      reads.push(path);
+      return JSON.stringify(path === 'client facts.json' ? callers :
+        spec([route('/users', path === './--old.json' ? 'string' : 'number')]));
+    } });
+    const response = JSON.parse((await local.handleLine(JSON.stringify({
+      jsonrpc: '2.0', id: 103, method: 'tools/call', params: { name: 'contract_diff', arguments: {
+        before: ['./--old.json'], after: ['new facts.json'],
+        ...(withClients ? { clients: ['client facts.json'] } : {}),
+      } },
+    })))!);
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, false);
+    const report = JSON.parse(response.result.content[0].text);
+    assert.deepEqual(reads, ['./--old.json', 'new facts.json', ...(withClients ? ['client facts.json'] : [])]);
+    assert.equal(report.summary.total, 1);
+    assert.equal(report.inputs.clients.length, withClients ? 1 : 0);
+    assert.equal(report.changes[0].reviewCallers.after.length, withClients ? 1 : 0);
+    assert.equal(report.complete, false);
+    assert.equal(report.scope.runtimeCompatibility, 'not-assessed');
+  }
+});
+
 test('same-name column type/nullability changes retain exact field evidence and actual relation callers', () => {
   const report = createContractDiff([catalog([sql()])], [catalog([sql(contract('integer', true))])], [users]);
   assert.equal(report.summary.total, 1);
