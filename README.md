@@ -1,5 +1,9 @@
 # isthmus
 
+For explicit HTTP/DB field changes at the same route or relation, use the additive
+[`diff --contracts` workflow](docs/CONTRACT-DIFF.md). It preserves independent
+before/after caller evidence, unknown freshness and bounded coverage.
+
 The optional [AI-DLC adapter](docs/AI-DLC-ADAPTER.md) forwards existing `task` results
 to planning and validation through a separately composed experimental plugin.
 Recorded capture evidence does not verify the current checkout.
@@ -43,7 +47,7 @@ It reuses trace paths and check rules, prioritizes explicitly mapped recorded te
 and preserves unknowns when output is bounded. Manual input claims remain unverified,
 including when artifact bytes match; this is not compiler or execution attestation.
 
-**0.13.1** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
+**0.14.0** supports Flutter Dart ↔ Swift/Kotlin change preflight, MethodChannel and
 Pigeon/BasicMessageChannel facts, declared runtime scenarios, and content-based capture reuse.
 It adds `impact --file`/`--symbol`/`--changes` (with lossless `--compact` JSON and a
 gap-aware `--strict` gate), `preflight <context.json>` with `--summary`/`--explain` over
@@ -52,7 +56,7 @@ apps have exercised public plugin APIs. See [preflight](docs/PREFLIGHT.md),
 [runtime verification](docs/RUNTIME.md), and
 [building from pinned source commits](docs/TOOLCHAIN.md) for setup and measured limits.
 
-The compatible producer set for **0.13.1** is:
+The compatible producer set for **0.14.0** is:
 cartograph **0.25.0**, kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**,
 gartograph **0.9.1**, rustograph **0.4.1**, tsograph **0.10.0**, and pythograph **0.2.1** — see
 [compatible versions (Korean)](docs/COMPATIBILITY.md) for install commands, a

@@ -1,5 +1,8 @@
 # 브리지 사실 교환 형식 (버전 1)
 
+선택적 명시 데이터 계약 `dataContract`와 전후 비교는 [CONTRACT-DIFF.md](CONTRACT-DIFF.md)에
+정의한다. 기존 route/bridge 조인의 의미와 always-incomplete 영향 계약은 바꾸지 않는다.
+
 isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.md),
 [언어 간 전이 분석과 수집](PREFLIGHT.md),
 [런타임 통신 검증](RUNTIME.md), 생산자 순회 결과인 [`language-traversal` v1](LANGUAGE-TRAVERSAL.md)과

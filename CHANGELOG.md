@@ -4,7 +4,14 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-22
+
 ### Added
+
+- `diff --contracts`와 MCP `contract_diff`가 같은 HTTP route/DB relation의 명시 필드 변경을
+  비교한다. 전후 조인을 분리해 삭제 호출자를 보존하고 데이터 타입·nullability·필수 여부,
+  미수집·동적 경로·내용 신원·범위·출력 제한을 남긴다. 정적 검토 후보이며 런타임 실패 예측은 아니다.
+  [계약과 이전 버전 호환성](docs/CONTRACT-DIFF.md)을 참고한다.
 
 - 선택적 AI-DLC plugin adapter가 `delivery-planning`·`build-and-test`에 기존 task 근거를 전달한다.
   원본 bounded task·해시와 stale/unknown/unverified/잘림을 보존하며 현재 checkout의 pass로

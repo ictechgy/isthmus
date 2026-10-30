@@ -1,5 +1,8 @@
 # isthmus
 
+같은 HTTP route/DB relation의 명시 필드 변경은 새 [`diff --contracts`](docs/CONTRACT-DIFF.md)로
+비교한다. 전후 호출 근거·미확인 신선도·분석/출력 범위는 분리해 보존한다.
+
 선택적 [AI-DLC adapter](docs/AI-DLC-ADAPTER.md)는 기존 `task` 결과를 계획·검증 단계에 전달한다.
 별도로 compose하는 실험적 plugin이며 기록 당시의 근거와 현재 checkout 검증을 구분한다.
 
@@ -47,7 +50,7 @@ isthmus는 각 언어 도구가 내보낸 **브리지 사실**(채널 이름 · 
 검증 앱에서 공개 플러그인 API를 실행했다. 설정과 측정 범위는 [사전 점검](docs/PREFLIGHT.md),
 [런타임 검증](docs/RUNTIME.md), [고정 소스 구축](docs/TOOLCHAIN.md)을 참조한다.
 
-**0.13.1**의 호환 producer 세트는 cartograph **0.25.0**,
+**0.14.0**의 호환 producer 세트는 cartograph **0.25.0**,
 kartograph **0.20.0**, dartograph **0.16.1**, schemagraph **0.7.0**, gartograph **0.9.1**,
 rustograph **0.4.1**, tsograph **0.10.0**, pythograph **0.2.1**이다 — 설치 명령·고정 예제·CI 예시는
 [호환 버전](docs/COMPATIBILITY.md)을 참조한다. 이전 npm 아카이브는 발행 당시의
