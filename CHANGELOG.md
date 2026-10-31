@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+- Public cold-cache installation uses a separate pinned released manifest, selected explicitly by `--released`; source candidate/package version equality remains mandatory.
+
+- Accept strict trailing-slash catch-all prefixes emitted by tsograph, and count a
+  prefix call against its original handler without weakening missing-original validation.
+
 ## [0.14.0] - 2026-10-22
 
 ### Added
