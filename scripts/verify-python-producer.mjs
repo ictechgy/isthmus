@@ -1,6 +1,6 @@
 /** 설치된 Python 생산자의 실제 HTTP·호출 그래프를 consumer까지 왕복 검증한다. */
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -38,8 +38,10 @@ export function assertPythonTrace(trace) {
 export function verifyPythonProducer(isthmusMain, pythograph, run = runChild) {
   const work = mkdtempSync(join(tmpdir(), 'isthmus-python-'));
   try {
-    const project = join(work, 'project');
-    mkdirSync(project, { mode: 0o700 });
+    const projectDirectory = join(work, 'project');
+    mkdirSync(projectDirectory, { mode: 0o700 });
+    // 생산자는 canonical project를 낸다. macOS /var 별칭도 같은 실제 루트로 대조한다.
+    const project = realpathSync(projectDirectory);
     writeFileSync(join(project, 'app.py'), [
       'from pathlib import Path', 'Path(__file__).with_name("executed").write_text("executed")',
       'from flask import Flask', 'import requests',

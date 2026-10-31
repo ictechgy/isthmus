@@ -30,13 +30,13 @@ jobs:
           node-version: '22.18.0'
       - name: Read compatible isthmus version
         id: compatibility
-        run: echo "isthmus=$(node -p "require('./compatibility.json').isthmus")" >> "$GITHUB_OUTPUT"
+        run: echo "isthmus=$(node -p "require('./compatibility.released.json').isthmus")" >> "$GITHUB_OUTPUT"
       - run: npm install --global isthmus-cli@${{ steps.compatibility.outputs.isthmus }}
-      - run: node scripts/verify-installed-compatibility.mjs isthmus="$(command -v isthmus)"
+      - run: node scripts/verify-installed-compatibility.mjs --released isthmus="$(command -v isthmus)"
       - run: node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
 
   # 발행 producer 설치본이 fixtures/bridge-app을 스캔해 Dart↔Swift↔Kotlin
-  # 3방향 조인까지 재현한다. isthmus와 producer를 compatibility.json 버전으로
+  # 3방향 조인까지 재현한다. isthmus와 producer를 compatibility.released.json 버전으로
   # 고정하고 설치본의 --version을 정본과 대조한다.
   # cartograph는 brew 대신 GitHub Release 아카이브를 받는다 — tap에는 최신
   # formula 하나뿐이라 brew로는 버전을 고정할 수 없고(새 발행마다 이 job이
@@ -61,10 +61,10 @@ jobs:
       - name: Read compatible versions
         id: compatibility
         run: |
-          echo "isthmus=$(node -p "require('./compatibility.json').isthmus")" >> "$GITHUB_OUTPUT"
-          echo "cartograph=$(node -p "require('./compatibility.json').producers.cartograph")" >> "$GITHUB_OUTPUT"
-          echo "dartograph=$(node -p "require('./compatibility.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
-          echo "kartograph=$(node -p "require('./compatibility.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
+          echo "isthmus=$(node -p "require('./compatibility.released.json').isthmus")" >> "$GITHUB_OUTPUT"
+          echo "cartograph=$(node -p "require('./compatibility.released.json').producers.cartograph")" >> "$GITHUB_OUTPUT"
+          echo "dartograph=$(node -p "require('./compatibility.released.json').producers.dartograph")" >> "$GITHUB_OUTPUT"
+          echo "kartograph=$(node -p "require('./compatibility.released.json').producers.kartograph")" >> "$GITHUB_OUTPUT"
       - name: Install cartograph release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,7 +117,7 @@ jobs:
           "$KARTOGRAPH_BIN" --version
       - name: Verify installed versions
         run: |
-          node scripts/verify-installed-compatibility.mjs \
+          node scripts/verify-installed-compatibility.mjs --released \
             isthmus="$(command -v isthmus)" \
             cartograph="$RUNNER_TEMP/cartograph/cartograph/cartograph" \
             dartograph="$HOME/.pub-cache/bin/dartograph" \
@@ -128,7 +128,7 @@ jobs:
             "$RUNNER_TEMP/cartograph/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$KARTOGRAPH_BIN"
 
   # API 영향 producer(schemagraph·gartograph·rustograph)의 발행 아카이브를
-  # compatibility.json 버전으로 받아 발행 checksum과 --version을 대조한다.
+  # compatibility.released.json 버전으로 받아 발행 checksum과 --version을 대조한다.
   # tsograph는 아카이브 대신 npm 발행본을 설치해 --version만 대조한다.
   # 이 job은 설치·버전만 확인한다 — 이 도구들의 문서로 trace까지 잇는 e2e는
   # 각 producer 저장소의 검증 범위다. Linux x86_64 아카이브를 쓰며 npm
@@ -147,10 +147,10 @@ jobs:
       - name: Read compatible versions
         id: compatibility
         run: |
-          echo "schemagraph=$(node -p "require('./compatibility.json').producers.schemagraph")" >> "$GITHUB_OUTPUT"
-          echo "gartograph=$(node -p "require('./compatibility.json').producers.gartograph")" >> "$GITHUB_OUTPUT"
-          echo "rustograph=$(node -p "require('./compatibility.json').producers.rustograph")" >> "$GITHUB_OUTPUT"
-          echo "tsograph=$(node -p "require('./compatibility.json').producers.tsograph")" >> "$GITHUB_OUTPUT"
+          echo "schemagraph=$(node -p "require('./compatibility.released.json').producers.schemagraph")" >> "$GITHUB_OUTPUT"
+          echo "gartograph=$(node -p "require('./compatibility.released.json').producers.gartograph")" >> "$GITHUB_OUTPUT"
+          echo "rustograph=$(node -p "require('./compatibility.released.json').producers.rustograph")" >> "$GITHUB_OUTPUT"
+          echo "tsograph=$(node -p "require('./compatibility.released.json').producers.tsograph")" >> "$GITHUB_OUTPUT"
       - name: Download release archives and verify checksums
         env:
           SCHEMAGRAPH_VERSION: ${{ steps.compatibility.outputs.schemagraph }}
@@ -188,7 +188,7 @@ jobs:
           RUSTOGRAPH_VERSION: ${{ steps.compatibility.outputs.rustograph }}
         run: |
           api="$RUNNER_TEMP/api"
-          node scripts/verify-installed-compatibility.mjs \
+          node scripts/verify-installed-compatibility.mjs --released \
             schemagraph="$api/schemagraph/schemagraph-$SCHEMAGRAPH_VERSION/schemagraph" \
             gartograph="$api/gartograph/gartograph-$GARTOGRAPH_VERSION-linux-amd64/gartograph" \
             rustograph="$api/rustograph/rustograph-$RUSTOGRAPH_VERSION-linux-amd64/rustograph" \
@@ -208,11 +208,11 @@ jobs:
       - name: Install pinned published tools in isolated locations
         run: |
           python3 -m venv "$RUNNER_TEMP/python-producer"
-          "$RUNNER_TEMP/python-producer/bin/python" -m pip install "pythograph==$(node -p "require('./compatibility.json').producers.pythograph")"
-          npm install --prefix "$RUNNER_TEMP/isthmus" "isthmus-cli@$(node -p "require('./compatibility.json').isthmus")"
+          "$RUNNER_TEMP/python-producer/bin/python" -m pip install "pythograph==$(node -p "require('./compatibility.released.json').producers.pythograph")"
+          npm install --prefix "$RUNNER_TEMP/isthmus" "isthmus-cli@$(node -p "require('./compatibility.released.json').isthmus")"
       - name: Verify versions and producer-consumer behavior
         run: |
-          node scripts/verify-installed-compatibility.mjs \
+          node scripts/verify-installed-compatibility.mjs --released \
             isthmus="$RUNNER_TEMP/isthmus/node_modules/.bin/isthmus" \
             pythograph="$RUNNER_TEMP/python-producer/bin/pythograph"
           node scripts/verify-python-producer.mjs \

@@ -34,3 +34,25 @@ test('설치 버전이 정본과 같으면 통과하고 다르면 실패한다',
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('발행 세트 선택은 소스 후보와 분리되고 불일치를 계속 거부한다', () => {
+  const released = JSON.parse(readFileSync('compatibility.released.json', 'utf8'));
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-released-check-'));
+  try {
+    const executable = join(directory, 'isthmus');
+    writeFileSync(executable, `#!/bin/sh\necho "isthmus ${released.isthmus}"\n`);
+    chmodSync(executable, 0o755);
+    const pass = runChild(process.execPath, ['scripts/verify-installed-compatibility.mjs', '--released', `isthmus=${executable}`]);
+    assert.equal(pass.status, 0, pass.stderr);
+    assert.match(pass.stdout, /compatibility\.released\.json/u);
+    if (released.isthmus !== compatibility.isthmus) {
+      const candidate = runChild(process.execPath, ['scripts/verify-installed-compatibility.mjs', `isthmus=${executable}`]);
+      assert.equal(candidate.status, 1);
+    }
+    writeFileSync(executable, '#!/bin/sh\necho "isthmus 0.0.0"\n');
+    const wrong = runChild(process.execPath, ['scripts/verify-installed-compatibility.mjs', '--released', `isthmus=${executable}`]);
+    assert.equal(wrong.status, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
