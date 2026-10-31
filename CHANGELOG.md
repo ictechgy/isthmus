@@ -4,7 +4,14 @@
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-10-22
+- Public cold-cache installation uses a separate pinned released manifest, selected explicitly by `--released`; source candidate/package version equality remains mandatory.
+
+- Accept strict trailing-slash catch-all prefixes emitted by tsograph, and count a
+  prefix call against its original handler without weakening missing-original validation.
+
+## [0.14.0] - Unreleased
+
+Prepared on 2026-10-22; this source candidate has not been published.
 
 ### Added
 
@@ -119,7 +126,7 @@
   있는 저장소면 조회 전에 실패한다. 부분 clone은 git 2.45 이상으로, 부분 clone이 아닌 checkout이나 빠진 객체를 미리 받아 둔
   신뢰하는 checkout(예: git 2.49 이상의 `git backfill`)에서 수집한다 — commit만 fetch해서는 빠진 blob이 들어오지 않는다.
 
-## [0.13.1] - Unreleased
+### Incorporated 0.13.1 source candidate (never published)
 
 아직 npm에 발행하지 않은 릴리스 후보이다.
 

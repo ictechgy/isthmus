@@ -1,13 +1,5 @@
 # isthmus
 
-For explicit HTTP/DB field changes at the same route or relation, use the additive
-[`diff --contracts` workflow](docs/CONTRACT-DIFF.md). It preserves independent
-before/after caller evidence, unknown freshness and bounded coverage.
-
-The optional [AI-DLC adapter](docs/AI-DLC-ADAPTER.md) forwards existing `task` results
-to planning and validation through a separately composed experimental plugin.
-Recorded capture evidence does not verify the current checkout.
-
 <img src="https://raw.githubusercontent.com/ictechgy/isthmus/main/icon.png" alt="isthmus's heron mascot" width="112" height="112" align="right">
 
 **Cross-language bridge calls in cross-platform apps, joined into one graph.**
@@ -19,6 +11,17 @@ joins them into one.
 
 The name refers to an isthmus — the narrow strip of land that connects two landmasses. On a
 map, it is the bridge.
+
+
+Verified on 2026-11-01: npm publishes **isthmus-cli 0.13.0**. This checkout and `compatibility.json` describe the **0.14.0 candidate**; candidate compatibility checks require a source build until that exact version is published. Do not infer registry availability from the source manifest.
+For explicit HTTP/DB field changes at the same route or relation, use the additive
+[`diff --contracts` workflow](docs/CONTRACT-DIFF.md). It preserves independent
+before/after caller evidence, unknown freshness and bounded coverage.
+
+The optional [AI-DLC adapter](docs/AI-DLC-ADAPTER.md) forwards existing `task` results
+to planning and validation through a separately composed experimental plugin.
+Recorded capture evidence does not verify the current checkout.
+
 
 ## What it does, and why
 

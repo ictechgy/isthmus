@@ -7,7 +7,7 @@ import type {
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import type { HttpMethod, RouteMethod } from '../exchange/route-template.ts';
-import { parseRouteTemplate } from '../exchange/route-template.ts';
+import { catchAllOriginalTemplates, parseRouteTemplate } from '../exchange/route-template.ts';
 import type { BridgeEndpoint, JoinLimitation, RouteEndpointInfo } from './join.ts';
 import {
   RouteIndex,
@@ -692,9 +692,10 @@ function markCalled(
   }
   for (const { declaration, endpoint } of facts) {
     if (!declaration.catchAllPrefix || !called.has(declaration.id)) continue;
-    const template = declaration.template === '/' ? '/{**}' : `${declaration.template}/{**}`;
-    const key = JSON.stringify([declaration.method, endpoint.symbol?.usr ?? null, template]);
-    for (const id of originals.get(key) ?? []) called.add(id);
+    for (const template of catchAllOriginalTemplates(declaration.template, declaration.trailingSlash)) {
+      const key = JSON.stringify([declaration.method, endpoint.symbol?.usr ?? null, template]);
+      for (const id of originals.get(key) ?? []) called.add(id);
+    }
   }
   return facts.map((fact) => {
     const isCalled = called.has(fact.declaration.id);

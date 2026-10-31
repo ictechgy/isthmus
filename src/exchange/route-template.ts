@@ -50,6 +50,14 @@ export type HttpMethod = (typeof httpMethods)[number];
 /** route 사실의 method 값이다. `ANY`는 method 없는 서버 매핑이다. */
 export type RouteMethod = HttpMethod | 'ANY';
 
+/** 기존 빈 세그먼트 신원을 보존하면서 strict 접두사에 펼친 끝 슬래시도 원본과 묶는다. */
+export function catchAllOriginalTemplates(template: string, trailingSlash?: 'strict' | 'optional' | null): readonly string[] {
+  if (template === '/') return ['/{**}'];
+  const original = `${template}/{**}`;
+  return trailingSlash === 'strict' && template.endsWith('/')
+    ? [original, `${template.slice(0, -1)}/{**}`] : [original];
+}
+
 /**
  * 정규 경로 템플릿을 세그먼트로 해석한다. 문법을 어기면 사유와 함께 실패한다.
  *

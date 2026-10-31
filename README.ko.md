@@ -1,5 +1,7 @@
 # isthmus
 
+2026-11-01 확인: npm 발행본은 **isthmus-cli 0.13.0**이다. 이 checkout과 `compatibility.json`은 **0.14.0 후보**를 설명하며 해당 버전 발행 전에는 후보 호환성 검증에 소스 빌드가 필요하다. 소스 manifest로 registry 설치 가능 여부를 추론하지 않는다.
+
 같은 HTTP route/DB relation의 명시 필드 변경은 새 [`diff --contracts`](docs/CONTRACT-DIFF.md)로
 비교한다. 전후 호출 근거·미확인 신선도·분석/출력 범위는 분리해 보존한다.
 

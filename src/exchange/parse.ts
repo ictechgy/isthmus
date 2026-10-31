@@ -1,5 +1,6 @@
 import { dataContractProblem, normalizeDataContract, type DataContract } from './data-contract.ts';
 import {
+  catchAllOriginalTemplates,
   httpMethods,
   MAX_ROUTE_TEMPLATE_LENGTH,
   parseRouteTemplate,
@@ -960,9 +961,10 @@ function validateRouteDocumentFacts(document: BridgeFactsDocument): void {
   document.facts.forEach((fact, index) => {
     if (fact.catchAllPrefix !== true) return;
     const channel = fact.channel as string;
-    const original = channel === '/' ? '/{**}' : `${channel}/{**}`;
-    if (!originals.has(JSON.stringify([fact.method, fact.symbol!.usr!, original,
-      fact.service ?? document.service ?? null, orderKey(fact)]))) {
+    const hasOriginal = catchAllOriginalTemplates(channel, fact.trailingSlash).some((original) =>
+      originals.has(JSON.stringify([fact.method, fact.symbol!.usr!, original,
+        fact.service ?? document.service ?? null, orderKey(fact)])));
+    if (!hasOriginal) {
       fail(`A catch-all prefix declaration has no matching {**} declaration at index ${index}.`);
     }
   });

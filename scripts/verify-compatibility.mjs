@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const semver = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/u;
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const compatibility = JSON.parse(readFileSync(join(repositoryRoot, 'compatibility.json'), 'utf8'));
+const released = JSON.parse(readFileSync(join(repositoryRoot, 'compatibility.released.json'), 'utf8'));
 const packageDocument = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const documents = {
   'docs/COMPATIBILITY.md': readFileSync(join(repositoryRoot, 'docs/COMPATIBILITY.md'), 'utf8'),
@@ -16,6 +17,16 @@ verify(compatibility.format === 'isthmus-compatibility' && compatibility.version
   'manifest format');
 verify(semver.test(compatibility.isthmus), 'isthmus version shape');
 verify(compatibility.isthmus === packageDocument.version, 'isthmus version matches package');
+// 공개 설치 감시는 후보 package 버전과 독립된 고정 세트를 사용한다.
+verify(released.format === 'isthmus-compatibility' && released.version === 1, 'released manifest format');
+verify(semver.test(released.isthmus), 'released isthmus version shape');
+verify(released.producers !== null && typeof released.producers === 'object' &&
+  !Array.isArray(released.producers), 'released producer map');
+verify(JSON.stringify(Object.keys(released.producers).sort()) ===
+  JSON.stringify(Object.keys(compatibility.producers).sort()), 'released producer names');
+for (const [name, version] of Object.entries(released.producers)) {
+  verify(semver.test(version), `${name} released version shape`);
+}
 verify(compatibility.producers !== null && typeof compatibility.producers === 'object' &&
   !Array.isArray(compatibility.producers), 'producer map');
 for (const [name, version] of Object.entries(compatibility.producers)) {
