@@ -59,6 +59,35 @@ test('리뷰 1: 접두사 decl과 원본의 유효 service가 다르면 원본�
   ]), /no matching \{\*\*\} declaration/);
 });
 
+test('strict 끝 슬래시 접두사는 같은 catch-all 원본과 묶이고 긴 호출도 보존한다', () => {
+  const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
+  const server = document('js', ['server'], [
+    decl('GET', '/docs/api/files/{**}', { symbol, trailingSlash: 'strict' }),
+    decl('GET', '/docs/api/files/', { symbol, trailingSlash: 'strict', catchAllPrefix: true }),
+  ]);
+  const prefix = document('kotlin', ['client'], [call('GET', '/docs/api/files/')]);
+  const joined = joinBridgeDocuments([server, prefix]);
+  assert.deepEqual(joined.routes!.scopes[0]!.decls.map(({ declaration, called }) =>
+    `${declaration.template}:${called}`), ['/docs/api/files/{**}:true', '/docs/api/files/:true']);
+  assert.deepEqual(callCodes(server, prefix), []);
+  const long = document('kotlin', ['client'], [call('GET', '/docs/api/files/a/b')]);
+  assert.deepEqual(callCodes(server, long), []);
+  assert.throws(() => document('js', ['server'], [
+    decl('GET', '/docs/api/files/', { symbol, trailingSlash: 'strict', catchAllPrefix: true }),
+  ]), /no matching \{\*\*\} declaration/);
+});
+
+test('strict 접두사의 기존 빈 세그먼트 원본도 계속 유효하다', () => {
+  const symbol = { qualifiedName: 'Files.get', usr: 'files-get' };
+  const server = document('js', ['server'], [
+    decl('GET', '/files//{**}', { symbol, trailingSlash: 'strict' }),
+    decl('GET', '/files/', { symbol, trailingSlash: 'strict', catchAllPrefix: true }),
+  ]);
+  const client = document('kotlin', ['client'], [call('GET', '/files/')]);
+  assert.deepEqual(joinBridgeDocuments([server, client]).routes!.scopes[0]!.decls
+    .map(({ called }) => called), [true, true]);
+});
+
 test('리뷰 2: suffix 후보도 caseInsensitive decl은 대소문자를 접어 맞춘다', () => {
   assert.deepEqual(callCodes(
     document('js', ['server'], [decl('GET', '/users', { pathAnchor: 'base', caseInsensitive: true })]),

@@ -848,7 +848,11 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   `/files/{*path}`가 함께 있는 흔한 구성에서 명시적 decl과 구분하기 위해서다.
   - `method`·`symbol`·`location`은 원본 catch-all decl과 같다. 같은 문서에 원본 decl(같은
     method와 `symbol.usr`·유효 service, 템플릿은 접두사가 `/`이면 `/{**}`, 아니면 접두사 + `/{**}`)이
-    없으면 입력 오류다. 접두사 decl은 접두사 경로 자체만 받고, 더 긴 호출은 함께 있는 원본이 받는다.
+    없으면 입력 오류다. 단, `trailingSlash: "strict"`이고 접두사가 `/` 이외의 끝 슬래시 경로면
+    마지막 슬래시 하나를 떼고 `/{**}`를 붙인 템플릿도 원본으로 인정한다. 기존의 빈
+    세그먼트를 포함한 원본(`/files//{**}`)도 계속 유효하다. 이는 Next.js의
+    `trailingSlash: true` optional catch-all 접두사(`/files/` → `/files/{**}`)를 보존한다.
+    접두사 decl은 접두사 경로 자체만 받고, 더 긴 호출은 함께 있는 원본이 받는다.
   - specificity 문서에서는 원본 `{**}` decl과 같은 순위로 본다. 그래서 같은 키의 명시적
     decl이 있으면 항상 명시적 decl이 match다. 매칭 품질은 `catch-all`이다.
   - registration-order 문서에서는 원본 decl의 `order`를 그대로 물려받는다. 원본을 찾는 키에 `order`가 들어가므로
