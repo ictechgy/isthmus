@@ -40,7 +40,8 @@ export interface CodeQualityFinding {
  * - `location.path`는 URI 인코딩하지 않은 프로젝트 상대 경로다 — SARIF의
  *   `sarifUri`와 다른 소비자(URI 참조가 아니라 파일 뷰어 경로)라서다.
  *
- * `fingerprint`는 논리 이슈 식별자(code·target·channel·method) 해시다.
+ * `fingerprint`는 논리 이슈 식별자(code·target·channel·method, http는 scope, 플랫폼별 핸들러 누락은
+ * platform 추가) 해시다.
  * GitLab은 같은 지문의 발견을 병합하므로, check 보고서가 같은 논리 키의
  * 이슈를 두 개 이상 담으면 안 되는 상류 불변에 의존한다 — 중복이 관찰되면
  * 깨진 아티팩트 대신 명시적으로 실패한다.
@@ -91,7 +92,8 @@ function codeQualityFinding(
   const channel = issue.method === undefined
     ? `Channel '${issue.channel}'`
     : `Channel '${issue.channel}', method '${issue.method}'`;
-  const context = issue.scope === undefined ? channel : `${channel}, scope '${issue.scope}'`;
+  const scoped = issue.scope === undefined ? channel : `${channel}, scope '${issue.scope}'`;
+  const context = issue.platform === undefined ? scoped : `${scoped}, platform '${issue.platform}'`;
   return {
     description:
       `${checkIssueRuleDescriptions[issue.code]} ${context} (target: ${issue.target})`,

@@ -328,6 +328,7 @@ function issueFingerprint(issue: {
   readonly channel: string;
   readonly method?: string;
   readonly scope?: string;
+  readonly platform?: string;
 }): string {
   return createHash('sha256').update(baselineEntryKey(issue)).digest('hex');
 }

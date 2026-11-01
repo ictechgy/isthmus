@@ -289,7 +289,8 @@ additive, isthmus-owned rendering of the same join: every issue becomes a result
 (project-relative paths become percent-encoded, repository-relative URIs), remaining
 endpoints as related locations, and baseline-suppressed issues carry an `external`
 suppression. Results include a
-`partialFingerprints` hash of the logical issue identity (code, target, channel, method), so
+`partialFingerprints` hash of the logical issue identity (code, target, channel, method, plus
+`scope` for http and `platform` for `invocation-unhandled-on-platform*`), so
 deduplication survives source line moves exactly like baseline suppression.
 
 ### GitLab Code Quality output
@@ -441,7 +442,8 @@ isthmus check dart-bridges.json swift-bridges.json --strict --baseline isthmus-b
 `--update-baseline` does not suppress the run that writes it; it rewrites the whole file — an
 isthmus-owned `isthmus-baseline` version 1 document — from the current issues, so resolved
 items drop out automatically. `--baseline` suppresses only the issues whose logical identity
-(code, target, channel, method) matches an entry, so moving source lines never breaks
+(code, target, channel, method, plus `scope` for http and `platform` for
+`invocation-unhandled-on-platform*`) matches an entry, so moving source lines never breaks
 suppression and a new channel or method mismatch is never suppressed. Suppressed issues are
 not deleted: they keep their facts, evidence, and severity, gain a `suppressed` marker, and
 are excluded only from the summary error/warning counts and the `--strict` decision. Entries
@@ -570,6 +572,16 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
   distinguished
 - `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
   reason
+- `invocation-unhandled-on-platform` (warning): the method is handled on one receiver platform,
+  but another receiver platform registers the same channel without a handler for it (for
+  example iOS-only implementations that surface as `MissingPluginException` on Android). The
+  issue's `platform` field names the platform without the handler; the match itself is
+  unchanged. A platform that never registers the channel is not reported, because the channel
+  may be platform-specific. `-unverified` (warning) means that platform reported a handler
+  analysis gap. `platform` is part of the issue identity (baseline, SARIF and Code Quality
+  fingerprints), so accepting a missing Android handler does not hide a later missing iOS one.
+  Evidence carries at most 3 of that platform's channel registrations;
+  `omittedRegistrations` (also SARIF `properties.omittedRegistrations`) counts the rest
 
 React Native name boundaries follow the same pairing — a `require`/`import` with no
 matching `export` is an error, an `export` with no caller is a warning:

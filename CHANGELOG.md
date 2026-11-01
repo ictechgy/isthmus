@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+- `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
+  (the producer's `conformance.lock` at its known locations, or a copied `SHA256SUMS`) and the
+  vendored files against this commit's canonical `SHA256SUMS`, and reports per-suite
+  `current`/`stale`/`modified`/`missing`/`unknown`/`not-vendored` as a Markdown table or JSON.
+  It only reports by default; `--strict` exits 1 on drift or when a producer has no record.
+
+- React Native module/component name classification compares each caller and receiver with the
+  mechanisms observed on the other side instead of every evidence pair, so one name with many
+  imports and exports no longer costs O(callers x receivers). Output is byte-identical; the
+  consumer benchmark gains a 20,000 x 20,000 mismatched-mechanism `check` case.
+
+- `check` reports `invocation-unhandled-on-platform` (warning) when a method is handled on one
+  receiver platform but another receiver platform registers the same channel without a handler
+  for it, and `-unverified` when that platform reported a handler analysis gap. The issue carries
+  `platform`, which is part of its baseline/SARIF/Code Quality identity, and at most 3 of that
+  platform's channel registrations as evidence; `omittedRegistrations` (also in SARIF
+  `properties`) counts the rest. SARIF adds the rule only when such an issue exists, and inputs
+  with a single receiver platform keep byte-identical check and SARIF output. Matches, errors and
+  exit codes are unchanged.
+
 - Public cold-cache installation uses a separate pinned released manifest, selected explicitly by `--released`; source candidate/package version equality remains mandatory.
 
 - Accept strict trailing-slash catch-all prefixes emitted by tsograph, and count a

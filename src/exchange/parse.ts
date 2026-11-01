@@ -1039,11 +1039,20 @@ export function isCallerPlatform(platform: unknown): platform is 'dart' | 'js' {
   return platform === 'dart' || platform === 'js';
 }
 
+/**
+ * 브리지 수신 측 사실을 생산하는 플랫폼의 고정 순서 목록이다. 판정(`isReceiverPlatform`)과
+ * 플랫폼별 순회(join의 플랫폼별 핸들러 누락)가 같은 집합을 쓰게 한다.
+ */
+export const bridgeReceiverPlatforms = ['kotlin', 'swift'] as const;
+
+/** 브리지 수신 측 플랫폼이다. */
+export type BridgeReceiverPlatform = (typeof bridgeReceiverPlatforms)[number];
+
 /** 브리지 수신 측 사실을 생산하는 플랫폼인지 확인한다. go는 어느 쪽도 아니다. */
 export function isReceiverPlatform(
   platform: unknown,
-): platform is 'swift' | 'kotlin' {
-  return platform === 'swift' || platform === 'kotlin';
+): platform is BridgeReceiverPlatform {
+  return (bridgeReceiverPlatforms as readonly unknown[]).includes(platform);
 }
 
 /**

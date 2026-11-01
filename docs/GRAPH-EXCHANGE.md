@@ -441,6 +441,19 @@ require에는 싣지 않는다.
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - 생성 없는 `channel-register`는 호출 측 사용을 찾지 못한 경고로 보존한다
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
+  - match 판정 키에는 수신 플랫폼이 없어 한 플랫폼의 핸들러로 호출이 match된다. 이 판정은 그대로 두고,
+    match된 메서드의 핸들러가 없는 수신 플랫폼이 같은 `(target, channel)`의 `channel-register`를 냈으면
+    `invocation-unhandled-on-platform` warning을 따로 보고한다(이슈의 `platform`이 빠진 플랫폼). 채널을
+    등록하지 않은 플랫폼은 플랫폼 전용 채널일 수 있어 추측해 보고하지 않는다. 빠진 플랫폼 자신의 핸들러
+    공백(아래 수신 측 공백 규칙과 같은 접두사, 그 플랫폼 문서·사실에서 나온 한계만)이 있으면
+    `invocation-unhandled-on-platform-unverified` warning이다. 다른 플랫폼의 공백은 이 판정을 무르지 않는다.
+    의도적으로 한 플랫폼에만 구현하는 호출(`Platform.isIOS` 분기 등)이 있으므로 error가 아니다.
+    진단 신원은 code·target·channel·method에 `platform`을 더한다. 베이스라인 항목의 `platform`은
+    `invocation-unhandled-on-platform*` 항목에 필수이고, 다른 코드의 항목에 있거나 수신 플랫폼(swift·kotlin)이
+    아닌 값이면 입력 오류다(종료 코드 2). platform이 없는 기존 키·지문은 바이트 단위로 유지한다.
+    증거는 호출, 빠진 플랫폼의 채널 등록 중 위치 순 앞의 최대 3개, 다른 플랫폼의 핸들러이며, 자른 등록 수는
+    이슈의 `omittedRegistrations`(SARIF는 `properties.omittedRegistrations`, 자르지 않으면 키 없음)다 — 같은 등록이
+    그 채널의 모든 메서드 진단에 반복되므로 상한 없이 실으면 출력이 메서드 수 × 등록 수가 된다
 - `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같고
   mechanism이 도달 가능해야 한다. `mechanism: "expo"`인 import는
   TurboModuleRegistry 폴백이 있어 core·expo export 모두와 잇고,
@@ -1480,6 +1493,16 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   gartograph·rustograph·tsograph·pythograph)는 이 suite를 벤더링해 `conformance.lock`에 새 항목으로 더한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
   케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
+- 생산자 사본의 드리프트는 `node scripts/conformance-drift.mjs [--json] [--strict] <producer>=<checkout-or-record> ...`로
+  본다. checkout에서는 루트 `conformance.lock`(사본은 `conformance/`), `conformance/conformance.lock`,
+  `fixtures/isthmus-conformance/`·`fixtures/isthmus_conformance/`의 lock, lock 없이 복사한 `conformance/SHA256SUMS`
+  순으로 기록을 찾는다(기록 파일 경로를 직접 줄 수도 있다). 사본은 루트 lock(옆에 `conformance/`가 있는
+  `conformance.lock`)이면 `conformance/`, 그 밖에는 기록 옆에서 찾는다. lock의 isthmus 커밋은 `commit`·`isthmus.commit`·
+  `source.commit` 중 있는 값을 쓴다. 기록과 실제 사본 파일을 이 커밋의 정본과 대조해 suite별로 `current`·`stale`
+  (이전 정본)·`modified`(사본이 기록과 다름)·`missing`(기록만 있고 사본 없음)·`unknown`(정본에 없는 suite)·
+  `not-vendored`를 Markdown 표(GitHub step summary용) 또는 JSON으로 낸다. 생산자에게 필요 없는 suite가 있으므로
+  `not-vendored`는 드리프트가 아니다. 기본 종료 코드는 0이고 `--strict`만 드리프트나 기록이 없는 생산자에 1을 낸다
+  (경로 없음·읽기 실패·예기치 않은 오류 2, 사용 오류 64). 생산자 테스트는 실행하지 않으며 저장소 checkout·예약 실행은 이 스크립트 밖이다
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
   OpenAPI 경로 템플릿과 Spring MVC PathPattern(`framework.spring.path-pattern`, Spring Framework v6.2.10 소스 확인,
   `producer:kartograph`)이 있다. Spring 케이스: 끝 `**`·`{*x}`의 0세그먼트 매칭(접두사 decl), 루트 `/**`, 중간 `**`

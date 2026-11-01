@@ -13,6 +13,8 @@ const channels = 10_000;
 const eventCount = 100_000;
 const checks = 1_000;
 const consumers = 20_000;
+// 쌍마다 비교하던 분류는 이 크기에서 수십 초가 걸려, 머신 속도가 달라도 5초 예산으로 제곱 회귀를 잡는다.
+const boundaryEvidence = 20_000;
 const repetitions = 5;
 const timeBudgetMs = 5_000;
 try {
@@ -35,7 +37,10 @@ try {
   const preflightExpectations = { ...expectations,
     checks: expectations.checks.map((check) => ({ ...check, channel: 'camera', method: 'photo' })) };
   const scopedMessages = messagePreflight();
-  const inputs = { dart, swift, runtime, expectations, preflight, preflightRuntime, preflightExpectations, scopedMessages };
+  const boundaryCallers = nameBoundaryDocument('js');
+  const boundaryReceivers = nameBoundaryDocument('swift');
+  const inputs = { dart, swift, runtime, expectations, preflight, preflightRuntime, preflightExpectations, scopedMessages,
+    boundaryCallers, boundaryReceivers };
   for (const [name, value] of Object.entries(inputs)) {
     await writeFile(join(root, `${name}.json`), JSON.stringify(value), { mode: 0o600 });
   }
@@ -83,6 +88,19 @@ try {
     assert.equal(report.requiresReview, false);
     assert.ok(report.affected.items.some(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === 'dart:0'));
   });
+  // 한 모듈·컴포넌트 이름에 호출·수신 증거가 몰리고 mechanism이 모두 어긋난 최악 입력이다. 쌍마다 비교하면
+  // O(호출자×수신자)라 이 크기에서 예산을 넘는다. 증거 전체를 싣는 보고서라 출력 버퍼를 넓힌다.
+  const boundaryResult = measure(['check', join(root, 'boundaryCallers.json'), join(root, 'boundaryReceivers.json')], (report) => {
+    assert.equal(report.summary.observedFacts, boundaryEvidence * 4);
+    assert.equal(report.summary.matchedModules, 0);
+    assert.equal(report.summary.matchedComponents, 0);
+    assert.deepEqual(report.issues.map(({ code, evidence }) => [code, evidence.length]), [
+      ['module-import-mechanism-mismatch', boundaryEvidence * 2],
+      ['module-export-mechanism-mismatch', boundaryEvidence * 2],
+      ['component-require-without-export', boundaryEvidence * 2],
+      ['component-export-mechanism-mismatch', boundaryEvidence * 2],
+    ]);
+  }, 128 * 1024 * 1024);
   process.stdout.write(`${JSON.stringify({
     scope: 'consumer-cli-only', node: process.version, platform: process.platform, arch: process.arch,
     repetitions, timeBudgetMs,
@@ -91,8 +109,10 @@ try {
     preflightWithRuntime: { consumers, events: eventCount, expectations: checks, ...preflightResult },
     summaryView: summaryResult, explanationView: explanationResult,
     scopedMessages: { handlers: channels, references: channels, dispatchCandidates: channels, ...messageResult },
+    nameBoundaries: { callersPerName: boundaryEvidence, receiversPerName: boundaryEvidence, ...boundaryResult },
   }, null, 2)}\n`);
-  assert.ok([impact, runtimeResult, preflightResult, summaryResult, explanationResult, messageResult].every(({ p95Ms }) => p95Ms < timeBudgetMs),
+  assert.ok([impact, runtimeResult, preflightResult, summaryResult, explanationResult, messageResult, boundaryResult]
+    .every(({ p95Ms }) => p95Ms < timeBudgetMs),
     'Consumer preflight exceeded the documented time budget.');
 } finally {
   await rm(root, { recursive: true, force: true });
@@ -128,13 +148,13 @@ function messagePreflight() {
 }
 
 /** 명령마다 새 프로세스를 사용하고 매번 독립적인 집계를 확인한다. */
-function measure(args, verify) {
+function measure(args, verify, maxBuffer = 32 * 1024 * 1024) {
   const times = [];
   let outputBytes = 0;
   for (let iteration = 0; iteration < repetitions; iteration++) {
     const started = performance.now();
     const result = runChild(process.execPath, [binary, ...args], {
-      timeout: 30_000, maxBuffer: 32 * 1024 * 1024,
+      timeout: 30_000, maxBuffer,
     });
     times.push(performance.now() - started);
     assert.equal(result.status, 0, 'Benchmark command must succeed.');
@@ -162,6 +182,25 @@ function bridgeDocument(platform) {
     limitationScopes: platform === 'swift'
       ? Array.from({ length: 1000 }, (_, index) => ({ limitationIndex: index, channels: [`other/${index}`] })) : [],
   };
+}
+
+/**
+ * RN 이름 경계 하나에 증거가 몰린 입력이다. 코어 import×Expo export, Expo require×코어 export라 호환 쌍이 없다.
+ */
+function nameBoundaryDocument(platform) {
+  const facts = [];
+  for (let index = 0; index < boundaryEvidence; index++) {
+    const location = (kind) => ({ path: platform === 'js' ? `src/${kind}${index}.ts` : `ios/${kind}${index}.swift`, line: 1, column: 1 });
+    if (platform === 'js') {
+      facts.push({ kind: 'module-import', channel: 'Module', dynamic: false, location: location('module') });
+      facts.push({ kind: 'component-require', channel: 'View', dynamic: false, mechanism: 'expo', location: location('view') });
+    } else {
+      facts.push({ kind: 'module-export', channel: 'Module', dynamic: false, mechanism: 'expo', location: location('module') });
+      facts.push({ kind: 'component-export', channel: 'View', dynamic: false, location: location('view') });
+    }
+  }
+  return { format: 'bridge-facts', version: 1, platform, target: 'react-native', project: '/benchmark',
+    tool: { name: 'benchmark', version: '1' }, generatedAt: '2026-09-14T00:00:00Z', facts, limitations: [] };
 }
 
 /** 같은 라우팅의 반복 기대가 이벤트 전체 재순회를 일으키는지도 측정한다. */

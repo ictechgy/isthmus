@@ -12,11 +12,13 @@ import type {
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import {
+  bridgeReceiverPlatforms,
   isBridgeCallerDocument,
   isBridgeDomainDocument,
   isBridgeReceiverDocument,
   isChannelLimitationScope,
   type BridgeLimitationScope,
+  type BridgeReceiverPlatform,
 } from '../exchange/parse.ts';
 import { normalizeRouteRange } from '../exchange/route-limitation-scope.ts';
 import type { HttpMethod } from '../exchange/route-template.ts';
@@ -111,6 +113,31 @@ export interface UnhandledInvocation {
   readonly channel: string;
   readonly method: string;
   readonly invocations: readonly BridgeEndpoint[];
+}
+
+/**
+ * 다른 수신 플랫폼에서는 처리되지만, 같은 채널을 등록한 수신 플랫폼 하나에서
+ * 핸들러가 관찰되지 않은 match 메서드다.
+ *
+ * match 판정(`MatchedMethod`)은 그대로다. 한 메서드 키에 빠진 플랫폼마다 항목이 하나다.
+ */
+export interface PlatformUnhandledInvocation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly method: string;
+  /** 채널을 등록했지만 이 메서드의 핸들러가 관찰되지 않은 수신 플랫폼이다. */
+  readonly platform: BridgeReceiverPlatform;
+  readonly invocations: readonly BridgeEndpoint[];
+  /**
+   * 빠진 플랫폼이 같은 채널에 남긴 등록 증거 중 위치 순 앞의 최대
+   * `MAX_PLATFORM_REGISTRATION_EVIDENCE`개다. 같은 등록이 그 채널의 모든 메서드 항목에 반복되므로
+   * 상한 없이 복사하면 출력이 메서드 수 × 등록 수로 커진다.
+   */
+  readonly registrations: readonly BridgeEndpoint[];
+  /** 상한 때문에 싣지 않은 등록 증거 수다. 이슈의 같은 이름 필드(0이면 생략)로 그대로 옮긴다. */
+  readonly omittedRegistrations: number;
+  /** 다른 수신 플랫폼에서 관찰된 핸들러 증거다. */
+  readonly handlers: readonly BridgeEndpoint[];
 }
 
 /** 호출자를 찾지 못한 논리 핸들러와 모든 네이티브 증거다. */
@@ -909,6 +936,58 @@ function collectMethodGroups(
   return groups;
 }
 
+/**
+ * match 메서드 중 채널을 등록한 수신 플랫폼 하나에서 핸들러가 빠진 항목을 찾는다.
+ *
+ * 메서드 키에는 수신 플랫폼이 없어, 한 플랫폼의 핸들러만으로 호출이 match된다. Flutter에서
+ * iOS에만 구현하고 Android에서 빠뜨린 메서드는 런타임 `MissingPluginException`·`notImplemented`
+ * 가 되지만 match 판정으로는 보이지 않는다. 그 누락을 match를 바꾸지 않는 별도 항목으로 낸다.
+ *
+ * 빠진 플랫폼이 같은 (target, channel)을 등록했다는 정적 사실이 있을 때만 낸다. 채널을 아예
+ * 관찰하지 않은 플랫폼은 그 채널을 쓰지 않는 플랫폼 전용 구현일 수 있으므로 추측해 연결하지
+ * 않는다. 조인 결과만으로 계산하므로 결과 모양과 다른 진단은 바뀌지 않는다.
+ */
+export function platformUnhandledInvocations(
+  joined: BridgeJoinResult,
+): PlatformUnhandledInvocation[] {
+  // (target, channel, platform)별 등록 증거를 한 번만 나눠 둔다. 등록은 이미 위치 순이라 앞에서
+  // 자른 증거도 결정적이다.
+  const registrations = new Map<string, { readonly shown: readonly BridgeEndpoint[]; readonly omitted: number }>();
+  for (const group of [...joined.matchedChannels, ...joined.registrationsWithoutCreations]) {
+    for (const platform of bridgeReceiverPlatforms) {
+      const endpoints = group.registrations.filter((endpoint) => endpoint.platform === platform);
+      if (endpoints.length === 0) continue;
+      registrations.set(JSON.stringify([group.target, group.channel, platform]), {
+        shown: endpoints.slice(0, MAX_PLATFORM_REGISTRATION_EVIDENCE),
+        omitted: Math.max(0, endpoints.length - MAX_PLATFORM_REGISTRATION_EVIDENCE),
+      });
+    }
+  }
+  const result: PlatformUnhandledInvocation[] = [];
+  for (const method of joined.matchedMethods) {
+    for (const platform of bridgeReceiverPlatforms) {
+      if (method.handlers.some((handler) => handler.platform === platform)) continue;
+      const platformRegistrations = registrations.get(JSON.stringify([method.target, method.channel, platform]));
+      if (platformRegistrations === undefined) continue;
+      result.push({
+        target: method.target,
+        channel: method.channel,
+        method: method.method,
+        platform,
+        invocations: method.invocations,
+        registrations: platformRegistrations.shown,
+        omittedRegistrations: platformRegistrations.omitted,
+        handlers: method.handlers,
+      });
+    }
+  }
+  // matchedMethods가 이미 메서드 키 순이고 플랫폼 순서가 고정이라 순서가 결정적이다.
+  return result;
+}
+
+/** 플랫폼별 핸들러 누락 항목 하나에 싣는 빠진 플랫폼의 채널 등록 증거 상한이다. */
+export const MAX_PLATFORM_REGISTRATION_EVIDENCE = 3;
+
 /** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
 function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
   endpoints.sort(compareEndpoints);
@@ -1120,20 +1199,22 @@ function classifyNameGroups(
   groups: Map<string, MutableNameGroup>,
   callerKind: 'module-import' | 'component-require',
 ): NameClassification {
-  const compatible = (caller: BridgeEndpoint, receiver: BridgeEndpoint) =>
-    boundaryCompatible(callerKind, caller, receiver);
   const matched: MatchedBoundaryName[] = [];
   const unexported: UnexportedBoundaryName[] = [];
   const unrequired: UnrequiredBoundaryName[] = [];
   for (const group of groups.values()) {
-    const satisfied = group.callers.filter((caller) =>
-      group.receivers.some((receiver) => compatible(caller, receiver)));
-    const unsatisfied = group.callers.filter((caller) =>
-      !group.receivers.some((receiver) => compatible(caller, receiver)));
-    const reached = group.receivers.filter((receiver) =>
-      group.callers.some((caller) => compatible(caller, receiver)));
-    const unreached = group.receivers.filter((receiver) =>
-      !group.callers.some((caller) => compatible(caller, receiver)));
+    // 호환 여부는 양쪽 mechanism에만 달렸으므로, 반대편에 관찰된 mechanism 집합(최대 두 값)과만
+    // 비교한다. 증거 쌍마다 비교하던 O(호출자×수신자)와 같은 분류를 O(호출자+수신자)로 낸다.
+    const receiverMechanisms = endpointMechanisms(group.receivers);
+    const callerMechanisms = endpointMechanisms(group.callers);
+    const isSatisfied = (caller: BridgeEndpoint) => receiverMechanisms.some((receiverMechanism) =>
+      boundaryCompatible(callerKind, caller.mechanism ?? 'core', receiverMechanism));
+    const isReached = (receiver: BridgeEndpoint) => callerMechanisms.some((callerMechanism) =>
+      boundaryCompatible(callerKind, callerMechanism, receiver.mechanism ?? 'core'));
+    const satisfied = group.callers.filter(isSatisfied);
+    const unsatisfied = group.callers.filter((caller) => !isSatisfied(caller));
+    const reached = group.receivers.filter(isReached);
+    const unreached = group.receivers.filter((receiver) => !isReached(receiver));
     // 만족한 호출자가 있으면 그와 호환되는 수신자가 존재하므로 도달한
     // 수신자도 비어 있지 않다.
     if (satisfied.length > 0) {
@@ -1180,6 +1261,11 @@ function classifyNameGroups(
   return { matched, unexported, unrequired };
 }
 
+/** 증거들에 관찰된 mechanism을 중복 없이 모은다. 생략된 mechanism은 `core`로 읽는다. */
+function endpointMechanisms(endpoints: readonly BridgeEndpoint[]): BridgeMechanism[] {
+  return [...new Set(endpoints.map((endpoint) => endpoint.mechanism ?? 'core'))];
+}
+
 /**
  * mechanism이 다른 호출·수신 쌍이 실제로 연결되는지 판정한다.
  *
@@ -1191,11 +1277,9 @@ function classifyNameGroups(
  */
 function boundaryCompatible(
   callerKind: 'module-import' | 'component-require',
-  caller: BridgeEndpoint,
-  receiver: BridgeEndpoint,
+  callerMechanism: BridgeMechanism,
+  receiverMechanism: BridgeMechanism,
 ): boolean {
-  const callerMechanism = caller.mechanism ?? 'core';
-  const receiverMechanism = receiver.mechanism ?? 'core';
   if (callerKind === 'module-import') {
     return callerMechanism === 'expo' || receiverMechanism === 'core';
   }

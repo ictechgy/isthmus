@@ -261,8 +261,8 @@ isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sari
 하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 퍼센트 인코딩된
 저장소 상대 URI가 된다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
 `external` suppression을 달고 나온다. 결과마다 논리 이슈 식별자(code·target·channel·
-method)의 `partialFingerprints` 해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인
-억제와 같은 기준으로 살아남는다.
+method, http는 `scope`, `invocation-unhandled-on-platform*`은 `platform` 추가)의 `partialFingerprints`
+해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인 억제와 같은 기준으로 살아남는다.
 
 ### GitLab Code Quality 출력
 
@@ -392,7 +392,8 @@ isthmus check dart-bridges.json swift-bridges.json --strict --baseline isthmus-b
 
 `--update-baseline`은 이번 실행을 억제하지 않고 현재 이슈 전체를 isthmus 소유
 `isthmus-baseline` 버전 1 문서로 다시 쓴다. 파일 전체를 새로 쓰므로 해결된 항목은
-자동으로 빠진다. `--baseline`은 항목과 논리 이슈 식별자(code·target·channel·method)가
+자동으로 빠진다. `--baseline`은 항목과 논리 이슈 식별자(code·target·channel·method, http는
+`scope`, `invocation-unhandled-on-platform*`은 `platform` 추가)가
 같은 이슈만 억제하므로 소스 줄이 이동해도 억제가 깨지지 않고, 새 채널·메서드 불일치는
 억제되지 않는다. 억제된 이슈도 지워지지 않는다 — 사실·증거·심각도를 보존한 채
 `suppressed` 표시가 붙고 요약의 error·warning 계산과 `--strict` 판단에서만 빠진다.
@@ -507,6 +508,14 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 - `unhandled-invocation-unverified` (warning): 위 첫 항목과 같은 사실이지만, 수신 측이
   핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
 - `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
+- `invocation-unhandled-on-platform` (warning): 한 수신 플랫폼은 메서드를 처리하지만, 같은 채널을
+  등록한 다른 수신 플랫폼에는 그 핸들러가 없음(예: iOS에만 구현해 Android에서
+  `MissingPluginException`이 되는 경우). 이슈의 `platform` 필드가 핸들러가 빠진 플랫폼이며 match
+  판정 자체는 그대로다. 채널을 아예 등록하지 않은 플랫폼은 플랫폼 전용 채널일 수 있어 보고하지
+  않는다. `-unverified` (warning)는 그 플랫폼이 핸들러 분석 공백을 신고한 경우다. `platform`은 진단
+  신원(베이스라인, SARIF·Code Quality 지문)의 원소라 Android 누락을 인정해도 이후의 iOS 누락은 억제되지
+  않는다. 증거에는 그 플랫폼의 채널 등록을 최대 3개만 싣고 나머지 수는 `omittedRegistrations`(SARIF는
+  `properties.omittedRegistrations`)에 남긴다
 
 React Native 이름 경계도 같은 방향으로 보고한다 — `require`/`import`에 맞는
 `export`가 없으면 error, `export`에 호출자가 없으면 warning이다.

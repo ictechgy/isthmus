@@ -2,7 +2,9 @@ import {
   isBridgeTarget,
   isBridgeTimestamp,
   isJsonObject,
+  isReceiverPlatform,
   isSafeNonEmptyString,
+  type BridgeReceiverPlatform,
   type BridgeTarget,
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
@@ -11,13 +13,13 @@ import type {
   CheckIssueCode,
   CheckReport,
 } from './check-report.ts';
-import { checkIssueCodes } from './check-report.ts';
+import { checkIssueCodes, platformIssueCodes } from './check-report.ts';
 import { encodeSortedJson } from './sorted-json.ts';
 
 /**
  * 베이스라인이 억제하는 논리 이슈 하나의 식별자다.
  *
- * 위치가 아니라 논리 키(code+target+channel+method)다. 소스 줄 이동이나
+ * 위치가 아니라 논리 키(code+target+channel+method, http는 scope, 플랫폼별 핸들러 누락은 platform 추가)다. 소스 줄 이동이나
  * 증거 위치 변화는 억제를 깨지 않고, 새 채널·메서드 불일치는 새 키라
  * 억제되지 않는다. diff가 논리 연결을 비교하는 키와 같은 철학이다.
  */
@@ -31,6 +33,11 @@ export interface BaselineEntry {
    * 키와 직렬화가 바이트 단위로 같다.
    */
   readonly scope?: string;
+  /**
+   * `invocation-unhandled-on-platform*` 진단 신원의 수신 플랫폼이다. 그 항목에만 있어 기존 항목의
+   * 키와 직렬화가 바이트 단위로 같다. 한 플랫폼의 누락을 인정해도 다른 플랫폼의 누락은 억제되지 않는다.
+   */
+  readonly platform?: BridgeReceiverPlatform;
 }
 
 /** check 실행 사이에서 인정된 이슈를 보존하는 isthmus 소유 문서다. */
@@ -108,6 +115,7 @@ export function createBaselineDocument(
       channel: issue.channel,
       ...(issue.method === undefined ? {} : { method: issue.method }),
       ...(issue.scope === undefined ? {} : { scope: issue.scope }),
+      ...(issue.platform === undefined ? {} : { platform: issue.platform }),
     };
     const key = baselineEntryKey(entry);
     if (seen.has(key)) continue;
@@ -178,14 +186,17 @@ export function baselineEntryKey(issue: {
   readonly channel: string;
   readonly method?: string;
   readonly scope?: string;
+  readonly platform?: string;
 }): string {
-  // scope는 http 진단에만 있다. 없으면 4원소 배열 그대로라 기존 키·지문이 바뀌지 않는다.
+  // scope는 http 진단에만, platform은 플랫폼별 핸들러 누락에만 있다. 없으면 4원소 배열 그대로라 기존
+  // 키·지문이 바뀌지 않는다. platform은 객체로 감싸 문자열 scope 원소와 섞이지 않게 한다.
   return JSON.stringify([
     issue.code,
     issue.target,
     issue.channel,
     issue.method ?? null,
     ...(issue.scope === undefined ? [] : [issue.scope]),
+    ...(issue.platform === undefined ? [] : [{ platform: issue.platform }]),
   ]);
 }
 
@@ -227,6 +238,15 @@ function normalizeEntry(value: unknown, index: number): BaselineEntry {
   if (value.target === 'http' && value.scope === undefined) {
     fail(`Http baseline entries require a scope at index ${index}.`);
   }
+  // platform은 플랫폼별 누락 항목에만, 수신 플랫폼 값으로만 온다. 다른 항목의 platform을 버리면
+  // 억제 키가 조용히 바뀌고, 플랫폼별 항목에서 빠지면 다른 플랫폼의 누락까지 억제한다.
+  const platformSpecific = platformIssueCodeSet.has(value.code);
+  if (value.platform !== undefined && (!platformSpecific || !isReceiverPlatform(value.platform))) {
+    fail(`Invalid platform in baseline entry at index ${index}.`);
+  }
+  if (platformSpecific && value.platform === undefined) {
+    fail(`Platform-specific baseline entries require a platform at index ${index}.`);
+  }
   const code = value.code as CheckIssueCode;
   return {
     code,
@@ -234,17 +254,19 @@ function normalizeEntry(value: unknown, index: number): BaselineEntry {
     channel: value.channel,
     ...(value.method === undefined ? {} : { method: value.method as string }),
     ...(value.scope === undefined ? {} : { scope: value.scope as string }),
+    ...(value.platform === undefined ? {} : { platform: value.platform as BridgeReceiverPlatform }),
   };
 }
 
-/** 항목을 code·target·channel·method 순으로 고정한다. */
+/** 항목을 code·target·channel·method(·scope·platform) 순으로 고정한다. */
 function compareEntries(left: BaselineEntry, right: BaselineEntry): number {
   return (
     compareStrings(left.code, right.code) ||
     compareStrings(left.target, right.target) ||
     compareStrings(left.channel, right.channel) ||
     compareStrings(left.method ?? '', right.method ?? '') ||
-    compareStrings(left.scope ?? '', right.scope ?? '')
+    compareStrings(left.scope ?? '', right.scope ?? '') ||
+    compareStrings(left.platform ?? '', right.platform ?? '')
   );
 }
 
@@ -257,3 +279,6 @@ function fail(message: string): never {
 
 /** 검증에 쓰는 진단 코드 집합이다. */
 const checkIssueCodeSet = new Set<string>(checkIssueCodes);
+
+/** 항목에 수신 플랫폼이 있어야 하는 진단 코드 집합이다. */
+const platformIssueCodeSet = new Set<string>(platformIssueCodes);
