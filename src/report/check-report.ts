@@ -1,4 +1,4 @@
-import type { BridgeTarget } from '../exchange/parse.ts';
+import type { BridgeReceiverPlatform, BridgeTarget } from '../exchange/parse.ts';
 import { isBridgeReceiverDocument, isReceiverPlatform } from '../exchange/parse.ts';
 import type { BridgeMessageTransport } from '../exchange/messages.ts';
 import { messageTarget } from '../exchange/messages.ts';
@@ -181,10 +181,15 @@ export interface CheckIssue {
   readonly channel: string;
   readonly method?: string;
   /**
-   * `invocation-unhandled-on-platform*`에서 핸들러가 빠진 수신 플랫폼이다. 다른 코드에는 없어
-   * 기존 진단의 출력이 그대로다. 메서드 키마다 이 진단은 최대 하나라 진단 신원에는 넣지 않는다.
+   * `invocation-unhandled-on-platform*`에서 핸들러가 빠진 수신 플랫폼이다. 진단 신원의 원소라
+   * 베이스라인 억제와 지문이 플랫폼마다 갈린다. 다른 코드에는 없어 기존 진단의 출력·신원이 그대로다.
    */
-  readonly platform?: 'swift' | 'kotlin';
+  readonly platform?: BridgeReceiverPlatform;
+  /**
+   * `invocation-unhandled-on-platform*`에서 상한 때문에 증거에 싣지 않은 빠진 플랫폼의 채널 등록 수다.
+   * 0이면 키가 없다.
+   */
+  readonly omittedRegistrations?: number;
   readonly evidence: readonly BridgeEndpoint[];
   /**
    * `ambiguous-relation-use`에서 비한정 이름이 닿을 수 있는 선언 측 한정
@@ -260,8 +265,9 @@ export function createCheckReport(
       channel: item.channel,
       method: item.method,
       platform: item.platform,
-      // 호출 위치, 빠진 플랫폼의 채널 등록(핸들러를 더할 곳), 다른 플랫폼의 핸들러 순이다.
+      // 호출 위치, 빠진 플랫폼의 채널 등록(핸들러를 더할 곳, 상한까지), 다른 플랫폼의 핸들러 순이다.
       evidence: [...item.invocations, ...item.registrations, ...item.handlers],
+      ...(item.registrationsOmitted === 0 ? {} : { omittedRegistrations: item.registrationsOmitted }),
     })),
     ...joined.unregisteredChannelCreations.map<CheckIssue>((item) => ({
       severity: gaps.hidesRegistrations(item.target, item.channel) ? 'warning' : 'error',
@@ -597,7 +603,7 @@ interface ReceiverCoverageGaps {
    * 수신 플랫폼 하나가 스스로 알린(또는 소비자가 그 플랫폼 사실에서 센) 공백이 핸들러를 가리는지다.
    * 다른 수신 플랫폼의 공백은 이 플랫폼의 핸들러를 가리지 못한다.
    */
-  hidesHandlersOn(platform: 'swift' | 'kotlin', target: BridgeTarget, channel: string): boolean;
+  hidesHandlersOn(platform: BridgeReceiverPlatform, target: BridgeTarget, channel: string): boolean;
   hidesRegistrations(target: BridgeTarget, channel: string): boolean;
   /**
    * 동적 export 계수는 소비자만 세며 소비자 한계는 채널 범위를 갖지 않으므로
@@ -656,7 +662,7 @@ function receiverCoverageGaps(
     startsWithAny(producerHandlerGapPrefixes)(message) ||
     (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
   const platformHandlerGaps = new Map<string, { all: boolean; channels: Set<string> }>();
-  const handlerGapsOn = (platform: 'swift' | 'kotlin', target: BridgeTarget) => {
+  const handlerGapsOn = (platform: BridgeReceiverPlatform, target: BridgeTarget) => {
     const key = `${platform}\u0000${target}`;
     const existing = platformHandlerGaps.get(key);
     if (existing !== undefined) return existing;

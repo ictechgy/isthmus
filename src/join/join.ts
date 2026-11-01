@@ -12,11 +12,13 @@ import type {
 } from '../exchange/parse.ts';
 import { compareStrings } from '../compare.ts';
 import {
+  bridgeReceiverPlatforms,
   isBridgeCallerDocument,
   isBridgeDomainDocument,
   isBridgeReceiverDocument,
   isChannelLimitationScope,
   type BridgeLimitationScope,
+  type BridgeReceiverPlatform,
 } from '../exchange/parse.ts';
 import { normalizeRouteRange } from '../exchange/route-limitation-scope.ts';
 import type { HttpMethod } from '../exchange/route-template.ts';
@@ -117,19 +119,23 @@ export interface UnhandledInvocation {
  * 다른 수신 플랫폼에서는 처리되지만, 같은 채널을 등록한 수신 플랫폼 하나에서
  * 핸들러가 관찰되지 않은 match 메서드다.
  *
- * match 판정(`MatchedMethod`)은 그대로다. 수신 플랫폼은 swift·kotlin 둘뿐이고 match
- * 메서드에는 핸들러를 가진 플랫폼이 하나 이상 있으므로, 한 메서드 키에 이 항목은
- * 최대 하나다.
+ * match 판정(`MatchedMethod`)은 그대로다. 한 메서드 키에 빠진 플랫폼마다 항목이 하나다.
  */
 export interface PlatformUnhandledInvocation {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method: string;
   /** 채널을 등록했지만 이 메서드의 핸들러가 관찰되지 않은 수신 플랫폼이다. */
-  readonly platform: 'swift' | 'kotlin';
+  readonly platform: BridgeReceiverPlatform;
   readonly invocations: readonly BridgeEndpoint[];
-  /** 빠진 플랫폼이 같은 채널에 남긴 등록 증거다. */
+  /**
+   * 빠진 플랫폼이 같은 채널에 남긴 등록 증거 중 위치 순 앞의 최대
+   * `MAX_PLATFORM_REGISTRATION_EVIDENCE`개다. 같은 등록이 그 채널의 모든 메서드 항목에 반복되므로
+   * 상한 없이 복사하면 출력이 메서드 수 × 등록 수로 커진다.
+   */
   readonly registrations: readonly BridgeEndpoint[];
+  /** 상한 때문에 싣지 않은 등록 증거 수다. */
+  readonly registrationsOmitted: number;
   /** 다른 수신 플랫폼에서 관찰된 핸들러 증거다. */
   readonly handlers: readonly BridgeEndpoint[];
 }
@@ -944,38 +950,43 @@ function collectMethodGroups(
 export function platformUnhandledInvocations(
   joined: BridgeJoinResult,
 ): PlatformUnhandledInvocation[] {
-  const registrations = new Map<string, readonly BridgeEndpoint[]>();
+  // (target, channel, platform)별 등록 증거를 한 번만 나눠 둔다. 등록은 이미 위치 순이라 앞에서
+  // 자른 증거도 결정적이다.
+  const registrations = new Map<string, { readonly shown: readonly BridgeEndpoint[]; readonly omitted: number }>();
   for (const group of [...joined.matchedChannels, ...joined.registrationsWithoutCreations]) {
-    registrations.set(`${group.target}\u0000${group.channel}`, group.registrations);
+    for (const platform of bridgeReceiverPlatforms) {
+      const endpoints = group.registrations.filter((endpoint) => endpoint.platform === platform);
+      if (endpoints.length === 0) continue;
+      registrations.set(JSON.stringify([group.target, group.channel, platform]), {
+        shown: endpoints.slice(0, MAX_PLATFORM_REGISTRATION_EVIDENCE),
+        omitted: Math.max(0, endpoints.length - MAX_PLATFORM_REGISTRATION_EVIDENCE),
+      });
+    }
   }
   const result: PlatformUnhandledInvocation[] = [];
   for (const method of joined.matchedMethods) {
-    const channelRegistrations = registrations.get(`${method.target}\u0000${method.channel}`) ?? [];
-    for (const platform of receiverPlatforms) {
+    for (const platform of bridgeReceiverPlatforms) {
       if (method.handlers.some((handler) => handler.platform === platform)) continue;
-      const platformRegistrations = channelRegistrations.filter((endpoint) => endpoint.platform === platform);
-      if (platformRegistrations.length === 0) continue;
+      const platformRegistrations = registrations.get(JSON.stringify([method.target, method.channel, platform]));
+      if (platformRegistrations === undefined) continue;
       result.push({
         target: method.target,
         channel: method.channel,
         method: method.method,
         platform,
         invocations: method.invocations,
-        registrations: platformRegistrations,
+        registrations: platformRegistrations.shown,
+        registrationsOmitted: platformRegistrations.omitted,
         handlers: method.handlers,
       });
     }
   }
-  // matchedMethods가 이미 메서드 키 순이고 키마다 항목이 최대 하나라 순서가 결정적이다.
+  // matchedMethods가 이미 메서드 키 순이고 플랫폼 순서가 고정이라 순서가 결정적이다.
   return result;
 }
 
-/**
- * 플랫폼별 핸들러 누락을 계산하는 수신 플랫폼의 고정 순서다(`isReceiverPlatform`과 같은 집합).
- * 수신 플랫폼이 둘뿐이라 메서드 키마다 항목이 최대 하나이고, 진단 신원에 플랫폼이 없어도 겹치지 않는다.
- * 수신 플랫폼을 늘리면 진단 신원(베이스라인·지문)에 플랫폼을 넣어야 한다.
- */
-const receiverPlatforms = ['kotlin', 'swift'] as const;
+/** 플랫폼별 핸들러 누락 항목 하나에 싣는 빠진 플랫폼의 채널 등록 증거 상한이다. */
+export const MAX_PLATFORM_REGISTRATION_EVIDENCE = 3;
 
 /** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
 function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {

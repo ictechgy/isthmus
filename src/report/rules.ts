@@ -10,6 +10,7 @@ export type IssueFingerprint = (issue: {
   readonly channel: string;
   readonly method?: string;
   readonly scope?: string;
+  readonly platform?: string;
 }) => string;
 
 /**

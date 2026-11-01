@@ -171,6 +171,12 @@ test('플랫폼별 핸들러 누락 이슈는 빠진 수신 플랫폼을 문구�
     ['photo', 'No kotlin native handler was verified for camera.photo; another receiver platform handles it.'],
     ['video', 'No swift native handler was verified for camera.video; another receiver platform handles it.'],
   ]);
+  // platform이 없는 이슈(손으로 만든 보고서)에도 "undefined"를 문구에 넣지 않는다.
+  const withoutPlatform = createPreflightSummary({ ...withIssues, issues: [
+    { code: 'invocation-unhandled-on-platform', severity: 'warning', target: 'flutter', channel: 'camera', method: 'photo', evidence: [] },
+  ] }, 10);
+  assert.equal(withoutPlatform.issues.items[0]?.message,
+    'No native handler was verified on one receiver platform for camera.photo; another receiver platform handles it.');
 });
 
 test('MethodChannel·RN 이름 경계 이슈 코드는 원인별 미리보기 문구와 결정적 순서를 갖는다', () => {

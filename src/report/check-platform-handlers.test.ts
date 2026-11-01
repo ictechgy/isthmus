@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { parseBridgeFactsDocument, type BridgeFactsDocument } from '../exchange/parse.ts';
 import { joinBridgeDocuments } from '../join/join.ts';
+import { applyBaseline, baselineEntryKey, createBaselineDocument, parseBaselineDocument } from './baseline.ts';
 import { createCheckReport, encodeCheckReport } from './check-report.ts';
 import { createCodeQualityFindings } from './codequality.ts';
 import { createSarifLog, encodeSarifLog } from './sarif.ts';
@@ -268,6 +269,158 @@ test('Code Quality 발견도 빠진 수신 플랫폼을 설명에 싣는다', ()
       + "that registers the same channel. Channel 'camera', method 'photo', platform 'kotlin' (target: flutter)",
   );
   assert.deepEqual(finding?.location, { path: 'lib/bridge.dart', lines: { begin: 4 } });
+});
+
+test('빠진 플랫폼의 채널 등록 증거는 이슈마다 상한으로 자르고 생략 수를 남긴다', () => {
+  // Kotlin이 같은 채널을 다섯 곳에서 등록했다. 핸들러를 더할 후보 위치는 위치 순 앞의 셋만 싣는다.
+  const kotlin = receiverDocument('kotlin', [7, 3, 9, 5, 11].map((line) => ({
+    kind: 'channel-register' as const, channel: 'camera', line,
+  })));
+
+  const [issue, ...rest] = createCheckReport(joinBridgeDocuments([dartDocument, swiftDocument, kotlin])).issues;
+
+  assert.deepEqual(rest, []);
+  assert.equal(issue?.code, 'invocation-unhandled-on-platform');
+  assert.deepEqual(issue?.evidence.map(({ platform, location }) => [platform, location?.line]), [
+    ['dart', 4],
+    ['kotlin', 3],
+    ['kotlin', 5],
+    ['kotlin', 7],
+    ['swift', 4],
+  ]);
+  assert.equal(issue?.omittedRegistrations, 2);
+});
+
+test('채널 등록이 상한 이하이면 생략 수를 싣지 않는다', () => {
+  const [issue] = createCheckReport(joinBridgeDocuments([dartDocument, swiftDocument, kotlinRegistersCamera])).issues;
+
+  assert.equal(issue !== undefined && Object.hasOwn(issue, 'omittedRegistrations'), false);
+});
+
+test('메서드 수와 채널 등록 수가 함께 커져도 보고서는 선형으로 자란다', () => {
+  // 한 채널에서 Dart가 N개 메서드를 호출하고 Swift가 모두 처리한다. Kotlin은 같은 채널을 N곳에서
+  // 등록했지만 핸들러가 없다. 등록 증거를 이슈마다 모두 복사하면 N×N이 된다.
+  const report = (count: number) => {
+    const methods = Array.from({ length: count }, (_, index) => `m${index}`);
+    const dart = parseBridgeFactsDocument({
+      ...dartDocument,
+      facts: methods.map((method, index) => ({
+        kind: 'method-invoke', channel: 'camera', method, dynamic: false,
+        location: { path: 'lib/bridge.dart', line: index + 1, column: 1 },
+      })),
+    });
+    const swift = receiverDocument('swift', [
+      { kind: 'channel-register', channel: 'camera', line: 1 },
+      ...methods.map((method, index) => ({ kind: 'method-handle' as const, channel: 'camera', method, line: index + 2 })),
+    ]);
+    const kotlin = receiverDocument('kotlin', methods.map((_, index) => ({
+      kind: 'channel-register' as const, channel: 'camera', line: index + 1,
+    })));
+    return createCheckReport(joinBridgeDocuments([dart, swift, kotlin]));
+  };
+
+  const small = report(150);
+  const large = report(300);
+
+  // Dart 문서에 채널 생성이 없어 등록 진단 하나가 함께 나온다.
+  const platformIssues = large.issues.filter(({ code }) => code === 'invocation-unhandled-on-platform');
+  assert.equal(platformIssues.length, 300);
+  assert.deepEqual(large.issues.filter(({ code }) => code !== 'invocation-unhandled-on-platform').map(({ code }) => code),
+    ['registration-without-creation']);
+  for (const issue of platformIssues) {
+    assert.equal(issue.evidence.length, 1 + 3 + 1);
+    assert.equal(issue.omittedRegistrations, 297);
+  }
+  const ratio = encodeCheckReport(large).length / encodeCheckReport(small).length;
+  assert.ok(ratio < 2.2, `report size must grow linearly, got ratio ${ratio.toFixed(2)}`);
+});
+
+test('플랫폼별 누락은 플랫폼까지 진단 신원이라 베이스라인이 다른 플랫폼의 누락을 억제하지 않는다', () => {
+  // 처음에는 Kotlin에 photo 핸들러가 없다. 나중에 Kotlin이 처리하고 Swift가 핸들러를 잃었다.
+  const kotlinMissing = createCheckReport(joinBridgeDocuments([dartDocument, swiftDocument, kotlinRegistersCamera]));
+  const swiftWithoutHandler = receiverDocument('swift', [{ kind: 'channel-register', channel: 'camera', line: 3 }]);
+  const kotlinHandles = receiverDocument('kotlin', [
+    { kind: 'channel-register', channel: 'camera', line: 7 },
+    { kind: 'method-handle', channel: 'camera', method: 'photo', line: 8 },
+  ]);
+  const swiftMissing = createCheckReport(joinBridgeDocuments([dartDocument, swiftWithoutHandler, kotlinHandles]));
+  const baseline = createBaselineDocument(kotlinMissing.issues, '2026-11-01T00:00:00Z');
+
+  const applied = applyBaseline(swiftMissing, baseline.entries);
+
+  assert.deepEqual(baseline.entries, [{
+    code: 'invocation-unhandled-on-platform', target: 'flutter', channel: 'camera', method: 'photo', platform: 'kotlin',
+  }]);
+  assert.deepEqual(swiftMissing.issues.map(({ code, platform }) => [code, platform]),
+    [['invocation-unhandled-on-platform', 'swift']]);
+  assert.equal(applied.issues[0]?.suppressed, undefined);
+  assert.equal(applied.summary.warnings, 1);
+  assert.equal(applied.summary.staleBaselineEntries, 1);
+  assert.notEqual(baselineEntryKey(kotlinMissing.issues[0]!), baselineEntryKey(swiftMissing.issues[0]!));
+  // 같은 플랫폼의 누락은 그대로 억제된다. 문서 왕복 뒤에도 같다.
+  const reparsed = parseBaselineDocument(JSON.parse(JSON.stringify(baseline)));
+  assert.equal(applyBaseline(kotlinMissing, reparsed.entries).issues[0]?.suppressed, true);
+  // 기존 진단의 키는 4원소 그대로다.
+  assert.equal(
+    baselineEntryKey({ code: 'unhandled-invocation', target: 'flutter', channel: 'camera', method: 'photo' }),
+    '["unhandled-invocation","flutter","camera","photo"]',
+  );
+});
+
+test('SARIF 지문도 빠진 플랫폼마다 다르다', () => {
+  const kotlinMissing = createCheckReport(joinBridgeDocuments([dartDocument, swiftDocument, kotlinRegistersCamera]));
+  const swiftMissing = createCheckReport(joinBridgeDocuments([
+    dartDocument,
+    receiverDocument('swift', [{ kind: 'channel-register', channel: 'camera', line: 3 }]),
+    receiverDocument('kotlin', [
+      { kind: 'channel-register', channel: 'camera', line: 7 },
+      { kind: 'method-handle', channel: 'camera', method: 'photo', line: 8 },
+    ]),
+  ]));
+  const fingerprint = (report: typeof kotlinMissing) =>
+    createSarifLog(report, undefined, baselineEntryKey).runs[0]!.results[0]!.partialFingerprints.isthmusIssueV1;
+
+  assert.equal(fingerprint(kotlinMissing), '["invocation-unhandled-on-platform","flutter","camera","photo",{"platform":"kotlin"}]');
+  assert.equal(fingerprint(swiftMissing), '["invocation-unhandled-on-platform","flutter","camera","photo",{"platform":"swift"}]');
+});
+
+test('베이스라인의 platform은 플랫폼별 누락 항목에만, 수신 플랫폼 값으로만 온다', () => {
+  const document = (entry: Record<string, unknown>) => ({
+    format: 'isthmus-baseline', version: 1, generatedAt: '2026-11-01T00:00:00Z', entries: [entry],
+  });
+  const base = { code: 'invocation-unhandled-on-platform', target: 'flutter', channel: 'camera', method: 'photo' };
+
+  assert.throws(() => parseBaselineDocument(document(base)), /Platform-specific baseline entries require a platform at index 0\./u);
+  assert.throws(() => parseBaselineDocument(document({ ...base, platform: 'dart' })), /Invalid platform in baseline entry at index 0\./u);
+  assert.throws(() => parseBaselineDocument(document({ ...base, code: 'unhandled-invocation', platform: 'kotlin' })),
+    /Invalid platform in baseline entry at index 0\./u);
+  assert.deepEqual(parseBaselineDocument(document({ ...base, platform: 'swift' })).entries, [{ ...base, platform: 'swift' }]);
+});
+
+test('같은 채널 범위의 공백은 그 채널의 플랫폼별 누락을 판정 불가로 내린다', () => {
+  const kotlin = receiverDocument(
+    'kotlin',
+    [{ kind: 'channel-register', channel: 'camera', line: 7 }],
+    ['opaque-handler-bodies: 1 handler body was not analyzed'],
+    [{ limitationIndex: 0, channels: ['camera'] }],
+  );
+
+  const report = createCheckReport(joinBridgeDocuments([dartDocument, swiftDocument, kotlin]));
+
+  assert.deepEqual(report.issues.map(({ code, platform }) => [code, platform]),
+    [['invocation-unhandled-on-platform-unverified', 'kotlin']]);
+});
+
+test('호출 측 채널 생성이 없는 등록도 빠진 플랫폼의 채널 등록 근거가 된다', () => {
+  // Dart가 채널 생성 없이 호출만 남겼다. 채널 등록은 registrationsWithoutCreations에 있다.
+  const dart = parseBridgeFactsDocument({ ...dartDocument, facts: dartDocument.facts.filter(({ kind }) => kind === 'method-invoke') });
+
+  const report = createCheckReport(joinBridgeDocuments([dart, swiftDocument, kotlinRegistersCamera]));
+
+  assert.deepEqual(report.issues.map(({ code, platform }) => [code, platform ?? null]), [
+    ['invocation-unhandled-on-platform', 'kotlin'],
+    ['registration-without-creation', null],
+  ]);
 });
 
 async function loadFixture(name: string): Promise<BridgeFactsDocument> {

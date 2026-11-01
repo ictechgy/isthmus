@@ -18,8 +18,10 @@
 - `check` reports `invocation-unhandled-on-platform` (warning) when a method is handled on one
   receiver platform but another receiver platform registers the same channel without a handler
   for it, and `-unverified` when that platform reported a handler analysis gap. The issue carries
-  `platform`; SARIF adds the rule only when such an issue exists, and inputs with a single receiver
-  platform keep byte-identical check and SARIF output. Matches, errors and exit codes are unchanged.
+  `platform`, which is part of its baseline/SARIF/Code Quality identity, and at most 3 of that
+  platform's channel registrations as evidence (`omittedRegistrations` counts the rest). SARIF adds
+  the rule only when such an issue exists, and inputs with a single receiver platform keep
+  byte-identical check and SARIF output. Matches, errors and exit codes are unchanged.
 
 - Public cold-cache installation uses a separate pinned released manifest, selected explicitly by `--released`; source candidate/package version equality remains mandatory.
 
