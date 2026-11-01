@@ -448,10 +448,12 @@ require에는 싣지 않는다.
     공백(아래 수신 측 공백 규칙과 같은 접두사, 그 플랫폼 문서·사실에서 나온 한계만)이 있으면
     `invocation-unhandled-on-platform-unverified` warning이다. 다른 플랫폼의 공백은 이 판정을 무르지 않는다.
     의도적으로 한 플랫폼에만 구현하는 호출(`Platform.isIOS` 분기 등)이 있으므로 error가 아니다.
-    진단 신원은 code·target·channel·method에 `platform`을 더한다(베이스라인 항목도 `platform`을 싣는다).
+    진단 신원은 code·target·channel·method에 `platform`을 더한다. 베이스라인 항목의 `platform`은
+    `invocation-unhandled-on-platform*` 항목에 필수이고, 다른 코드의 항목에 있거나 수신 플랫폼(swift·kotlin)이
+    아닌 값이면 입력 오류다(종료 코드 2). platform이 없는 기존 키·지문은 바이트 단위로 유지한다.
     증거는 호출, 빠진 플랫폼의 채널 등록 중 위치 순 앞의 최대 3개, 다른 플랫폼의 핸들러이며, 자른 등록 수는
-    `omittedRegistrations`다 — 같은 등록이 그 채널의 모든 메서드 진단에 반복되므로 상한 없이 실으면 출력이
-    메서드 수 × 등록 수가 된다
+    이슈의 `omittedRegistrations`(SARIF는 `properties.omittedRegistrations`, 자르지 않으면 키 없음)다 — 같은 등록이
+    그 채널의 모든 메서드 진단에 반복되므로 상한 없이 실으면 출력이 메서드 수 × 등록 수가 된다
 - `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같고
   mechanism이 도달 가능해야 한다. `mechanism: "expo"`인 import는
   TurboModuleRegistry 폴백이 있어 core·expo export 모두와 잇고,

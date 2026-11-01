@@ -53,6 +53,8 @@ interface SarifResult {
     readonly method?: string;
     readonly scope?: string;
     readonly platform?: string;
+    /** 관련 위치에 싣지 않은 빠진 플랫폼의 채널 등록 수다. 잘랐을 때만 있다. */
+    readonly omittedRegistrations?: number;
   };
   readonly partialFingerprints: { readonly isthmusIssueV1: string };
 }
@@ -174,6 +176,8 @@ function sarifResult(
       ...(issue.method === undefined ? {} : { method: issue.method }),
       ...(issue.scope === undefined ? {} : { scope: issue.scope }),
       ...(issue.platform === undefined ? {} : { platform: issue.platform }),
+      // 관련 위치가 잘렸음을 SARIF 소비자가 알 수 있게 한다. 자르지 않은 결과에는 키가 없다.
+      ...(issue.omittedRegistrations === undefined ? {} : { omittedRegistrations: issue.omittedRegistrations }),
     },
     partialFingerprints: {
       isthmusIssueV1: issueFingerprint(issue),

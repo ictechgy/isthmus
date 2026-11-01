@@ -267,7 +267,7 @@ export function createCheckReport(
       platform: item.platform,
       // 호출 위치, 빠진 플랫폼의 채널 등록(핸들러를 더할 곳, 상한까지), 다른 플랫폼의 핸들러 순이다.
       evidence: [...item.invocations, ...item.registrations, ...item.handlers],
-      ...(item.registrationsOmitted === 0 ? {} : { omittedRegistrations: item.registrationsOmitted }),
+      ...(item.omittedRegistrations === 0 ? {} : { omittedRegistrations: item.omittedRegistrations }),
     })),
     ...joined.unregisteredChannelCreations.map<CheckIssue>((item) => ({
       severity: gaps.hidesRegistrations(item.target, item.channel) ? 'warning' : 'error',

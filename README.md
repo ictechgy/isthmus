@@ -581,7 +581,7 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
   analysis gap. `platform` is part of the issue identity (baseline, SARIF and Code Quality
   fingerprints), so accepting a missing Android handler does not hide a later missing iOS one.
   Evidence carries at most 3 of that platform's channel registrations;
-  `omittedRegistrations` counts the rest
+  `omittedRegistrations` (also SARIF `properties.omittedRegistrations`) counts the rest
 
 React Native name boundaries follow the same pairing — a `require`/`import` with no
 matching `export` is an error, an `export` with no caller is a warning:

@@ -261,8 +261,8 @@ isthmus check dart-bridges.json swift-bridges.json --format sarif > isthmus.sari
 하는 결과가 되고, 첫 증거 끝점이 주 위치가 되며(프로젝트 상대 경로가 퍼센트 인코딩된
 저장소 상대 URI가 된다), 나머지 끝점은 관련 위치로 실린다. 베이스라인이 억제한 이슈는
 `external` suppression을 달고 나온다. 결과마다 논리 이슈 식별자(code·target·channel·
-method)의 `partialFingerprints` 해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인
-억제와 같은 기준으로 살아남는다.
+method, http는 `scope`, `invocation-unhandled-on-platform*`은 `platform` 추가)의 `partialFingerprints`
+해시가 있어 소스 줄이 움직여도 중복 판정이 베이스라인 억제와 같은 기준으로 살아남는다.
 
 ### GitLab Code Quality 출력
 
@@ -514,7 +514,8 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
   판정 자체는 그대로다. 채널을 아예 등록하지 않은 플랫폼은 플랫폼 전용 채널일 수 있어 보고하지
   않는다. `-unverified` (warning)는 그 플랫폼이 핸들러 분석 공백을 신고한 경우다. `platform`은 진단
   신원(베이스라인, SARIF·Code Quality 지문)의 원소라 Android 누락을 인정해도 이후의 iOS 누락은 억제되지
-  않는다. 증거에는 그 플랫폼의 채널 등록을 최대 3개만 싣고 나머지 수는 `omittedRegistrations`에 남긴다
+  않는다. 증거에는 그 플랫폼의 채널 등록을 최대 3개만 싣고 나머지 수는 `omittedRegistrations`(SARIF는
+  `properties.omittedRegistrations`)에 남긴다
 
 React Native 이름 경계도 같은 방향으로 보고한다 — `require`/`import`에 맞는
 `export`가 없으면 error, `export`에 호출자가 없으면 warning이다.

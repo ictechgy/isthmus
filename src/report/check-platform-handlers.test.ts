@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { parseBridgeFactsDocument, type BridgeFactsDocument } from '../exchange/parse.ts';
-import { joinBridgeDocuments } from '../join/join.ts';
+import { joinBridgeDocuments, platformUnhandledInvocations } from '../join/join.ts';
 import { applyBaseline, baselineEntryKey, createBaselineDocument, parseBaselineDocument } from './baseline.ts';
 import { createCheckReport, encodeCheckReport } from './check-report.ts';
 import { createCodeQualityFindings } from './codequality.ts';
@@ -289,6 +289,37 @@ test('빠진 플랫폼의 채널 등록 증거는 이슈마다 상한으로 자�
     ['swift', 4],
   ]);
   assert.equal(issue?.omittedRegistrations, 2);
+});
+
+test('조인 항목과 이슈는 같은 이름(omittedRegistrations)으로 자른 등록 수를 싣는다', () => {
+  const kotlin = receiverDocument('kotlin', [7, 3, 9, 5, 11].map((line) => ({
+    kind: 'channel-register' as const, channel: 'camera', line,
+  })));
+
+  const [item] = platformUnhandledInvocations(joinBridgeDocuments([dartDocument, swiftDocument, kotlin]));
+  const [single] = platformUnhandledInvocations(joinBridgeDocuments([dartDocument, swiftDocument, kotlinRegistersCamera]));
+
+  assert.equal(item?.omittedRegistrations, 2);
+  assert.deepEqual(item?.registrations.map(({ location }) => location?.line), [3, 5, 7]);
+  assert.equal(single?.omittedRegistrations, 0);
+});
+
+test('SARIF는 등록 증거를 잘랐을 때만 properties에 생략 수를 싣는다', () => {
+  const kotlin = receiverDocument('kotlin', [7, 3, 9, 5, 11].map((line) => ({
+    kind: 'channel-register' as const, channel: 'camera', line,
+  })));
+  const result = (documents: BridgeFactsDocument[]) =>
+    createSarifLog(createCheckReport(joinBridgeDocuments(documents)), undefined, () => 'fingerprint').runs[0]!.results[0]!;
+
+  const truncated = result([dartDocument, swiftDocument, kotlin]);
+  const complete = result([dartDocument, swiftDocument, kotlinRegistersCamera]);
+
+  assert.deepEqual(truncated.properties, {
+    target: 'flutter', channel: 'camera', method: 'photo', platform: 'kotlin', omittedRegistrations: 2,
+  });
+  // 관련 위치는 실린 증거(등록 3곳 + 다른 플랫폼 핸들러)뿐이다.
+  assert.equal(truncated.relatedLocations?.length, 4);
+  assert.equal(Object.hasOwn(complete.properties, 'omittedRegistrations'), false);
 });
 
 test('채널 등록이 상한 이하이면 생략 수를 싣지 않는다', () => {

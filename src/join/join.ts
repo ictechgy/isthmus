@@ -134,8 +134,8 @@ export interface PlatformUnhandledInvocation {
    * 상한 없이 복사하면 출력이 메서드 수 × 등록 수로 커진다.
    */
   readonly registrations: readonly BridgeEndpoint[];
-  /** 상한 때문에 싣지 않은 등록 증거 수다. */
-  readonly registrationsOmitted: number;
+  /** 상한 때문에 싣지 않은 등록 증거 수다. 이슈의 같은 이름 필드(0이면 생략)로 그대로 옮긴다. */
+  readonly omittedRegistrations: number;
   /** 다른 수신 플랫폼에서 관찰된 핸들러 증거다. */
   readonly handlers: readonly BridgeEndpoint[];
 }
@@ -976,7 +976,7 @@ export function platformUnhandledInvocations(
         platform,
         invocations: method.invocations,
         registrations: platformRegistrations.shown,
-        registrationsOmitted: platformRegistrations.omitted,
+        omittedRegistrations: platformRegistrations.omitted,
         handlers: method.handlers,
       });
     }
