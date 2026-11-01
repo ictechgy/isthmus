@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+- React Native module/component name classification compares each caller and receiver with the
+  mechanisms observed on the other side instead of every evidence pair, so one name with many
+  imports and exports no longer costs O(callers x receivers). Output is byte-identical; the
+  consumer benchmark gains a 10,000 x 10,000 mismatched-mechanism `check` case.
+
 - `check` reports `invocation-unhandled-on-platform` (warning) when a method is handled on one
   receiver platform but another receiver platform registers the same channel without a handler
   for it, and `-unverified` when that platform reported a handler analysis gap. The issue carries

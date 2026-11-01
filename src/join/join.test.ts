@@ -1434,6 +1434,66 @@ test('수신 측 관찰이 아예 없으면 불일치 증거 없이 미수출로
   );
 });
 
+test('mechanism 집합 분류는 모든 소규모 조합에서 증거 쌍 단위 판정과 같다', () => {
+  // 기준 모델: 증거 쌍마다 호환을 판정한다(계약의 mechanism 규칙). 분류기는 반대편 mechanism
+  // 집합만 보므로, 생략·core·expo를 0~3개씩 섞은 모든 조합에서 결과가 같아야 한다.
+  const options = [undefined, 'core', 'expo'] as const;
+  const combinations: Array<ReadonlyArray<'core' | 'expo' | undefined>> = [[]];
+  for (let size = 1; size <= 3; size++) {
+    const previous = combinations.filter((combination) => combination.length === size - 1);
+    for (const combination of previous) {
+      for (const option of options) combinations.push([...combination, option]);
+    }
+  }
+  const compatible = (kind: 'module-import' | 'component-require', caller: string, receiver: string) =>
+    kind === 'module-import' ? caller === 'expo' || receiver === 'core' : caller === receiver;
+  const kinds = [
+    { caller: 'module-import', receiver: 'module-export', matched: 'matchedModules',
+      unexported: 'moduleImportsWithoutExports', unrequired: 'moduleExportsWithoutImports' },
+    { caller: 'component-require', receiver: 'component-export', matched: 'matchedComponents',
+      unexported: 'componentRequiresWithoutExports', unrequired: 'componentExportsWithoutRequires' },
+  ] as const;
+  let compared = 0;
+  for (const kind of kinds) {
+    for (const callerMechanisms of combinations) {
+      if (callerMechanisms.length === 0) continue;
+      for (const receiverMechanisms of combinations) {
+        const caller = mechanismDocument('js', callerMechanisms.map((mechanism, index) => ({
+          kind: kind.caller, channel: 'Name', ...(mechanism === undefined ? {} : { mechanism }), path: `src/c${index}.ts`,
+        })));
+        const receiver = mechanismDocument('swift', [
+          // 수신 측 문서가 비지 않게 다른 이름의 export를 하나 둔다(구성 요건).
+          { kind: kind.receiver, channel: 'Other' },
+          ...receiverMechanisms.map((mechanism, index) => ({
+            kind: kind.receiver, channel: 'Name', ...(mechanism === undefined ? {} : { mechanism }), path: `ios/r${index}.swift`,
+          })),
+        ]);
+        const result = joinBridgeDocuments([caller, receiver]);
+        const callers = callerMechanisms.map((mechanism, index) => ({ mechanism: mechanism ?? 'core', path: `src/c${index}.ts` }));
+        const receivers = receiverMechanisms.map((mechanism, index) => ({ mechanism: mechanism ?? 'core', path: `ios/r${index}.swift` }));
+        const satisfied = callers.filter((c) => receivers.some((r) => compatible(kind.caller, c.mechanism, r.mechanism)));
+        const reached = receivers.filter((r) => callers.some((c) => compatible(kind.caller, c.mechanism, r.mechanism)));
+        // 순서까지 비교한다. 증거는 위치 순이고 c0<c1<c2·r0<r1<r2라 기준 모델의 색인 순과 같다.
+        const paths = (endpoints: readonly { location?: { path: string } }[] | undefined) =>
+          endpoints?.map(({ location }) => location?.path);
+        const named = <T extends { channel: string }>(items: readonly T[]) => items.filter(({ channel }) => channel === 'Name');
+        const matched = named(result[kind.matched]);
+        const unexported = named(result[kind.unexported]);
+        const unrequired = named(result[kind.unrequired]);
+        assert.deepEqual(matched.map(({ callers: c, receivers: r }) => [paths(c), paths(r)]),
+          satisfied.length === 0 ? [] : [[satisfied.map(({ path }) => path), reached.map(({ path }) => path)]]);
+        assert.deepEqual(unexported.map(({ callers: c }) => paths(c)),
+          satisfied.length === callers.length ? [] : [callers.filter((c) => !satisfied.includes(c)).map(({ path }) => path)]);
+        assert.deepEqual(unrequired.map(({ receivers: r }) => paths(r)),
+          reached.length === receivers.length ? [] : [receivers.filter((r) => !reached.includes(r)).map(({ path }) => path)]);
+        compared++;
+      }
+    }
+  }
+  // (호출자 조합 39개) × (수신자 조합 40개) × 두 종류
+  assert.equal(compared, 39 * 40 * 2);
+});
+
 test('도달 못한 수신자는 호출 측 mechanism 불일치 증거를 실는다', () => {
   const caller = mechanismDocument('js', [
     { kind: 'module-import', channel: 'CameraModule' },

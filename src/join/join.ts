@@ -1188,20 +1188,22 @@ function classifyNameGroups(
   groups: Map<string, MutableNameGroup>,
   callerKind: 'module-import' | 'component-require',
 ): NameClassification {
-  const compatible = (caller: BridgeEndpoint, receiver: BridgeEndpoint) =>
-    boundaryCompatible(callerKind, caller, receiver);
   const matched: MatchedBoundaryName[] = [];
   const unexported: UnexportedBoundaryName[] = [];
   const unrequired: UnrequiredBoundaryName[] = [];
   for (const group of groups.values()) {
-    const satisfied = group.callers.filter((caller) =>
-      group.receivers.some((receiver) => compatible(caller, receiver)));
-    const unsatisfied = group.callers.filter((caller) =>
-      !group.receivers.some((receiver) => compatible(caller, receiver)));
-    const reached = group.receivers.filter((receiver) =>
-      group.callers.some((caller) => compatible(caller, receiver)));
-    const unreached = group.receivers.filter((receiver) =>
-      !group.callers.some((caller) => compatible(caller, receiver)));
+    // 호환 여부는 양쪽 mechanism에만 달렸으므로, 반대편에 관찰된 mechanism 집합(최대 두 값)과만
+    // 비교한다. 증거 쌍마다 비교하던 O(호출자×수신자)와 같은 분류를 O(호출자+수신자)로 낸다.
+    const receiverMechanisms = endpointMechanisms(group.receivers);
+    const callerMechanisms = endpointMechanisms(group.callers);
+    const isSatisfied = (caller: BridgeEndpoint) => receiverMechanisms.some((receiverMechanism) =>
+      boundaryCompatible(callerKind, caller.mechanism ?? 'core', receiverMechanism));
+    const isReached = (receiver: BridgeEndpoint) => callerMechanisms.some((callerMechanism) =>
+      boundaryCompatible(callerKind, callerMechanism, receiver.mechanism ?? 'core'));
+    const satisfied = group.callers.filter(isSatisfied);
+    const unsatisfied = group.callers.filter((caller) => !isSatisfied(caller));
+    const reached = group.receivers.filter(isReached);
+    const unreached = group.receivers.filter((receiver) => !isReached(receiver));
     // 만족한 호출자가 있으면 그와 호환되는 수신자가 존재하므로 도달한
     // 수신자도 비어 있지 않다.
     if (satisfied.length > 0) {
@@ -1248,6 +1250,11 @@ function classifyNameGroups(
   return { matched, unexported, unrequired };
 }
 
+/** 증거들에 관찰된 mechanism을 중복 없이 모은다. 생략된 mechanism은 `core`로 읽는다. */
+function endpointMechanisms(endpoints: readonly BridgeEndpoint[]): BridgeMechanism[] {
+  return [...new Set(endpoints.map((endpoint) => endpoint.mechanism ?? 'core'))];
+}
+
 /**
  * mechanism이 다른 호출·수신 쌍이 실제로 연결되는지 판정한다.
  *
@@ -1259,11 +1266,9 @@ function classifyNameGroups(
  */
 function boundaryCompatible(
   callerKind: 'module-import' | 'component-require',
-  caller: BridgeEndpoint,
-  receiver: BridgeEndpoint,
+  callerMechanism: BridgeMechanism,
+  receiverMechanism: BridgeMechanism,
 ): boolean {
-  const callerMechanism = caller.mechanism ?? 'core';
-  const receiverMechanism = receiver.mechanism ?? 'core';
   if (callerKind === 'module-import') {
     return callerMechanism === 'expo' || receiverMechanism === 'core';
   }
