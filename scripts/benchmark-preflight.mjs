@@ -13,7 +13,8 @@ const channels = 10_000;
 const eventCount = 100_000;
 const checks = 1_000;
 const consumers = 20_000;
-const boundaryEvidence = 10_000;
+// 쌍마다 비교하던 분류는 이 크기에서 수십 초가 걸려, 머신 속도가 달라도 5초 예산으로 제곱 회귀를 잡는다.
+const boundaryEvidence = 20_000;
 const repetitions = 5;
 const timeBudgetMs = 5_000;
 try {
@@ -88,7 +89,7 @@ try {
     assert.ok(report.affected.items.some(({ subject }) => subject.kind === 'symbol' && subject.symbol.id === 'dart:0'));
   });
   // 한 모듈·컴포넌트 이름에 호출·수신 증거가 몰리고 mechanism이 모두 어긋난 최악 입력이다. 쌍마다 비교하면
-  // O(호출자×수신자)라 이 크기에서 예산을 넘는다.
+  // O(호출자×수신자)라 이 크기에서 예산을 넘는다. 증거 전체를 싣는 보고서라 출력 버퍼를 넓힌다.
   const boundaryResult = measure(['check', join(root, 'boundaryCallers.json'), join(root, 'boundaryReceivers.json')], (report) => {
     assert.equal(report.summary.observedFacts, boundaryEvidence * 4);
     assert.equal(report.summary.matchedModules, 0);
@@ -99,7 +100,7 @@ try {
       ['component-require-without-export', boundaryEvidence * 2],
       ['component-export-mechanism-mismatch', boundaryEvidence * 2],
     ]);
-  });
+  }, 128 * 1024 * 1024);
   process.stdout.write(`${JSON.stringify({
     scope: 'consumer-cli-only', node: process.version, platform: process.platform, arch: process.arch,
     repetitions, timeBudgetMs,
@@ -147,13 +148,13 @@ function messagePreflight() {
 }
 
 /** 명령마다 새 프로세스를 사용하고 매번 독립적인 집계를 확인한다. */
-function measure(args, verify) {
+function measure(args, verify, maxBuffer = 32 * 1024 * 1024) {
   const times = [];
   let outputBytes = 0;
   for (let iteration = 0; iteration < repetitions; iteration++) {
     const started = performance.now();
     const result = runChild(process.execPath, [binary, ...args], {
-      timeout: 30_000, maxBuffer: 32 * 1024 * 1024,
+      timeout: 30_000, maxBuffer,
     });
     times.push(performance.now() - started);
     assert.equal(result.status, 0, 'Benchmark command must succeed.');
