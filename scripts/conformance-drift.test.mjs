@@ -152,6 +152,22 @@ test('루트 lock 파일을 직접 줘도 checkout 모드와 같이 conformance/
   assert.equal(runDrift(['--strict', `p=${space.path('root-lock/conformance.lock')}`], { root: space.path('canonical') }).exitCode, 0);
 });
 
+test('루트가 아닌 lock은 옆에 conformance/ 디렉터리가 있어도 기록 옆의 사본과 대조한다', (t) => {
+  // fixture 디렉터리 lock의 사본은 기록 옆에 있다. 무관한 하위 conformance/ 디렉터리로 옮겨 가지 않는다.
+  const space = workspace(t);
+  const lock = JSON.stringify({ format: 'isthmus-conformance-lock', version: 1, files: { 'a.json': sha('a-v2') } });
+  space.write('nested/fixtures/isthmus-conformance/conformance.lock', lock);
+  space.write('nested/fixtures/isthmus-conformance/a.json', 'a-v2');
+  space.write('nested/fixtures/isthmus-conformance/conformance/a.json', 'unrelated');
+  const canonical = readCanonical(space.path('canonical'));
+
+  const checkout = compareProducer(canonical, readProducerRecord(space.path('nested')));
+  const direct = compareProducer(canonical, readProducerRecord(space.path('nested/fixtures/isthmus-conformance/conformance.lock')));
+
+  assert.equal(checkout.suites[0]?.status, 'current');
+  assert.equal(direct.suites[0]?.status, 'current');
+});
+
 test('CRLF 줄 끝의 SHA256SUMS 사본도 읽는다', (t) => {
   const space = workspace(t);
   space.write('crlf/conformance/SHA256SUMS', `${sha('a-v2')}  a.json\r\n${sha('b')}  b.json\r\n`);

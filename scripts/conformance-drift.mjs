@@ -87,21 +87,24 @@ export function readProducerRecord(location) {
   if (entry === null) throw new DriftInputError('The producer path does not exist.');
   let recordPath;
   let source;
+  /** checkout 모드에서 기록이 생산자 루트의 lock인지다. 기록 파일을 직접 주면 아래에서 사본 위치로 판정한다. */
+  let rootLock;
   if (entry.isDirectory()) {
     const relative = recordLocations.find((candidate) => statOrNull(join(location, candidate))?.isFile() === true);
     if (relative === undefined) return { source: null, commit: null, files: new Map(), actual: new Map(), absent: new Set() };
     recordPath = join(location, relative);
     source = relative;
+    rootLock = relative === 'conformance.lock';
   } else if (entry.isFile()) {
     recordPath = location;
     source = basename(recordPath);
   } else {
     throw new DriftInputError('The producer path is not a directory or a regular record file.');
   }
-  const vendorDirectory = vendorDirectoryFor(recordPath);
   const text = readBounded(recordPath).toString('utf8');
   const isSums = basename(recordPath) === 'SHA256SUMS';
   const { files, commit } = isSums ? { files: parseSums(text, 'SHA256SUMS'), commit: null } : parseLock(text);
+  const vendorDirectory = vendorDirectoryFor(recordPath, files, rootLock);
   const actual = new Map();
   const absent = new Set();
   for (const name of files.keys()) {
@@ -116,13 +119,20 @@ export function readProducerRecord(location) {
 }
 
 /**
- * 기록이 가리키는 사본 디렉터리다. 저장소 루트 lock(옆에 `conformance/` 디렉터리가 있는 `conformance.lock`)은
- * `conformance/`, 그 밖의 기록은 기록 옆이다. checkout을 주든 기록 파일을 직접 주든 같은 규칙이다.
+ * 기록이 가리키는 사본 디렉터리다. 생산자 루트의 lock은 `conformance/`, 그 밖의 기록은 기록 옆이다.
+ *
+ * checkout 모드는 기록을 찾은 위치로 루트 lock인지 안다. 기록 파일을 직접 주면 루트인지 알 수 없으므로,
+ * `conformance.lock` 옆에 기록된 사본이 하나도 없고 `conformance/` 디렉터리가 있을 때만 루트 lock으로 본다 —
+ * fixture 디렉터리 lock 옆의 무관한 하위 `conformance/`로 옮겨 가지 않게 한다.
  */
-function vendorDirectoryFor(recordPath) {
+function vendorDirectoryFor(recordPath, files, rootLock) {
   const directory = dirname(recordPath);
   const nested = join(directory, 'conformance');
-  return basename(recordPath) === 'conformance.lock' && statOrNull(nested)?.isDirectory() === true ? nested : directory;
+  if (rootLock !== undefined) return rootLock ? nested : directory;
+  if (basename(recordPath) !== 'conformance.lock' || statOrNull(nested)?.isDirectory() !== true) return directory;
+  const besideRecord = [...files.keys()].some((name) =>
+    /^[A-Za-z0-9._-]+$/u.test(name) && !name.startsWith('.') && statOrNull(join(directory, name)) !== null);
+  return besideRecord ? directory : nested;
 }
 
 /** lock JSON을 파일 이름 → 해시와 isthmus 커밋으로 읽는다. */
