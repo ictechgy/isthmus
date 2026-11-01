@@ -1487,6 +1487,15 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   gartograph·rustograph·tsograph·pythograph)는 이 suite를 벤더링해 `conformance.lock`에 새 항목으로 더한다.
 - isthmus `npm run verify`는 SHA256SUMS를 대조하고, 소비자 케이스를 제품 파서·매처로, 생산자
   케이스를 `scripts/verify-conformance.mjs`의 참조 구현으로 실행한다.
+- 생산자 사본의 드리프트는 `node scripts/conformance-drift.mjs [--json] [--strict] <producer>=<checkout-or-record> ...`로
+  본다. checkout에서는 루트 `conformance.lock`(사본은 `conformance/`), `conformance/conformance.lock`,
+  `fixtures/isthmus-conformance/`·`fixtures/isthmus_conformance/`의 lock, lock 없이 복사한 `conformance/SHA256SUMS`
+  순으로 기록을 찾는다(기록 파일 경로를 직접 줄 수도 있다). lock의 isthmus 커밋은 `commit`·`isthmus.commit`·
+  `source.commit` 중 있는 값을 쓴다. 기록과 실제 사본 파일을 이 커밋의 정본과 대조해 suite별로 `current`·`stale`
+  (이전 정본)·`modified`(사본이 기록과 다름)·`missing`(기록만 있고 사본 없음)·`unknown`(정본에 없는 suite)·
+  `not-vendored`를 Markdown 표(GitHub step summary용) 또는 JSON으로 낸다. 생산자에게 필요 없는 suite가 있으므로
+  `not-vendored`는 드리프트가 아니다. 기본 종료 코드는 0이고 `--strict`만 드리프트에 1을 낸다(경로 없음·읽기 실패 2,
+  사용 오류 64). 생산자 테스트는 실행하지 않으며 저장소 checkout·예약 실행은 이 스크립트 밖이다
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
   OpenAPI 경로 템플릿과 Spring MVC PathPattern(`framework.spring.path-pattern`, Spring Framework v6.2.10 소스 확인,
   `producer:kartograph`)이 있다. Spring 케이스: 끝 `**`·`{*x}`의 0세그먼트 매칭(접두사 decl), 루트 `/**`, 중간 `**`

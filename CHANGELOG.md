@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+- `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
+  (the producer's `conformance.lock` at its known locations, or a copied `SHA256SUMS`) and the
+  vendored files against this commit's canonical `SHA256SUMS`, and reports per-suite
+  `current`/`stale`/`modified`/`missing`/`unknown`/`not-vendored` as a Markdown table or JSON.
+  It only reports by default; `--strict` exits 1 on drift.
+
 - React Native module/component name classification compares each caller and receiver with the
   mechanisms observed on the other side instead of every evidence pair, so one name with many
   imports and exports no longer costs O(callers x receivers). Output is byte-identical; the
