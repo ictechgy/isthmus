@@ -173,6 +173,148 @@ test('플랫폼별 핸들러 누락 이슈는 빠진 수신 플랫폼을 문구�
   ]);
 });
 
+test('MethodChannel·RN 이름 경계 이슈 코드는 원인별 미리보기 문구와 결정적 순서를 갖는다', () => {
+  const issue = (code: PreflightReport['issues'][number]['code'], channel: string, method?: string,
+    severity: 'error' | 'warning' = 'warning') => ({
+    code, severity, target: 'react-native' as const, channel, ...(method === undefined ? {} : { method }), evidence: [],
+  });
+  const withIssues: PreflightReport = {
+    ...report,
+    // 입력 순서를 일부러 뒤섞는다. 미리보기는 code·channel·method·severity 순으로 고정된다.
+    issues: [
+      issue('module-import-without-export', 'Cam', undefined, 'error'),
+      issue('component-export-mechanism-mismatch', 'View'),
+      issue('handler-without-invocation', 'camera', 'zoom'),
+      issue('handler-without-invocation', 'camera', 'focus'),
+      issue('component-export-without-require', 'View'),
+      issue('module-export-without-import', 'Cam'),
+      issue('component-require-mechanism-mismatch', 'View'),
+      issue('module-import-mechanism-mismatch', 'Cam'),
+      issue('module-import-without-export-optional', 'Cam'),
+      issue('module-import-without-export-unverified', 'Cam'),
+      issue('registration-without-creation', 'camera'),
+      issue('unregistered-channel-creation-unverified', 'camera'),
+      issue('unregistered-channel-creation', 'camera', undefined, 'error'),
+      issue('unhandled-invocation', 'camera', 'photo', 'error'),
+      issue('unhandled-invocation', 'camera', 'photo', 'warning'),
+      issue('unhandled-invocation-unverified', 'camera', 'photo'),
+    ],
+  };
+
+  const view = createPreflightSummary(withIssues, 100);
+
+  assert.equal(view.issues.total, 16);
+  assert.deepEqual(view.issues.items.map(({ code, severity, message }) => [code, severity, message]), [
+    ['component-export-mechanism-mismatch', 'warning', 'Observed component requires for View resolve through a different bridge mechanism.'],
+    ['component-export-without-require', 'warning', 'Native component export has no verified require for View.'],
+    ['component-require-mechanism-mismatch', 'warning', 'Observed component exports for View resolve through a different bridge mechanism.'],
+    ['handler-without-invocation', 'warning', 'Native handler has no verified invocation for camera.focus.'],
+    ['handler-without-invocation', 'warning', 'Native handler has no verified invocation for camera.zoom.'],
+    ['module-export-without-import', 'warning', 'Native module export has no verified import for Cam.'],
+    ['module-import-mechanism-mismatch', 'warning', 'Observed module exports for Cam resolve through a different bridge mechanism.'],
+    ['module-import-without-export', 'error', 'No native module export was verified for Cam.'],
+    ['module-import-without-export-optional', 'warning', 'No native module export was verified for Cam, but every caller tolerates absence.'],
+    ['module-import-without-export-unverified', 'warning', 'No native module export was verified for Cam.'],
+    ['registration-without-creation', 'warning', 'Native registration has no verified channel creation for camera.'],
+    // 같은 code·channel·method는 severity 문자열 순(error가 먼저)이다.
+    ['unhandled-invocation', 'error', 'No native handler was verified for camera.photo.'],
+    ['unhandled-invocation', 'warning', 'No native handler was verified for camera.photo.'],
+    ['unhandled-invocation-unverified', 'warning', 'No native handler was verified for camera.photo.'],
+    ['unregistered-channel-creation', 'error', 'No native registration was verified for camera.'],
+    ['unregistered-channel-creation-unverified', 'warning', 'No native registration was verified for camera.'],
+  ]);
+  // method가 없는 이슈는 미리보기에도 method 키가 없다.
+  assert.equal(Object.hasOwn(view.issues.items[0]!, 'method'), false);
+  assert.equal(view.issues.items[3]?.method, 'focus');
+});
+
+test('한계 목록은 정렬·제한하고 bridge 한계의 채널 범위도 같은 상한으로 자른다', () => {
+  const bridgeLimitation = (platform: 'swift' | 'kotlin' | 'dart', target: 'flutter' | null, tool: string, message: string,
+    channels?: readonly string[]) => ({ platform, target, tool, message, ...(channels === undefined ? {} : { channels }) });
+  const withLimitations: PreflightReport = {
+    ...report,
+    limitations: [
+      { code: 'producer-gap', message: 'b', analysis: 'swift' },
+      { code: 'capture-limitation', message: 'z' },
+      { code: 'producer-gap', message: 'a', analysis: 'swift' },
+      { code: 'producer-gap', message: 'c', analysis: 'dart' },
+    ],
+    bridgeLimitations: [
+      bridgeLimitation('swift', 'flutter', 'cartograph', 'opaque-handler-bodies: 2', ['ch/c', 'ch/a', 'ch/b']),
+      bridgeLimitation('swift', null, 'cartograph', 'objective-c-sources: 1'),
+      bridgeLimitation('kotlin', 'flutter', 'kartograph', 'dynamic-methods: 1'),
+      bridgeLimitation('swift', 'flutter', 'cartograph', 'dynamic-channels: 1'),
+      bridgeLimitation('swift', 'flutter', 'isthmus', 'unjoined-dynamic-methods: 1'),
+    ],
+    messageLimitations: [
+      bridgeLimitation('swift', 'flutter', 'cartograph', 'unattributed-message-handles: 1'),
+      bridgeLimitation('dart', 'flutter', 'dartograph', 'dynamic-message-channels: 1'),
+    ],
+  };
+
+  const view = createPreflightSummary(withLimitations, 2);
+
+  // code, analysis(없으면 빈 문자열), message 순이다.
+  assert.deepEqual(view.limitations, { total: 4, omitted: 2, items: [
+    { code: 'capture-limitation', message: 'z' },
+    { code: 'producer-gap', message: 'c', analysis: 'dart' },
+  ] });
+  assert.deepEqual(createPreflightSummary(withLimitations, 4).limitations.items.slice(2), [
+    { code: 'producer-gap', message: 'a', analysis: 'swift' },
+    { code: 'producer-gap', message: 'b', analysis: 'swift' },
+  ]);
+  // platform, target(null은 빈 문자열로 먼저), tool, message 순이며 채널 범위도 상한 2로 자른다.
+  const bridge = createPreflightSummary(withLimitations, 5).bridgeLimitations;
+  assert.deepEqual(bridge.items.map(({ platform, target, tool, message }) => [platform, target, tool, message]), [
+    ['kotlin', 'flutter', 'kartograph', 'dynamic-methods: 1'],
+    ['swift', null, 'cartograph', 'objective-c-sources: 1'],
+    ['swift', 'flutter', 'cartograph', 'dynamic-channels: 1'],
+    ['swift', 'flutter', 'cartograph', 'opaque-handler-bodies: 2'],
+    ['swift', 'flutter', 'isthmus', 'unjoined-dynamic-methods: 1'],
+  ]);
+  assert.equal(Object.hasOwn(bridge.items[0]!, 'channels'), false);
+  assert.deepEqual(view.bridgeLimitations.total, 5);
+  assert.deepEqual(createPreflightSummary(withLimitations, 2).bridgeLimitations.items.length, 2);
+  const scoped = createPreflightSummary({ ...withLimitations, bridgeLimitations: [withLimitations.bridgeLimitations[0]!] }, 2);
+  assert.deepEqual(scoped.bridgeLimitations.items[0]?.channels, { total: 3, items: ['ch/a', 'ch/b'], omitted: 1 });
+  assert.deepEqual(view.messageLimitations?.items.map(({ platform, message }) => [platform, message]), [
+    ['dart', 'dynamic-message-channels: 1'],
+    ['swift', 'unattributed-message-handles: 1'],
+  ]);
+});
+
+test('runtime 경로 미리보기는 run·channel·method·instance 순으로 정렬한다', () => {
+  const expectations = parseRuntimeExpectations({ format: 'bridge-expectations', version: 1, project: context.project,
+    revision: context.revision, checks: [
+      { id: 'a', scenario: 'one', platform: 'macos', transport: 'method-channel', channel: 'camera', method: 'photo' },
+    ] });
+  const runtime = parseBridgeRuntime({ format: 'bridge-runtime', version: 1, project: context.project, revision: context.revision,
+    tool: { name: 'recorder', version: '1' }, run: { id: 'run', scenario: 'one', platform: 'macos', status: 'completed',
+      startedAt: '2026-09-14T00:00:00Z', finishedAt: '2026-09-14T00:00:01Z' }, droppedEvents: 0,
+    events: [{ sequence: 1, instance: 'main', transport: 'method-channel', channel: 'camera', method: 'photo', outcome: 'success' }] });
+  const withRuntime = attachPreflightRuntime(context, report, expectations, [runtime]);
+  const route = withRuntime.runtime!.routes[0]!;
+  const { method: _method, ...withoutMethod } = route;
+  const routes = [
+    { ...route, runId: 'run-b' },
+    { ...route, runId: 'run-a', channel: 'zoom' },
+    { ...route, runId: 'run-a', instance: 'secondary' },
+    { ...withoutMethod, runId: 'run-a' },
+    { ...route, runId: 'run-a' },
+  ];
+
+  const view = createPreflightSummary({ ...withRuntime, runtime: { ...withRuntime.runtime!, routes } }, 10);
+
+  assert.deepEqual(view.runtime?.routes.items.map(({ runId, channel, method, instance }) => [runId, channel, method, instance]), [
+    ['run-a', 'camera', undefined, 'main'],
+    ['run-a', 'camera', 'photo', 'main'],
+    ['run-a', 'camera', 'photo', 'secondary'],
+    ['run-a', 'zoom', 'photo', 'main'],
+    ['run-b', 'camera', 'photo', 'main'],
+  ]);
+  assert.equal(Object.hasOwn(view.runtime!.routes.items[0]!, 'method'), false);
+});
+
 test('invalid limits and broken or cyclic paths fail with PreflightGraphError', () => {
   assert.throws(() => createPreflightSummary(report, 0), RangeError);
   assert.throws(() => createPreflightSummary(report, 101), RangeError);
