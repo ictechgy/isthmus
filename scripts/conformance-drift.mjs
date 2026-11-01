@@ -29,7 +29,8 @@ const driftStatuses = new Set(['stale', 'modified', 'missing', 'unknown']);
 /** `sha256  name` 줄 목록을 파일 이름 → 해시로 읽는다. 형식이 어긋나면 입력 오류다. */
 export function parseSums(text, label) {
   const files = new Map();
-  for (const line of text.split('\n')) {
+  // CRLF로 체크아웃된 사본(Windows의 autocrlf 등)도 같은 기록으로 읽는다.
+  for (const line of text.split(/\r?\n/u)) {
     if (line.trim() === '') continue;
     const match = /^([0-9a-f]{64}) {2}(\S+)$/u.exec(line);
     if (match === null) throw new DriftInputError(`${label} has a malformed SHA256SUMS line.`);
@@ -85,21 +86,19 @@ export function readProducerRecord(location) {
   const entry = statOrNull(location);
   if (entry === null) throw new DriftInputError('The producer path does not exist.');
   let recordPath;
-  let vendorDirectory;
   let source;
   if (entry.isDirectory()) {
     const relative = recordLocations.find((candidate) => statOrNull(join(location, candidate))?.isFile() === true);
     if (relative === undefined) return { source: null, commit: null, files: new Map(), actual: new Map(), absent: new Set() };
     recordPath = join(location, relative);
-    vendorDirectory = relative === 'conformance.lock' ? join(location, 'conformance') : dirname(recordPath);
     source = relative;
   } else if (entry.isFile()) {
     recordPath = location;
-    vendorDirectory = dirname(recordPath);
     source = basename(recordPath);
   } else {
     throw new DriftInputError('The producer path is not a directory or a regular record file.');
   }
+  const vendorDirectory = vendorDirectoryFor(recordPath);
   const text = readBounded(recordPath).toString('utf8');
   const isSums = basename(recordPath) === 'SHA256SUMS';
   const { files, commit } = isSums ? { files: parseSums(text, 'SHA256SUMS'), commit: null } : parseLock(text);
@@ -114,6 +113,16 @@ export function readProducerRecord(location) {
     else actual.set(name, createHash('sha256').update(readBounded(path)).digest('hex'));
   }
   return { source, commit, files, actual, absent };
+}
+
+/**
+ * 기록이 가리키는 사본 디렉터리다. 저장소 루트 lock(옆에 `conformance/` 디렉터리가 있는 `conformance.lock`)은
+ * `conformance/`, 그 밖의 기록은 기록 옆이다. checkout을 주든 기록 파일을 직접 주든 같은 규칙이다.
+ */
+function vendorDirectoryFor(recordPath) {
+  const directory = dirname(recordPath);
+  const nested = join(directory, 'conformance');
+  return basename(recordPath) === 'conformance.lock' && statOrNull(nested)?.isDirectory() === true ? nested : directory;
 }
 
 /** lock JSON을 파일 이름 → 해시와 isthmus 커밋으로 읽는다. */
@@ -222,9 +231,13 @@ export function renderDriftMarkdown(report) {
     ].map(markdownCell).join(' | ')} |`);
   }
   const drifting = report.producers.filter(({ drift }) => drift).map(({ name }) => name);
+  const unrecorded = report.producers.filter(({ source }) => source === null).map(({ name }) => name);
   lines.push('', drifting.length === 0
     ? 'No vendored suite differs from the canonical vectors.'
     : `Drift: ${drifting.join(', ')}. Re-vendor the canonical files and SHA256SUMS, then rerun the producer conformance tests.`);
+  if (unrecorded.length > 0) {
+    lines.push(`No vendored record: ${unrecorded.join(', ')}. Vendor the canonical suites with a conformance.lock.`);
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -243,8 +256,22 @@ export function readCanonical(root = repositoryRoot) {
   return parseSums(readFileSync(join(root, 'conformance', 'SHA256SUMS'), 'utf8'), 'canonical SHA256SUMS');
 }
 
-/** 인자를 받아 보고서를 만들고 출력·종료 코드를 정한다. 프로세스 I/O는 호출자가 한다. */
-export function runDrift(argv, { root = repositoryRoot, revision = null } = {}) {
+/**
+ * 인자를 받아 보고서를 만들고 출력·종료 코드를 정한다. 프로세스 I/O는 호출자가 한다.
+ *
+ * `--strict`는 드리프트뿐 아니라 기록이 없는 생산자도 실패로 본다 — 엄격 검사를 요청한 생산자에 기록이
+ * 없으면 대조할 수 없다. 예기치 않은 오류는 드리프트(1)와 섞이지 않게 2로 바꾸고 원문을 싣지 않는다.
+ */
+export function runDrift(argv, options = {}) {
+  try {
+    return runDriftUnchecked(argv, options);
+  } catch {
+    return { exitCode: 2, stdout: '', stderr: 'isthmus conformance drift failed unexpectedly; check the canonical checkout and inputs.\n' };
+  }
+}
+
+/** `runDrift`의 본체다. 사용·입력 오류만 스스로 종료 코드로 바꾼다. */
+function runDriftUnchecked(argv, { root = repositoryRoot, revision = null } = {}) {
   let options;
   try {
     options = parseDriftArguments(argv);
@@ -271,9 +298,9 @@ export function runDrift(argv, { root = repositoryRoot, revision = null } = {}) 
     canonical: [...canonical].sort(([left], [right]) => compareNames(left, right)).map(([suite, sha256]) => ({ suite, sha256 })),
     producers,
   };
-  const drift = producers.some(({ drift: value }) => value);
+  const failed = producers.some(({ drift: value, source }) => value || source === null);
   return {
-    exitCode: options.strict && drift ? 1 : 0,
+    exitCode: options.strict && failed ? 1 : 0,
     stdout: options.json ? `${JSON.stringify(report, null, 2)}\n` : renderDriftMarkdown(report),
     stderr: '',
   };

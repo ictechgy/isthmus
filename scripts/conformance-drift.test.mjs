@@ -133,6 +133,62 @@ test('생산자마다 다른 lock 위치·모양을 찾아 기록 옆의 사본�
   assert.equal(direct.source, 'conformance.lock');
 });
 
+test('루트 lock 파일을 직접 줘도 checkout 모드와 같이 conformance/ 사본과 대조한다', (t) => {
+  // gartograph·rustograph·pythograph 모양: 루트 lock, 사본은 conformance/
+  const space = workspace(t);
+  space.write('root-lock/conformance.lock', JSON.stringify({
+    format: 'isthmus-conformance-lock', version: 1, commit: 'r'.repeat(40), files: { 'a.json': sha('a-v2'), 'b.json': sha('b') },
+  }));
+  space.write('root-lock/conformance/a.json', 'a-v2');
+  space.write('root-lock/conformance/b.json', 'b');
+  const canonical = readCanonical(space.path('canonical'));
+
+  const direct = compareProducer(canonical, readProducerRecord(space.path('root-lock/conformance.lock')));
+  const checkout = compareProducer(canonical, readProducerRecord(space.path('root-lock')));
+
+  assert.deepEqual(direct.suites.map(({ status }) => status), ['current', 'current', 'not-vendored']);
+  assert.equal(direct.drift, false);
+  assert.deepEqual({ ...direct, source: undefined }, { ...checkout, source: undefined });
+  assert.equal(runDrift(['--strict', `p=${space.path('root-lock/conformance.lock')}`], { root: space.path('canonical') }).exitCode, 0);
+});
+
+test('CRLF 줄 끝의 SHA256SUMS 사본도 읽는다', (t) => {
+  const space = workspace(t);
+  space.write('crlf/conformance/SHA256SUMS', `${sha('a-v2')}  a.json\r\n${sha('b')}  b.json\r\n`);
+  space.write('crlf/conformance/a.json', 'a-v2');
+  space.write('crlf/conformance/b.json', 'b');
+
+  const report = compareProducer(readCanonical(space.path('canonical')), readProducerRecord(space.path('crlf')));
+
+  assert.deepEqual(report.suites.map(({ suite, status }) => [suite, status]),
+    [['a.json', 'current'], ['b.json', 'current'], ['c.json', 'not-vendored']]);
+});
+
+test('--strict는 기록이 없는 생산자도 실패로 보고, 기본 실행은 보고만 한다', (t) => {
+  const space = workspace(t);
+  space.write('none/README.md', 'no vectors');
+  const options = { root: space.path('canonical'), revision: 'deadbeef' };
+
+  const lenient = runDrift([`none=${space.path('none')}`], options);
+  const strict = runDrift(['--strict', `none=${space.path('none')}`], options);
+
+  assert.equal(lenient.exitCode, 0);
+  assert.equal(strict.exitCode, 1);
+  assert.match(lenient.stdout, /\nNo vendored record: none\. Vendor the canonical suites with a conformance\.lock\.\n$/u);
+  assert.match(lenient.stdout, /\| none \| none \| - \| not-vendored \| not-vendored \| not-vendored \|/u);
+});
+
+test('예기치 않은 내부 오류는 드리프트(1)와 구분되는 종료 코드 2다', (t) => {
+  const space = workspace(t);
+  space.write('current/conformance.lock', JSON.stringify({ format: 'isthmus-conformance-lock', version: 1, files: {} }));
+  // 정본 SHA256SUMS가 없는 루트를 주면 내부 읽기 오류다.
+  const result = runDrift([`p=${space.path('current')}`], { root: space.path('no-canonical') });
+
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /^isthmus conformance drift failed unexpectedly; check the canonical checkout and inputs\.\n$/u);
+});
+
 test('디렉터리 밖을 가리키는 기록 이름은 읽지 않는다', (t) => {
   const space = workspace(t);
   space.write('escape/conformance.lock', JSON.stringify({
