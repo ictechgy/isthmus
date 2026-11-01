@@ -3,7 +3,7 @@ import type {
   CheckIssueCode,
   CheckReport,
 } from './check-report.ts';
-import { checkIssueCodes, httpIssueCodes } from './check-report.ts';
+import { checkIssueCodes, httpIssueCodes, platformIssueCodes } from './check-report.ts';
 import {
   checkIssueRuleDescriptions,
   type IssueFingerprint,
@@ -52,6 +52,7 @@ interface SarifResult {
     readonly channel: string;
     readonly method?: string;
     readonly scope?: string;
+    readonly platform?: string;
   };
   readonly partialFingerprints: { readonly isthmusIssueV1: string };
 }
@@ -86,7 +87,11 @@ export function createSarifLog(
   const includesHttp = report.summary.matchedRoutes !== undefined ||
     report.issues.some(({ target }) => target === 'http');
   const httpCodes = new Set<string>(httpIssueCodes);
-  const rules = [...checkIssueCodes].filter((id) => includesHttp || !httpCodes.has(id)).sort().map((id) => ({
+  // 플랫폼별 핸들러 누락 규칙도 그 진단이 있을 때만 싣는다. 수신 플랫폼이 하나뿐인 입력의 SARIF를 유지한다.
+  const platformCodes = new Set<string>(platformIssueCodes);
+  const reportedCodes = new Set<string>(report.issues.map(({ code }) => code));
+  const rules = [...checkIssueCodes].filter((id) =>
+    (includesHttp || !httpCodes.has(id)) && (!platformCodes.has(id) || reportedCodes.has(id))).sort().map((id) => ({
     id,
     shortDescription: { text: checkIssueRuleDescriptions[id] },
   }));
@@ -141,7 +146,8 @@ function sarifResult(
   const base = issue.method === undefined
     ? `${issue.code} on channel '${issue.channel}'`
     : `${issue.code} on channel '${issue.channel}' for method '${issue.method}'`;
-  const subject = issue.scope === undefined ? base : `${base} in scope '${issue.scope}'`;
+  const scoped = issue.scope === undefined ? base : `${base} in scope '${issue.scope}'`;
+  const subject = issue.platform === undefined ? scoped : `${scoped} on platform '${issue.platform}'`;
   return {
     ruleId: issue.code,
     ruleIndex: index,
@@ -167,6 +173,7 @@ function sarifResult(
       channel: issue.channel,
       ...(issue.method === undefined ? {} : { method: issue.method }),
       ...(issue.scope === undefined ? {} : { scope: issue.scope }),
+      ...(issue.platform === undefined ? {} : { platform: issue.platform }),
     },
     partialFingerprints: {
       isthmusIssueV1: issueFingerprint(issue),

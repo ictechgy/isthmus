@@ -256,6 +256,8 @@ function issuePreview(issue: PreflightReport['issues'][number]): PreflightIssueP
   const route = issue.method === undefined ? issue.channel : `${issue.channel}.${issue.method}`;
   const message = issue.code === 'unhandled-invocation' || issue.code === 'unhandled-invocation-unverified'
     ? `No native handler was verified for ${route}.`
+    : issue.code === 'invocation-unhandled-on-platform' || issue.code === 'invocation-unhandled-on-platform-unverified'
+      ? `No ${issue.platform} native handler was verified for ${route}; another receiver platform handles it.`
     : issue.code === 'unregistered-channel-creation' || issue.code === 'unregistered-channel-creation-unverified'
       ? `No native registration was verified for ${route}.`
       : issue.code === 'registration-without-creation'

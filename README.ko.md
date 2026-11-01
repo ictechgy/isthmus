@@ -507,6 +507,11 @@ isthmus graph dart-bridges.json swift-bridges.json --format mermaid
 - `unhandled-invocation-unverified` (warning): 위 첫 항목과 같은 사실이지만, 수신 측이
   핸들러를 놓쳤을 수 있다고 스스로 신고해 없는 것인지 못 본 것인지 판정할 수 없음
 - `unregistered-channel-creation-unverified` (warning): 같은 이유로 등록 여부를 판정할 수 없음
+- `invocation-unhandled-on-platform` (warning): 한 수신 플랫폼은 메서드를 처리하지만, 같은 채널을
+  등록한 다른 수신 플랫폼에는 그 핸들러가 없음(예: iOS에만 구현해 Android에서
+  `MissingPluginException`이 되는 경우). 이슈의 `platform` 필드가 핸들러가 빠진 플랫폼이며 match
+  판정 자체는 그대로다. 채널을 아예 등록하지 않은 플랫폼은 플랫폼 전용 채널일 수 있어 보고하지
+  않는다. `-unverified` (warning)는 그 플랫폼이 핸들러 분석 공백을 신고한 경우다
 
 React Native 이름 경계도 같은 방향으로 보고한다 — `require`/`import`에 맞는
 `export`가 없으면 error, `export`에 호출자가 없으면 warning이다.

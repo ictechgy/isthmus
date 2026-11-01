@@ -21,6 +21,10 @@ export const checkIssueRuleDescriptions: Record<CheckIssueCode, string> = {
     'A caller-side bridge method invocation has no matching handler on any receiver-side document.',
   'unhandled-invocation-unverified':
     'A caller-side bridge method invocation has no matching handler, and a receiver-side analysis gap may be hiding it.',
+  'invocation-unhandled-on-platform':
+    'A caller-side bridge method invocation is handled on another receiver platform, but not on a receiver platform that registers the same channel.',
+  'invocation-unhandled-on-platform-unverified':
+    'A caller-side bridge method invocation is handled on another receiver platform but not observed on a platform that registers the same channel, and that platform reported an analysis gap that may be hiding it.',
   'unregistered-channel-creation':
     'A caller-side bridge channel creation has no matching registration on any receiver-side document.',
   'unregistered-channel-creation-unverified':

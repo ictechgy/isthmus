@@ -91,7 +91,8 @@ function codeQualityFinding(
   const channel = issue.method === undefined
     ? `Channel '${issue.channel}'`
     : `Channel '${issue.channel}', method '${issue.method}'`;
-  const context = issue.scope === undefined ? channel : `${channel}, scope '${issue.scope}'`;
+  const scoped = issue.scope === undefined ? channel : `${channel}, scope '${issue.scope}'`;
+  const context = issue.platform === undefined ? scoped : `${scoped}, platform '${issue.platform}'`;
   return {
     description:
       `${checkIssueRuleDescriptions[issue.code]} ${context} (target: ${issue.target})`,

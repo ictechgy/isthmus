@@ -441,6 +441,13 @@ require에는 싣지 않는다.
 - `channel-create` ↔ `channel-register`: `channel` 이 같다. 플랫폼별로 따로 맞춘다 (Swift 와 Kotlin 이 각각 등록하는 것이 정상)
 - 생성 없는 `channel-register`는 호출 측 사용을 찾지 못한 경고로 보존한다
 - `method-invoke` ↔ `method-handle`: `(channel, method)` 가 같다
+  - match 판정 키에는 수신 플랫폼이 없어 한 플랫폼의 핸들러로 호출이 match된다. 이 판정은 그대로 두고,
+    match된 메서드의 핸들러가 없는 수신 플랫폼이 같은 `(target, channel)`의 `channel-register`를 냈으면
+    `invocation-unhandled-on-platform` warning을 따로 보고한다(이슈의 `platform`이 빠진 플랫폼). 채널을
+    등록하지 않은 플랫폼은 플랫폼 전용 채널일 수 있어 추측해 보고하지 않는다. 빠진 플랫폼 자신의 핸들러
+    공백(아래 수신 측 공백 규칙과 같은 접두사, 그 플랫폼 문서·사실에서 나온 한계만)이 있으면
+    `invocation-unhandled-on-platform-unverified` warning이다. 다른 플랫폼의 공백은 이 판정을 무르지 않는다.
+    의도적으로 한 플랫폼에만 구현하는 호출(`Platform.isIOS` 분기 등)이 있으므로 error가 아니다
 - `module-import` ↔ `module-export`: `(target, channel=모듈 이름)`이 같고
   mechanism이 도달 가능해야 한다. `mechanism: "expo"`인 import는
   TurboModuleRegistry 폴백이 있어 core·expo export 모두와 잇고,

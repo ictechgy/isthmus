@@ -8,7 +8,7 @@ import type {
   JoinLimitation,
   RelationResolver,
 } from '../join/join.ts';
-import { compareLimitations, isBridgeJoinDeferred } from '../join/join.ts';
+import { compareLimitations, isBridgeJoinDeferred, platformUnhandledInvocations } from '../join/join.ts';
 import type { MessageBridgeJoin } from '../join/messages.ts';
 import { countMatchedRoutes, createRouteIssues } from './route-issues.ts';
 import { encodeSortedJson } from './sorted-json.ts';
@@ -78,6 +78,16 @@ export const httpIssueCodes = [
 ] as const;
 
 /**
+ * 같은 채널을 등록한 수신 플랫폼 하나에서만 핸들러가 빠진 호출의 진단 종류다. 둘 다 warning이다 —
+ * `Platform.isIOS` 분기처럼 의도적으로 한 플랫폼에만 구현하는 호출이 있다. SARIF 규칙 목록은 이
+ * 진단이 있을 때만 이 코드를 싣는다. 수신 플랫폼이 하나뿐인 입력의 SARIF를 바이트 단위로 유지한다.
+ */
+export const platformIssueCodes = [
+  'invocation-unhandled-on-platform',
+  'invocation-unhandled-on-platform-unverified',
+] as const;
+
+/**
  * check가 보고하는 안정적인 진단 종류다.
  *
  * `-unverified` 종류는 수신 측이 스스로 분석 공백을 신고해, 핸들러가 없는 것인지
@@ -86,6 +96,7 @@ export const httpIssueCodes = [
 export const checkIssueCodes = [
   'unhandled-invocation',
   'unhandled-invocation-unverified',
+  ...platformIssueCodes,
   'unregistered-channel-creation',
   'unregistered-channel-creation-unverified',
   'registration-without-creation',
@@ -169,6 +180,11 @@ export interface CheckIssue {
   readonly target: BridgeTarget;
   readonly channel: string;
   readonly method?: string;
+  /**
+   * `invocation-unhandled-on-platform*`에서 핸들러가 빠진 수신 플랫폼이다. 다른 코드에는 없어
+   * 기존 진단의 출력이 그대로다. 메서드 키마다 이 진단은 최대 하나라 진단 신원에는 넣지 않는다.
+   */
+  readonly platform?: 'swift' | 'kotlin';
   readonly evidence: readonly BridgeEndpoint[];
   /**
    * `ambiguous-relation-use`에서 비한정 이름이 닿을 수 있는 선언 측 한정
@@ -234,6 +250,18 @@ export function createCheckReport(
       channel: item.channel,
       method: item.method,
       evidence: item.invocations,
+    })),
+    ...platformUnhandledInvocations(joined).map<CheckIssue>((item) => ({
+      severity: 'warning',
+      code: gaps.hidesHandlersOn(item.platform, item.target, item.channel)
+        ? 'invocation-unhandled-on-platform-unverified'
+        : 'invocation-unhandled-on-platform',
+      target: item.target,
+      channel: item.channel,
+      method: item.method,
+      platform: item.platform,
+      // 호출 위치, 빠진 플랫폼의 채널 등록(핸들러를 더할 곳), 다른 플랫폼의 핸들러 순이다.
+      evidence: [...item.invocations, ...item.registrations, ...item.handlers],
     })),
     ...joined.unregisteredChannelCreations.map<CheckIssue>((item) => ({
       severity: gaps.hidesRegistrations(item.target, item.channel) ? 'warning' : 'error',
@@ -565,6 +593,11 @@ function messageConsumerLimitations(
 /** 수신 측이 스스로 알린 분석 공백이 target별로 무엇을 가리는지 나타낸다. */
 interface ReceiverCoverageGaps {
   hidesHandlers(target: BridgeTarget, channel: string): boolean;
+  /**
+   * 수신 플랫폼 하나가 스스로 알린(또는 소비자가 그 플랫폼 사실에서 센) 공백이 핸들러를 가리는지다.
+   * 다른 수신 플랫폼의 공백은 이 플랫폼의 핸들러를 가리지 못한다.
+   */
+  hidesHandlersOn(platform: 'swift' | 'kotlin', target: BridgeTarget, channel: string): boolean;
   hidesRegistrations(target: BridgeTarget, channel: string): boolean;
   /**
    * 동적 export 계수는 소비자만 세며 소비자 한계는 채널 범위를 갖지 않으므로
@@ -619,6 +652,25 @@ function receiverCoverageGaps(
     allDecls: boolean; allRelationUses: boolean;
     handlerChannels: Set<string>; registrationChannels: Set<string>;
   }>();
+  const isHandlerGap = ({ tool, message, origin }: JoinLimitation) =>
+    startsWithAny(producerHandlerGapPrefixes)(message) ||
+    (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
+  const platformHandlerGaps = new Map<string, { all: boolean; channels: Set<string> }>();
+  const handlerGapsOn = (platform: 'swift' | 'kotlin', target: BridgeTarget) => {
+    const key = `${platform}\u0000${target}`;
+    const existing = platformHandlerGaps.get(key);
+    if (existing !== undefined) return existing;
+    const gaps = { all: false, channels: new Set<string>() };
+    for (const limitation of receiverLimitations) {
+      if (limitation.platform !== platform) continue;
+      if (limitation.target !== null && limitation.target !== target) continue;
+      if (!isHandlerGap(limitation)) continue;
+      if (limitation.channels === undefined) gaps.all = true;
+      else for (const channel of limitation.channels) gaps.channels.add(channel);
+    }
+    platformHandlerGaps.set(key, gaps);
+    return gaps;
+  };
   const gapsFor = (target: BridgeTarget) => {
     const existing = memoized.get(target);
     if (existing !== undefined) return existing;
@@ -627,10 +679,10 @@ function receiverCoverageGaps(
       allDecls: false, allRelationUses: false,
       handlerChannels: new Set<string>(), registrationChannels: new Set<string>(),
     };
-    for (const { platform, target: gapTarget, tool, message, channels, origin } of receiverLimitations) {
+    for (const limitation of receiverLimitations) {
+      const { platform, target: gapTarget, tool, message, channels, origin } = limitation;
       if (gapTarget !== null && gapTarget !== target) continue;
-      const handlers = startsWithAny(producerHandlerGapPrefixes)(message) ||
-        (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusHandlerGapPrefixes)(message));
+      const handlers = isHandlerGap(limitation);
       const registrations = startsWithAny(sourceCoverageGapPrefixes)(message) ||
         (origin === 'consumer' && tool === 'isthmus' && startsWithAny(isthmusRegistrationGapPrefixes)(message));
       const exports = origin === 'consumer' && tool === 'isthmus' &&
@@ -667,6 +719,10 @@ function receiverCoverageGaps(
     hidesHandlers: (target, channel) => {
       const gaps = gapsFor(target);
       return gaps.allHandlers || gaps.handlerChannels.has(channel);
+    },
+    hidesHandlersOn: (platform, target, channel) => {
+      const gaps = handlerGapsOn(platform, target);
+      return gaps.all || gaps.channels.has(channel);
     },
     hidesRegistrations: (target, channel) => {
       const gaps = gapsFor(target);

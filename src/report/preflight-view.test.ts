@@ -154,6 +154,25 @@ test('mechanism 불일치 이슈는 수신 증거가 있으면 불일치 문구�
     'Observed module imports for Cam resolve through a different bridge mechanism.');
 });
 
+test('플랫폼별 핸들러 누락 이슈는 빠진 수신 플랫폼을 문구에 밝힌다', () => {
+  const withIssues: PreflightReport = {
+    ...report,
+    issues: [
+      { code: 'invocation-unhandled-on-platform', severity: 'warning', target: 'flutter',
+        channel: 'camera', method: 'photo', platform: 'kotlin', evidence: [] },
+      { code: 'invocation-unhandled-on-platform-unverified', severity: 'warning', target: 'flutter',
+        channel: 'camera', method: 'video', platform: 'swift', evidence: [] },
+    ],
+  };
+
+  const view = createPreflightSummary(withIssues, 10);
+
+  assert.deepEqual(view.issues.items.map(({ method, message }) => [method, message]), [
+    ['photo', 'No kotlin native handler was verified for camera.photo; another receiver platform handles it.'],
+    ['video', 'No swift native handler was verified for camera.video; another receiver platform handles it.'],
+  ]);
+});
+
 test('invalid limits and broken or cyclic paths fail with PreflightGraphError', () => {
   assert.throws(() => createPreflightSummary(report, 0), RangeError);
   assert.throws(() => createPreflightSummary(report, 101), RangeError);

@@ -570,6 +570,13 @@ The output is `isthmus-check` version 1 JSON, reporting these facts:
   distinguished
 - `unregistered-channel-creation-unverified` (warning): registration undecidable for the same
   reason
+- `invocation-unhandled-on-platform` (warning): the method is handled on one receiver platform,
+  but another receiver platform registers the same channel without a handler for it (for
+  example iOS-only implementations that surface as `MissingPluginException` on Android). The
+  issue's `platform` field names the platform without the handler; the match itself is
+  unchanged. A platform that never registers the channel is not reported, because the channel
+  may be platform-specific. `-unverified` (warning) means that platform reported a handler
+  analysis gap
 
 React Native name boundaries follow the same pairing — a `require`/`import` with no
 matching `export` is an error, an `export` with no caller is a warning:

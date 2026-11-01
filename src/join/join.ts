@@ -113,6 +113,27 @@ export interface UnhandledInvocation {
   readonly invocations: readonly BridgeEndpoint[];
 }
 
+/**
+ * 다른 수신 플랫폼에서는 처리되지만, 같은 채널을 등록한 수신 플랫폼 하나에서
+ * 핸들러가 관찰되지 않은 match 메서드다.
+ *
+ * match 판정(`MatchedMethod`)은 그대로다. 수신 플랫폼은 swift·kotlin 둘뿐이고 match
+ * 메서드에는 핸들러를 가진 플랫폼이 하나 이상 있으므로, 한 메서드 키에 이 항목은
+ * 최대 하나다.
+ */
+export interface PlatformUnhandledInvocation {
+  readonly target: BridgeTarget;
+  readonly channel: string;
+  readonly method: string;
+  /** 채널을 등록했지만 이 메서드의 핸들러가 관찰되지 않은 수신 플랫폼이다. */
+  readonly platform: 'swift' | 'kotlin';
+  readonly invocations: readonly BridgeEndpoint[];
+  /** 빠진 플랫폼이 같은 채널에 남긴 등록 증거다. */
+  readonly registrations: readonly BridgeEndpoint[];
+  /** 다른 수신 플랫폼에서 관찰된 핸들러 증거다. */
+  readonly handlers: readonly BridgeEndpoint[];
+}
+
 /** 호출자를 찾지 못한 논리 핸들러와 모든 네이티브 증거다. */
 export interface HandlerWithoutInvocation {
   readonly target: BridgeTarget;
@@ -908,6 +929,53 @@ function collectMethodGroups(
   }
   return groups;
 }
+
+/**
+ * match 메서드 중 채널을 등록한 수신 플랫폼 하나에서 핸들러가 빠진 항목을 찾는다.
+ *
+ * 메서드 키에는 수신 플랫폼이 없어, 한 플랫폼의 핸들러만으로 호출이 match된다. Flutter에서
+ * iOS에만 구현하고 Android에서 빠뜨린 메서드는 런타임 `MissingPluginException`·`notImplemented`
+ * 가 되지만 match 판정으로는 보이지 않는다. 그 누락을 match를 바꾸지 않는 별도 항목으로 낸다.
+ *
+ * 빠진 플랫폼이 같은 (target, channel)을 등록했다는 정적 사실이 있을 때만 낸다. 채널을 아예
+ * 관찰하지 않은 플랫폼은 그 채널을 쓰지 않는 플랫폼 전용 구현일 수 있으므로 추측해 연결하지
+ * 않는다. 조인 결과만으로 계산하므로 결과 모양과 다른 진단은 바뀌지 않는다.
+ */
+export function platformUnhandledInvocations(
+  joined: BridgeJoinResult,
+): PlatformUnhandledInvocation[] {
+  const registrations = new Map<string, readonly BridgeEndpoint[]>();
+  for (const group of [...joined.matchedChannels, ...joined.registrationsWithoutCreations]) {
+    registrations.set(`${group.target}\u0000${group.channel}`, group.registrations);
+  }
+  const result: PlatformUnhandledInvocation[] = [];
+  for (const method of joined.matchedMethods) {
+    const channelRegistrations = registrations.get(`${method.target}\u0000${method.channel}`) ?? [];
+    for (const platform of receiverPlatforms) {
+      if (method.handlers.some((handler) => handler.platform === platform)) continue;
+      const platformRegistrations = channelRegistrations.filter((endpoint) => endpoint.platform === platform);
+      if (platformRegistrations.length === 0) continue;
+      result.push({
+        target: method.target,
+        channel: method.channel,
+        method: method.method,
+        platform,
+        invocations: method.invocations,
+        registrations: platformRegistrations,
+        handlers: method.handlers,
+      });
+    }
+  }
+  // matchedMethods가 이미 메서드 키 순이고 키마다 항목이 최대 하나라 순서가 결정적이다.
+  return result;
+}
+
+/**
+ * 플랫폼별 핸들러 누락을 계산하는 수신 플랫폼의 고정 순서다(`isReceiverPlatform`과 같은 집합).
+ * 수신 플랫폼이 둘뿐이라 메서드 키마다 항목이 최대 하나이고, 진단 신원에 플랫폼이 없어도 겹치지 않는다.
+ * 수신 플랫폼을 늘리면 진단 신원(베이스라인·지문)에 플랫폼을 넣어야 한다.
+ */
+const receiverPlatforms = ['kotlin', 'swift'] as const;
 
 /** 증거 위치와 심볼을 정렬하고 같은 증거를 한 번만 남긴다. */
 function sortUniqueEndpoints(endpoints: BridgeEndpoint[]): void {
