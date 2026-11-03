@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+- persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
+  declarations with different spellings fold into one join key, such as `public.Users` and
+  `public.users`, with the group count and up to three representative spellings. A case-sensitive
+  quoted identifier is otherwise joined silently as the same relation, so one spelling's unused
+  declaration hides behind the other's uses. Repeated identical spellings stay quiet. The contract
+  now states that a qualified use joins only a declaration with the same number of segments: a
+  three-part name such as `mydb.public.orders` does not join `public.orders`.
+
 - `extract-js` reads `NativeModules` only as the react-native registry. A same-name parameter, an
   import from another module, or a local non-react-native declaration (a test shim) no longer
   produces `module-import`/`method-invoke` facts that surfaced as false

@@ -2104,3 +2104,27 @@ test('관계 해석기는 persistence 선언이 없으면 모든 사용을 미�
   assert.deepEqual(resolver.resolveUse('users'), { status: 'missing' });
   assert.deepEqual(resolver.resolveUse('missing'), { status: 'missing' });
 });
+
+test('철자만 다른 관계 선언을 한 키로 접으면 그 그룹 수를 소비자 한계로 센다', () => {
+  // 인용 식별자는 데이터베이스에서 대소문자를 구분할 수 있다. 접은 결과 한쪽 선언의 미사용(decl-without-use)이
+  // 다른 철자의 사용에 가려지므로, 접었다는 사실을 남겨야 한다.
+  const caller = persistenceDocument('go', [{ kind: 'relation-use', channel: 'public.users' }]);
+  const folded = joinBridgeDocuments([caller, persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.Users', symbol: 'public.Users' },
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.orders', symbol: 'public.orders' },
+    { kind: 'relation-decl', channel: 'public.ORDERS', symbol: 'public.ORDERS' },
+    { kind: 'relation-decl', channel: 'public.audit', symbol: 'public.audit' },
+  ])]);
+  assert.deepEqual(folded.limitations.filter(({ message }) => message.startsWith('case-folded-relations:')), [{
+    platform: 'sql', target: 'persistence', tool: 'isthmus', origin: 'consumer',
+    message: 'case-folded-relations: 2 relation declarations merge spellings that differ only in case or escaping '
+      + '(public.ORDERS, public.Users); a case-sensitive quoted identifier is joined as the same relation',
+  }]);
+  // 같은 철자가 여러 번 나온 것은 접은 것이 아니므로 조용하다.
+  const repeated = joinBridgeDocuments([caller, persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users', path: 'db/other.sql' },
+  ])]);
+  assert.equal(repeated.limitations.some(({ message }) => message.startsWith('case-folded-relations:')), false);
+});

@@ -714,7 +714,7 @@ function collectLimitations(
       };
     });
   });
-  limitations.push(...unjoinedFactLimitations(documents), ...routeLimitations);
+  limitations.push(...unjoinedFactLimitations(documents), ...routeLimitations, ...caseFoldedRelationLimitations(documents));
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
   return limitations.sort(compareLimitations);
@@ -786,6 +786,44 @@ function unjoinedFactLimitations(
       'module or component export facts with a non-literal name',
     ),
   ];
+}
+
+/** 접은 관계 선언 한계에 예로 싣는 이름 수다. 나머지는 개수로만 남긴다. */
+const MAX_CASE_FOLDED_EXAMPLES = 3;
+
+/**
+ * 철자가 다른 관계 수준 선언을 조인 키(소문자 접기·escape 해제)가 한 그룹으로 합친 수를 플랫폼·target별로 센다.
+ *
+ * 인용 식별자는 데이터베이스에서 대소문자를 구분할 수 있는데 조인은 방언 규칙 차이를 흡수하려고 접는다. 접힌
+ * 그룹에서는 한 철자 선언의 미사용이 다른 철자의 사용에 가려지므로, 접은 사실을 관찰로 남긴다. 같은 철자가
+ * 반복된 것은 접은 것이 아니다. 예는 그룹의 대표(최소) 철자 순으로 [MAX_CASE_FOLDED_EXAMPLES]개까지 싣는다.
+ */
+function caseFoldedRelationLimitations(documents: readonly BridgeFactsDocument[]): JoinLimitation[] {
+  const groups = new Map<string, { platform: BridgePlatform; target: BridgeTarget | null; spellings: Map<string, Set<string>> }>();
+  for (const document of documents) {
+    if (document.target !== 'persistence') continue;
+    const target = limitationTarget(document);
+    const attribution = JSON.stringify([document.platform, target]);
+    const entry = groups.get(attribution) ?? { platform: document.platform, target, spellings: new Map() };
+    for (const fact of document.facts) {
+      if (fact.kind !== 'relation-decl' || fact.dynamic || typeof fact.channel !== 'string' || fact.method !== undefined) continue;
+      const key = normalizeRelationKey(fact.channel);
+      entry.spellings.set(key, (entry.spellings.get(key) ?? new Set()).add(fact.channel));
+    }
+    groups.set(attribution, entry);
+  }
+  return [...groups.values()].flatMap(({ platform, target, spellings }) => {
+    const folded = [...spellings.values()].filter((names) => names.size > 1)
+      .map((names) => [...names].sort(compareStrings)[0]!).sort(compareStrings);
+    if (folded.length === 0) return [];
+    const examples = folded.slice(0, MAX_CASE_FOLDED_EXAMPLES).join(', ')
+      + (folded.length > MAX_CASE_FOLDED_EXAMPLES ? ', ...' : '');
+    return [{
+      platform, target, tool: 'isthmus', origin: 'consumer' as const,
+      message: `case-folded-relations: ${folded.length} relation declarations merge spellings that differ only in case `
+        + `or escaping (${examples}); a case-sensitive quoted identifier is joined as the same relation`,
+    }];
+  });
 }
 
 /** 조건에 맞는 사실 수를 플랫폼·target별로 세어 한계 문장으로 바꾼다. */
