@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-03
+
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
   (the producer's `conformance.lock` at its known locations, or a copied `SHA256SUMS`) and the
   vendored files against this commit's canonical `SHA256SUMS`, and reports per-suite
@@ -29,9 +31,6 @@
 - Accept strict trailing-slash catch-all prefixes emitted by tsograph, and count a
   prefix call against its original handler without weakening missing-original validation.
 
-## [0.14.0] - Unreleased
-
-Prepared on 2026-10-22; this source candidate has not been published.
 
 ### Added
 
