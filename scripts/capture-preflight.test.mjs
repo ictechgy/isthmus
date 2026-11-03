@@ -376,6 +376,12 @@ test('since는 서브모듈에서 git을 띄우지 않고 기록된 commit 차�
   assert.ok(second.context.limitations.includes('unmodeled-changes: 1 tracked configuration/resource change(s) require separate review'));
 });
 
+/**
+ * 설치된 git이 `--no-lazy-fetch` 전역 옵션을 아는지다(2.45 이상). 모르는 git은 promisor 저장소 조회를 하위 명령 전에
+ * 사용 오류로 끝내므로 같은 fail-closed 결과가 한 단계 앞에서 난다.
+ */
+const gitKnowsNoLazyFetch = runChild('git', ['--no-lazy-fetch', 'version']).status === 0;
+
 test('since는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령을 실행하지 않고 실패한다', async (t) => {
   const f = await setup(t);
   const kit = await markerKit(t);
@@ -383,10 +389,13 @@ test('since는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령
   const { base } = await initPartialCloneWithPromisorMarker(project, join(kit.scratch, 'origin'), kit);
   const { selection: _selection, ...rest } = f.config;
   // 빠진 base blob을 읽어야 rename을 알 수 있어 git이 promisor remote에서 lazy fetch를 띄우려 하지만, 격리가 fetch를
-  // 막으므로 그 설정의 uploadpack 마커가 생기지 않고 조회가 실패한다(fail-closed).
+  // 막으므로 그 설정의 uploadpack 마커가 생기지 않고 조회가 실패한다(fail-closed). `--no-lazy-fetch`를 모르는 git(2.45
+  // 미만)은 같은 이유로 base 조회 단계에서 먼저 끝난다.
   const config = { ...rest, project, since: base, output: join(project, 'context.json'),
     cache: join(project, 'cache.json'), toolInputs: [join(project, 'producer.txt')] };
-  await assert.rejects(capturePreflight(config, { execute: realGit(f) }), /Preflight producer step failed: git-changes\./u);
+  const failedStep = gitKnowsNoLazyFetch ? 'git-changes' : 'git-base';
+  await assert.rejects(capturePreflight(config, { execute: realGit(f) }),
+    new RegExp(`Preflight producer step failed: ${failedStep}\\.`, 'u'));
   assert.deepEqual(await kit.found(), []);
   assert.deepEqual(f.calls, [], 'No producer runs after the isolation failure.');
 });
