@@ -13,7 +13,7 @@ The name refers to an isthmus — the narrow strip of land that connects two lan
 map, it is the bridge.
 
 
-Verified on 2026-11-01: npm publishes **isthmus-cli 0.13.0**. This checkout and `compatibility.json` describe the **0.14.0 candidate**; candidate compatibility checks require a source build until that exact version is published. Do not infer registry availability from the source manifest.
+This checkout targets **isthmus-cli 0.14.0**. The matching npm release and its producer compatibility are separate checks; confirm the version on [npm](https://www.npmjs.com/package/isthmus-cli).
 For explicit HTTP/DB field changes at the same route or relation, use the additive
 [`diff --contracts` workflow](docs/CONTRACT-DIFF.md). It preserves independent
 before/after caller evidence, unknown freshness and bounded coverage.
