@@ -12,6 +12,8 @@ import type { BridgeEndpoint, JoinLimitation, RouteEndpointInfo } from './join.t
 import {
   RouteIndex,
   RouteSuffixBudgetError,
+  RouteExactBudgetError,
+  MAX_ROUTE_EXACT_STEPS,
   MAX_ROUTE_SUFFIX_COMPARISONS,
   type RouteDeclaration,
   type RouteSideOutcome,
@@ -174,11 +176,12 @@ export function joinRouteFacts(
   const services = declarationServices(http);
   const scopeNames = services === undefined ? [DEFAULT_ROUTE_SCOPE] : [...services].sort(compareStrings);
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
+  const exactBudget = { remaining: MAX_ROUTE_EXACT_STEPS };
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const shadowBudget = { remaining: MAX_ROUTE_SHADOW_COMPARISONS };
   const inputs = partitionScopes(http, services, scopeNames);
   const scopes = scopeNames.map((scope) =>
-    buildScope(scope, inputs.get(scope)!, budget, scopeBudget, shadowBudget, compareEndpoints));
+    buildScope(scope, inputs.get(scope)!, { budget, exactBudget, scopeBudget, shadowBudget }, compareEndpoints));
   return {
     driftOnly: !http.some(isClientDocument),
     scopes,
@@ -258,9 +261,10 @@ function buildLinkScope(
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = servers.filter(({ platform }) => platform === 'openapi').length;
   const budget = { remaining: MAX_ROUTE_SUFFIX_COMPARISONS };
+  const exactBudget = { remaining: MAX_ROUTE_EXACT_STEPS };
   const shadows = findRouteShadows(decls, { remaining: MAX_ROUTE_SHADOW_COMPARISONS });
-  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget);
-  const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
+  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget, exactBudget);
+  const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget, exactBudget);
   const scopeBudget = { remaining: MAX_ROUTE_SCOPE_COMPARISONS };
   const serverScopes = new RouteLimitationScopeIndex(servers, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clients, scopeBudget);
@@ -494,13 +498,23 @@ function positionedDeclarations(
   return found;
 }
 
+/** 한 조인의 모든 scope가 공유하는 작업 예산이다. 어느 하나라도 넘으면 조인 전체가 부분 결과 없이 실패한다. */
+interface RouteJoinBudgets {
+  /** base 앵커 suffix 후보 비교다. */
+  readonly budget: { remaining: number };
+  /** root↔root 정확 매칭의 trie 방문과 후보 평가다. */
+  readonly exactBudget: { remaining: number };
+  /** 한계 스코프 대조다. */
+  readonly scopeBudget: { remaining: number };
+  /** registration-order 가림 분석이다. */
+  readonly shadowBudget: { remaining: number };
+}
+
 /** 한 scope의 선언·호출을 모으고 호출마다 양쪽 결과를 계산한다. 입력은 `partitionScopes`가 이 scope 몫으로 나눴다. */
 function buildScope(
   scope: string,
   inputs: ScopeInputs,
-  budget: { remaining: number },
-  scopeBudget: { remaining: number },
-  shadowBudget: { remaining: number },
+  { budget, exactBudget, scopeBudget, shadowBudget }: RouteJoinBudgets,
   compareEndpoints: CompareEndpoints,
 ): RouteScope {
   const { serverDocuments, clientDocuments } = inputs;
@@ -512,8 +526,8 @@ function buildScope(
     document.platform !== 'openapi' && (document.roles?.includes('server') ?? false));
   const contractDocuments = serverDocuments.filter(({ platform }) => platform === 'openapi').length;
   const shadows = findRouteShadows(decls, shadowBudget);
-  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget);
-  const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget);
+  const declIndex = new RouteIndex(indexedDeclarations(decls, shadows), budget, exactBudget);
+  const contractIndex = new RouteIndex(contracts.map(({ declaration }) => declaration), budget, exactBudget);
   const serverScopes = new RouteLimitationScopeIndex(serverDocuments, scopeBudget);
   const clientScopes = new RouteLimitationScopeIndex(clientDocuments, scopeBudget);
   const dynamic = dynamicGaps(inputs.declarations, scopeBudget);
@@ -864,4 +878,4 @@ function routeConsumerLimitations(
   }));
 }
 
-export { RouteSuffixBudgetError, RouteScopeBudgetError, RouteShadowBudgetError };
+export { RouteExactBudgetError, RouteSuffixBudgetError, RouteScopeBudgetError, RouteShadowBudgetError };

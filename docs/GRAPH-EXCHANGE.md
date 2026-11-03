@@ -975,7 +975,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   하나일 때만 match다. 64개를 넘으면 모호함이다. 다른 scope나 decl과 contract의 후보는 함께 순위를
   매기지 않는다. 품질은 항상 `suffix`이고, suffix 후보 위의 method 불일치가 error 근거가 아니라는
   규칙은 그대로다. 한 조인의 suffix 비교는 (호출, 선언, 오프셋) 5,000,000번까지이며 넘으면 부분
-  결과 대신 입력 오류다.
+  결과 대신 입력 오류다. root↔root 정확 매칭도 같은 방식으로 한 조인의 trie 노드 방문과 후보 평가를
+  10,000,000 단위까지 센다. 호출의 `{}`는 모든 리터럴 자식으로 퍼지므로 `/{}/{}` 같은 동적 호출과 많은
+  선언이 만나면 호출×선언만큼 일하기 때문이다. 넘으면 부분 결과 대신 입력 오류다. 모호 결과의 targets는
+  후보마다 평가 단위를 쓰므로 조인 전체에서 이 예산이 상한이다.
   base decl·base contract의 `route-decl-without-call`·`route-contract-without-call`은 항상
   `-unverified`다. 잇지 않은 base call이 그 경로를 불렀을 수 있기 때문이다.
 - root로 승격(`declared-base`)되는 것은 workspace link의 `match.baseRefs`에 `pathPrefix`가

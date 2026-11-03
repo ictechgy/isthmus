@@ -31,10 +31,11 @@ import {
   RouteJoinInputError,
   RouteShadowBudgetError,
   RouteSuffixBudgetError,
+  RouteExactBudgetError,
   type RouteJoinResult,
   type RouteLinkRule,
 } from './route-join.ts';
-import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
+import { MAX_ROUTE_EXACT_STEPS, MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
 import { MAX_ROUTE_SHADOW_COMPARISONS } from './route-shadow.ts';
 import { isDeclarationSideGap, MAX_ROUTE_SCOPE_COMPARISONS, RouteScopeBudgetError } from './route-limitation-scope.ts';
 
@@ -435,7 +436,7 @@ export function joinBridgeDocuments(
  * http 문서가 있으면 route 조인을 실행한다. 없으면 undefined라 기존 결과 모양이 그대로다.
  *
  * mixed-targets 보류는 호출자가 결과를 버리므로 여기서 따로 막지 않는다. 귀속 규칙 위반과
- * suffix 비교 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
+ * suffix·정확 매칭·가림·한계 스코프 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
  */
 function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRule | undefined): RouteJoinResult | undefined {
   if (!documents.some(({ target }) => target === 'http')) return undefined;
@@ -447,6 +448,13 @@ function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRu
       throw new BridgeJoinValidationError(
         `Http suffix matching exceeds ${MAX_ROUTE_SUFFIX_COMPARISONS} comparisons; narrow the inputs `
         + '(fewer base-anchored calls or declarations per join) and retry. No partial result is emitted.',
+      );
+    }
+    if (error instanceof RouteExactBudgetError) {
+      throw new BridgeJoinValidationError(
+        `Http exact route matching exceeds ${MAX_ROUTE_EXACT_STEPS} steps; narrow the inputs `
+        + '(fewer fully dynamic call paths such as /{}/{}, or fewer declarations per join) and retry. '
+        + 'No partial result is emitted.',
       );
     }
     if (error instanceof RouteShadowBudgetError) {

@@ -171,6 +171,18 @@ test('suffix 비교 예산을 넘으면 조인이 부분 결과 없이 원인과
   );
 });
 
+test('root 정확 매칭 예산을 넘으면 조인이 부분 결과 없이 원인과 해결 방향을 담은 입력 오류로 바꾼다', () => {
+  // 선언 `/svc{i}/{}` 2,000개 × 동적 호출 `/{}/{}` 1,700개: 호출마다 정확 trie 방문 4,001번과 후보 평가 2,000번으로
+  // 10,000,000 단위를 넘는다. 예산이 없던 때는 8,000 × 8,000에서 힙 부족(exit 134)이었다.
+  const decls = Array.from({ length: 2_000 }, (_, index) => decl('GET', `/svc${index}/{}`));
+  const calls = Array.from({ length: 1_700 }, () => call('GET', '/{}/{}'));
+  assert.throws(
+    () => joinBridgeDocuments([document('js', ['server'], decls), document('kotlin', ['client'], calls)]),
+    (error: unknown) => error instanceof Error && error.name === 'BridgeJoinValidationError' &&
+      /Http exact route matching exceeds 10000000 steps; narrow the inputs/.test(error.message),
+  );
+});
+
 test('REST 모양 선언 1,200개와 base 호출 1,500개는 suffix 비교 예산 안에서 모두 하나의 선언에 match한다', () => {
   // 자원마다 경로 6개(목록 GET·POST, 항목 GET·PUT·DELETE, 하위 목록 GET)다. 환경 변수 base URL 뒤의 호출은 base
   // 앵커라 suffix 후보로만 잇는다. 길이가 맞을 수 없는 오프셋까지 세던 때는 이 규모에서 예산을 넘어 결과가 없었다.

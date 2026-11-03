@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+- http root-to-root exact matching now counts trie node visits and candidate evaluations against a
+  per-join budget of 10,000,000 steps and fails with exit 2 and a cause/remedy message instead of
+  running for minutes or exhausting the heap (exit 134). A dynamic call such as `/{}/{}` fans out to
+  every literal child, so 8,000 declarations x 8,000 such calls previously ran out of memory; the
+  same input now fails in seconds. The case-insensitive trie is no longer walked when the index has
+  no case-insensitive declarations, which roughly halves the work of every root call. Results under
+  the budget are unchanged. Ambiguous targets cost one evaluation each, so the budget also bounds
+  how many targets one join retains.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
