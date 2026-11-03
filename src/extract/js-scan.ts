@@ -1143,11 +1143,27 @@ function skipTypeArguments(
 /** 두 번째 순회: 브리지 API 호출·멤버 호출을 사실로 모은다. */
 function collectCalls(context: ScanContext): void {
   const { tokens } = context;
+  const importPositions = importStatementPositions(tokens);
+  const namespaces = reactNativeNamespaceImports(tokens);
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (token.kind !== 'identifier') continue;
-    if (token.text === 'NativeModules') {
+    const property = ['.', '?.'].includes(tokens[index - 1]?.text ?? '');
+    if (token.text === 'NativeModules' && property) {
       index = collectNativeModulesAccess(context, index);
+      continue;
+    }
+    if (!property && (token.text === 'NativeModules' || nativeModulesAlias(context, token.text))) {
+      // 레지스트리를 가져오는 import 절·구조 분해의 이름은 값 사용이 아니고, react-native 출처가 아닌 같은 이름은
+      // RN 레지스트리가 아니다(로컬 shim·다른 모듈·매개변수).
+      if (importPositions.has(index) || isPatternDeclarator(tokens, index) ||
+        !isNativeModulesRegistry(context, token.text, index)) continue;
+      index = collectNativeModulesAccess(context, index);
+      continue;
+    }
+    if (!property && ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'NativeModules' &&
+      isReactNativeNamespace(context, namespaces, token.text, index)) {
+      index = collectNativeModulesAccess(context, index + 2);
       continue;
     }
     if (token.text === 'TurboModuleRegistry') {
@@ -1186,6 +1202,97 @@ function collectCalls(context: ScanContext): void {
       index = collectBoundMemberCall(context, index);
     }
   }
+}
+
+/**
+ * 식별자가 react-native에서 다른 이름으로 가져온 `NativeModules`(`import { NativeModules as NM }`)인지 본다.
+ */
+function nativeModulesAlias(context: ScanContext, name: string): boolean {
+  return (context.importsByLocalName.get(name) ?? []).some(({ specifier, exportedName }) =>
+    specifier === 'react-native' && exportedName === 'NativeModules');
+}
+
+/**
+ * 값 위치의 `NativeModules`(또는 별칭)가 react-native 레지스트리를 가리키는지 본다.
+ *
+ * 같은 이름의 매개변수가 가리면, 다른 모듈에서 가져왔으면, react-native가 아닌 값으로 선언했으면(테스트 shim 등)
+ * 레지스트리가 아니다. 이 파일에 import도 선언도 없으면 기존처럼 전역 레지스트리로 읽는다. 스코프는 구분하지 않고
+ * 파일 단위로 판정한다 — 로컬 선언이 하나라도 있으면 그 이름은 레지스트리로 읽지 않는다.
+ */
+function isNativeModulesRegistry(context: ScanContext, name: string, index: number): boolean {
+  if (isShadowed(context, name, index)) return false;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) return nativeModulesAlias(context, name);
+  if (name !== 'NativeModules') return false;
+  if (context.localNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
+  return true;
+}
+
+/**
+ * 식별자가 react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)인지 본다.
+ * 같은 이름의 매개변수가 가리면 아니다.
+ */
+function isReactNativeNamespace(
+  context: ScanContext,
+  namespaceImports: ReadonlySet<string>,
+  name: string,
+  index: number,
+): boolean {
+  if (isShadowed(context, name, index)) return false;
+  if (namespaceImports.has(name)) return true;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) {
+    return imports.some(({ specifier, exportedName }) => specifier === 'react-native' && exportedName === 'default');
+  }
+  return context.requireSpecifiers.get(name) === 'react-native';
+}
+
+/** `import * as NAME from 'react-native'`의 NAME 목록이다. 이 형태는 import 목록에 기록되지 않아 토큰으로 찾는다. */
+function reactNativeNamespaceImports(tokens: readonly JsToken[]): Set<string> {
+  const names = new Set<string>();
+  for (let index = 0; index + 5 < tokens.length; index++) {
+    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text === '*' && tokens[index + 2]?.text === 'as' &&
+      tokens[index + 3]?.kind === 'identifier' && tokens[index + 4]?.text === 'from' &&
+      tokens[index + 5]?.value === 'react-native') {
+      names.add(tokens[index + 3]!.text);
+    }
+  }
+  return names;
+}
+
+/** 정적 `import … from '…'` 문(동적 `import(…)` 제외)이 차지한 토큰 위치다. */
+function importStatementPositions(tokens: readonly JsToken[]): Set<number> {
+  const positions = new Set<number>();
+  for (let index = 0; index < tokens.length; index++) {
+    if (tokens[index]?.text !== 'import' || tokens[index + 1]?.text === '(' ||
+      ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    let end = index + 1;
+    while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+    for (let cursor = index; cursor <= end; cursor++) positions.add(cursor);
+    index = end;
+  }
+  return positions;
+}
+
+/** 선언 구조 분해 패턴이 감싸는 이름을 찾을 때 거슬러 오르는 토큰 수 상한이다. 긴 입력에서 이차 시간을 막는다. */
+const MAX_PATTERN_LOOKBEHIND = 256;
+
+/**
+ * 토큰이 `const|let|var { … }` 선언 구조 분해 패턴 안의 이름인지 본다(`const { NativeModules } = require(…)`).
+ *
+ * 객체 리터럴의 단축 속성(`pass({ NativeModules })`)은 값 사용이라 선언 키워드가 앞에 없으면 패턴이 아니다.
+ */
+function isPatternDeclarator(tokens: readonly JsToken[], index: number): boolean {
+  let depth = 0;
+  for (let cursor = index - 1; cursor >= 0 && index - cursor <= MAX_PATTERN_LOOKBEHIND; cursor--) {
+    const text = tokens[cursor]!.text;
+    if (text === '}') depth++;
+    else if (text === '{') {
+      if (depth === 0) return ['const', 'let', 'var'].includes(tokens[cursor - 1]?.text ?? '');
+      depth--;
+    } else if (depth === 0 && [';', '(', ')', '=', '=>'].includes(text)) return false;
+  }
+  return false;
 }
 
 /**
@@ -1545,8 +1652,9 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
       tokens[index + 1]?.text === '=>' && tokens[index + 2]?.text === '{') {
       const close = findMatching(tokens, index + 2, '{', '}');
       if (close !== undefined) {
+        // 매개변수 자신의 위치부터 가린다 — 그 이름 토큰은 바깥 바인딩의 값 사용이 아니다.
         shadows.push({
-          from: index + 2,
+          from: index,
           to: close + 1,
           names: new Set([token.text]),
         });
@@ -1582,7 +1690,8 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
         names.add(param.text);
       }
     }
-    shadows.push({ from: bodyIndex, to: bodyClose + 1, names });
+    // 매개변수 목록부터 가린다 — 매개변수 이름 토큰과 뒤 매개변수의 기본값 식은 바깥 바인딩을 보지 않는다.
+    shadows.push({ from: index, to: bodyClose + 1, names });
     index = close;
   }
   return shadows;

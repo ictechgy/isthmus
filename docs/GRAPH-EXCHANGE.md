@@ -413,6 +413,11 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 `codegenNativeComponent`·`requireNativeViewManager`와 같은 파일·상대 import·
 `export { A as B } from` 형태의 배럴 재수출(4홉 상한) 범위의 바인딩 해석,
 그리고 확정된 모듈 식의 멤버 호출(`method-invoke`)까지 읽는다.
+`NativeModules`는 react-native 레지스트리일 때만 읽는다: 같은 이름의 매개변수가 가리거나, react-native가
+아닌 모듈에서 가져왔거나, react-native가 아닌 값으로 로컬 선언(테스트 shim 등)했으면 레지스트리가 아니다.
+이 파일에 import·선언이 없는 이름은 전역 레지스트리로 읽는다. `import { NativeModules as NM }` 별칭과
+react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)를 거친
+`RN.NativeModules.X`도 같은 사실로 읽고, import 절·선언 구조 분해의 이름 자체는 값 사용으로 세지 않는다.
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
 동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·

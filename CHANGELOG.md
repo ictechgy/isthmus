@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+- `extract-js` reads `NativeModules` only as the react-native registry. A same-name parameter, an
+  import from another module, or a local non-react-native declaration (a test shim) no longer
+  produces `module-import`/`method-invoke` facts that surfaced as false
+  `module-import-without-export` and `unhandled-invocation` errors. The name inside an `import`
+  clause or a declaration destructuring pattern is no longer counted as a dynamic bare reference.
+  An aliased import (`import { NativeModules as NM }`) and access through the react-native module
+  object (`import * as RN`, `import RN`, `const RN = require('react-native')`, then
+  `RN.NativeModules.X`) now produce the same facts as `NativeModules.X` instead of none. A file with
+  no import or declaration of the name keeps the previous global reading.
+
 - `docs/COMPATIBILITY.md` records that isthmus-cli 0.14.0 is published and why the producer pins
   and both manifests stay at the 0.13.0 producer set (the newer producer releases have no official
   install and cold-cache verification yet; cold-cache runs only on schedule or dispatch). Its
