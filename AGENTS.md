@@ -11,6 +11,9 @@
   RN은 수신 측 사실·소비자 조인·`extract-js`(내장 무의존 토큰 스캔)까지 구현됐다.
   Capacitor·Cordova·KMP는 v0.1 밖이다. 플랫폼별 구현·실행 검증·발행 상태를 구분한다.
 - 제품은 JSON 파일만 읽고 쓴다. 자매 도구 실행은 `scripts/`의 검증 작업이며 전체 언어 그래프는 조인하지 않는다.
+- 자매 producer는 cartograph(Swift)·kartograph(Kotlin)·dartograph(Dart)·gartograph(Go)·rustograph(Rust)·
+  tsograph(TS/JS)·pythograph(Python)·schemagraph(SQL)다. 교환 계약·공유 벡터를 바꾸면 영향받는 저장소를
+  [docs 지침](docs/AGENTS.md) 절차로 알리고, 벡터 사본 드리프트는 `scripts/conformance-drift.mjs`로 확인한다.
 - `retentions --for cartograph`의 결과를 `cartograph dead --external-retentions <path>`에 전달한다.
 - MIT·영구 무료. 도구는 삭제 안전성 판정·자동 수정·자동 삭제를 제공하지 않는다.
 - 관찰 근거와 `limitations`를 보존한다. 빈 결과·`notFound`·코드 0을 완전성의 증거로 삼지 않는다.

@@ -1,56 +1,44 @@
 # Handoff
 
-_Last updated: 2026-09-20_
+_Last updated: 2026-11-03_
 
 현재 재개 정보다. 규칙은 [AGENTS.md](AGENTS.md), 이전 발행·검증 원장은
-[HANDOFF-HISTORY.md](HANDOFF-HISTORY.md)에 보존한다. 과거 Next Steps는 현재 실행 지시가 아니다.
+[HANDOFF-HISTORY.md](HANDOFF-HISTORY.md)에 보존한다(2026-09-20 인계 원문은 그 파일 끝 절). 과거 Next Steps는
+현재 실행 지시가 아니다.
 
 ## 현재 상태
 
-- 현재 소스 버전은 isthmus-cli **0.10.0**이며 호환 세트는 [compatibility.json](compatibility.json)
-  (cartograph 0.23.0, kartograph 0.18.0, dartograph 0.16.0, schemagraph 0.7.0, gartograph 0.9.0,
-  rustograph 0.4.0)이다. npm 0.10.0 발행·`v0.10.0` 태그·릴리스는 registry와 cold-cache 실행으로 따로
-  확인한다. 이미 발행된 npm 아카이브(0.8.0·0.9.0)는 발행 당시 manifest를 유지한다.
-- JS 이벤트 추출은 안정적인 모듈 범위 let/var와 직접 CommonJS RN namespace를 지원한다.
-  초기화 전·재할당·escape·이름 가림·생성자 변경과 const 블록 범위 밖 구독은 확정하지 않는다.
-  [공개 RN 두 버전](experiments/real-corpus/results/rn-event-development-results.json)은
-  **TP 4 / FN 0 / FP 0**이다. 발행본의 TP3/FN1 기록은 덮어쓰지 않았다.
-- v1/v2 `generatedAt`은 추출 시각이며 optional `sourceModifiedAt`은 관찰한 source mtime이다.
-  Kotlin producer가 두 값을 분리한다. 파서·impact/diff는 선택 메타데이터를 보존한다.
-  시각은 compiler freshness나 실행 완전성 증거가 아니다. [공유 계약](docs/GRAPH-EXCHANGE.md)을 따른다.
-- [공개 Sound.kt 컴파일 검사](experiments/real-corpus/results/rn-compiled-development-results.json)는
-  Kotlin2.4.20/JVM21·Android SDK·명시적 RN API 스텁을 사용했다. 실제 JVM ID에 연결한
-  retention으로 dead 후보를 억제하고 JS127행 explain을 확인했다. 무관한 메서드는 미도달로 남는다.
-  [witness 추가 검사](experiments/real-corpus/results/rn-witness-development-results.json)는 실제 Gradle
-  성공·외부 입력을 `matched`로 확인하고 source/class/scope/실패 빌드의 stale 대조를 통과했다.
-- [실제 Flutter 앱 결과](experiments/real-corpus/results/runtime-development-results.json)는
-  Flutter3.47.2 macOS 앱과 소유한 Android API36 arm64 에뮬레이터의 성공·오류·미등록·timeout·pending을
-  대조한다. macOS 하네스는 현재 SDK의 CocoaPods 설정을 앱 단위로 지정한다.
-  Android `--new-emulator`는 연결된 사용자 기기를 선택하지 않고 전용 AVD를 만든다.
-  [확장 검사](experiments/real-corpus/results/runtime-expansion-development-results.json)는 Android 실기기
-  release·iOS27 시뮬레이터 debug·실기기 RN0.81.4/Hermes legacy bridge release까지 실행했다.
-  공개 Sound 원본의 이벤트 전달과 다른 player/구독 해제 대조를 확인했다. 실제 iPhone·iOS release,
-  RN 새 아키텍처·모든 lifecycle·미디어 재생은 검증 범위 밖이다.
-- kartograph 후속에는 정확한 dependency baseline/suppress와 JSR-269 Filer 기반 processor
-  source 귀속이 포함된다. [kartograph 인계](https://github.com/ictechgy/kartograph/blob/main/HANDOFF.md)와
-  각 PR의 최종 CI·GLM 처분을 따른다. 개발 collector에는 javac/KAPT/KSP의 source/class/resource
-  및 지정 디렉터리 callback 중 직접 byte 변경을 구분하는 별도 출력 receipt가 추가됐다.
-  기존 snapshot의 JSR-269 source 귀속과 새 선택적 runner의 입력/성공 검증 범위를 구분한다.
-- 원시 로그·실행 실패/복구·검증 기록은 로컬 `.git/remaining-all-20260920/`에 있다.
-  앞선 발행본 15케이스 TP83/FN0과 캐시 검증은 `.git/release-corpus-docs-20260920/` 원장을 재사용한다.
-  다른 checkout에서 이 로컬 경로가 존재한다고 가정하지 않는다.
-- 작업 소유 캐시 7개를 휴지통으로 옮겼고 원본·아카이브·compiled class·snapshot 등
-  76개 보존 파일의 해시가 같음을 확인했다. SDK와 검증 로그는 유지했다. 복원은 로컬
-  `.git/remaining-all-20260920/cleanup-final.json`의 from/to 경로를 따른다.
-  1,187,371 logical bytes의 휴지통 이동을 디스크 공간 회수로 해석하지 않는다.
-- `docs/RESEARCH.md`, kartograph `.claude/`·`HANDOFF.cartograph-notes.md`, dartograph
-  `HANDOFF-PROGRESS.md`·`editors/vscode/icon-drafts/`는 기존 사용자 변경으로 보존한다.
+- 발행본은 isthmus-cli **0.14.0**(npm `latest`, 2026-11-03)이다. 0.14.0 tarball의 `compatibility.json`은
+  저장소 HEAD와 같고 producer 핀은 0.13.0 세트(cartograph 0.25.0·kartograph 0.20.0·dartograph 0.16.1·
+  schemagraph 0.7.0·gartograph 0.9.1·rustograph 0.4.1·tsograph 0.10.0·pythograph 0.2.1)다.
+- 공개 감시 세트 `compatibility.released.json`은 isthmus 0.13.0이다. 0.14.0으로 올리려면 cold-cache
+  workflow(예약·수동 전용)를 0.14.0으로 실행한 기록이 먼저 필요하다. producer 최신 발행본
+  (2026-11-03 기준 cartograph 0.30.0·kartograph 0.26.0·dartograph 0.17.0·schemagraph 0.9.0·gartograph 0.11.0·
+  rustograph 0.7.0·tsograph 0.11.0·pythograph 0.3.1)의 공식 설치·호환 검증도 아직 없다
+  ([COMPATIBILITY](docs/COMPATIBILITY.md)).
+- 2026-11-03 계열 검토 후속(브랜치 `ccr-37904670-hxdjsx`)이 `[Unreleased]`에 있다:
+  - http root↔root 정확 매칭 작업 예산(조인당 10,000,000 단위, 넘으면 exit 2)
+  - bridge 구성 요건의 target 단위 검사
+  - `conformance-drift.mjs`의 케이스 `appliesTo` 판정(`consumer-only`), 패키지 포함, 주간·수동 드리프트 workflow
+  - extract-js `NativeModules` 출처·가림 규칙, 별칭·모듈 객체 접근
+  - persistence `case-folded-relations:` 한계와 3부 이름 규칙 명시
+  - COMPATIBILITY 발행 상태·설치 예제 핀 정정과 그 핀의 자동 검사
+  - 계약 표·README·스킬 현행화, git 2.45 미만에서도 맞는 lazy fetch 격리 테스트
+- 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
+  cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였다(나머지는 `consumer-only`).
 
-## 재개 기준
+## 후속 후보 (사용자가 고르기 전에는 착수하지 않는다)
 
-이번 후속의 실제 머지·CI 상태는 PR에서 확인한다. 구현·후보 검증·발행본·앱 실행을 구분한다.
-0.9.0/0.13.0 발행 작업의 원시는 로컬 `.git/release-followups-20260920/`에 기록한다.
-버전 파일만으로 발행을 단정하지 말고 registry·실제 설치·릴리스 CI를 확인한다. 기존 태그/아카이브는 바꾸지 않는다.
-이번 확장의 원시 근거는 로컬 `.git/evidence-runtime-expansion-20260920/`에 있다.
-개발 하네스/선택적 collector 변경은 새 릴리스로 발행하지 않았다. 이미 끝난 RN var 누락,
-타임스탬프 분리, 공개 컴파일 retention, macOS/Android 하네스를 과거 목록 때문에 다시 시작하지 않는다.
+- 생산자 버전 경보: 검증 세트보다 오래된 생산자 문서를 알리는 소비자 한계를 시도했지만, 한계가 `impact --strict`
+  등 엄격 게이트의 "분석 공백"으로 세어져 종료 코드가 0→1로 바뀌었다. 게이트에 들지 않는 별도 notice 채널이
+  필요하며 출력 계약 설계가 먼저다.
+- 새 공유 suite(열 인코딩, persistence 이름, limitation 접두사 목록): 생산자 8곳이 함께 바뀐다.
+- bridge 문서가 스캔한 target을 밝히는 선택 필드(`scannedTargets` 초안, GRAPH-EXCHANGE)의 생산자 합의.
+- extract-js의 `js-binding-scope:` 한계는 측정하지 않고 항상 싣는다. 측정하려면 범위 밖 바인딩 계수가 필요하다.
+- 발행 workflow·npm provenance(외부 권한 필요), 파일별 커버리지 하한.
+
+## Resume Prompt
+
+HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
+검토 후속은 `[Unreleased]`다. 발행·머지 여부는 PR·npm registry로 확인하고, 위 후속 후보는 내가 고르기 전에
+착수하지 마.
