@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+- `scripts/conformance-drift.mjs` reads each case's `appliesTo`. When a producer's record names an
+  older canonical file but its untouched copy and the canonical file agree on every case that applies
+  to that producer (`producer`, `producer:<that producer>`, or a qualifier that is not a family
+  producer name) and on the behavioral header (`format`, `version`, `suite`), the suite is
+  `consumer-only` and not drift. The script now ships in the npm package, and the
+  `conformance-drift` workflow runs it weekly and on demand with `--strict` against the default
+  branch of the seven producers that vendor vectors, recording each producer SHA in the summary.
+
 - Bridge input composition is now checked per target: every bridge target that has facts needs a
   caller platform (dart, js) document and a receiver platform (swift, kotlin) document. A flutter
   caller document with only a react-native receiver document used to pass the platform-level check
