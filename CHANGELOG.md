@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+- `docs/COMPATIBILITY.md` records that isthmus-cli 0.14.0 is published and why the producer pins
+  and both manifests stay at the 0.13.0 producer set (the newer producer releases have no official
+  install and cold-cache verification yet; cold-cache runs only on schedule or dispatch). Its
+  installation and CI examples now use the released set that the cold-cache workflow installs
+  instead of 0.10.0-era pins, and `scripts/verify-compatibility.mjs` fails when an install command
+  outside the table drifts from `compatibility.released.json`.
+
 - `scripts/conformance-drift.mjs` reads each case's `appliesTo`. When a producer's record names an
   older canonical file but its untouched copy and the canonical file agree on every case that applies
   to that producer (`producer`, `producer:<that producer>`, or a qualifier that is not a family
