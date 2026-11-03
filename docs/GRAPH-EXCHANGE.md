@@ -26,7 +26,9 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 `preflight`는 선택적 context.messages로 소비한다. `impact`는 v1 전용으로 version 2를
 명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
 
-cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
+cartograph(Swift) · kartograph(Kotlin) · dartograph(Dart) · gartograph(Go) · rustograph(Rust) · tsograph(TS/JS) ·
+pythograph(Python) · schemagraph(SQL) 생산자와 isthmus 내장 JS/TS 추출기(`extract-js`)가 **내보내고**, isthmus 가
+**읽는** 형식. 이 문서가 바뀌면 영향받는 생산자 저장소가 같이 바뀐다(어느 생산자가 어느 kind를 내는지는 아래 표). 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
 
 ## 원칙
 
@@ -405,10 +407,10 @@ Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
-| `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart·JS·Python) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
-| `route-decl` | kotlin·js(서버) | 서버 라우트 선언 — [HTTP 경계](#개발-중-http-경계-v1-확장) |
-| `route-call` | kotlin·swift·dart·js(클라이언트) | 클라이언트 HTTP 호출 |
+| `route-decl` | kotlin·js·python·go·rust(서버) | 서버 라우트 선언 — [HTTP 경계](#개발-중-http-경계-v1-확장) |
+| `route-call` | kotlin·swift·dart·js·python·go·rust(클라이언트) | 클라이언트 HTTP 호출 |
 | `route-contract` | openapi | 스펙 operation |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
@@ -684,6 +686,7 @@ cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스�
 - **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다
 
 <a id="개발-중-http-경계-v1-확장"></a>
+<a id="개발-중-http-경계-합의-초안"></a>
 
 ## HTTP 경계 (v1 확장)
 

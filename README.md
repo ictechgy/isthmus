@@ -43,7 +43,7 @@ calls it over channel `com.example/camera`".
 
 ## Status
 
-Development builds add an experimental, read-only
+isthmus-cli 0.14.0 adds an experimental, read-only
 [`task` summary and optional evidence manifest](docs/TASK-EVIDENCE.md):
 `isthmus task trace-context.json --evidence evidence.json --limit 20`.
 It reuses trace paths and check rules, prioritizes explicitly mapped recorded tests,
@@ -127,6 +127,9 @@ Change predictions are measured against a pinned public precision corpus —
 **LocalSend** app — over 15 file/symbol/version-diff cases. The latest run
 recorded **TP 83 / FN 0 / FP 0**, including the first app-level
 Dart↔Swift↔Kotlin join ([`experiments/real-corpus/`](experiments/real-corpus/)).
+That run used isthmus 0.8.0, cartograph 0.20.0, dartograph 0.15.0 and kartograph 0.12.0
+([`results.json`](experiments/real-corpus/results/results.json)) and has not been repeated with the
+current compatibility set.
 These are static bridge-boundary numbers over stub-compiled Swift and
 source-scanned Kotlin; runtime execution and full-app precision are not
 measured.

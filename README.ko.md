@@ -8,7 +8,7 @@
 선택적 [AI-DLC adapter](docs/AI-DLC-ADAPTER.md)는 기존 `task` 결과를 계획·검증 단계에 전달한다.
 별도로 compose하는 실험적 plugin이며 기록 당시의 근거와 현재 checkout 검증을 구분한다.
 
-개발 빌드의 실험적 [`task` 조회·선택적 evidence manifest](docs/TASK-EVIDENCE.md)는
+isthmus-cli 0.14.0부터 제공하는 실험적 [`task` 조회·선택적 evidence manifest](docs/TASK-EVIDENCE.md)는
 `isthmus task trace-context.json --evidence evidence.json --limit 20`으로 사용한다.
 기존 trace 경로와 check 규칙을 재사용하고, 명시적으로 연결된 검증 결과의 테스트 우선순위와
 unknown을 제한된 목록으로 묶는다. 파일 바이트가 같아도 수동 입력 선언은 `unverified`이며
@@ -111,6 +111,8 @@ http 문서를 거부한다.
 `url_launcher_macos`와 **LocalSend** 앱, 파일/심볼/버전 diff 15케이스 — 로 측정한다.
 최근 실행은 **TP 83 / FN 0 / FP 0**을 기록했고, 최초의 앱 수준 Dart↔Swift↔Kotlin
 3방향 조인을 포함한다([`experiments/real-corpus/`](experiments/real-corpus/)).
+그 실행은 isthmus 0.8.0·cartograph 0.20.0·dartograph 0.15.0·kartograph 0.12.0 조합이며
+([`results.json`](experiments/real-corpus/results/results.json)) 현재 호환 세트로는 다시 측정하지 않았다.
 이 수치는 스텁 컴파일 Swift와 소스 스캔 Kotlin 위의 정적 브리지 경계이며,
 런타임 실행·앱 전체 정밀도는 측정하지 않았다.
 
