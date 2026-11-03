@@ -168,7 +168,10 @@ test('채널 스코프는 수신 platform과 target 경계를 그대로 지킨�
   const kotlin = parseBridgeFactsDocument({ ...scoped(), platform: 'kotlin' });
   assert.equal(createCheckReport(joinBridgeDocuments([caller(), kotlin])).issues.find((x) => x.channel === 'A')?.severity, 'warning');
   const otherTarget = parseBridgeFactsDocument({ ...scoped(), target: 'capacitor' });
-  assert.equal(createCheckReport(joinBridgeDocuments([caller(), otherTarget])).issues.find((x) => x.channel === 'A')?.severity, 'error');
+  // target 단위 구성 요건: flutter 수신 측과 capacitor 호출 측을 사실 0건 문서로 채운다. 한계가 없어 결과를 바꾸지 않는다.
+  const emptySide = (platform: string) => parseBridgeFactsDocument({ ...input(platform), target: null, facts: [], limitations: [] });
+  assert.equal(createCheckReport(joinBridgeDocuments([caller(), otherTarget, emptySide('kotlin'), emptySide('js')]))
+    .issues.find((x) => x.channel === 'A')?.severity, 'error');
   const callerGap = parseBridgeFactsDocument({ ...caller(), limitations: ['objective-c-sources: not a receiver'],
     limitationScopes: [{ limitationIndex: 0, channels: ['B'] }],
   });

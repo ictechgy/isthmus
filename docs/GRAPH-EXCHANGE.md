@@ -494,9 +494,15 @@ require에는 싣지 않는다.
   문서는 플랫폼이 kotlin·swift·dart여도 bridge 문서가 아니다 — 이 플랫폼들은 여러
   도메인의 생산자라 platform만으로 역할을 정하면 다른 도메인 문서가 bridge 근거로
   샌다. bridge 도메인 문서가 있으면 그중 호출 측 플랫폼(dart·js) 문서와 수신 측
-  플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 한쪽만 있는 입력은 한쪽
+  플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 사실은 target별로만 조인되므로
+  이 요건은 사실이 있는 bridge target마다 적용한다 — flutter 호출 측과 react-native 수신
+  측만 있는 입력은 플랫폼 기준으로는 양쪽이 있어도 어느 target도 양쪽을 갖지 못한다.
+  한쪽만 있는 입력은 한쪽
   관찰을 경계 불일치로 오독할 수 있으므로 소비자는 입력 오류로 거부한다. 사실이
-  없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다. 그래서 관계 사용을 하나도
+  없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다. 사실 0건 문서는 `target: null`이라
+  어느 target을 스캔했는지 실을 수 없으므로 모든 target의 근거로 센다. 어느 target을
+  스캔했는지 밝히는 선택 필드(예: `scannedTargets`)는 생산자 합의 전 초안이며 이 버전은
+  받지 않는다. `mixed-targets` 문서가 있으면 조인 전체가 보류되므로 target 단위 검사를 하지 않는다. 그래서 관계 사용을 하나도
   찾지 못한 kotlin·swift·dart persistence 생산 결과(사실 0건, `target: null`)도
   bridge 문서로 세지며, persistence 입력에 이런 문서만 bridge 쪽으로 남아 요건을
   못 채우면 isthmus는 그 원인(null target)을 오류 문구에 밝힌다. persistence 도메인의

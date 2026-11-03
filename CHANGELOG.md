@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+- Bridge input composition is now checked per target: every bridge target that has facts needs a
+  caller platform (dart, js) document and a receiver platform (swift, kotlin) document. A flutter
+  caller document with only a react-native receiver document used to pass the platform-level check
+  and then report every flutter invocation as unhandled and every react-native export as unused;
+  it is now an input error (exit 2) that names each target's missing side. Zero-fact documents
+  (`target: null`) still count for every target, and `mixed-targets` inputs are still deferred.
+
 - http root-to-root exact matching now counts trie node visits and candidate evaluations against a
   per-join budget of 10,000,000 steps and fails with exit 2 and a cause/remedy message instead of
   running for minutes or exhausting the heap (exit 134). A dynamic call such as `/{}/{}` fans out to

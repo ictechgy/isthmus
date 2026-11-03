@@ -541,7 +541,10 @@ function validateBridgeComposition(
 ): void {
   const hasCaller = bridgeDocuments.some(isBridgeCallerDocument);
   const hasReceiver = bridgeDocuments.some(isBridgeReceiverDocument);
-  if (hasCaller && hasReceiver) return;
+  if (hasCaller && hasReceiver) {
+    validateBridgeTargetComposition(bridgeDocuments);
+    return;
+  }
   const requirement = 'Bridge documents must include at least one caller platform (dart, js) document '
     + 'and one receiver platform (swift, kotlin) document; ';
   if (hasPersistenceDomain && bridgeDocuments.every(({ target }) => target === null)) {
@@ -552,6 +555,38 @@ function validateBridgeComposition(
     );
   }
   throw new BridgeJoinValidationError(`${requirement}run a producer for the missing side.`);
+}
+
+/**
+ * 사실이 있는 bridge target마다 호출 측과 수신 측 문서가 각각 하나 이상 있는지 검사한다.
+ *
+ * 사실은 target별로만 조인되므로, flutter 호출 측과 react-native 수신 측만 있는 입력은 플랫폼 기준 요건을 채워도
+ * 어느 target도 양쪽을 갖지 못해 한쪽 관찰 전부를 경계 불일치로 오독한다. 사실 0건 문서(target null)는 어느 target을
+ * 스캔했는지 실을 수 없으므로 기존처럼 모든 target의 근거로 센다. mixed-targets 문서의 target은 대표값일 뿐이라
+ * 이 검사를 하지 않는다 — 그 입력은 조인 전체가 보류된다.
+ */
+function validateBridgeTargetComposition(bridgeDocuments: readonly BridgeFactsDocument[]): void {
+  if (bridgeDocuments.some(hasMixedTargets)) return;
+  const sides = (predicate: (document: BridgeFactsDocument) => boolean, target: BridgeTarget) =>
+    bridgeDocuments.some((document) => predicate(document) && (document.target === null || document.target === target));
+  const targets = [...new Set(bridgeDocuments.flatMap(({ target }) => (target === null ? [] : [target])))]
+    .sort(compareStrings);
+  const missing = targets.flatMap((target) => [
+    ...(sides(isBridgeCallerDocument, target) ? [] : [`${target} has no caller document`]),
+    ...(sides(isBridgeReceiverDocument, target) ? [] : [`${target} has no receiver document`]),
+  ]);
+  if (missing.length === 0) return;
+  throw new BridgeJoinValidationError(
+    'Bridge documents must include a caller platform (dart, js) document and a receiver platform (swift, kotlin) '
+    + `document for each target; ${joinWithAnd(missing)}. A zero-fact document (target null) counts for every target. `
+    + 'Run a producer for the missing side or pass only the documents of targets that have both sides.',
+  );
+}
+
+/** 사람이 읽는 목록을 `a`, `a and b`, `a, b and c` 형태로 잇는다. */
+function joinWithAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)!}`;
 }
 
 /**
