@@ -6,9 +6,10 @@
 
 - persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
   declarations with different spellings fold into one join key, such as `public.Users` and
-  `public.users`, with the group count and up to three representative spellings. A case-sensitive
-  quoted identifier is otherwise joined silently as the same relation, so one spelling's unused
-  declaration hides behind the other's uses. Repeated identical spellings stay quiet. The contract
+  `public.users`, with the group count and up to three representative spellings. Where the database
+  folds unquoted identifiers the merge is right; a case-sensitive quoted identifier, however, is
+  otherwise joined silently as the same relation, so one spelling's unused declaration hides behind
+  the other's uses. The message states both cases. Repeated identical spellings stay quiet. The contract
   now states that a qualified use joins only a declaration with the same number of segments: a
   three-part name such as `mydb.public.orders` does not join `public.orders`.
 

@@ -2119,7 +2119,8 @@ test('철자만 다른 관계 선언을 한 키로 접으면 그 그룹 수를 �
   assert.deepEqual(folded.limitations.filter(({ message }) => message.startsWith('case-folded-relations:')), [{
     platform: 'sql', target: 'persistence', tool: 'isthmus', origin: 'consumer',
     message: 'case-folded-relations: 2 relation declarations merge spellings that differ only in case or escaping '
-      + '(public.ORDERS, public.Users); a case-sensitive quoted identifier is joined as the same relation',
+      + '(public.ORDERS, public.Users); they are joined as one relation, which is wrong only where the database '
+      + 'keeps them distinct (such as case-sensitive quoted identifiers)',
   }]);
   // 같은 철자가 여러 번 나온 것은 접은 것이 아니므로 조용하다.
   const repeated = joinBridgeDocuments([caller, persistenceDocument('sql', [

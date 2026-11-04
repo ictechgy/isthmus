@@ -821,7 +821,8 @@ function caseFoldedRelationLimitations(documents: readonly BridgeFactsDocument[]
     return [{
       platform, target, tool: 'isthmus', origin: 'consumer' as const,
       message: `case-folded-relations: ${folded.length} relation declarations merge spellings that differ only in case `
-        + `or escaping (${examples}); a case-sensitive quoted identifier is joined as the same relation`,
+        + `or escaping (${examples}); they are joined as one relation, which is wrong only where the database `
+        + 'keeps them distinct (such as case-sensitive quoted identifiers)',
     }];
   });
 }
