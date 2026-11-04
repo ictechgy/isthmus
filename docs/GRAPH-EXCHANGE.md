@@ -427,7 +427,11 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 아닌 모듈에서 가져왔거나, react-native가 아닌 값으로 로컬 선언(테스트 shim 등)했으면 레지스트리가 아니다.
 이 파일에 import·선언이 없는 이름은 전역 레지스트리로 읽는다. `import { NativeModules as NM }` 별칭과
 react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)를 거친
-`RN.NativeModules.X`도 같은 사실로 읽고, import 절·선언 구조 분해의 이름 자체는 값 사용으로 세지 않는다.
+`RN.NativeModules.X`와 그 객체에서 구조 분해한 `const { NativeModules } = RN`(별칭 포함)도 같은 사실로 읽고,
+import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조 분해의 이름 자체는 값 사용으로 세지 않는다.
+매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
+다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
+`unattributed-js-native-modules:` 한계로 센다.
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
 동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·

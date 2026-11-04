@@ -19,8 +19,14 @@
   clause or a declaration destructuring pattern is no longer counted as a dynamic bare reference.
   An aliased import (`import { NativeModules as NM }`) and access through the react-native module
   object (`import * as RN`, `import RN`, `const RN = require('react-native')`, then
-  `RN.NativeModules.X`) now produce the same facts as `NativeModules.X` instead of none. A file with
-  no import or declaration of the name keeps the previous global reading.
+  `RN.NativeModules.X`) now produce the same facts as `NativeModules.X` instead of none, and so does
+  destructuring from that object (`const { NativeModules } = RN`, with or without an alias). A file with
+  no import or declaration of the name keeps the previous global reading. A parameter default
+  (`(native = NativeModules.Camera) => …`) reads the outer binding instead of being hidden by the
+  parameter list, and the name inside a re-export clause (`export { NativeModules } from
+  'react-native'`) is no longer a dynamic bare reference. `NativeModules` imported from another module
+  (a barrel re-export or a stand-in) is not read as the registry; its member accesses are counted in a
+  new `unattributed-js-native-modules:` limitation instead of disappearing.
 
 - `docs/COMPATIBILITY.md` records that isthmus-cli 0.14.0 is published and why the producer pins
   and both manifests stay at the 0.13.0 producer set (the newer producer releases have no official

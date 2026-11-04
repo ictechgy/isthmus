@@ -246,10 +246,12 @@ function buildLimitations(
   let dynamicModuleNames = 0;
   let dynamicComponentNames = 0;
   let dynamicMethodNames = 0;
+  let importedNativeModulesAccesses = 0;
   for (const scan of scans.values()) {
     dynamicModuleNames += scan.counts.dynamicModuleNames;
     dynamicComponentNames += scan.counts.dynamicComponentNames;
     dynamicMethodNames += scan.counts.dynamicMethodNames;
+    importedNativeModulesAccesses += scan.counts.importedNativeModulesAccesses;
   }
   const limitations: string[] = [
     'js-binding-scope: member calls through bindings that leave the scan set '
@@ -285,6 +287,13 @@ function buildLimitations(
     limitations.push(
       `unattributed-js-package-calls: ${extra.unattributedPackageCalls} member `
       + 'calls on package imports could not be attributed to a module name',
+    );
+  }
+  if (importedNativeModulesAccesses > 0) {
+    limitations.push(
+      `unattributed-js-native-modules: ${importedNativeModulesAccesses} NativeModules accesses use a binding `
+      + 'imported from another module (a barrel re-export or a stand-in), so they are not read as the '
+      + 'react-native registry',
     );
   }
   if (fileCount === 0) {
