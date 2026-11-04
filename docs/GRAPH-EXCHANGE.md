@@ -1528,8 +1528,10 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   `not-vendored`를 Markdown 표(GitHub step summary용) 또는 JSON으로 낸다. 생산자에게 필요 없는 suite가 있으므로
   `not-vendored`는 드리프트가 아니다. 기록이 이전 정본이어도 손대지 않은 사본과 정본에서 그 생산자에게 적용되는
   케이스(`appliesTo`가 `producer`이거나 `producer:<그 생산자>`, 계열 이름이 아닌 한정자는 보수적으로 적용)와 벡터
-  머리(`format`·`version`·`suite`)가 id별로 같으면 `consumer-only`이고 드리프트로 세지 않는다. 생산자 이름은 인자의
-  `<producer>`다. 기본 종료 코드는 0이고 `--strict`만 드리프트나 기록이 없는 생산자에 1을 낸다
+  머리(`format`·`version`·`suite`)가 id별로 같으면 `stale-consumer-only`로 구분한다. 이것도 드리프트다 — 생산자가
+  consumer 전용 케이스를 자기 테스트에서 실행할 수 있어(tsograph의 `dispatch.validate`) 생산자 동작 영향 여부를
+  이 스크립트가 알 수 없다. 생산자 이름은 인자의 `<producer>`이고, 계열 생산자 이름이 아니면(오타 포함) 케이스 단위로
+  구분하지 않고 `stale`로 둔다. 기본 종료 코드는 0이고 `--strict`만 드리프트나 기록이 없는 생산자에 1을 낸다
   (경로 없음·읽기 실패·예기치 않은 오류 2, 사용 오류 64). 생산자 테스트는 실행하지 않는다. 이 스크립트는 npm
   패키지에도 들어 있어 생산자가 설치본으로 실행할 수 있다(정본은 같은 패키지의 `conformance/`).
   `.github/workflows/conformance-drift.yml`은 주 1회와 수동 실행으로 벡터를 쓰는 생산자 일곱 곳의 기본 브랜치

@@ -19,13 +19,14 @@ _Last updated: 2026-11-03_
 - 2026-11-03 계열 검토 후속(브랜치 `ccr-37904670-hxdjsx`)이 `[Unreleased]`에 있다:
   - http root↔root 정확 매칭 작업 예산(조인당 10,000,000 단위, 넘으면 exit 2)
   - bridge 구성 요건의 target 단위 검사
-  - `conformance-drift.mjs`의 케이스 `appliesTo` 판정(`consumer-only`), 패키지 포함, 주간·수동 드리프트 workflow
+  - `conformance-drift.mjs`의 케이스 `appliesTo` 판정(`stale-consumer-only`도 드리프트로 셈), 패키지 포함, 주간·수동 드리프트 workflow
   - extract-js `NativeModules` 출처·가림 규칙, 별칭·모듈 객체 접근
   - persistence `case-folded-relations:` 한계와 3부 이름 규칙 명시
   - COMPATIBILITY 발행 상태·설치 예제 핀 정정과 그 핀의 자동 검사
   - 계약 표·README·스킬 현행화, git 2.45 미만에서도 맞는 lazy fetch 격리 테스트
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
-  cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였다(나머지는 `consumer-only`).
+  cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
+  (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
 
 ## 후속 후보 (사용자가 고르기 전에는 착수하지 않는다)
 

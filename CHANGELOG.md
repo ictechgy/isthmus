@@ -32,8 +32,11 @@
 - `scripts/conformance-drift.mjs` reads each case's `appliesTo`. When a producer's record names an
   older canonical file but its untouched copy and the canonical file agree on every case that applies
   to that producer (`producer`, `producer:<that producer>`, or a qualifier that is not a family
-  producer name) and on the behavioral header (`format`, `version`, `suite`), the suite is
-  `consumer-only` and not drift. The script now ships in the npm package, and the
+  producer name) and on the behavioral header (`format`, `version`, `suite`), the suite is reported as
+  `stale-consumer-only`. It still counts as drift and fails `--strict`: a producer may run consumer
+  cases in its own tests (tsograph runs the `dispatch.validate` cases), so the script cannot tell that
+  the producer is unaffected. A producer name outside the family (including a typo) is not compared
+  case by case and stays `stale`. The script now ships in the npm package, and the
   `conformance-drift` workflow runs it weekly and on demand with `--strict` against the default
   branch of the seven producers that vendor vectors, recording each producer SHA in the summary.
 

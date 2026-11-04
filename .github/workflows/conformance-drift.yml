@@ -1,9 +1,13 @@
 name: conformance-drift
 
 # 생산자 저장소의 conformance 사본이 이 커밋의 정본보다 낡았는지 주 1회와 수동으로 대조한다.
-# 생산자에게 적용되는 케이스가 다르면(stale·modified·missing·unknown) 실패해 저장소 알림으로 드러난다.
-# consumer 전용 차이는 실패가 아니다. 생산자는 각 기본 브랜치 HEAD를 읽고, 실행마다 그 SHA를 요약에 남긴다.
-# 생산자 테스트는 실행하지 않는다 — 기록과 사본 해시·케이스만 읽는다.
+# 사본이 정본과 다르면(stale·stale-consumer-only·modified·missing·unknown) 잡이 실패한다. consumer 전용
+# 케이스만 다른 경우도 실패다 — 생산자가 그 케이스를 자기 테스트에서 실행할 수 있다(tsograph의 dispatch.validate).
+# 실패는 Actions 실행 기록과 요약에 남는다. 예약 실행의 실패 알림 메일은 GitHub 설정상 cron을 마지막으로
+# 수정한 사람에게만 가므로, 감시를 맡은 사람은 이 workflow 실행 기록을 확인한다.
+# 생산자 checkout은 의도적으로 revision을 고정하지 않는다(scripts/AGENTS.md의 고정 revision 규칙의 예외).
+# 이 workflow의 목적이 각 생산자 기본 브랜치의 현재 사본을 감시하는 것이기 때문이며, 대신 실행마다 읽은
+# 생산자 SHA를 요약에 남겨 재현할 수 있게 한다. 생산자 테스트는 실행하지 않는다 — 기록과 사본 해시·케이스만 읽는다.
 on:
   schedule:
     - cron: '17 3 * * 1'

@@ -23,8 +23,12 @@ export class DriftUsageError extends Error {}
 /** 생산자 기록을 읽지 못한 입력 오류다. 종료 코드 2로 바뀐다. */
 export class DriftInputError extends Error {}
 
-/** 드리프트로 세는 상태다. `consumer-only`는 생산자에게 적용되는 케이스가 그대로라 세지 않는다. */
-const driftStatuses = new Set(['stale', 'modified', 'missing', 'unknown']);
+/**
+ * 드리프트로 세는 상태다. `stale-consumer-only`도 센다 — 생산자에게 적용되는 케이스는 그대로지만, 생산자가
+ * consumer 전용 케이스를 자기 테스트에서 실행할 수 있다(tsograph는 `dispatch.validate` 사례로 출력 규칙을
+ * 확인한다). 그 생산자 동작에 영향이 있는지는 이 스크립트가 알 수 없으므로 current로 단정하지 않는다.
+ */
+const driftStatuses = new Set(['stale', 'stale-consumer-only', 'modified', 'missing', 'unknown']);
 
 /**
  * 계열 생산자 이름이다. `appliesTo`의 `producer:<이름>` 한정자가 이 중 하나면 그 생산자에게만 적용된다.
@@ -206,6 +210,8 @@ function readBounded(path) {
  *
  * - `current`: 기록이 정본과 같고, 사본 파일이 있으면 그 해시도 같다.
  * - `stale`: 기록이 정본과 다르다(이전 정본을 벤더링했다).
+ * - `stale-consumer-only`: `stale`이지만 이 생산자에게 적용되는 케이스·벡터 머리는 같다. 생산자 동작에는 영향이
+ *   없을 수 있으나 consumer 전용 케이스를 실행하는 생산자는 다시 벤더링해야 하므로 드리프트로 센다.
  * - `modified`: 기록은 정본과 같지만 사본 파일 해시가 기록과 다르다.
  * - `missing`: 기록은 정본과 같지만 사본 파일이 없다.
  * - `not-vendored`: 정본 suite를 가져오지 않았다. 생산자에게 필요 없는 suite일 수 있다.
@@ -225,7 +231,7 @@ export function compareProducer(canonical, record, { producer, root } = {}) {
           : actual !== undefined && actual !== recorded ? 'modified' : 'current';
     if (status === 'stale' && actual === recorded &&
       sameProducerCases(join(root ?? repositoryRoot, 'conformance', name), record.paths?.get(name), producer)) {
-      status = 'consumer-only';
+      status = 'stale-consumer-only';
     }
     suites.push({ suite: name, status });
   }
@@ -243,12 +249,13 @@ export function compareProducer(canonical, record, { producer, root } = {}) {
 /**
  * 정본과 사본이 이 생산자에게 적용되는 케이스·머리에서 같은지 본다.
  *
- * 사본 해시가 기록과 같을 때(손대지 않은 이전 정본)만 부른다. 생산자 이름을 모르거나, 어느 쪽이든 읽거나 해석할 수
- * 없거나, 케이스 id가 겹치면 같다고 단정하지 않는다(false) — 보수적으로 stale로 남긴다. 케이스 비교는 id별 JSON
- * 직렬화의 일치이고 순서는 보지 않는다.
+ * 사본 해시가 기록과 같을 때(손대지 않은 이전 정본)만 부른다. 생산자 이름을 모르거나 계열 생산자 이름이 아니면
+ * (오타 포함 — `producer:<이름>` 케이스를 그 이름과 맞출 수 없다), 어느 쪽이든 읽거나 해석할 수 없거나, 케이스 id가
+ * 겹치면 같다고 단정하지 않는다(false) — 보수적으로 stale로 남긴다. 케이스 비교는 id별 JSON 직렬화의 일치이고
+ * 순서는 보지 않는다.
  */
 function sameProducerCases(canonicalPath, vendoredPath, producer) {
-  if (producer === undefined || vendoredPath === undefined) return false;
+  if (producer === undefined || !familyProducers.has(producer) || vendoredPath === undefined) return false;
   const canonical = applicableView(canonicalPath, producer);
   const vendored = applicableView(vendoredPath, producer);
   if (canonical === null || vendored === null || canonical.header !== vendored.header) return false;
@@ -309,13 +316,14 @@ export function renderDriftMarkdown(report) {
   const drifting = report.producers.filter(({ drift }) => drift).map(({ name }) => name);
   const unrecorded = report.producers.filter(({ source }) => source === null).map(({ name }) => name);
   const consumerOnly = report.producers
-    .filter(({ drift, suites: rows }) => !drift && rows.some(({ status }) => status === 'consumer-only'))
+    .filter(({ suites: rows }) => rows.some(({ status }) => status === 'stale-consumer-only'))
     .map(({ name }) => name);
   lines.push('', drifting.length === 0
-    ? 'No vendored suite differs from the canonical vectors in cases that apply to the producer.'
+    ? 'No vendored suite differs from the canonical vectors.'
     : `Drift: ${drifting.join(', ')}. Re-vendor the canonical files and SHA256SUMS, then rerun the producer conformance tests.`);
   if (consumerOnly.length > 0) {
-    lines.push(`Consumer-only changes (re-vendor when convenient): ${consumerOnly.join(', ')}.`);
+    lines.push(`Only consumer cases changed for: ${consumerOnly.join(', ')}. Producer behavior may be unaffected, `
+      + 'but a producer whose tests run these cases must re-vendor.');
   }
   if (unrecorded.length > 0) {
     lines.push(`No vendored record: ${unrecorded.join(', ')}. Vendor the canonical suites with a conformance.lock.`);

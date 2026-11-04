@@ -284,7 +284,7 @@ test('Markdown 표는 suite 열과 드리프트 생산자를 밝히고 --strict�
     '',
   ].join('\n'));
   assert.equal(clean.exitCode, 0);
-  assert.match(clean.stdout, /No vendored suite differs from the canonical vectors in cases that apply to the producer\.\n$/u);
+  assert.match(clean.stdout, /No vendored suite differs from the canonical vectors\.\n$/u);
   assert.doesNotMatch(clean.stdout, /unknown suites/u);
   const json = JSON.parse(runDrift(['--json', `old=${space.path('old')}`], options).stdout);
   assert.equal(json.format, 'isthmus-conformance-drift');
@@ -343,11 +343,39 @@ function appliesWorkspace(t, oldCases, newCases, header = {}) {
 
 const kase = (id, appliesTo, expect = { valid: true }) => ({ id, appliesTo, input: { id }, expect });
 
-test('생산자에게 적용되지 않는 케이스만 바뀌었으면 stale 대신 consumer-only로 보고하고 드리프트로 세지 않는다', (t) => {
+test('생산자에게 적용되지 않는 케이스만 바뀌었으면 stale-consumer-only로 보고하고 드리프트로 센다', (t) => {
+  // 생산자도 consumer 전용 케이스를 테스트에서 실행할 수 있다(tsograph의 dispatch.validate). 그래서 생산자
+  // 동작에 영향이 없을 수 있다는 것만 구분하고, current로 단정하지 않는다.
   const base = [kase('p/1', ['consumer', 'producer'])];
   const space = appliesWorkspace(t, base, [...base, kase('c/1', ['consumer']), kase('k/1', ['producer:kartograph'])]);
-  assert.equal(space.status('gartograph'), 'consumer-only');
-  assert.equal(space.report('gartograph').drift, false);
+  assert.equal(space.status('gartograph'), 'stale-consumer-only');
+  assert.equal(space.report('gartograph').drift, true);
+});
+
+test('consumer 전용 케이스의 기대값만 바뀐 정본도 --strict에서 실패한다', (t) => {
+  // 검토 재현: 정본 http-dispatch.json에서 consumer 전용 validate/strict-slash-prefix의 expect만 뒤집는다.
+  // 이 케이스를 실행하는 생산자는 사본을 다시 받아야 하므로 드리프트다.
+  const directory = mkdtempSync(join(tmpdir(), 'isthmus-conformance-consumer-only-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const original = readFileSync(join(root, 'conformance', 'http-dispatch.json'), 'utf8');
+  const vector = JSON.parse(original);
+  const target = vector.cases.find(({ id }) => id === 'validate/strict-slash-prefix');
+  assert.deepEqual(target.appliesTo, ['consumer']);
+  target.expect = { ...target.expect, valid: !target.expect.valid };
+  const flipped = `${JSON.stringify(vector, null, 2)}\n`;
+  mkdirSync(join(directory, 'canonical', 'conformance'), { recursive: true });
+  writeFileSync(join(directory, 'canonical', 'conformance', 'http-dispatch.json'), flipped);
+  writeFileSync(join(directory, 'canonical', 'conformance', 'SHA256SUMS'), `${sha(flipped)}  http-dispatch.json\n`);
+  mkdirSync(join(directory, 'tsograph', 'conformance'), { recursive: true });
+  writeFileSync(join(directory, 'tsograph', 'conformance', 'http-dispatch.json'), original);
+  writeFileSync(join(directory, 'tsograph', 'conformance', 'SHA256SUMS'), `${sha(original)}  http-dispatch.json\n`);
+
+  const result = runDrift(['--strict', '--json', `tsograph=${join(directory, 'tsograph')}`], { root: join(directory, 'canonical') });
+
+  assert.equal(result.exitCode, 1);
+  const [producer] = JSON.parse(result.stdout).producers;
+  assert.equal(producer.drift, true);
+  assert.deepEqual(producer.suites, [{ suite: 'http-dispatch.json', status: 'stale-consumer-only' }]);
 });
 
 test('생산자에게 적용되는 케이스가 더해지거나 바뀌면 stale이다', (t) => {
@@ -358,27 +386,32 @@ test('생산자에게 적용되는 케이스가 더해지거나 바뀌면 stale�
   // 이름을 지정한 생산자 케이스는 그 생산자에게만 적용된다.
   const named = appliesWorkspace(t, base, [...base, kase('k/1', ['producer:kartograph'])]);
   assert.equal(named.status('kartograph'), 'stale');
-  assert.equal(named.status('rustograph'), 'consumer-only');
+  assert.equal(named.status('rustograph'), 'stale-consumer-only');
   // 계열 생산자 이름이 아닌 한정자(producer:openapi)는 어느 생산자에게 적용되는지 몰라 보수적으로 적용된다고 본다.
   assert.equal(appliesWorkspace(t, base, [...base, kase('o/1', ['producer:openapi'])]).status('tsograph'), 'stale');
   // 생산자 이름을 모르면(기록 파일만 받은 경우 등) 케이스 단위로 판정하지 않는다.
   assert.equal(appliesWorkspace(t, base, [...base, kase('c/1', ['consumer'])]).status(undefined), 'stale');
+  // 계열 생산자가 아닌 이름(오타 포함)은 producer:<이름> 케이스를 그 이름과 맞출 수 없어 케이스 단위로 판정하지 않는다.
+  const cartographOnly = appliesWorkspace(t, base, [...base, kase('s/1', ['producer:cartograph'])]);
+  assert.equal(cartographOnly.status('cartograph'), 'stale');
+  assert.equal(cartographOnly.status('cartograf'), 'stale');
+  assert.equal(cartographOnly.status('swift'), 'stale');
 });
 
 test('벡터 머리(format·version·suite)가 바뀌면 케이스와 무관하게 stale이다', (t) => {
   const base = [kase('p/1', ['producer'])];
   assert.equal(appliesWorkspace(t, base, base, { version: 2 }).status('gartograph'), 'stale');
   // 설명·계약 링크 문구만 바뀐 것은 생산자 동작이 아니다.
-  assert.equal(appliesWorkspace(t, base, base, { description: 'reworded' }).status('gartograph'), 'consumer-only');
+  assert.equal(appliesWorkspace(t, base, base, { description: 'reworded' }).status('gartograph'), 'stale-consumer-only');
 });
 
-test('consumer-only는 표에 그대로 싣고 다시 벤더링을 권하는 문장과 구분한다', () => {
+test('stale-consumer-only는 표에 싣고 드리프트로 세되 생산자 케이스 차이와 구분해 설명한다', () => {
   const markdown = renderDriftMarkdown({
     revision: null,
     canonical: [{ suite: 'v.json', sha256: 'x' }],
-    producers: [{ name: 'gartograph', source: 'conformance.lock', commit: null, drift: false, suites: [{ suite: 'v.json', status: 'consumer-only' }] }],
+    producers: [{ name: 'gartograph', source: 'conformance.lock', commit: null, drift: true, suites: [{ suite: 'v.json', status: 'stale-consumer-only' }] }],
   });
-  assert.match(markdown, /\| gartograph \| conformance\.lock \| - \| consumer-only \|/u);
-  assert.match(markdown, /No vendored suite differs from the canonical vectors in cases that apply to the producer\./u);
-  assert.match(markdown, /Consumer-only changes \(re-vendor when convenient\): gartograph\./u);
+  assert.match(markdown, /\| gartograph \| conformance\.lock \| - \| stale-consumer-only \|/u);
+  assert.match(markdown, /Drift: gartograph\./u);
+  assert.match(markdown, /Only consumer cases changed for: gartograph\. Producer behavior may be unaffected, but a producer whose tests run these cases must re-vendor\./u);
 });
