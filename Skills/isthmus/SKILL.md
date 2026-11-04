@@ -3,7 +3,8 @@ name: isthmus
 description: >-
   Inspect file or symbol changes across Flutter Dart-to-Swift/Kotlin bridges, trace callers,
   compare snapshots, or produce cartograph retention evidence. Use before changing
-  MethodChannel or Pigeon/Basic handlers and their Dart callers. `extract-js` extracts
+  MethodChannel or Pigeon/Basic handlers and their Dart callers, HTTP routes and their
+  client calls, or SQL relations and the code that uses them. `extract-js` extracts
   React Native caller-side facts from JS/TS sources within its token-scan scope.
 ---
 
@@ -122,10 +123,23 @@ If inputs are missing, identify the required files and proceed with independent 
 - Trace callers: `isthmus query <channel-or-method> <dart.json> <swift.json>`.
   Read `usedBy`, `dependsOn`, symbol evidence, and `limitations`.
   `ambiguous` returns qualified-name candidates; disambiguate from context or ask when necessary.
-- Persistence pairs (development builds): `isthmus check <code.json> <sql.json> --pairs` adds
+- Persistence pairs (isthmus-cli 0.10.0+): `isthmus check <code.json> <sql.json> --pairs` adds
   `matches` (code uses ↔ catalog declarations with their symbols) to the JSON report only;
   `isthmus query relation:<name> <code.json> <sql.json>` answers one relation. Chaining those ids to
   producer and `schemagraph impact` is manual; follow `docs/PERSISTENCE-TRACE.md`.
+- HTTP routes (isthmus-cli 0.10.0+): pass server `route-decl` (or OpenAPI `route-contract`) documents and client
+  `route-call` documents from the producers to `isthmus check <server.json> <client.json> [--pairs] [--strict]`;
+  `query route:<template>` answers one route. A document set needs a declaration side and a caller side, or a
+  zero-fact document that declares its `roles`. Base-anchored and dynamic calls are candidates, not proof;
+  `-unverified` codes and `limitations` still apply.
+- Follow a change across domains (isthmus-cli 0.10.0+): `isthmus trace <trace-context.json> [--strict] [--compact]`
+  joins route, relation, symbol or file roots to DB and client impact candidates through each producer's
+  `language-traversal` analysis. `isthmus task <trace-context.json> [--evidence <manifest.json>] [--limit <1..100>]`
+  (0.14.0+, experimental) summarizes one trace task and keeps manual evidence claims `unverified`.
+- Compare surfaces between revisions: `isthmus diff --http --before <...> --after <...> [--clients <client.json...>]`
+  (0.10.0+) reports client calls that stop binding; `isthmus diff --contracts --before <declarations.json...>
+  --after <declarations.json...> [--clients <clients.json...>]` (0.14.0+) compares declared HTTP fields and DB
+  columns/constraints and keeps runtime compatibility `not-assessed`.
 - Review a change: `isthmus diff --before <old-dart.json> <old-swift.json> --after <new-dart.json> <new-swift.json> --strict`.
   Inspect added/removed logical methods, introduced/resolved issues, both sets of limitations,
   and producer versions/timestamps. Revisions come from the caller's before/after choice.
@@ -144,7 +158,7 @@ If inputs are missing, identify the required files and proceed with independent 
   `isthmus retentions <dart.json> <swift.json> --for cartograph`.
   Save stdout to a new private temporary file, check successful output, then pass its path to
   `cartograph dead --external-retentions <path>`. Clean up only artifacts created for this run.
-  Development builds also accept `--for kartograph` with a Kotlin document and actual JVM identities.
+  Since isthmus-cli 0.8.0, `--for kartograph` accepts a Kotlin document with actual JVM identities.
   Use kartograph 0.11.0+ for Kotlin and cartograph 0.20.0+ for indexed Objective-C retentions; missing identities fail.
 
 ## Interpret and finish

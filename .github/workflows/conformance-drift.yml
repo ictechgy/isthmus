@@ -1,0 +1,65 @@
+name: conformance-drift
+
+# 생산자 저장소의 conformance 사본이 이 커밋의 정본보다 낡았는지 주 1회와 수동으로 대조한다.
+# 사본이 정본과 다르면(stale·stale-consumer-only·modified·missing·unknown) 잡이 실패한다. consumer 전용
+# 케이스만 다른 경우도 실패다 — 생산자가 그 케이스를 자기 테스트에서 실행할 수 있다(tsograph의 dispatch.validate).
+# 실패는 Actions 실행 기록과 요약에 남는다. 예약 실행의 실패 알림 메일은 GitHub 설정상 cron을 마지막으로
+# 수정한 사람에게만 가므로, 감시를 맡은 사람은 이 workflow 실행 기록을 확인한다.
+# 생산자 checkout은 의도적으로 revision을 고정하지 않는다(scripts/AGENTS.md의 고정 revision 규칙의 예외).
+# 이 workflow의 목적이 각 생산자 기본 브랜치의 현재 사본을 감시하는 것이기 때문이며, 대신 실행마다 읽은
+# 생산자 SHA를 요약에 남겨 재현할 수 있게 한다. 생산자 테스트는 실행하지 않는다 — 기록과 사본 해시·케이스만 읽는다.
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { producer: cartograph }
+          - { producer: kartograph }
+          - { producer: dartograph }
+          - { producer: gartograph }
+          - { producer: rustograph }
+          - { producer: pythograph }
+          - { producer: tsograph }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: isthmus
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ictechgy/${{ matrix.producer }}
+          path: producer
+          persist-credentials: false
+          sparse-checkout: |
+            conformance
+            conformance.lock
+            fixtures/isthmus-conformance
+            fixtures/isthmus_conformance
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.18.0'
+      - name: Compare vendored conformance vectors
+        env:
+          PRODUCER: ${{ matrix.producer }}
+        run: |
+          set -euo pipefail
+          revision="$(git -C producer rev-parse HEAD)"
+          echo "${PRODUCER} at ${revision}" >> "$GITHUB_STEP_SUMMARY"
+          node isthmus/scripts/conformance-drift.mjs --strict "${PRODUCER}=producer" | tee -a "$GITHUB_STEP_SUMMARY"

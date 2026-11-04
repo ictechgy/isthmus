@@ -1236,7 +1236,7 @@ const bridgeDomainTargets = new Set<BridgeTarget>([
   'capacitor',
 ]);
 
-/** http target 문서를 낼 수 있는 플랫폼이다. sql의 http 사실은 없다. go·rust는 route-decl만 낸다. */
+/** http target 문서를 낼 수 있는 플랫폼이다. sql의 http 사실은 없다. kind별 허용 플랫폼은 `routeKindPlatforms`가 정한다. */
 const httpPlatforms = new Set<unknown>(['kotlin', 'swift', 'dart', 'js', 'python', 'go', 'rust', 'openapi']);
 
 /** http 도메인의 사실 종류다. */

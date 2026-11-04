@@ -704,6 +704,32 @@ test('호출 측 문서만 있는 조인은 한쪽 관찰을 불일치로 보고
   );
 });
 
+test('bridge 구성 요건은 target마다 적용해 다른 target의 반대쪽 문서로 채우지 않는다', () => {
+  // flutter 호출 측(dart)과 react-native 수신 측(swift)만 있으면 플랫폼 기준으로는 양쪽이 있지만, 어느 target도
+  // 양쪽을 갖지 못한다. 그대로 조인하면 flutter 호출 전부가 미처리, react-native export 전부가 미사용으로 오독된다.
+  const flutterCaller = parseBridgeFactsDocument({ ...dartDocument, target: 'flutter' });
+  const reactNativeReceiver = mechanismDocument('swift', [{ kind: 'module-export', channel: 'Camera' }]);
+  assert.throws(
+    () => joinBridgeDocuments([flutterCaller, reactNativeReceiver]),
+    {
+      name: 'BridgeJoinValidationError',
+      message:
+        'Bridge documents must include a caller platform (dart, js) document and a receiver platform '
+        + '(swift, kotlin) document for each target; flutter has no receiver document and react-native has no caller '
+        + 'document. A zero-fact document (target null) counts for every target. Run a producer for the missing side '
+        + 'or pass only the documents of targets that have both sides.',
+    },
+  );
+});
+
+test('사실 0건 문서(target null)는 어느 target의 반대쪽으로도 센다', () => {
+  // 사실이 없으면 target을 실을 수 없어 어느 target을 스캔했는지 모른다. 기존처럼 요건을 채우는 근거로 인정한다.
+  const flutterCaller = parseBridgeFactsDocument({ ...dartDocument, target: 'flutter' });
+  const reactNativeReceiver = mechanismDocument('swift', [{ kind: 'module-export', channel: 'Camera' }]);
+  const result = joinBridgeDocuments([flutterCaller, reactNativeReceiver, emptyDocument('kotlin'), emptyDocument('js')]);
+  assert.equal(result.deferred, false);
+});
+
 test('수신 측 문서만 있는 조인도 같은 이유로 거부한다', () => {
   assert.throws(
     () => joinBridgeDocuments([swiftDocument, swiftDocument]),
@@ -809,10 +835,12 @@ test('같은 플랫폼의 한계는 target 문자열 순으로 정렬한다', ()
     limitations: ['opaque-handler-bodies: 1 named-function handler is not read'],
   });
 
+  // react-native 호출 측은 사실 0건 js 문서로 채운다(target 단위 구성 요건).
   const result = joinBridgeDocuments([
     dartDocument,
     flutterSwift,
     reactNativeSwift,
+    emptyDocument('js'),
   ]);
 
   assert.deepEqual(
@@ -844,7 +872,8 @@ test('같은 플랫폼이라도 target이 다르면 조인에서 제외한 사�
     limitations: [],
   });
 
-  const result = joinBridgeDocuments([dartDocument, reactNativeJs, swiftDocument]);
+  // react-native 수신 측은 사실 0건 kotlin 문서로 채운다(target 단위 구성 요건).
+  const result = joinBridgeDocuments([dartDocument, reactNativeJs, swiftDocument, emptyDocument('kotlin')]);
 
   assert.deepEqual(
     result.limitations.filter(({ message }) =>
@@ -1138,7 +1167,10 @@ test('target이 다른 같은 이름의 모듈 사실은 연결하지 않는다'
     tool: { name: 'dartograph', version: '0.1.0' },
   });
 
-  const result = joinBridgeDocuments([flutterJs, reactNativeSwiftDocument, reactNativeKotlinDocument]);
+  // flutter 수신 측·react-native 호출 측은 사실 0건 문서로 채운다(target 단위 구성 요건). 사실이 없어 결과를 바꾸지 않는다.
+  const result = joinBridgeDocuments([
+    flutterJs, reactNativeSwiftDocument, reactNativeKotlinDocument, emptyDocument('swift'), emptyDocument('js'),
+  ]);
 
   assert.deepEqual(result.matchedModules, []);
   assert.deepEqual(
@@ -2071,4 +2103,29 @@ test('관계 해석기는 persistence 선언이 없으면 모든 사용을 미�
   const resolver = createRelationResolver([dartDocument, swiftDocument]);
   assert.deepEqual(resolver.resolveUse('users'), { status: 'missing' });
   assert.deepEqual(resolver.resolveUse('missing'), { status: 'missing' });
+});
+
+test('철자만 다른 관계 선언을 한 키로 접으면 그 그룹 수를 소비자 한계로 센다', () => {
+  // 인용 식별자는 데이터베이스에서 대소문자를 구분할 수 있다. 접은 결과 한쪽 선언의 미사용(decl-without-use)이
+  // 다른 철자의 사용에 가려지므로, 접었다는 사실을 남겨야 한다.
+  const caller = persistenceDocument('go', [{ kind: 'relation-use', channel: 'public.users' }]);
+  const folded = joinBridgeDocuments([caller, persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.Users', symbol: 'public.Users' },
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.orders', symbol: 'public.orders' },
+    { kind: 'relation-decl', channel: 'public.ORDERS', symbol: 'public.ORDERS' },
+    { kind: 'relation-decl', channel: 'public.audit', symbol: 'public.audit' },
+  ])]);
+  assert.deepEqual(folded.limitations.filter(({ message }) => message.startsWith('case-folded-relations:')), [{
+    platform: 'sql', target: 'persistence', tool: 'isthmus', origin: 'consumer',
+    message: 'case-folded-relations: 2 relation declarations merge spellings that differ only in case or escaping '
+      + '(public.ORDERS, public.Users); they are joined as one relation, which is wrong only where the database '
+      + 'keeps them distinct (such as case-sensitive quoted identifiers)',
+  }]);
+  // 같은 철자가 여러 번 나온 것은 접은 것이 아니므로 조용하다.
+  const repeated = joinBridgeDocuments([caller, persistenceDocument('sql', [
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users' },
+    { kind: 'relation-decl', channel: 'public.users', symbol: 'public.users', path: 'db/other.sql' },
+  ])]);
+  assert.equal(repeated.limitations.some(({ message }) => message.startsWith('case-folded-relations:')), false);
 });

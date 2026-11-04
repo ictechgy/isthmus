@@ -75,6 +75,8 @@ export interface JsScanCounts {
   readonly dynamicModuleNames: number;
   readonly dynamicComponentNames: number;
   readonly dynamicMethodNames: number;
+  /** 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`의 멤버 접근 수다. 레지스트리로 귀속하지 않는다. */
+  readonly importedNativeModulesAccesses: number;
 }
 
 /** 위치 정보가 붙기 전의 사실 골격이다. */
@@ -127,6 +129,16 @@ export interface ScannedExports {
   }>;
 }
 
+/** 식별자 하나에서 구조 분해한 로컬 이름의 원천이다. */
+interface DestructuredSource {
+  /** 구조 분해한 속성 이름이다(`{ NativeModules: NM }`의 NativeModules). */
+  readonly property: string;
+  /** 원천 식별자다(`= RN`의 RN). */
+  readonly source: string;
+  /** 원천 식별자 토큰의 위치다. 매개변수 가림은 이 위치에서 판정한다. */
+  readonly sourceIndex: number;
+}
+
 interface ScanContext {
   readonly source: string;
   readonly tokens: readonly JsToken[];
@@ -150,6 +162,7 @@ interface ScanContext {
     dynamicModuleNames: number;
     dynamicComponentNames: number;
     dynamicMethodNames: number;
+    importedNativeModulesAccesses: number;
   };
   /**
    * 매개변수가 가리는 토큰 구간의 이름별 색인이다. `function f(M) {…}`·`f(M) {…}`·
@@ -170,6 +183,14 @@ interface ScanContext {
    * 판정한다.
    */
   readonly requireSpecifiers: Map<string, string>;
+  /**
+   * `const { P: local } = SOURCE`처럼 식별자 하나에서 구조 분해한 로컬 이름의 원천이다(속성 이름·원천 식별자·원천
+   * 토큰 위치). `const { NativeModules } = RN`의 RN이 react-native 모듈 객체인지는 import가 뒤에 와도 알 수 있도록
+   * 사용 시점에 판정한다.
+   */
+  readonly destructuredSources: Map<string, DestructuredSource>;
+  /** `import * as NAME from 'react-native'`의 NAME 목록이다. */
+  readonly reactNativeNamespaces: ReadonlySet<string>;
   readonly unstableAliasNames: ReadonlySet<string>;
   defaultExport?: BoundName;
 }
@@ -250,10 +271,13 @@ function createBoundContext(source: string): ScanContext {
       dynamicModuleNames: 0,
       dynamicComponentNames: 0,
       dynamicMethodNames: 0,
+      importedNativeModulesAccesses: 0,
     },
     paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
     localNames: new Set(),
     requireSpecifiers: new Map(),
+    destructuredSources: new Map(),
+    reactNativeNamespaces: reactNativeNamespaceImports(tokens),
     unstableAliasNames: new Set(tokens.filter((token, index) =>
       token.kind === 'identifier' && tokens[index - 1]?.text !== 'as' &&
       (!['(', '<'].includes(tokens[index + 1]?.text ?? '') ||
@@ -775,7 +799,11 @@ function collectDeclaration(context: ScanContext, start: number): number {
       const required = tokens[close + 1]?.text === '='
         ? readRequireSpecifier(tokens, close + 2)
         : undefined;
-      recordDestructuredLocals(context, index, close, required);
+      // `const { … } = SOURCE;`처럼 식별자 하나가 원천이면 그 식별자를 남긴다(모듈 객체 판정용).
+      const sourceToken = tokens[close + 2];
+      const sourceIndex = tokens[close + 1]?.text === '=' && sourceToken?.kind === 'identifier' &&
+        endsExpression(tokens, close + 2) ? close + 2 : undefined;
+      recordDestructuredLocals(context, index, close, required, sourceIndex);
       index = close + 1;
       continue;
     }
@@ -923,6 +951,7 @@ function recordDestructuredLocals(
   open: number,
   close: number,
   specifier: string | undefined,
+  sourceIndex?: number,
 ): void {
   const { tokens } = context;
   for (let index = open + 1; index < close; index++) {
@@ -939,6 +968,10 @@ function recordDestructuredLocals(
     context.localNames.add(localName);
     if (specifier !== undefined) {
       context.requireSpecifiers.set(localName, specifier);
+    }
+    if (sourceIndex !== undefined) {
+      context.destructuredSources.set(localName,
+        { property: token.text, source: tokens[sourceIndex]!.text, sourceIndex });
     }
     // 기본값·중첩 패턴까지 포함해 다음 `,`까지 건너뛴다.
     let cursor = index + 1;
@@ -1143,11 +1176,36 @@ function skipTypeArguments(
 /** 두 번째 순회: 브리지 API 호출·멤버 호출을 사실로 모은다. */
 function collectCalls(context: ScanContext): void {
   const { tokens } = context;
+  const importPositions = importStatementPositions(tokens);
+  const namespaces = context.reactNativeNamespaces;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (token.kind !== 'identifier') continue;
-    if (token.text === 'NativeModules') {
+    const property = ['.', '?.'].includes(tokens[index - 1]?.text ?? '');
+    if (token.text === 'NativeModules' && property) {
       index = collectNativeModulesAccess(context, index);
+      continue;
+    }
+    if (!property && (token.text === 'NativeModules' || nativeModulesAlias(context, token.text) ||
+      context.destructuredSources.get(token.text)?.property === 'NativeModules')) {
+      // 레지스트리를 가져오는 import 절·구조 분해의 이름은 값 사용이 아니고, react-native 출처가 아닌 같은 이름은
+      // RN 레지스트리가 아니다(로컬 shim·다른 모듈·매개변수).
+      if (importPositions.has(index) || isPatternDeclarator(tokens, index)) continue;
+      if (isNativeModulesRegistry(context, token.text, index)) {
+        index = collectNativeModulesAccess(context, index);
+        continue;
+      }
+      // 다른 모듈에서 가져온 이름(배럴 재수출·대역)은 레지스트리로 단정하지 않는다. 그래도 조용히 버리지 않고 멤버
+      // 접근을 세어 문서 한계로 낸다 — 빈 결과가 청정으로 읽히지 않게.
+      if (importedFromOtherModule(context, token.text, index) &&
+        ['.', '?.', '['].includes(tokens[index + 1]?.text ?? '')) {
+        context.counts.importedNativeModulesAccesses++;
+      }
+      continue;
+    }
+    if (!property && ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'NativeModules' &&
+      isReactNativeNamespace(context, namespaces, token.text, index)) {
+      index = collectNativeModulesAccess(context, index + 2);
       continue;
     }
     if (token.text === 'TurboModuleRegistry') {
@@ -1186,6 +1244,139 @@ function collectCalls(context: ScanContext): void {
       index = collectBoundMemberCall(context, index);
     }
   }
+}
+
+/**
+ * 식별자가 react-native에서 다른 이름으로 가져온 `NativeModules`(`import { NativeModules as NM }`)인지 본다.
+ */
+function nativeModulesAlias(context: ScanContext, name: string): boolean {
+  return (context.importsByLocalName.get(name) ?? []).some(({ specifier, exportedName }) =>
+    specifier === 'react-native' && exportedName === 'NativeModules');
+}
+
+/**
+ * 값 위치의 `NativeModules`(또는 별칭)가 react-native 레지스트리를 가리키는지 본다.
+ *
+ * 같은 이름의 매개변수가 가리면, 다른 모듈에서 가져왔으면, react-native가 아닌 값으로 선언했으면(테스트 shim 등)
+ * 레지스트리가 아니다. 이 파일에 import도 선언도 없으면 기존처럼 전역 레지스트리로 읽는다. 스코프는 구분하지 않고
+ * 파일 단위로 판정한다 — 로컬 선언이 하나라도 있으면 그 이름은 레지스트리로 읽지 않는다.
+ */
+function isNativeModulesRegistry(context: ScanContext, name: string, index: number): boolean {
+  if (isShadowed(context, name, index)) return false;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) return nativeModulesAlias(context, name);
+  if (destructuredFromReactNative(context, name)) return true;
+  if (name !== 'NativeModules') return false;
+  if (context.localNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
+  return true;
+}
+
+/** 이름이 react-native가 아닌 모듈에서 가져온 import 바인딩인지 본다. 매개변수가 가리면 아니다. */
+function importedFromOtherModule(context: ScanContext, name: string, index: number): boolean {
+  if (isShadowed(context, name, index)) return false;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  return imports.length > 0 && imports.every(({ specifier }) => specifier !== 'react-native');
+}
+
+/**
+ * 로컬 이름이 react-native 모듈 객체에서 구조 분해한 `NativeModules`(`const { NativeModules: NM } = RN`)인지 본다.
+ * 원천 식별자는 구조 분해 위치에서 판정한다.
+ */
+function destructuredFromReactNative(context: ScanContext, name: string): boolean {
+  const origin = context.destructuredSources.get(name);
+  return origin !== undefined && origin.property === 'NativeModules' &&
+    isReactNativeNamespace(context, context.reactNativeNamespaces, origin.source, origin.sourceIndex);
+}
+
+/**
+ * 식별자가 react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)인지 본다.
+ * 같은 이름의 매개변수가 가리면 아니다.
+ */
+function isReactNativeNamespace(
+  context: ScanContext,
+  namespaceImports: ReadonlySet<string>,
+  name: string,
+  index: number,
+): boolean {
+  if (isShadowed(context, name, index)) return false;
+  if (namespaceImports.has(name)) return true;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) {
+    return imports.some(({ specifier, exportedName }) => specifier === 'react-native' && exportedName === 'default');
+  }
+  return context.requireSpecifiers.get(name) === 'react-native';
+}
+
+/** `import * as NAME from 'react-native'`의 NAME 목록이다. 이 형태는 import 목록에 기록되지 않아 토큰으로 찾는다. */
+function reactNativeNamespaceImports(tokens: readonly JsToken[]): Set<string> {
+  const names = new Set<string>();
+  for (let index = 0; index + 5 < tokens.length; index++) {
+    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text === '*' && tokens[index + 2]?.text === 'as' &&
+      tokens[index + 3]?.kind === 'identifier' && tokens[index + 4]?.text === 'from' &&
+      tokens[index + 5]?.value === 'react-native') {
+      names.add(tokens[index + 3]!.text);
+    }
+  }
+  return names;
+}
+
+/** 정적 `import … from '…'` 문(동적 `import(…)` 제외)과 재수출 절(`export { … } from`·`export * from`)이 차지한 토큰 위치다. */
+function importStatementPositions(tokens: readonly JsToken[]): Set<number> {
+  const positions = new Set<number>();
+  for (let index = 0; index < tokens.length; index++) {
+    if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    let end: number | undefined;
+    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text !== '(') {
+      end = index + 1;
+      while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+    } else if (tokens[index]?.text === 'export') {
+      end = reexportClauseEnd(tokens, index);
+    }
+    if (end === undefined) continue;
+    for (let cursor = index; cursor <= end; cursor++) positions.add(cursor);
+    index = end;
+  }
+  return positions;
+}
+
+/**
+ * `export { … } [from 'spec']`·`export * [as ns] from 'spec'` 절의 마지막 토큰 위치다. 그 밖의 export면 undefined다.
+ *
+ * 재수출 절의 이름(`export { NativeModules } from 'react-native'`)은 값 사용이 아니다. 세미콜론 없는
+ * `export { a }` 뒤의 코드를 먹지 않도록 `{`의 짝과 `from` 문자열까지만 본다.
+ */
+function reexportClauseEnd(tokens: readonly JsToken[], index: number): number | undefined {
+  const next = tokens[index + 1];
+  if (next?.text === '{') {
+    const close = findMatching(tokens, index + 1, '{', '}');
+    if (close === undefined) return undefined;
+    return tokens[close + 1]?.text === 'from' && tokens[close + 2]?.kind === 'string' ? close + 2 : close;
+  }
+  if (next?.text !== '*') return undefined;
+  let end = index + 2;
+  while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+  return end;
+}
+
+/** 선언 구조 분해 패턴이 감싸는 이름을 찾을 때 거슬러 오르는 토큰 수 상한이다. 긴 입력에서 이차 시간을 막는다. */
+const MAX_PATTERN_LOOKBEHIND = 256;
+
+/**
+ * 토큰이 `const|let|var { … }` 선언 구조 분해 패턴 안의 이름인지 본다(`const { NativeModules } = require(…)`).
+ *
+ * 객체 리터럴의 단축 속성(`pass({ NativeModules })`)은 값 사용이라 선언 키워드가 앞에 없으면 패턴이 아니다.
+ */
+function isPatternDeclarator(tokens: readonly JsToken[], index: number): boolean {
+  let depth = 0;
+  for (let cursor = index - 1; cursor >= 0 && index - cursor <= MAX_PATTERN_LOOKBEHIND; cursor--) {
+    const text = tokens[cursor]!.text;
+    if (text === '}') depth++;
+    else if (text === '{') {
+      if (depth === 0) return ['const', 'let', 'var'].includes(tokens[cursor - 1]?.text ?? '');
+      depth--;
+    } else if (depth === 0 && [';', '(', ')', '=', '=>'].includes(text)) return false;
+  }
+  return false;
 }
 
 /**
@@ -1545,8 +1736,9 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
       tokens[index + 1]?.text === '=>' && tokens[index + 2]?.text === '{') {
       const close = findMatching(tokens, index + 2, '{', '}');
       if (close !== undefined) {
+        // 매개변수 자신의 위치부터 가린다 — 그 이름 토큰은 바깥 바인딩의 값 사용이 아니다.
         shadows.push({
-          from: index + 2,
+          from: index,
           to: close + 1,
           names: new Set([token.text]),
         });
@@ -1575,17 +1767,48 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
     if (tokens[bodyIndex]?.text !== '{') continue;
     const bodyClose = findMatching(tokens, bodyIndex, '{', '}');
     if (bodyClose === undefined) continue;
-    const names = new Set<string>();
-    for (let cursor = index + 1; cursor < close; cursor++) {
-      const param = tokens[cursor]!;
-      if (param.kind === 'identifier' || param.kind === 'keyword') {
-        names.add(param.text);
-      }
-    }
-    shadows.push({ from: bodyIndex, to: bodyClose + 1, names });
+    const names = parameterBindingNames(tokens, index, close);
+    // 매개변수 목록부터 가린다 — 매개변수 이름 토큰과 뒤 매개변수의 기본값 식은 바깥 바인딩을 보지 않는다.
+    shadows.push({ from: index, to: bodyClose + 1, names });
     index = close;
   }
   return shadows;
+}
+
+/**
+ * 매개변수 목록 `(`…`)`이 묶는 이름이다.
+ *
+ * 기본값 식(`=` 뒤부터 같은 괄호 깊이의 `,`나 그 깊이를 닫는 괄호까지)의 식별자는 매개변수 이름이 아니다 —
+ * `(native = NativeModules.Camera)`의 `NativeModules`는 바깥 바인딩을 읽는다. 구조 분해 패턴의 속성 이름과 타입
+ * 주석은 구분하지 않고 이름으로 센다(가림을 넓게 잡는 쪽).
+ */
+function parameterBindingNames(tokens: readonly JsToken[], open: number, close: number): Set<string> {
+  const names = new Set<string>();
+  let depth = 0;
+  // 기본값 식을 연 깊이다. 그 깊이의 `,`나 그 깊이를 닫는 괄호에서 기본값이 끝난다.
+  let defaultDepth: number | undefined;
+  for (let cursor = open + 1; cursor < close; cursor++) {
+    const token = tokens[cursor]!;
+    if (token.text === '(' || token.text === '[' || token.text === '{') {
+      depth++;
+      continue;
+    }
+    if (token.text === ')' || token.text === ']' || token.text === '}') {
+      if (defaultDepth === depth) defaultDepth = undefined;
+      depth--;
+      continue;
+    }
+    if (defaultDepth !== undefined) {
+      if (token.text === ',' && depth === defaultDepth) defaultDepth = undefined;
+      continue;
+    }
+    if (token.text === '=') {
+      defaultDepth = depth;
+      continue;
+    }
+    if (token.kind === 'identifier' || token.kind === 'keyword') names.add(token.text);
+  }
+  return names;
 }
 
 /** 위치 `index`의 `name`이 매개변수에 가려졌는지 판정한다. */

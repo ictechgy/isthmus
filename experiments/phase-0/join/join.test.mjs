@@ -231,10 +231,12 @@ test('서로 다른 target의 같은 문자열 키를 연결하지 않는다', (
   const reactNativeSwift = structuredClone(swiftDocument);
   reactNativeSwift.target = 'react-native';
 
-  const report = joinBridgeFacts(dartDocument, reactNativeSwift);
-
-  assert.deepEqual(report.matchedChannels, []);
-  assert.deepEqual(report.matchedMethods, []);
+  // 두 문서 모두 사실이 있어 target이 정해지므로, 어느 target도 호출·수신 양쪽을 갖지 못한 입력은 연결하지 않고
+  // target 단위 구성 요건으로 거부한다(조인 전 입력 오류).
+  assert.throws(
+    () => joinBridgeFacts(dartDocument, reactNativeSwift),
+    { name: 'BridgeJoinValidationError', message: /for each target; flutter has no receiver document/ },
+  );
 });
 
 test('원시 교환 문서와 project 일치를 제품 계약으로 검증한다', () => {

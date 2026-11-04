@@ -493,6 +493,12 @@ test('git revision은 서브모듈에서 git을 띄우지 않고 기록된 commi
   assert.equal(await dirty('moved'), true);
 });
 
+/**
+ * 설치된 git이 `--no-lazy-fetch` 전역 옵션을 아는지다(2.45 이상). 모르는 git은 promisor 저장소 조회를 하위 명령 전에
+ * 사용 오류로 끝내므로 같은 fail-closed 결과가 한 단계 앞에서 난다.
+ */
+const gitKnowsNoLazyFetch = runChild('git', ['--no-lazy-fetch', 'version']).status === 0;
+
 test('git revision 조회는 부분 clone의 promisor lazy fetch로 저장소 설정의 명령을 실행하지 않고 실패한다', async (t) => {
   const { work, config } = await singleProjectConfig(t);
   const kit = await markerKit(t);
@@ -504,10 +510,13 @@ test('git revision 조회는 부분 clone의 promisor lazy fetch로 저장소 �
   config.members[0].project = { root: 'work', path: 'clone' };
   config.members[0].revision = { git: true };
   config.trace = false;
-  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), 'revision:app:status', /git status exited with status 128/u);
+  // `--no-lazy-fetch`를 모르는 git(2.45 미만)은 revision 조회의 첫 git 호출에서 먼저 끝난다. 마커가 없다는 결과는 같다.
+  const failedStep = gitKnowsNoLazyFetch ? 'revision:app:status' : 'revision:app';
+  await rejectsAt(captureTrace(config, { execute: fixtureExecute }), failedStep,
+    gitKnowsNoLazyFetch ? /git status exited with status 128/u : undefined);
   assert.deepEqual(await kit.found(), []);
   const manifest = JSON.parse(await readFile(join(work, 'out/capture-manifest.json'), 'utf8'));
-  assert.equal(manifest.failure.step, 'revision:app:status');
+  assert.equal(manifest.failure.step, failedStep);
 });
 
 test('git revision은 lazy fetch를 끄지 못하는 git(2.45 미만)에서 부분 clone이면 조회를 시작하지 않고, 아니면 그대로 조회한다', async (t) => {

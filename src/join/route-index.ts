@@ -140,6 +140,25 @@ export const MAX_ROUTE_SUFFIX_COMPARISONS = 5_000_000;
  */
 const INFEASIBLE_VISITS_PER_COMPARISON = 64;
 
+/**
+ * 한 조인에서 root↔root 정확 매칭이 쓸 수 있는 작업 단위(trie 노드 방문과 후보 평가)의 상한이다.
+ *
+ * 호출의 파라미터 세그먼트(`{}`)는 trie의 모든 리터럴 자식으로 퍼진다. 그래서 `/{}/{}` 같은 동적 호출 m개와
+ * `/svc{i}/{}` 같은 선언 n개는 호출×선언만큼 방문·평가하고, 상한이 없으면 문서 입력 상한보다 훨씬 작은 입력에서도
+ * 힙을 다 써 문서에 없는 종료 코드로 끝난다. 넘으면 부분 결과 대신 실패한다. 리터럴이 앞선 현실 규모의 호출은
+ * 호출당 수십 단위만 쓴다.
+ */
+export const MAX_ROUTE_EXACT_STEPS = 10_000_000;
+
+/** 정확 매칭 예산을 넘었음을 나타낸다. 조인 층이 입력 오류로 바꾼다. */
+export class RouteExactBudgetError extends Error {
+  /** 입력 내용을 담지 않는 고정 문구만 보존한다. */
+  constructor() {
+    super('RouteExactBudgetError');
+    this.name = 'RouteExactBudgetError';
+  }
+}
+
 /** suffix 비교 예산을 넘었음을 나타낸다. 조인 층이 입력 오류로 바꾼다. */
 export class RouteSuffixBudgetError extends Error {
   /** 입력 내용을 담지 않는 고정 문구만 보존한다. */
@@ -176,12 +195,22 @@ export class RouteIndex {
    */
   readonly #baseSuffixPool: RouteDeclaration[] = [];
   readonly #budget: { remaining: number };
+  /** root↔root 정확 매칭 예산이다. 같은 조인의 모든 색인이 공유한다. */
+  readonly #exactBudget: { remaining: number };
   /** 맞을 오프셋이 없어 비교하지 않은 (호출, 선언) 방문 수다. */
   #infeasibleVisits = 0;
 
-  /** 선언을 색인한다. 예산은 같은 조인의 모든 색인이 공유한다. */
-  constructor(declarations: readonly RouteDeclaration[], budget: { remaining: number }) {
+  /**
+   * 선언을 색인한다. suffix 예산과 정확 매칭 예산은 같은 조인의 모든 색인이 공유한다.
+   * 정확 매칭 예산을 생략하면 이 색인만 쓰는 [MAX_ROUTE_EXACT_STEPS] 예산을 만든다.
+   */
+  constructor(
+    declarations: readonly RouteDeclaration[],
+    budget: { remaining: number },
+    exactBudget: { remaining: number } = { remaining: MAX_ROUTE_EXACT_STEPS },
+  ) {
     this.#budget = budget;
+    this.#exactBudget = exactBudget;
     for (const declaration of declarations) {
       if (declaration.anchor === 'base') {
         if (hasLiteral(declaration.segments)) this.#baseSuffixPool.push(declaration);
@@ -222,15 +251,23 @@ export class RouteIndex {
     return this.#nearMiss(probe) ?? { status: 'missing' };
   }
 
-  /** root 선언 중 호출 경로와 맞는 후보를 찾는다. 대소문자 무시 선언은 접어서 맞춘다. */
+  /**
+   * root 선언 중 호출 경로와 맞는 후보를 찾는다. 대소문자 무시 선언은 접어서 맞춘다.
+   *
+   * 대소문자 무시 선언이 없으면 접은 trie는 후보를 하나도 내지 않으므로 걷지 않는다. 방문과 평가는 정확 매칭 예산을 쓴다.
+   */
   #rootCandidates(segments: readonly RouteSegment[]): RouteCandidate[] {
     const found = new Map<RouteDeclaration, RouteCandidate>();
-    for (const [declaration, declSegments] of walk(this.#exact, segments)) {
+    const step = () => this.#spendExact();
+    for (const [declaration, declSegments] of walk(this.#exact, segments, step)) {
+      step();
       const candidate = evaluateSegments(declaration, declSegments, segments, false);
       if (candidate !== undefined) keepBetter(found, candidate);
     }
-    for (const [declaration, declSegments] of walk(this.#folded, foldSegments(segments))) {
+    if (this.#rootCaseInsensitive.length === 0) return [...found.values()];
+    for (const [declaration, declSegments] of walk(this.#folded, foldSegments(segments), step)) {
       if (!declaration.caseInsensitive) continue;
+      step();
       const candidate = evaluateSegments(declaration, declSegments, segments, true);
       if (candidate !== undefined) keepBetter(found, candidate);
     }
@@ -252,7 +289,9 @@ export class RouteIndex {
       if (slash.length > 0) return { status: 'near-miss', reason: 'trailing-slash', candidates: slash };
     }
     const cased = new Set<RouteDeclaration>();
-    for (const [declaration, declSegments] of walk(this.#folded, foldSegments(probe.segments))) {
+    const step = () => this.#spendExact();
+    for (const [declaration, declSegments] of walk(this.#folded, foldSegments(probe.segments), step)) {
+      step();
       if (evaluateSegments(declaration, declSegments, probe.segments, true) !== undefined) cased.add(declaration);
     }
     const candidates = preferCompatible(probe, [...cased]);
@@ -325,6 +364,12 @@ export class RouteIndex {
   #visitInfeasible(): void {
     this.#infeasibleVisits += 1;
     if (this.#infeasibleVisits % INFEASIBLE_VISITS_PER_COMPARISON === 0) this.#spend();
+  }
+
+  /** 공유 정확 매칭 예산을 하나 쓴다. 다 쓰면 실패한다. */
+  #spendExact(): void {
+    this.#exactBudget.remaining -= 1;
+    if (this.#exactBudget.remaining < 0) throw new RouteExactBudgetError();
   }
 
   /** 공유 비교 예산을 하나 쓴다. 다 쓰면 실패한다. */
@@ -923,11 +968,17 @@ function childFor(node: TrieNode, segment: Exclude<RouteSegment, { kind: 'catch-
 /**
  * 호출 세그먼트로 trie를 걸어 경로가 맞을 수 있는 선언을 모은다(과대 근사).
  *
- * 호출 파라미터는 모든 리터럴 자식으로 퍼진다. 최종 판정은 `evaluateSegments`가 한다.
+ * 호출 파라미터는 모든 리터럴 자식으로 퍼진다. 최종 판정은 `evaluateSegments`가 한다. 노드를 방문할 때마다
+ * `step`을 불러 호출자가 작업량을 세고 예산을 넘으면 걷기를 멈추게 한다.
  */
-function walk(root: TrieNode, segments: readonly RouteSegment[]): Array<readonly [RouteDeclaration, readonly RouteSegment[]]> {
+function walk(
+  root: TrieNode,
+  segments: readonly RouteSegment[],
+  step: () => void,
+): Array<readonly [RouteDeclaration, readonly RouteSegment[]]> {
   const found: Array<readonly [RouteDeclaration, readonly RouteSegment[]]> = [];
   const visit = (node: TrieNode, index: number): void => {
+    step();
     if (index < segments.length) found.push(...node.catchAll);
     if (index === segments.length) {
       found.push(...node.terminal);

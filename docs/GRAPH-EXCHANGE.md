@@ -26,7 +26,9 @@ isthmus 소유의 추가 입력/보고 계약은 [변경 사전 점검](IMPACT.m
 `preflight`는 선택적 context.messages로 소비한다. `impact`는 v1 전용으로 version 2를
 명시적으로 거부한다 — 모르는 facts를 무시하고 초록 결과를 내지 않는다.
 
-cartograph · kartograph · dartograph · isthmus 의 JS/TS 추출기가 **내보내고**, isthmus 가 **읽는** 형식. 이 문서가 바뀌면 네 저장소가 같이 바뀐다. 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
+cartograph(Swift) · kartograph(Kotlin) · dartograph(Dart) · gartograph(Go) · rustograph(Rust) · tsograph(TS/JS) ·
+pythograph(Python) · schemagraph(SQL) 생산자와 isthmus 내장 JS/TS 추출기(`extract-js`)가 **내보내고**, isthmus 가
+**읽는** 형식. 이 문서가 바뀌면 영향받는 생산자 저장소가 같이 바뀐다(어느 생산자가 어느 kind를 내는지는 아래 표). 버전 1은 `experiments/phase-0/`의 Dart ↔ Swift 코퍼스를 양방향으로 조인해 검증했다.
 
 ## 원칙
 
@@ -325,7 +327,16 @@ Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 
 - 조인 키는 소문자로 접은 관계 이름이다. SQL 방언마다 대소문자 규칙이 달라
   소비자는 기본 Unicode 소문자 접기로 비교한다. 이름 안의 `.`는 한정
   구분자다 — 이름 자체에 `.`가 들어간 객체는 생산자가 `%2E`로 escape해 낸다.
-- 한정 사용(`a.b`)은 접은 한정 선언과 정확히 같을 때만 잇는다. 비한정
+  철자가 다른 관계 수준 선언이 접혀 한 키가 되면(`public.Users`와 `public.users`)
+  소비자는 그 그룹 수와 대표 철자 예를 `case-folded-relations:` 한계로 센다. 따옴표 없는
+  식별자를 접는 데이터베이스(PostgreSQL 등)에서는 두 철자가 실제로 한 관계라 접기가 맞다. 그러나
+  인용 식별자는 대소문자를 구분할 수 있고, 그때는 접힌 그룹에서 한 철자 선언의 미사용이 다른 철자의
+  사용에 가려진다. 소비자는 어느 쪽인지 알 수 없어 세기만 한다. 같은 철자의 반복은 세지 않는다.
+- 한정 사용(`a.b`)은 접은 한정 선언과 세그먼트 수까지 정확히 같을 때만 잇는다.
+  데이터베이스·카탈로그를 앞에 붙인 3부 이름(`mydb.public.orders`)은 2부 선언
+  (`public.orders`)과 잇지 않고 `relation-use-without-decl`이다 — 소비자는 어느 앞 세그먼트가
+  카탈로그인지 추측하지 않는다. 생산자는 선언과 같은 한정 깊이로 내거나, 카탈로그를 뗄 근거가
+  없으면 원문 그대로 둔다. 비한정
   사용(`b`)은 마지막 세그먼트가 같은 선언과 잇는다 — 후보가 하나면 match,
   둘 이상이면 어느 선언인지 추측하지 않는다. 모호한 사용은 match도
   missing도 아닌 `ambiguous-relation-use` 경고로만 보고한다.
@@ -397,10 +408,10 @@ Python 생산자(pythograph)의 문서다. Python에는 이 계약이 다루는 
 | `module-import` | JS | `NativeModules.Name`, `TurboModuleRegistry.get('Name')`; Expo `requireNativeModule`·`requireOptionalNativeModule` |
 | `component-export` | Swift / Kotlin | RN `RCT_EXPORT_VIEW_PROPERTY` 등 뷰 매니저; Expo `View(V.self)` DSL |
 | `component-require` | JS | `requireNativeComponent('Name')`; Expo `requireNativeViewManager('Name')` |
-| `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
+| `relation-use` | sql 외 (v1: Go·Rust·Kotlin·Swift·Dart·JS·Python) | 코드의 관계·컬럼 이름 참조 — SQL 리터럴, struct 태그, 쿼리 빌더 |
 | `relation-decl` | sql | 카탈로그의 관계·컬럼 선언 — `channel`은 `schema.name` 한정 |
-| `route-decl` | kotlin·js(서버) | 서버 라우트 선언 — [HTTP 경계](#개발-중-http-경계-v1-확장) |
-| `route-call` | kotlin·swift·dart·js(클라이언트) | 클라이언트 HTTP 호출 |
+| `route-decl` | kotlin·js·python·go·rust(서버) | 서버 라우트 선언 — [HTTP 경계](#개발-중-http-경계-v1-확장) |
+| `route-call` | kotlin·swift·dart·js·python·go·rust(클라이언트) | 클라이언트 HTTP 호출 |
 | `route-contract` | openapi | 스펙 operation |
 
 RN 의 메서드는 `method-invoke`(JS: `NativeModules.Name.method()`) / `method-handle`(네이티브: `RCT_EXPORT_METHOD(method:)`, `@ReactMethod fun method`) 로 같은 종류를 쓴다. `channel` 자리에 모듈 이름이 들어간다.
@@ -413,6 +424,15 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 `codegenNativeComponent`·`requireNativeViewManager`와 같은 파일·상대 import·
 `export { A as B } from` 형태의 배럴 재수출(4홉 상한) 범위의 바인딩 해석,
 그리고 확정된 모듈 식의 멤버 호출(`method-invoke`)까지 읽는다.
+`NativeModules`는 react-native 레지스트리일 때만 읽는다: 같은 이름의 매개변수가 가리거나, react-native가
+아닌 모듈에서 가져왔거나, react-native가 아닌 값으로 로컬 선언(테스트 shim 등)했으면 레지스트리가 아니다.
+이 파일에 import·선언이 없는 이름은 전역 레지스트리로 읽는다. `import { NativeModules as NM }` 별칭과
+react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)를 거친
+`RN.NativeModules.X`와 그 객체에서 구조 분해한 `const { NativeModules } = RN`(별칭 포함)도 같은 사실로 읽고,
+import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조 분해의 이름 자체는 값 사용으로 세지 않는다.
+매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
+다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
+`unattributed-js-native-modules:` 한계로 센다.
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
 동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·
@@ -494,9 +514,15 @@ require에는 싣지 않는다.
   문서는 플랫폼이 kotlin·swift·dart여도 bridge 문서가 아니다 — 이 플랫폼들은 여러
   도메인의 생산자라 platform만으로 역할을 정하면 다른 도메인 문서가 bridge 근거로
   샌다. bridge 도메인 문서가 있으면 그중 호출 측 플랫폼(dart·js) 문서와 수신 측
-  플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 한쪽만 있는 입력은 한쪽
+  플랫폼(swift·kotlin) 문서가 각각 최소 하나 있어야 한다. 사실은 target별로만 조인되므로
+  이 요건은 사실이 있는 bridge target마다 적용한다 — flutter 호출 측과 react-native 수신
+  측만 있는 입력은 플랫폼 기준으로는 양쪽이 있어도 어느 target도 양쪽을 갖지 못한다.
+  한쪽만 있는 입력은 한쪽
   관찰을 경계 불일치로 오독할 수 있으므로 소비자는 입력 오류로 거부한다. 사실이
-  없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다. 그래서 관계 사용을 하나도
+  없는 문서도 해당 플랫폼이 분석됐다는 근거로 인정한다. 사실 0건 문서는 `target: null`이라
+  어느 target을 스캔했는지 실을 수 없으므로 모든 target의 근거로 센다. 어느 target을
+  스캔했는지 밝히는 선택 필드(예: `scannedTargets`)는 생산자 합의 전 초안이며 이 버전은
+  받지 않는다. `mixed-targets` 문서가 있으면 조인 전체가 보류되므로 target 단위 검사를 하지 않는다. 그래서 관계 사용을 하나도
   찾지 못한 kotlin·swift·dart persistence 생산 결과(사실 0건, `target: null`)도
   bridge 문서로 세지며, persistence 입력에 이런 문서만 bridge 쪽으로 남아 요건을
   못 채우면 isthmus는 그 원인(null target)을 오류 문구에 밝힌다. persistence 도메인의
@@ -665,6 +691,7 @@ cartograph의 버전 1 구현은 `symbol.usr`을 붙이기 위해 인덱스 스�
 - **버전 1 승격**: `expected/dart.json`과 `expected/swift.json`을 실제 추출기로 만들고, 채널 1개·메서드 1개 연결, 핸들러 없는 호출 1개, 호출 없는 핸들러 2개를 `expected/join.json`으로 대조해 충족했다
 
 <a id="개발-중-http-경계-v1-확장"></a>
+<a id="개발-중-http-경계-합의-초안"></a>
 
 ## HTTP 경계 (v1 확장)
 
@@ -975,7 +1002,10 @@ pct-encoded = "%" 대문자-HEXDIG 대문자-HEXDIG                       ; unre
   하나일 때만 match다. 64개를 넘으면 모호함이다. 다른 scope나 decl과 contract의 후보는 함께 순위를
   매기지 않는다. 품질은 항상 `suffix`이고, suffix 후보 위의 method 불일치가 error 근거가 아니라는
   규칙은 그대로다. 한 조인의 suffix 비교는 (호출, 선언, 오프셋) 5,000,000번까지이며 넘으면 부분
-  결과 대신 입력 오류다.
+  결과 대신 입력 오류다. root↔root 정확 매칭도 같은 방식으로 한 조인의 trie 노드 방문과 후보 평가를
+  10,000,000 단위까지 센다. 호출의 `{}`는 모든 리터럴 자식으로 퍼지므로 `/{}/{}` 같은 동적 호출과 많은
+  선언이 만나면 호출×선언만큼 일하기 때문이다. 넘으면 부분 결과 대신 입력 오류다. 모호 결과의 targets는
+  후보마다 평가 단위를 쓰므로 조인 전체에서 이 예산이 상한이다.
   base decl·base contract의 `route-decl-without-call`·`route-contract-without-call`은 항상
   `-unverified`다. 잇지 않은 base call이 그 경로를 불렀을 수 있기 때문이다.
 - root로 승격(`declared-base`)되는 것은 workspace link의 `match.baseRefs`에 `pathPrefix`가
@@ -1501,8 +1531,16 @@ Next.js 예시(추정 — 생산자가 착수할 때 공식 소스로 확인한�
   `source.commit` 중 있는 값을 쓴다. 기록과 실제 사본 파일을 이 커밋의 정본과 대조해 suite별로 `current`·`stale`
   (이전 정본)·`modified`(사본이 기록과 다름)·`missing`(기록만 있고 사본 없음)·`unknown`(정본에 없는 suite)·
   `not-vendored`를 Markdown 표(GitHub step summary용) 또는 JSON으로 낸다. 생산자에게 필요 없는 suite가 있으므로
-  `not-vendored`는 드리프트가 아니다. 기본 종료 코드는 0이고 `--strict`만 드리프트나 기록이 없는 생산자에 1을 낸다
-  (경로 없음·읽기 실패·예기치 않은 오류 2, 사용 오류 64). 생산자 테스트는 실행하지 않으며 저장소 checkout·예약 실행은 이 스크립트 밖이다
+  `not-vendored`는 드리프트가 아니다. 기록이 이전 정본이어도 손대지 않은 사본과 정본에서 그 생산자에게 적용되는
+  케이스(`appliesTo`가 `producer`이거나 `producer:<그 생산자>`, 계열 이름이 아닌 한정자는 보수적으로 적용)와 벡터
+  머리(`format`·`version`·`suite`)가 id별로 같으면 `stale-consumer-only`로 구분한다. 이것도 드리프트다 — 생산자가
+  consumer 전용 케이스를 자기 테스트에서 실행할 수 있어(tsograph의 `dispatch.validate`) 생산자 동작 영향 여부를
+  이 스크립트가 알 수 없다. 생산자 이름은 인자의 `<producer>`이고, 계열 생산자 이름이 아니면(오타 포함) 케이스 단위로
+  구분하지 않고 `stale`로 둔다. 기본 종료 코드는 0이고 `--strict`만 드리프트나 기록이 없는 생산자에 1을 낸다
+  (경로 없음·읽기 실패·예기치 않은 오류 2, 사용 오류 64). 생산자 테스트는 실행하지 않는다. 이 스크립트는 npm
+  패키지에도 들어 있어 생산자가 설치본으로 실행할 수 있다(정본은 같은 패키지의 `conformance/`).
+  `.github/workflows/conformance-drift.yml`은 주 1회와 수동 실행으로 벡터를 쓰는 생산자 일곱 곳의 기본 브랜치
+  HEAD를 sparse checkout해 `--strict`로 대조하고, 각 생산자 SHA를 요약에 남긴다
 - 프레임워크별 변환표(Spring·Express·Django 등)는 착수할 때 공식 소스로 확인해 추가한다. 현재는
   OpenAPI 경로 템플릿과 Spring MVC PathPattern(`framework.spring.path-pattern`, Spring Framework v6.2.10 소스 확인,
   `producer:kartograph`)이 있다. Spring 케이스: 끝 `**`·`{*x}`의 0세그먼트 매칭(접두사 decl), 루트 `/**`, 중간 `**`

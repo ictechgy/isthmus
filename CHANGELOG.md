@@ -4,6 +4,65 @@
 
 ## [Unreleased]
 
+- persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
+  declarations with different spellings fold into one join key, such as `public.Users` and
+  `public.users`, with the group count and up to three representative spellings. Where the database
+  folds unquoted identifiers the merge is right; a case-sensitive quoted identifier, however, is
+  otherwise joined silently as the same relation, so one spelling's unused declaration hides behind
+  the other's uses. The message states both cases. Repeated identical spellings stay quiet. The contract
+  now states that a qualified use joins only a declaration with the same number of segments: a
+  three-part name such as `mydb.public.orders` does not join `public.orders`.
+
+- `extract-js` reads `NativeModules` only as the react-native registry. A same-name parameter, an
+  import from another module, or a local non-react-native declaration (a test shim) no longer
+  produces `module-import`/`method-invoke` facts that surfaced as false
+  `module-import-without-export` and `unhandled-invocation` errors. The name inside an `import`
+  clause or a declaration destructuring pattern is no longer counted as a dynamic bare reference.
+  An aliased import (`import { NativeModules as NM }`) and access through the react-native module
+  object (`import * as RN`, `import RN`, `const RN = require('react-native')`, then
+  `RN.NativeModules.X`) now produce the same facts as `NativeModules.X` instead of none, and so does
+  destructuring from that object (`const { NativeModules } = RN`, with or without an alias). A file with
+  no import or declaration of the name keeps the previous global reading. A parameter default
+  (`(native = NativeModules.Camera) => …`) reads the outer binding instead of being hidden by the
+  parameter list, and the name inside a re-export clause (`export { NativeModules } from
+  'react-native'`) is no longer a dynamic bare reference. `NativeModules` imported from another module
+  (a barrel re-export or a stand-in) is not read as the registry; its member accesses are counted in a
+  new `unattributed-js-native-modules:` limitation instead of disappearing.
+
+- `docs/COMPATIBILITY.md` records that isthmus-cli 0.14.0 is published and why the producer pins
+  and both manifests stay at the 0.13.0 producer set (the newer producer releases have no official
+  install and cold-cache verification yet; cold-cache runs only on schedule or dispatch). Its
+  installation and CI examples now use the released set that the cold-cache workflow installs
+  instead of 0.10.0-era pins, and `scripts/verify-compatibility.mjs` fails when an install command
+  outside the table drifts from `compatibility.released.json`.
+
+- `scripts/conformance-drift.mjs` reads each case's `appliesTo`. When a producer's record names an
+  older canonical file but its untouched copy and the canonical file agree on every case that applies
+  to that producer (`producer`, `producer:<that producer>`, or a qualifier that is not a family
+  producer name) and on the behavioral header (`format`, `version`, `suite`), the suite is reported as
+  `stale-consumer-only`. It still counts as drift and fails `--strict`: a producer may run consumer
+  cases in its own tests (tsograph runs the `dispatch.validate` cases), so the script cannot tell that
+  the producer is unaffected. A producer name outside the family (including a typo) is not compared
+  case by case and stays `stale`. The script now ships in the npm package, and the
+  `conformance-drift` workflow runs it weekly and on demand with `--strict` against the default
+  branch of the seven producers that vendor vectors, recording each producer SHA in the summary.
+
+- Bridge input composition is now checked per target: every bridge target that has facts needs a
+  caller platform (dart, js) document and a receiver platform (swift, kotlin) document. A flutter
+  caller document with only a react-native receiver document used to pass the platform-level check
+  and then report every flutter invocation as unhandled and every react-native export as unused;
+  it is now an input error (exit 2) that names each target's missing side. Zero-fact documents
+  (`target: null`) still count for every target, and `mixed-targets` inputs are still deferred.
+
+- http root-to-root exact matching now counts trie node visits and candidate evaluations against a
+  per-join budget of 10,000,000 steps and fails with exit 2 and a cause/remedy message instead of
+  running for minutes or exhausting the heap (exit 134). A dynamic call such as `/{}/{}` fans out to
+  every literal child, so 8,000 declarations x 8,000 such calls previously ran out of memory; the
+  same input now fails in seconds. The case-insensitive trie is no longer walked when the index has
+  no case-insensitive declarations, which roughly halves the work of every root call. Results under
+  the budget are unchanged. Ambiguous targets cost one evaluation each, so the budget also bounds
+  how many targets one join retains.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors

@@ -679,3 +679,79 @@ test('import 색인은 수집된 순서대로 조회해 같은 이름 import의 
   );
   assert.deepEqual(scan.memberCalls.map((call) => call.ident), ['Late']);
 });
+
+test('NativeModules 레지스트리는 react-native 출처일 때만 읽고 로컬 shim·다른 모듈·매개변수가 가리면 읽지 않는다', () => {
+  // 같은 이름의 로컬 객체나 다른 모듈의 대역을 RN 레지스트리로 읽으면 수신 측에 없는 모듈 import와 미처리 호출이
+  // 거짓 error로 남는다.
+  for (const source of [
+    'const NativeModules = { Legacy: { run() {} } };\nNativeModules.Legacy.run();',
+    "import { NativeModules } from './testing-shim';\nNativeModules.Legacy.run();",
+    "const { NativeModules } = require('./testing-shim');\nNativeModules.Legacy.run();",
+    'function f(NativeModules) { return NativeModules.Mock.x(); }',
+  ]) {
+    assert.deepEqual(flatten(source), [], source);
+  }
+});
+
+test('react-native에서 가져온 NativeModules는 바인딩 위치를 사실로 세지 않고 별칭·namespace 접근도 읽는다', () => {
+  const camera = [
+    { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+  ];
+  // import 절·구조 분해의 이름 자체는 레지스트리를 값으로 쓰는 것이 아니다.
+  assert.deepEqual(flatten("import { NativeModules } from 'react-native';\nNativeModules.Camera.open();"), camera);
+  assert.deepEqual(flatten("const { NativeModules } = require('react-native');\nNativeModules.Camera.open();"), camera);
+  assert.deepEqual(flatten("import { NativeModules as NM } from 'react-native';\nNM.Camera.open();"), camera);
+  for (const source of [
+    "import * as RN from 'react-native';\nRN.NativeModules.Camera.open();",
+    "const RN = require('react-native');\nRN.NativeModules.Camera.open();",
+    "import RN from 'react-native';\nRN.NativeModules.Camera.open();",
+  ]) {
+    assert.deepEqual(flatten(source), camera, source);
+  }
+  // import 없이 쓰는 전역 이름과 레지스트리를 값으로 넘기는 접근은 기존 규칙 그대로다.
+  assert.deepEqual(flatten('NativeModules.Camera.open();'), camera);
+  assert.deepEqual(flatten("import { NativeModules } from 'react-native';\npass(NativeModules);"),
+    [{ kind: 'module-import', channel: 'NativeModules', method: undefined, dynamic: true }]);
+});
+
+test('매개변수 기본값 식의 NativeModules는 가려지지 않고 레지스트리로 읽는다', () => {
+  // 기본값 식은 매개변수 이름이 아니다. 기본값 안의 식별자까지 가림 집합에 넣으면 RN 레지스트리 접근이 사실 없이
+  // 사라지고, 수신 측 module-export가 짝 없는 경고로 남는다(검토 재현).
+  assert.deepEqual(
+    flatten("import { NativeModules } from 'react-native';\nexport function createCamera(native = NativeModules.Camera) {\n  return native;\n}"),
+    [{ kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false }],
+  );
+  assert.deepEqual(
+    flatten("import { NativeModules } from 'react-native';\nexport const useTorch = (mod = NativeModules.Torch) => {\n  mod.on();\n};"),
+    [{ kind: 'module-import', channel: 'Torch', method: undefined, dynamic: false }],
+  );
+  // 구조 분해 매개변수의 기본값도 같다. 매개변수 이름 자체가 NativeModules면 여전히 가린다.
+  assert.deepEqual(
+    flatten("import { NativeModules } from 'react-native';\nfunction f({ cam = NativeModules.Camera } = {}) { return cam; }"),
+    [{ kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false }],
+  );
+  assert.deepEqual(flatten("import { NativeModules } from 'react-native';\nfunction f(NativeModules = fallback) { return NativeModules.Mock.x(); }"), []);
+});
+
+test('react-native 모듈 객체에서 구조 분해한 NativeModules도 레지스트리로 읽는다', () => {
+  const camera = [
+    { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+  ];
+  for (const source of [
+    "import RN from 'react-native';\nconst { NativeModules } = RN;\nNativeModules.Camera.open();",
+    "import * as RN from 'react-native';\nconst { NativeModules } = RN;\nNativeModules.Camera.open();",
+    "const RN = require('react-native');\nconst { NativeModules } = RN;\nNativeModules.Camera.open();",
+    "import RN from 'react-native';\nconst { NativeModules: NM } = RN;\nNM.Camera.open();",
+  ]) {
+    assert.deepEqual(flatten(source), camera, source);
+  }
+  // 원천이 react-native 모듈 객체가 아니면 레지스트리가 아니다.
+  for (const source of [
+    "const RN = require('./testing-shim');\nconst { NativeModules } = RN;\nNativeModules.Legacy.run();",
+    "import Shim from './testing-shim';\nconst { NativeModules } = Shim;\nNativeModules.Legacy.run();",
+  ]) {
+    assert.deepEqual(flatten(source), [], source);
+  }
+});

@@ -39,7 +39,36 @@ for (const [name, version] of Object.entries(compatibility.producers)) {
 }
 verify(documents['docs/COMPATIBILITY.md'].includes(
   `| isthmus-cli | **${compatibility.isthmus}**`), 'isthmus in COMPATIBILITY.md');
+// 표 밖의 설치·재현 명령은 cold-cache가 실제로 쓰는 공개 감시 세트와 같아야 한다. 예제가 손으로 적은 옛 핀에
+// 머무르면 문서대로 재현해도 workflow와 다른 조합을 검증하게 된다.
+for (const [line, name, version] of installPins(documents['docs/COMPATIBILITY.md'])) {
+  const expected = name === 'isthmus' ? released.isthmus : released.producers[name];
+  verify(version === expected, `COMPATIBILITY.md install pin ${name} ${version} on line ${line}`);
+}
 process.stdout.write(`Compatibility verified: isthmus ${compatibility.isthmus}.\n`);
+
+/**
+ * 표 행이 아닌 줄의 설치 명령에서 (줄 번호, 도구, 버전)을 모은다.
+ *
+ * 표는 후보 세트(`compatibility.json`)를, 설치·재현 예제는 공개 감시 세트(`compatibility.released.json`)를 따른다.
+ * 산문이 이력으로 언급하는 버전은 명령 모양이 아니므로 세지 않는다.
+ */
+function installPins(text) {
+  const patterns = [
+    [/isthmus-cli@(\d+\.\d+\.\d+)/gu, () => 'isthmus'],
+    [/pub global activate dartograph (\d+\.\d+\.\d+)/gu, () => 'dartograph'],
+    [/npm install --global tsograph@(\d+\.\d+\.\d+)/gu, () => 'tsograph'],
+    [/ictechgy\/([a-z]+)\/releases\/download\/v?(\d+\.\d+\.\d+)\//gu, (match) => match[1]],
+  ];
+  const pins = [];
+  text.split('\n').forEach((content, index) => {
+    if (content.startsWith('|')) return;
+    for (const [pattern, toolOf] of patterns) {
+      for (const match of content.matchAll(pattern)) pins.push([index + 1, toolOf(match), match.at(-1)]);
+    }
+  });
+  return pins;
+}
 
 /** 호환 버전 표기 위반을 저장소 경로 없는 검사 이름으로 보고한다. */
 function verify(condition, name) {

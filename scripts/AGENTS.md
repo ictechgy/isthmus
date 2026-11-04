@@ -12,6 +12,8 @@
 - 임시 디렉터리는 전용 경로·제한된 권한으로 만들고 실패 시에도 정리한다.
   직접 만든 정확한 디렉터리의 범위를 확인한 뒤 재귀 정리한다.
 - 공개 checkout은 고정 저장소·revision·sparse 경로·Git 설정/hook 격리를 유지한다.
+  예외: `.github/workflows/conformance-drift.yml`은 생산자 기본 브랜치의 현재 사본을 감시하는 것이 목적이라
+  생산자 revision을 고정하지 않는다. 대신 실행마다 읽은 생산자 SHA를 요약에 남긴다.
   CI는 최소 Node·읽기 권한·시간 제한·SHA 고정 Action을 유지하며 PR과 main push를 검사한다.
 
 ## producer 경계를 바꿀 때

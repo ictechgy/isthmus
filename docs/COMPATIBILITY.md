@@ -4,12 +4,19 @@
 
 2026-11-01 발행 세트는 npm isthmus-cli 0.13.0 아카이브에 담긴 7개 producer 핀과 별도로 검증하는 pythograph 0.2.1이다. 소스 기능 설명·최소 지원 버전·전체 제품 정확도와 구분한다. 새 후보를 준비해도 발행 세트는 자동 변경하지 않는다. 실제 발행 설치와 cold-cache 근거를 확인한 뒤 갱신한다.
 
-2026-10-22 준비 중인 isthmus 0.14.0의 호환 대상 세트다. source 구현·CI와 패키지 후보 검증,
-registry 발행·독립 설치 확인은 각각 기록한다. 새 버전의 발행 전에는 아래 표가 릴리스 후보이며
-발행 완료를 뜻하지 않는다. 이전 조합의 검증 이력은 아래 절에 보존한다.
-고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이 필요할 때의 대안이다.
+isthmus-cli 0.14.0은 2026-11-03 npm에 발행됐다(`latest`). 그 tarball의 `compatibility.json`은 아래 표의
+producer 핀(0.13.0 세트와 같음)을 담는다. 그 뒤 각 producer가 새 버전을 냈지만(cartograph 0.30.0·
+kartograph 0.26.0·dartograph 0.17.0·schemagraph 0.9.0·gartograph 0.11.0·rustograph 0.7.0·tsograph 0.11.0·
+pythograph 0.3.1, 2026-11-03 기준), 새 조합의 공식 설치·cold-cache 검증 기록이 아직 없어 표와 두 manifest를
+올리지 않았다. cold-cache workflow는 예약·수동 실행만 하므로 PR CI는 이 검증을 대신하지 않는다.
+공개 감시 세트(`compatibility.released.json`)도 isthmus 0.14.0 cold-cache 실행을 확인하기 전까지 0.13.0이다.
+source 구현·CI와 패키지 후보 검증, registry 발행·독립 설치 확인은 각각 기록한다. 이전 조합의 검증
+이력은 아래 절에 보존한다. 고정 소스 구축([TOOLCHAIN.md](TOOLCHAIN.md))은 검증된 개발 commit 조합이 필요할
+때의 대안이다.
 
-이 표와 cold-cache CI의 기계 판독 정본은 현재 저장소 루트의 `compatibility.json`이다.
+이 표의 기계 판독 정본은 현재 저장소 루트의 `compatibility.json`이고, cold-cache CI와 아래 설치·재현 예제는
+`compatibility.released.json`을 따른다. `scripts/verify-compatibility.mjs`는 표 밖 설치 명령의 버전이 공개 감시
+세트와 같은지도 검사한다.
 각 npm 패키지는 발행 시점의 manifest를 포함한다. EventChannel v2는 producer가 내보내지만
 이 새 세트의 EventChannel 조인은 아직 별도 검증 범위다. 이전 측정은 아래 실측 이력과 구분한다. 이미 발행된 npm 0.8.0의 원본은
 [v0.8.0 태그](https://github.com/ictechgy/isthmus/blob/v0.8.0/compatibility.json)의 kartograph 0.11.0
@@ -34,8 +41,7 @@ isthmus 0.11.0 tarball은 tsograph 0.2.0 행을 포함한다.
 `.github/workflows/data-contracts.yml`은 고정 소스의 Tsograph와 Schemagraph를 빌드하고,
 격리 설치한 npm 후보로 실제 OpenAPI 및 SQLite 입력을 비교한다. 이 검사는 source 후보
 통합이며 registry 발행 증거가 아니다. 아래 producer 표는 아직 기존 고정 세트다.
-새 producer의 공식 설치·호환 검증 후 표와 `compatibility.json`을 함께 갱신해야 하며,
-그 전에는 0.14.0 공개 배포 완료로 표시하지 않는다.
+새 producer의 공식 설치·호환 검증 후 표와 `compatibility.json`을 함께 갱신한다.
 
 ## Python 생산자 왕복 검증 (2026-10-11)
 
@@ -228,33 +234,33 @@ release 빌드·권한/생명주기·다중 engine. 실행하지 않은 경로�
 
 ```bash
 # 발행 패키지만으로 고정 fixture 검증 (Ubuntu 포함 어느 OS나)
-npm install --global isthmus-cli@0.10.0
+npm install --global isthmus-cli@0.13.0
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js"
 
 # producer까지 포함한 3방향 조인 검증 (macOS)
-curl -fsSL https://github.com/ictechgy/cartograph/releases/download/0.23.0/cartograph-0.23.0-macos-universal.tar.gz -o cartograph-0.23.0.tar.gz
-tar -xzf cartograph-0.23.0.tar.gz   # cartograph/cartograph
-dart pub global activate dartograph 0.16.0
-curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.18.0/kartograph-0.18.0.tar -o kartograph-0.18.0.tar
-tar -xf kartograph-0.18.0.tar
+curl -fsSL https://github.com/ictechgy/cartograph/releases/download/0.25.0/cartograph-0.25.0-macos-universal.tar.gz -o cartograph-0.25.0.tar.gz
+tar -xzf cartograph-0.25.0.tar.gz   # cartograph/cartograph
+dart pub global activate dartograph 0.16.1
+curl -fsSL https://github.com/ictechgy/kartograph/releases/download/v0.20.0/kartograph-0.20.0.tar -o kartograph-0.20.0.tar
+tar -xf kartograph-0.20.0.tar
 node scripts/verify-installed-compatibility.mjs \
   isthmus="$(command -v isthmus)" cartograph="$PWD/cartograph/cartograph" \
-  dartograph="$HOME/.pub-cache/bin/dartograph" kartograph="$PWD/kartograph-0.18.0/bin/kartograph"
+  dartograph="$HOME/.pub-cache/bin/dartograph" kartograph="$PWD/kartograph-0.20.0/bin/kartograph"
 node scripts/verify-cold-cache.mjs "$(npm root --global)/isthmus-cli/dist/cli/main.js" \
-  "$PWD/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$PWD/kartograph-0.18.0/bin/kartograph"
+  "$PWD/cartograph/cartograph" "$HOME/.pub-cache/bin/dartograph" "$PWD/kartograph-0.20.0/bin/kartograph"
 
 # API 영향 producer의 발행 아카이브 버전 대조 (Linux x86_64 예시 — macOS는 darwin 아카이브)
-curl -fsSLO https://github.com/ictechgy/gartograph/releases/download/v0.9.0/gartograph-0.9.0-linux-amd64.tar.gz
-curl -fsSLO https://github.com/ictechgy/rustograph/releases/download/v0.4.0/rustograph-0.4.0-linux-amd64.tar.gz
+curl -fsSLO https://github.com/ictechgy/gartograph/releases/download/v0.9.1/gartograph-0.9.1-linux-amd64.tar.gz
+curl -fsSLO https://github.com/ictechgy/rustograph/releases/download/v0.4.1/rustograph-0.4.1-linux-amd64.tar.gz
 curl -fsSLO https://github.com/ictechgy/schemagraph/releases/download/v0.7.0/schemagraph-0.7.0-x86_64-unknown-linux-gnu.tar.gz
 for archive in *.tar.gz; do tar -xzf "$archive"; done
 node scripts/verify-installed-compatibility.mjs \
-  gartograph="$PWD/gartograph-0.9.0-linux-amd64/gartograph" \
-  rustograph="$PWD/rustograph-0.4.0-linux-amd64/rustograph" \
+  gartograph="$PWD/gartograph-0.9.1-linux-amd64/gartograph" \
+  rustograph="$PWD/rustograph-0.4.1-linux-amd64/rustograph" \
   schemagraph="$PWD/schemagraph-0.7.0/schemagraph"
 
 # tsograph는 npm 발행본을 설치해 버전을 대조한다
-npm install --global tsograph@0.1.0
+npm install --global tsograph@0.10.0
 node scripts/verify-installed-compatibility.mjs tsograph="$(command -v tsograph)"
 ```
 
@@ -378,8 +384,8 @@ jobs:
         with:
           channel: stable
       - run: brew install ictechgy/tap/cartograph   # tap 최신판 — 고정하려면 위 cold-cache 절처럼 릴리스 아카이브
-      - run: dart pub global activate dartograph 0.16.0
-      - run: npm install --global isthmus-cli@0.10.0
+      - run: dart pub global activate dartograph 0.16.1
+      - run: npm install --global isthmus-cli@0.13.0
       - run: flutter pub get
       - name: Capture bridge facts and producer analyses
         env:

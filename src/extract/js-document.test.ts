@@ -73,6 +73,19 @@ test('해석 못 한 상대·패키지 import 위의 호출은 한계로만 보�
   assert.ok(document.limitations.some((line) => line.startsWith('unattributed-js-package-calls: 1')));
 });
 
+test('배럴로 다시 내보낸 react-native NativeModules 접근은 조용히 버리지 않고 한계로 센다', () => {
+  // 배럴(export * / export { NativeModules } from 'react-native')을 거친 레지스트리는 스캔 파일 하나로는 대역과
+  // 구분할 수 없어 레지스트리로 단정하지 않는다. 그래도 사실 없이 사라지면 빈 결과가 청정으로 읽히므로 계수한다.
+  for (const barrel of ["export * from 'react-native';", "export { NativeModules } from 'react-native';"]) {
+    const document = assemble({
+      'src/rn.ts': barrel,
+      'src/app.ts': "import { NativeModules } from './rn';\nNativeModules.Camera.open();",
+    });
+    assert.deepEqual(flat(document), [], barrel);
+    assert.ok(document.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')), barrel);
+  }
+});
+
 test('동적 이름 사실을 보존하고 계수 한계를 단다', () => {
   const document = assemble({
     'src/dyn.ts': `

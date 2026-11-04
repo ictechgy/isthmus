@@ -31,10 +31,11 @@ import {
   RouteJoinInputError,
   RouteShadowBudgetError,
   RouteSuffixBudgetError,
+  RouteExactBudgetError,
   type RouteJoinResult,
   type RouteLinkRule,
 } from './route-join.ts';
-import { MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
+import { MAX_ROUTE_EXACT_STEPS, MAX_ROUTE_SUFFIX_COMPARISONS } from './route-index.ts';
 import { MAX_ROUTE_SHADOW_COMPARISONS } from './route-shadow.ts';
 import { isDeclarationSideGap, MAX_ROUTE_SCOPE_COMPARISONS, RouteScopeBudgetError } from './route-limitation-scope.ts';
 
@@ -435,7 +436,7 @@ export function joinBridgeDocuments(
  * http 문서가 있으면 route 조인을 실행한다. 없으면 undefined라 기존 결과 모양이 그대로다.
  *
  * mixed-targets 보류는 호출자가 결과를 버리므로 여기서 따로 막지 않는다. 귀속 규칙 위반과
- * suffix 비교 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
+ * suffix·정확 매칭·가림·한계 스코프 예산 초과는 원인과 해결 방향을 담은 입력 오류로 바꾼다.
  */
 function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRule | undefined): RouteJoinResult | undefined {
   if (!documents.some(({ target }) => target === 'http')) return undefined;
@@ -447,6 +448,13 @@ function joinRoutes(documents: readonly BridgeFactsDocument[], link: RouteLinkRu
       throw new BridgeJoinValidationError(
         `Http suffix matching exceeds ${MAX_ROUTE_SUFFIX_COMPARISONS} comparisons; narrow the inputs `
         + '(fewer base-anchored calls or declarations per join) and retry. No partial result is emitted.',
+      );
+    }
+    if (error instanceof RouteExactBudgetError) {
+      throw new BridgeJoinValidationError(
+        `Http exact route matching exceeds ${MAX_ROUTE_EXACT_STEPS} steps; narrow the inputs `
+        + '(fewer fully dynamic call paths such as /{}/{}, or fewer declarations per join) and retry. '
+        + 'No partial result is emitted.',
       );
     }
     if (error instanceof RouteShadowBudgetError) {
@@ -533,7 +541,10 @@ function validateBridgeComposition(
 ): void {
   const hasCaller = bridgeDocuments.some(isBridgeCallerDocument);
   const hasReceiver = bridgeDocuments.some(isBridgeReceiverDocument);
-  if (hasCaller && hasReceiver) return;
+  if (hasCaller && hasReceiver) {
+    validateBridgeTargetComposition(bridgeDocuments);
+    return;
+  }
   const requirement = 'Bridge documents must include at least one caller platform (dart, js) document '
     + 'and one receiver platform (swift, kotlin) document; ';
   if (hasPersistenceDomain && bridgeDocuments.every(({ target }) => target === null)) {
@@ -544,6 +555,38 @@ function validateBridgeComposition(
     );
   }
   throw new BridgeJoinValidationError(`${requirement}run a producer for the missing side.`);
+}
+
+/**
+ * 사실이 있는 bridge target마다 호출 측과 수신 측 문서가 각각 하나 이상 있는지 검사한다.
+ *
+ * 사실은 target별로만 조인되므로, flutter 호출 측과 react-native 수신 측만 있는 입력은 플랫폼 기준 요건을 채워도
+ * 어느 target도 양쪽을 갖지 못해 한쪽 관찰 전부를 경계 불일치로 오독한다. 사실 0건 문서(target null)는 어느 target을
+ * 스캔했는지 실을 수 없으므로 기존처럼 모든 target의 근거로 센다. mixed-targets 문서의 target은 대표값일 뿐이라
+ * 이 검사를 하지 않는다 — 그 입력은 조인 전체가 보류된다.
+ */
+function validateBridgeTargetComposition(bridgeDocuments: readonly BridgeFactsDocument[]): void {
+  if (bridgeDocuments.some(hasMixedTargets)) return;
+  const sides = (predicate: (document: BridgeFactsDocument) => boolean, target: BridgeTarget) =>
+    bridgeDocuments.some((document) => predicate(document) && (document.target === null || document.target === target));
+  const targets = [...new Set(bridgeDocuments.flatMap(({ target }) => (target === null ? [] : [target])))]
+    .sort(compareStrings);
+  const missing = targets.flatMap((target) => [
+    ...(sides(isBridgeCallerDocument, target) ? [] : [`${target} has no caller document`]),
+    ...(sides(isBridgeReceiverDocument, target) ? [] : [`${target} has no receiver document`]),
+  ]);
+  if (missing.length === 0) return;
+  throw new BridgeJoinValidationError(
+    'Bridge documents must include a caller platform (dart, js) document and a receiver platform (swift, kotlin) '
+    + `document for each target; ${joinWithAnd(missing)}. A zero-fact document (target null) counts for every target. `
+    + 'Run a producer for the missing side or pass only the documents of targets that have both sides.',
+  );
+}
+
+/** 사람이 읽는 목록을 `a`, `a and b`, `a, b and c` 형태로 잇는다. */
+function joinWithAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)!}`;
 }
 
 /**
@@ -671,7 +714,7 @@ function collectLimitations(
       };
     });
   });
-  limitations.push(...unjoinedFactLimitations(documents), ...routeLimitations);
+  limitations.push(...unjoinedFactLimitations(documents), ...routeLimitations, ...caseFoldedRelationLimitations(documents));
   const freshness = freshnessLimitation(documents);
   if (freshness !== undefined) limitations.push(freshness);
   return limitations.sort(compareLimitations);
@@ -743,6 +786,45 @@ function unjoinedFactLimitations(
       'module or component export facts with a non-literal name',
     ),
   ];
+}
+
+/** 접은 관계 선언 한계에 예로 싣는 이름 수다. 나머지는 개수로만 남긴다. */
+const MAX_CASE_FOLDED_EXAMPLES = 3;
+
+/**
+ * 철자가 다른 관계 수준 선언을 조인 키(소문자 접기·escape 해제)가 한 그룹으로 합친 수를 플랫폼·target별로 센다.
+ *
+ * 인용 식별자는 데이터베이스에서 대소문자를 구분할 수 있는데 조인은 방언 규칙 차이를 흡수하려고 접는다. 접힌
+ * 그룹에서는 한 철자 선언의 미사용이 다른 철자의 사용에 가려지므로, 접은 사실을 관찰로 남긴다. 같은 철자가
+ * 반복된 것은 접은 것이 아니다. 예는 그룹의 대표(최소) 철자 순으로 [MAX_CASE_FOLDED_EXAMPLES]개까지 싣는다.
+ */
+function caseFoldedRelationLimitations(documents: readonly BridgeFactsDocument[]): JoinLimitation[] {
+  const groups = new Map<string, { platform: BridgePlatform; target: BridgeTarget | null; spellings: Map<string, Set<string>> }>();
+  for (const document of documents) {
+    if (document.target !== 'persistence') continue;
+    const target = limitationTarget(document);
+    const attribution = JSON.stringify([document.platform, target]);
+    const entry = groups.get(attribution) ?? { platform: document.platform, target, spellings: new Map() };
+    for (const fact of document.facts) {
+      if (fact.kind !== 'relation-decl' || fact.dynamic || typeof fact.channel !== 'string' || fact.method !== undefined) continue;
+      const key = normalizeRelationKey(fact.channel);
+      entry.spellings.set(key, (entry.spellings.get(key) ?? new Set()).add(fact.channel));
+    }
+    groups.set(attribution, entry);
+  }
+  return [...groups.values()].flatMap(({ platform, target, spellings }) => {
+    const folded = [...spellings.values()].filter((names) => names.size > 1)
+      .map((names) => [...names].sort(compareStrings)[0]!).sort(compareStrings);
+    if (folded.length === 0) return [];
+    const examples = folded.slice(0, MAX_CASE_FOLDED_EXAMPLES).join(', ')
+      + (folded.length > MAX_CASE_FOLDED_EXAMPLES ? ', ...' : '');
+    return [{
+      platform, target, tool: 'isthmus', origin: 'consumer' as const,
+      message: `case-folded-relations: ${folded.length} relation declarations merge spellings that differ only in case `
+        + `or escaping (${examples}); they are joined as one relation, which is wrong only where the database `
+        + 'keeps them distinct (such as case-sensitive quoted identifiers)',
+    }];
+  });
 }
 
 /** 조건에 맞는 사실 수를 플랫폼·target별로 세어 한계 문장으로 바꾼다. */

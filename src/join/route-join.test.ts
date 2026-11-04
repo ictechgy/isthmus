@@ -9,6 +9,7 @@ import {
   compareRanks,
   evaluateSegments,
   MAX_ROUTE_SUFFIX_CANDIDATES,
+  RouteExactBudgetError,
   methodQuality,
   RouteIndex,
   type RouteDeclaration,
@@ -420,6 +421,25 @@ test('suffix 비교 예산을 넘으면 부분 결과 대신 실패한다', () =
   // 선언마다 길이가 맞는 오프셋 하나를 비교한다. 예산 1은 첫 선언에서 다 쓰고 두 번째 선언에서 넘는다.
   const index = new RouteIndex([routeDeclaration(0, '/a/b/c'), routeDeclaration(1, '/x/b/c')], { remaining: 1 });
   assert.throws(() => index.match(routeProbe('/c', 'base')), /RouteSuffixBudgetError/);
+});
+
+test('root 정확 매칭은 trie 방문과 후보 평가를 공유 예산으로 세고 넘으면 부분 결과 대신 실패한다', () => {
+  // 호출 파라미터는 모든 리터럴 자식으로 퍼지므로 `/{}/{}` 호출 하나가 선언 수만큼 방문·평가한다. 예산이 없으면
+  // 선언 n개 × 동적 호출 m개가 호출×선언만큼 돌아 큰 입력에서 힙을 다 쓴다.
+  const decls = Array.from({ length: 3 }, (_, id) => routeDeclaration(id, `/svc${id}/{}`));
+  const exact = { remaining: 100 };
+  const outcome = new RouteIndex(decls, { remaining: 100 }, exact).match(routeProbe('/{}/{}', 'root'));
+  assert.equal(outcome.status, 'ambiguous');
+  // 정확 trie: 루트 1 + 리터럴 자식 3 + 각 파라미터 자식 3 = 방문 7, 후보 평가 3. 대소문자 무시 선언이 없으면
+  // 접은 trie는 후보를 낼 수 없어 걷지 않는다.
+  assert.equal(100 - exact.remaining, 10);
+  const many = Array.from({ length: 6_400 }, (_, id) => routeDeclaration(id, `/svc${id}/{}`));
+  assert.throws(() => new RouteIndex(many, { remaining: 100 }, { remaining: 50 }).match(routeProbe('/{}/{}', 'root')),
+    RouteExactBudgetError);
+  // 리터럴이 맞는 호출은 한 갈래만 걸어 예산을 거의 쓰지 않는다.
+  const literal = { remaining: 100 };
+  assert.equal(new RouteIndex(many, { remaining: 100 }, literal).match(routeProbe('/svc7/{}', 'root')).status, 'matched');
+  assert.ok(100 - literal.remaining <= 8, `spent ${100 - literal.remaining}`);
 });
 
 test('suffix 비교 예산은 선언과 호출의 길이로 맞을 수 있는 오프셋만 센다', () => {

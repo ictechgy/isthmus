@@ -66,6 +66,7 @@ for (const requiredPath of [
   'scripts/capture-kartograph-evidence.mjs',
   'scripts/git-isolation.mjs',
   'scripts/render-pr-comment.mjs',
+  'scripts/conformance-drift.mjs',
   'dist/report/trace-capture.js',
   'scripts/run-child.mjs',
   'scripts/build-preflight-toolchain.mjs',
