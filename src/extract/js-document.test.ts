@@ -221,6 +221,15 @@ test('import type과 미바인딩 호출은 사실을 만들지 않는다', () =
   assert.deepEqual(flat(document), []);
 });
 
+test('default와 네임스페이스를 함께 가져온 default 이름도 해석해 귀속한다', () => {
+  const document = assemble({
+    'src/camera.ts': "export default requireNativeModule('Camera');",
+    'src/app.ts': "import Camera, * as Everything from './camera';\nCamera.shoot();",
+  });
+  assert.deepEqual(document.facts.filter((fact) => fact.kind === 'method-invoke')
+    .map(({ channel, method, location }) => [channel, method, location?.path]), [['Camera', 'shoot', 'src/app.ts']]);
+});
+
 test('CommonJS export를 통해 default 바인딩을 해석한다', () => {
   const document = assemble({
     'src/cjs.js': "module.exports = requireNativeModule('CjsMod');",

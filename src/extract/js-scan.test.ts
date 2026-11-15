@@ -858,7 +858,7 @@ test('출처를 따라가지 못하는 import 밖 값의 입구를 센다', () =
     ["import type * as Types from 'lib';", 0],
     ["import Lib from 'lib';", 0],
     ['import Lib', 0],
-    // `import X, * as NS`는 import 목록이 NS만 default로 기록해 문서 단계가 센다 — 스캐너는 빠진 X만 센다.
+    // `import X, * as NS`의 X는 import 목록에 남아 문서 단계가 센다 — 스캐너는 네임스페이스 NS만 센다.
     ["import Main, * as Lib from 'lib';", 1],
     ['import * as', 0],
     ["import * as Lib from 'lib';\nconst url = import.meta.url;", 1],
@@ -962,4 +962,23 @@ test('선언 수집은 문장 끝에서 멈춰 뒤 선언을 삼키지 않는다
   ].join('\n'));
   assert.deepEqual([...continued.bindings.keys()], ['Cam', 'Second']);
   assert.deepEqual(continued.memberCalls.map((call) => call.ident), ['Cam']);
+});
+
+test('default와 네임스페이스를 함께 가져오는 import는 default 이름을 그대로 남긴다', () => {
+  // 전에는 `as`가 앞 default 항목의 이름을 네임스페이스 이름으로 바꿔 default 이름이 사라지고
+  // 네임스페이스가 default로 기록됐다.
+  const scan = scanJsSource("import Main, * as Lib from './lib';\nMain.go();\nLib.go();");
+  assert.deepEqual(scan.imports.map((entry) => [entry.localName, entry.specifier, entry.exportedName]),
+    [['Main', './lib', 'default']]);
+  assert.deepEqual(scan.memberCalls.map((call) => call.ident), ['Main']);
+  // react-native에서 함께 가져온 두 이름은 모두 모듈 객체다.
+  assert.deepEqual(
+    flatten("import RN, * as All from 'react-native';\nAll.NativeModules.Camera.open();\nRN.NativeModules.Torch.on();"),
+    [
+      { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+      { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+      { kind: 'module-import', channel: 'Torch', method: undefined, dynamic: false },
+      { kind: 'method-invoke', channel: 'Torch', method: 'on', dynamic: false },
+    ],
+  );
 });

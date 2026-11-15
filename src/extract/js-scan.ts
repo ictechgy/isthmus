@@ -223,6 +223,8 @@ interface ScanContext {
    * 사용 시점에 판정한다.
    */
   readonly destructuredSources: Map<string, DestructuredSource>;
+  /** 네임스페이스 import의 이름 → specifier다(`import * as NAME`·`import X, * as NAME`). */
+  readonly namespaceImports: ReadonlyMap<string, string>;
   /** `import * as NAME from 'react-native'`의 NAME 목록이다. */
   readonly reactNativeNamespaces: ReadonlySet<string>;
   readonly unstableAliasNames: ReadonlySet<string>;
@@ -290,6 +292,7 @@ export class ParamShadowIndex {
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
 function createBoundContext(source: string): ScanContext {
   const tokens = tokenizeJsSource(source);
+  const namespaceImports = namespaceImportSpecifiers(tokens);
   const context: ScanContext = {
     source,
     tokens,
@@ -320,7 +323,9 @@ function createBoundContext(source: string): ScanContext {
     localNames: new Set(),
     requireSpecifiers: new Map(),
     destructuredSources: new Map(),
-    reactNativeNamespaces: reactNativeNamespaceImports(tokens),
+    namespaceImports,
+    reactNativeNamespaces: new Set([...namespaceImports].flatMap(([name, specifier]) =>
+      specifier === 'react-native' ? [name] : [])),
     unstableAliasNames: new Set(tokens.filter((token, index) =>
       token.kind === 'identifier' && tokens[index - 1]?.text !== 'as' &&
       (!['(', '<'].includes(tokens[index + 1]?.text ?? '') ||
@@ -633,7 +638,9 @@ function collectImport(context: ScanContext, start: number): number {
     if (token.text === 'as') {
       const alias = tokens[index + 1];
       const last = clause.at(-1);
-      if (last !== undefined &&
+      // `* as NS`의 네임스페이스는 import 목록에 넣지 않는다 — `import X, * as NS`에서 앞 default 이름 X를
+      // NS로 바꾸면 X가 사라지고 NS가 default로 기록된다.
+      if (tokens[index - 1]?.text !== '*' && last !== undefined &&
         (alias?.kind === 'identifier' || alias?.kind === 'keyword')) {
         clause[clause.length - 1] = { name: alias.text, exported: last.exported };
       }
@@ -1423,17 +1430,24 @@ function isReactNativeNamespace(
   return context.requireSpecifiers.get(name) === 'react-native';
 }
 
-/** `import * as NAME from 'react-native'`의 NAME 목록이다. 이 형태는 import 목록에 기록되지 않아 토큰으로 찾는다. */
-function reactNativeNamespaceImports(tokens: readonly JsToken[]): Set<string> {
-  const names = new Set<string>();
-  for (let index = 0; index + 5 < tokens.length; index++) {
-    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text === '*' && tokens[index + 2]?.text === 'as' &&
-      tokens[index + 3]?.kind === 'identifier' && tokens[index + 4]?.text === 'from' &&
-      tokens[index + 5]?.value === 'react-native') {
-      names.add(tokens[index + 3]!.text);
+/**
+ * 네임스페이스 import(`import * as NAME from 'spec'`·`import X, * as NAME from 'spec'`)의 이름 → specifier다.
+ * 이 형태는 import 목록에 기록되지 않아 토큰으로 찾는다.
+ */
+function namespaceImportSpecifiers(tokens: readonly JsToken[]): Map<string, string> {
+  const specifiers = new Map<string, string>();
+  for (let index = 0; index < tokens.length; index++) {
+    if (tokens[index]!.text !== 'import' || ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    const name = namespaceImportName(tokens, index);
+    if (name === undefined) continue;
+    // 이름 뒤는 `from 'spec'`이어야 한다 — 이름 위치는 namespaceImportName이 고정 위치에서 찾았다.
+    const nameIndex = tokens[index + 1]?.text === '*' ? index + 3 : index + 5;
+    const specifier = tokens[nameIndex + 2];
+    if (tokens[nameIndex + 1]?.text === 'from' && specifier?.kind === 'string' && specifier.value !== undefined) {
+      specifiers.set(name, specifier.value);
     }
   }
-  return names;
+  return specifiers;
 }
 
 /** 정적 `import … from '…'` 문(동적 `import(…)` 제외)과 재수출 절(`export { … } from`·`export * from`)이 차지한 토큰 위치다. */
@@ -2284,11 +2298,8 @@ function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet
         context.counts.untracedBindings++;
         continue;
       }
-      // import 목록이 기록한 이름은 문서 단계가 센다. `import X, * as NS`는 목록이 NS만 default로 남기고
-      // X를 빠뜨리므로 목록에 없는 이름만 여기서 센다.
-      for (const name of namespaceImportNames(tokens, index)) {
-        if (!context.importsByLocalName.has(name)) context.counts.untracedBindings++;
-      }
+      // 네임스페이스 이름은 import 목록에 없어 여기서 센다. `import X, * as NS`의 X는 목록에 있어 문서 단계가 센다.
+      if (namespaceImportName(tokens, index) !== undefined) context.counts.untracedBindings++;
       continue;
     }
     if (token.kind === 'identifier' && token.text === 'require' && tokens[index + 1]?.text === '(' &&
@@ -2299,17 +2310,17 @@ function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet
 }
 
 /**
- * 네임스페이스 import 절이 묶는 이름이다 — `import * as NS`는 [NS], `import X, * as NS`는 [X, NS]. 네임스페이스
- * 절은 이 두 자리에만 올 수 있어 고정 위치만 본다 — `import` 토큰마다 앞으로 훑으면 `import.meta`가 많은
- * 입력에서 이차 시간이 든다. 타입 전용 import(`import type * as T`)는 값이 아니다.
+ * `import * as NS`·`import X, * as NS`의 네임스페이스 이름 NS다. 네임스페이스 절은 이 두 자리에만 올 수 있어
+ * 고정 위치만 본다 — `import` 토큰마다 앞으로 훑으면 `import.meta`가 많은 입력에서 이차 시간이 든다. 타입 전용
+ * import(`import type * as T`)는 값이 아니다.
  */
-function namespaceImportNames(tokens: readonly JsToken[], index: number): string[] {
+function namespaceImportName(tokens: readonly JsToken[], index: number): string | undefined {
   const star = tokens[index + 1]?.text === '*'
     ? index + 1
     : tokens[index + 2]?.text === ',' && tokens[index + 3]?.text === '*' ? index + 3 : undefined;
-  if (star === undefined || tokens[star + 1]?.text !== 'as') return [];
-  const names = [tokens[star + 2], ...(star === index + 3 ? [tokens[index + 1]] : [])];
-  return names.flatMap((name) => name?.kind === 'identifier' || name?.kind === 'keyword' ? [name.text] : []);
+  if (star === undefined || tokens[star + 1]?.text !== 'as') return undefined;
+  const name = tokens[star + 2];
+  return name?.kind === 'identifier' || name?.kind === 'keyword' ? name.text : undefined;
 }
 
 /**

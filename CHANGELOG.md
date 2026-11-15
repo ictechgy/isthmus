@@ -106,6 +106,12 @@
   the next line does not continue the expression or the declaration list (ASI). Code that uses
   semicolons is unchanged; code without them now yields the method-invoke facts it was missing.
 
+- `extract-js` keeps the default name of `import X, * as NS from 'spec'`. The namespace's `as` used to
+  rename the preceding default entry, so `X` vanished from the import list (its member calls were
+  neither attributed nor counted) and `NS` was recorded as a default import. `NS` is now recognized as
+  a namespace import in both forms, so `import RN, * as All from 'react-native'` reads `RN.NativeModules`
+  and `All.NativeModules` alike.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
