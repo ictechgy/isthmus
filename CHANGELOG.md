@@ -97,6 +97,15 @@
   declarator's `=` (or `of`/`in`), and type annotations are skipped. Destructuring patterns, including
   object patterns inside array patterns, and local shim declarations are still local.
 
+- `extract-js` ends a `const`/`let`/`var` declaration at the end of its statement. It used to end only
+  at a `;` at depth 0, so in code without semicolons (`const a = 1⏎const Camera = …`), after a
+  `for (const x of list)` header, or before an unterminated block's `}`, the first declaration ran to
+  the end of the file and every later binding and export was never collected; member calls through
+  them and imports of them were not attributed. A declaration now also ends at the `)`/`]`/`}` that
+  closes an enclosing bracket or block, and at a line break where the previous line ends an operand and
+  the next line does not continue the expression or the declaration list (ASI). Code that uses
+  semicolons is unchanged; code without them now yields the method-invoke facts it was missing.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors

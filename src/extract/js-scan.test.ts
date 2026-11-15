@@ -928,3 +928,38 @@ test('선언 초기값의 객체 리터럴·함수 본문 안 이름은 로컬 �
     .facts.map((fact) => fact.mechanism);
   assert.deepEqual(mechanisms, ['expo']);
 });
+
+test('선언 수집은 문장 끝에서 멈춰 뒤 선언을 삼키지 않는다', () => {
+  // 세미콜론 없는 줄 끝(ASI)·for 머리의 닫는 괄호·감싼 블록의 끝에서 선언이 끝난다. 전에는 깊이 0의 `;`만
+  // 끝으로 봐서 첫 선언이 파일 끝까지 이어졌고, 뒤의 바인딩·export가 수집되지 않아 호출이 귀속되지 않았다.
+  for (const source of [
+    "const a = 1\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "let ready\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "const done = () => {}\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "for (const x of list) {}\nconst Cam = requireNativeModule('Cam');\nCam.take();",
+    "for (const key in table) use(key)\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "function f() { const a = 1 }\nconst Cam = requireNativeModule('Cam');\nCam.take();",
+    "function f() { const a = 1 } const Cam = requireNativeModule('Cam'); Cam.take();",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual([...scan.bindings.keys()], ['Cam'], source);
+    assert.deepEqual(scan.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Cam.take'], source);
+  }
+  assert.deepEqual(
+    scanJsSource("const label = 'x'\nconst Cam = requireNativeModule('Cam')\nexport default Cam").exports.defaultName,
+    { name: 'Cam' },
+  );
+  // 다음 줄이 식이나 선언 목록을 잇는 토큰으로 시작하면 같은 선언이다 — 뒤 선언자까지 그대로 묶는다.
+  const continued = scanJsSource([
+    'const first = 1',
+    "  , Cam = requireNativeModule('Cam')",
+    'const Other = base',
+    '  .child',
+    'const Picked = ready',
+    '  ? first',
+    "  : Other, Second = requireNativeModule('Second')",
+    'Cam.take()',
+  ].join('\n'));
+  assert.deepEqual([...continued.bindings.keys()], ['Cam', 'Second']);
+  assert.deepEqual(continued.memberCalls.map((call) => call.ident), ['Cam']);
+});

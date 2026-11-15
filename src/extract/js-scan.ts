@@ -797,6 +797,13 @@ function collectDeclaration(context: ScanContext, start: number): number {
   while (index < tokens.length) {
     const token = tokens[index]!;
     if (token.text === ';' && depth === 0) return index;
+    // 감싼 괄호·블록을 닫는 토큰(for 머리의 `)`, 세미콜론 없는 블록의 `}`)과 ASI로 끝난 줄에서도 선언이 끝난다.
+    // 선언 안의 `{`는 모두 짝까지 건너뛰므로 여기서 만나는 `}`는 감싼 블록의 것이다. 끝 바로 앞 위치를
+    // 돌려줘 호출자가 경계 토큰부터 다시 읽게 한다.
+    if (token.text === '}' || (depth === 0 && (token.text === ')' || token.text === ']')) ||
+      endsByLineBreak(tokens, start, index, depth)) {
+      return index - 1;
+    }
     if (depth === 0 && (token.text === '=' ||
       (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in')))) {
       target = false;
@@ -892,6 +899,19 @@ function collectDeclaration(context: ScanContext, start: number): number {
     index++;
   }
   return index;
+}
+
+/**
+ * 선언문이 `index` 앞의 줄바꿈에서 ASI로 끝났는지 본다. 깊이 0에서 앞 줄이 피연산자(식별자·리터럴·닫는
+ * 괄호·후위 증감)로 끝나고 이 줄이 식이나 선언 목록을 잇는 토큰으로 시작하지 않으면 새 문장이다.
+ */
+function endsByLineBreak(tokens: readonly JsToken[], start: number, index: number, depth: number): boolean {
+  const previous = tokens[index - 1];
+  if (depth !== 0 || index <= start + 1 || previous === undefined || tokens[index]!.line === previous.line) {
+    return false;
+  }
+  const operandEnd = isOperandEnd(previous) || ['}', '++', '--'].includes(previous.text);
+  return operandEnd && tokens[index]!.text !== ',' && !expressionContinuations.has(tokens[index]!.text);
 }
 
 /**
