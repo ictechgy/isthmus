@@ -127,6 +127,16 @@
   accesses are counted in `unattributed-js-native-modules:`, whose message now covers both barrel imports
   and untraced objects. A property name is never read as a file binding or an import alias.
 
+- `extract-js` ends a type-annotated declaration without an initializer at the end of its statement.
+  `let timer: Timer⏎const Haptics = requireNativeModule('Haptics')` used to skip the annotation up to the
+  next line's `=` and bind `timer` to `Haptics`: `timer.cancel()` became a false `Haptics.cancel` and
+  `Haptics.impact()` was not attributed. Because the misbound initializer counted as tracked, the measured
+  `js-binding-scope:` line could disappear and `impact --strict` could pass on the false fact. Annotation
+  skipping now stops at an ASI line break (the previous line ends a type: a name, a literal, a closing
+  bracket, a generic `>` or `void`, and the next line does not continue it). The annotation skip
+  introduced earlier in this release also no longer runs to the end of the file on nested generics
+  (`Map<string, Array<number>>`, whose `>>` is a single token), which had dropped every later binding.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors

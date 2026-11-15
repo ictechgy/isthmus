@@ -355,3 +355,13 @@ test('출처를 모르는 객체의 NativeModules 속성 접근은 레지스트�
   assert.deepEqual(flat(document), []);
   assert.ok(document.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 2 ')));
 });
+
+test('타입 주석만 있는 선언 뒤의 모듈 선언은 앞 이름이 아니라 제 이름으로 귀속된다', () => {
+  // 리뷰 재현: 전에는 timer.cancel()이 거짓 Haptics.cancel이 되고 Haptics.impact()는 빠졌으며, 잘못 묶인 초기값이
+  // "추적됨"으로 분류돼 한계도 사라졌다.
+  const document = assemble({
+    'src/a.ts': "let timer: Timer\nconst Haptics = requireNativeModule('Haptics')\nexport function f() { timer.cancel(); Haptics.impact() }\n",
+  });
+  assert.deepEqual(document.facts.map(({ kind, channel, method }) => [kind, channel, method ?? null]),
+    [['module-import', 'Haptics', null], ['method-invoke', 'Haptics', 'impact']]);
+});

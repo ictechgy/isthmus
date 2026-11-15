@@ -1037,3 +1037,25 @@ test('속성 위치의 이름은 파일 바인딩·별칭 import가 아니다', 
   assert.deepEqual(bound.memberCalls, []);
   assert.deepEqual(flatten("import { requireNativeModule as load } from 'expo';\na.load('X');\na.b.load('X');"), []);
 });
+
+test('타입 주석만 있는 선언은 문장 끝에서 끝나 다음 선언의 초기값을 가져가지 않는다', () => {
+  // 타입 주석 건너뛰기가 문장 끝을 몰라 다음 줄 선언의 `=`까지 읽고 앞 이름에 그 초기값을 묶었다 — 앞 이름의
+  // 호출이 거짓 method-invoke가 되고 뒤 이름의 호출은 귀속되지 않았다. 중첩 제네릭의 `>>`도 깊이를 닫지 못했다.
+  for (const source of [
+    "let timer: Timer\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { timer.cancel(); Haptics.impact() }",
+    "let pending: Promise<void> | null\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { pending.cancel(); Haptics.impact() }",
+    "let pending: Promise<void>\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { pending.cancel(); Haptics.impact() }",
+    "let handler: () => void\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { handler.cancel(); Haptics.impact() }",
+    "function g() { let t: Timer }\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { t.cancel(); Haptics.impact() }",
+    "const table: Map<string, Array<number>> = new Map();\nconst Haptics = requireNativeModule('Haptics');\nfunction f() { table.cancel(); Haptics.impact() }",
+    "const deep: A<B<C<D>>> = make();\nconst Haptics = requireNativeModule('Haptics');\nfunction f() { deep.cancel(); Haptics.impact() }",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual([...scan.bindings.keys()], ['Haptics'], source);
+    assert.deepEqual(scan.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Haptics.impact'], source);
+  }
+  // 다음 줄이 타입을 잇는 토큰이면 같은 주석이고, 그 뒤 초기값은 그 이름의 것이다.
+  const continued = scanJsSource("let value: Foo\n  | Bar = requireNativeModule('Haptics')\nvalue.impact()");
+  assert.deepEqual([...continued.bindings.keys()], ['value']);
+  assert.deepEqual(continued.memberCalls.map((call) => `${call.ident}.${call.method}`), ['value.impact']);
+});

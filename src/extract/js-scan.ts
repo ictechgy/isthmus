@@ -851,6 +851,8 @@ function collectDeclaration(context: ScanContext, start: number): number {
       // `const M: TurboModule = …`의 타입 주석은 건너뛰고 `=`를 찾는다.
       if (declarator && tokens[cursor]?.text === ':') {
         cursor = skipTypeAnnotation(tokens, cursor + 1);
+        // 주석이 ASI 줄바꿈에서 끝났으면 선언문도 끝났다 — 다음 줄 선언의 `=`를 이 이름의 초기값으로 읽지 않는다.
+        if (endsTypeByLineBreak(tokens, cursor)) return cursor - 1;
       }
       if (declarator && tokens[cursor]?.text === '=') {
         // `const X = require('spec')…`의 specifier를 기록한다.
@@ -959,31 +961,52 @@ const expressionContinuations = new Set([
 ]);
 
 /**
- * 타입 주석 구간을 건너뛰어 `=`·`,`·`;` 위치를 돌려준다.
+ * 타입 주석 구간을 건너뛰어 주석 다음 위치를 돌려준다 — 깊이 0의 `=`·`,`·`;`, 감싼 괄호를 닫는 토큰, 또는
+ * ASI로 문장이 끝난 줄의 첫 토큰.
  *
- * 타입 안의 `=`(예: 제네릭 기본값 `<T = X>`)는 괄호 깊이 안에 있으므로
- * 깊이 0의 `=`·`,`·`;`에서 멈춘다.
+ * 타입 안의 `=`(예: 제네릭 기본값 `<T = X>`)는 괄호 깊이 안에 있으므로 깊이 0에서만 멈춘다. 렉서는 `>>`·`>>>`를
+ * 한 토큰으로 내므로 중첩 제네릭을 닫을 때 그만큼 깊이를 줄인다 — 줄이지 않으면 주석이 파일 끝까지 이어진다.
+ * 초기값 없는 선언(`let timer: Timer`) 뒤 줄의 선언으로 넘어가지 않도록 깊이 0의 ASI 줄바꿈에서도 멈춘다.
  */
 function skipTypeAnnotation(
   tokens: readonly JsToken[],
   start: number,
 ): number {
   let depth = 0;
-  let index = start;
-  while (index < tokens.length) {
+  for (let index = start; index < tokens.length; index++) {
     const text = tokens[index]!.text;
+    if (depth === 0 && index > start && endsTypeByLineBreak(tokens, index)) return index;
     if (text === '(' || text === '[' || text === '{' || text === '<') {
       depth++;
-    } else if (text === ')' || text === ']' || text === '}' || text === '>') {
-      depth--;
+    } else if (typeClosers.has(text)) {
+      depth -= typeClosers.get(text)!;
       if (depth < 0) return index;
     } else if (depth === 0 &&
       (text === '=' || text === ',' || text === ';')) {
       return index;
     }
-    index++;
   }
-  return index;
+  return tokens.length;
+}
+
+/** 타입 깊이를 닫는 토큰과 닫는 단계 수다. `>>`·`>>>`는 중첩 제네릭 두세 단계를 한 번에 닫는다. */
+const typeClosers: ReadonlyMap<string, number> = new Map([
+  [')', 1], [']', 1], ['}', 1], ['>', 1], ['>>', 2], ['>>>', 3],
+]);
+
+/** 줄이 바뀌어도 앞 타입을 잇는 토큰이다(유니온·교차·멤버·인수·함수 타입·조건 타입·선언 목록). */
+const typeContinuations = new Set([...expressionContinuations, ',', ';', 'extends']);
+
+/**
+ * 타입 주석이 `index` 앞 줄바꿈에서 ASI로 끝났는지 본다. 앞 줄이 타입의 끝(이름·리터럴·닫는 괄호·제네릭의 `>`·
+ * `void`)으로 끝나고 이 줄이 타입을 잇는 토큰으로 시작하지 않으면 새 문장이다.
+ */
+function endsTypeByLineBreak(tokens: readonly JsToken[], index: number): boolean {
+  const token = tokens[index];
+  const previous = tokens[index - 1];
+  if (token === undefined || previous === undefined || token.line === previous.line) return false;
+  const typeEnd = isOperandEnd(previous) || typeClosers.has(previous.text) || previous.text === 'void';
+  return typeEnd && !typeContinuations.has(token.text);
 }
 
 /**
