@@ -783,16 +783,31 @@ function collectExport(context: ScanContext, start: number): number {
  *
  * 선언자는 선언 키워드 직후나 같은 깊이의 `,` 뒤에만 온다 — 이 조건이 없으면
  * 세미콜론 없는 코드에서 뒤 문장의 `state.handler = Cam` 같은 대입이
- * 선언자로 오인돼 바인딩이 파일 전역으로 새어 나간다.
+ * 선언자로 오인돼 바인딩이 파일 전역으로 새어 나간다. 같은 이유로 `{`는 선언자의
+ * 대상 구간(초기값 `=` 앞)에서만 구조 분해 패턴이다 — 초기값 안의 객체 리터럴·함수
+ * 본문 이름을 로컬 선언으로 기록하면 그 이름(`NativeModules` 등)의 해석이 파일 전체에서 바뀐다.
  */
 function collectDeclaration(context: ScanContext, start: number): number {
   const { tokens } = context;
   let index = start + 1;
   // 선언자의 `,`는 깊이 0에만 온다 — `f(x, y = z)` 인자 안의 `,`는 무관하다.
   let depth = 0;
+  // 지금 위치가 선언자의 대상(이름·패턴) 구간인지다. 깊이 0의 `=`·`of`·`in`에서 끝나고 `,`에서 다시 시작한다.
+  let target = true;
   while (index < tokens.length) {
     const token = tokens[index]!;
     if (token.text === ';' && depth === 0) return index;
+    if (depth === 0 && (token.text === '=' ||
+      (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in')))) {
+      target = false;
+      index++;
+      continue;
+    }
+    if (depth === 0 && token.text === ',') {
+      target = true;
+      index++;
+      continue;
+    }
     if (token.text === '(' || token.text === '[') {
       depth++;
       index++;
@@ -839,12 +854,18 @@ function collectDeclaration(context: ScanContext, start: number): number {
           continue;
         }
       }
-      index++;
+      // 타입 주석은 이름 자리가 아니다 — 그 안의 `{`·`,`를 패턴·선언자로 읽지 않게 주석 뒤로 건너뛴다.
+      index = declarator && cursor > index + 1 ? cursor : index + 1;
       continue;
     }
     if (token.text === '{') {
       const close = findMatching(tokens, index, '{', '}');
       if (close === undefined) return index;
+      if (!target) {
+        // 초기값 안의 객체 리터럴·함수 본문이다. 구조 분해 패턴이 아니므로 이름을 기록하지 않는다.
+        index = close + 1;
+        continue;
+      }
       // `const { A, ... } = NativeModules`인지 확인한다.
       const source = tokens[close + 2];
       const isNativeModules = tokens[close + 1]?.text === '=' &&

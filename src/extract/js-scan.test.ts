@@ -895,3 +895,36 @@ test('쓰임을 판정할 수 없는 모듈 식은 추적한다고 단정하지 
     assert.equal(scan.counts.escapedModuleReferences, escaped, String(links));
   }
 });
+
+test('선언 초기값의 객체 리터럴·함수 본문 안 이름은 로컬 선언으로 기록하지 않는다', () => {
+  const torch = [
+    { kind: 'module-import', channel: 'Torch', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Torch', method: 'on', dynamic: false },
+  ];
+  // 초기값 안의 `NativeModules`를 구조 분해 로컬로 오인하면 import 없이 전역으로 읽는 파일의 레지스트리 사실이
+  // 전부 사라졌다. 타입 주석의 쉼표 뒤 이름도 선언자가 아니다.
+  for (const source of [
+    'const api = { cam: NativeModules.Cam };\nNativeModules.Torch.on();',
+    'const api = { NativeModules };\nNativeModules.Torch.on();',
+    'const api = register({ first: 1, NativeModules });\nNativeModules.Torch.on();',
+    'const run = () => { load(first, NativeModules.Cam); };\nNativeModules.Torch.on();',
+    'const table: Map<string, NativeModules> = new Map();\nNativeModules.Torch.on();',
+    'for (const key in { NativeModules }) {}\nNativeModules.Torch.on();',
+    'for (const item of [{ NativeModules }]) {}\nNativeModules.Torch.on();',
+  ]) {
+    assert.deepEqual(flatten(source).filter((fact) => fact.channel === 'Torch'), torch, source);
+  }
+  // 구조 분해 선언 패턴(배열 패턴 안의 객체 패턴 포함)과 로컬 shim 선언은 그대로 로컬이다.
+  for (const source of [
+    'const { NativeModules } = shim;\nNativeModules.Torch.on();',
+    'const [{ NativeModules }] = shims;\nNativeModules.Torch.on();',
+    'const NativeModules = { Torch: mock };\nNativeModules.Torch.on();',
+    'const first = 1, { NativeModules } = shim;\nNativeModules.Torch.on();',
+  ]) {
+    assert.deepEqual(flatten(source), [], source);
+  }
+  // 초기값 객체의 키는 Expo API 이름의 로컬 선언이 아니다 — 가져오기·선언 없는 호출은 expo로 읽는다.
+  const mechanisms = scanJsSource("const mocks = { requireNativeModule: fake };\nrequireNativeModule('Cam');")
+    .facts.map((fact) => fact.mechanism);
+  assert.deepEqual(mechanisms, ['expo']);
+});

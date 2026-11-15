@@ -85,6 +85,18 @@
   the budget are unchanged. Ambiguous targets cost one evaluation each, so the budget also bounds
   how many targets one join retains.
 
+### Fixed
+
+- `extract-js` no longer records names inside a declaration's initializer as local declarations. An
+  object literal or function body in an initializer (`const api = { cam: NativeModules.Camera }`,
+  `const run = () => { load(a, NativeModules.Camera) }`) used to be read as a destructuring pattern, so
+  `NativeModules` became a "local shim" and every `NativeModules` fact in a file that reads the
+  registry without an import silently disappeared. The same misreading made an object key such as
+  `{ requireNativeModule: mock }` hide the `expo` mechanism of real calls, and treated names after a
+  comma in a type annotation (`Map<string, T>`) as declarators. A `{` is now a pattern only before the
+  declarator's `=` (or `of`/`in`), and type annotations are skipped. Destructuring patterns, including
+  object patterns inside array patterns, and local shim declarations are still local.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors
