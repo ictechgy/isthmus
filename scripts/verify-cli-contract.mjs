@@ -762,6 +762,13 @@ function verifyExtractJs() {
     verify(keys.includes('module-import:Cam') && keys.includes('method-invoke:Cam')
       && keys.includes('component-require:Grid'), 'extract-js facts');
     verify(document.facts.every((fact) => fact.location.path === 'src/app.ts'), 'extract-js locations');
+    // js-binding-scope는 측정 결과다 — 모든 모듈 값을 추적하고 출처 모를 import가 없으면 싣지 않는다.
+    verify(!document.limitations.some((line) => line.startsWith('js-binding-scope:')), 'extract-js measured binding scope');
+    const escaping = join(directory, 'escaping.ts');
+    writeFileSync(escaping, "register(requireNativeModule('Cam'));\n");
+    const escaped = JSON.parse(run(['extract-js', escaping, '--project', directory]).stdout);
+    verify(escaped.limitations.some((line) => line.startsWith('js-binding-scope: 1 native module references ')),
+      'extract-js counted binding scope');
     verify(run(['extract-js']).status === 64, 'extract-js usage');
     verify(run(['extract-js', join(directory, 'missing')]).status === 2, 'extract-js missing input');
     verify(run(['help', 'extract-js']).stdout.startsWith('Usage: isthmus extract-js'), 'extract-js help');

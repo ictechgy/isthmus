@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+- `extract-js` measures the `js-binding-scope:` limitation instead of always emitting a fixed
+  sentence. The line now starts with the number of native module references the scan recognized whose
+  value leaves the bindings it follows: passed to a function, returned, stored in instance state or in
+  another value, reassigned or destructured, read as a member without a call, or used where the scan
+  cannot decide (an unbalanced bracket, a member chain longer than 256 tokens). Attributed member calls,
+  recorded declarations and exports, and value-free tests (`if`/`while` conditions, `!`, `typeof`,
+  comparisons, `in`, the left side of `&&`, a ternary test, an assignment target) do not count. Imports
+  that do not resolve to a native module binding (other than `NativeModules`, `TurboModuleRegistry` and
+  the lookup and component APIs the scan reads by name), namespace imports, value-producing `require()`
+  calls and dynamic `import()` calls bring in values the scan cannot trace; when any are present the
+  line adds their number and states that the first number is a lower bound, and it is kept even when
+  the first number is 0. The line is omitted only when both numbers are 0. Output changes accordingly:
+  a scan in which every native module value is tracked and every import is traced (for example a
+  directory of codegen specs) no longer reports the line, so `impact --strict` (CLI and MCP) on such
+  inputs can exit 0 instead of 1 when no other relevant limitation remains. Anything matching the old
+  fixed text must match the `js-binding-scope:` prefix instead. Real app sources nearly always import
+  packages and keep the line, now with counts. The count also surfaces gaps that were silent before:
+  the `NativeModules.X ? NativeModules.X : fallback` library template,
+  `new NativeEventEmitter(NativeModules.X)`, `NativeModules.X!.m()` and `NativeModules.X?.m?.()` calls,
+  and declarations inside function bodies of `const`/`let`/`var` initializers, which the scan does not
+  collect.
+
 - persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
   declarations with different spellings fold into one join key, such as `public.Users` and
   `public.users`, with the group count and up to three representative spellings. Where the database

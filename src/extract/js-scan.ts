@@ -68,6 +68,11 @@ export interface JsFileScan {
   readonly exports: ScannedExports;
   /** 생산자 limitation에 쓰는 원시 계수다. */
   readonly counts: JsScanCounts;
+  /**
+   * 이 파일의 바인딩·상대 import 이름별로 값이 바인딩 추적을 벗어난 사용 횟수다. 그 이름이 모듈인지는
+   * 다른 파일의 export를 봐야 알 수 있어 문서 단계가 판정한다.
+   */
+  readonly identifierEscapes: ReadonlyMap<string, number>;
 }
 
 /** 스캔이 세는 한계 분류다. */
@@ -77,6 +82,16 @@ export interface JsScanCounts {
   readonly dynamicMethodNames: number;
   /** 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`의 멤버 접근 수다. 레지스트리로 귀속하지 않는다. */
   readonly importedNativeModulesAccesses: number;
+  /**
+   * 인식한 모듈 식(`NativeModules.X`·조회 호출·레지스트리·조회 API 값)이 귀속 호출·추적 바인딩·export·원시값
+   * 소비가 아닌 위치에 쓰여 스캔이 따라가지 않는 바인딩으로 넘어간 수다.
+   */
+  readonly escapedModuleReferences: number;
+  /**
+   * 출처를 스캔이 따라가지 못하는 값의 입구 수다 — 네임스페이스 import, 값을 쓰는 `require()` 호출,
+   * 동적 `import()` 호출. ES default·named import는 해석이 필요해 문서 단계가 센다.
+   */
+  readonly untracedBindings: number;
 }
 
 /** 위치 정보가 붙기 전의 사실 골격이다. */
@@ -163,7 +178,26 @@ interface ScanContext {
     dynamicComponentNames: number;
     dynamicMethodNames: number;
     importedNativeModulesAccesses: number;
+    escapedModuleReferences: number;
+    untracedBindings: number;
   };
+  /**
+   * 바인딩·export가 값을 따라가는 식의 시작 토큰 위치다. 선언 초기값은 수집이 끝난 뒤 바인딩이 살아 있을
+   * 때만 넣는다 — 재대입·같은 이름의 다른 선언으로 바뀐 바인딩은 그 초기값을 따라가지 않는다.
+   */
+  readonly trackedValueStarts: Set<number>;
+  /** 선언 초기값으로 바인딩한 기록(초기값 시작 위치·이름·값)이다. */
+  readonly initializers: { readonly start: number; readonly name: string; readonly value: BoundName }[];
+  /** 선언문이 묶은 선언자 이름 토큰 위치다. 값 사용이 아니다. */
+  readonly declaratorNames: Set<number>;
+  /** `const { A } = NativeModules`로 이름별 바인딩을 만든 레지스트리 토큰 위치다. */
+  readonly destructuredRegistrySources: Set<number>;
+  /** 괄호 그룹(여는 위치)의 값이 원시값으로 소비되는지 기억한다. */
+  readonly consumedGroups: Map<number, boolean>;
+  /** 괄호 그룹(여는 위치) 깊이 0에 값을 다른 바인딩으로 넘기는 연산이 있는지 기억한다. */
+  readonly divertingGroups: Map<number, boolean>;
+  /** 바인딩·상대 import 이름별로 값이 추적을 벗어난 사용 횟수다(JsFileScan.identifierEscapes). */
+  readonly identifierEscapes: Map<string, number>;
   /**
    * 매개변수가 가리는 토큰 구간의 이름별 색인이다. `function f(M) {…}`·`f(M) {…}`·
    * `(M) => {…}` 형태의 `{…}` 본문 구간과 매개변수 이름을 담는다 — 파일
@@ -272,7 +306,16 @@ function createBoundContext(source: string): ScanContext {
       dynamicComponentNames: 0,
       dynamicMethodNames: 0,
       importedNativeModulesAccesses: 0,
+      escapedModuleReferences: 0,
+      untracedBindings: 0,
     },
+    trackedValueStarts: new Set(),
+    initializers: [],
+    declaratorNames: new Set(),
+    destructuredRegistrySources: new Set(),
+    consumedGroups: new Map(),
+    divertingGroups: new Map(),
+    identifierEscapes: new Map(),
     paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
     localNames: new Set(),
     requireSpecifiers: new Map(),
@@ -285,13 +328,19 @@ function createBoundContext(source: string): ScanContext {
       .map((token) => token.text)),
   };
   collectBindings(context);
+  for (const { start, name, value } of context.initializers) {
+    if (sameBoundName(context.bindings.get(name), value)) context.trackedValueStarts.add(start);
+  }
   return context;
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
 export function scanJsSource(source: string): JsFileScan {
   const context = createBoundContext(source);
-  collectCalls(context);
+  const importPositions = importStatementPositions(context.tokens);
+  collectCalls(context, importPositions);
+  collectIdentifierEscapes(context, importPositions);
+  countUntracedEntries(context, importPositions);
   return {
     facts: context.facts,
     memberCalls: context.memberCalls,
@@ -306,6 +355,7 @@ export function scanJsSource(source: string): JsFileScan {
       reexported: context.reexports,
     },
     counts: context.counts,
+    identifierEscapes: context.identifierEscapes,
   };
 }
 
@@ -520,6 +570,7 @@ function collectBindings(context: ScanContext): void {
       const bound = readModuleExpression(context, index + 4);
       if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
         context.defaultExport = bound.value;
+        context.trackedValueStarts.add(index + 4);
         index = bound.endIndex;
       }
       continue;
@@ -534,6 +585,7 @@ function collectBindings(context: ScanContext): void {
       const bound = readModuleExpression(context, index + 4);
       if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
         context.namedExports.set(tokens[index + 2]!.text, bound.value);
+        context.trackedValueStarts.add(index + 4);
         index = bound.endIndex;
       }
     }
@@ -656,13 +708,17 @@ function collectExport(context: ScanContext, start: number): number {
     const bound = readModuleExpression(context, start + 2);
     if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
       context.defaultExport = bound.value;
+      context.trackedValueStarts.add(start + 2);
       return bound.endIndex;
     }
     // `export default M` — 로컬 바인딩을 거치는 형태다.
     const ident = tokens[start + 2];
     if (ident?.kind === 'identifier') {
       const resolved = context.bindings.get(ident.text);
-      if (resolved !== undefined) context.defaultExport = resolved;
+      if (resolved !== undefined) {
+        context.defaultExport = resolved;
+        context.trackedValueStarts.add(start + 2);
+      }
       return start + 2;
     }
     return start + 1;
@@ -752,7 +808,10 @@ function collectDeclaration(context: ScanContext, start: number): number {
         (depth === 0 && tokens[index - 1]?.text === ',');
       // 바인딩이 풀리든 안 풀리든 선언된 이름이다 — Expo API와 동명인
       // 로컬 선언이면 그 호출은 Expo API가 아니므로 mechanism 표시를 뺀다.
-      if (declarator) context.localNames.add(token.text);
+      if (declarator) {
+        context.localNames.add(token.text);
+        context.declaratorNames.add(index);
+      }
       let cursor = index + 1;
       // `const M: TurboModule = …`의 타입 주석은 건너뛰고 `=`를 찾는다.
       if (declarator && tokens[cursor]?.text === ':') {
@@ -767,6 +826,7 @@ function collectDeclaration(context: ScanContext, start: number): number {
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
           context.bindings.set(token.text, bound.value);
+          context.initializers.push({ start: cursor + 1, name: token.text, value: bound.value });
           // 초기값 식 내부의 괄호는 depth에 반영되지 않았으니 마지막 토큰까지
           // 건너뛴다 — `)`를 다시 처리하면 depth가 음수로 내려간다.
           index = bound.endIndex + 1;
@@ -791,6 +851,7 @@ function collectDeclaration(context: ScanContext, start: number): number {
         source?.kind === 'identifier' && source.text === 'NativeModules';
       if (isNativeModules) {
         collectDestructuredBindings(context, index, close);
+        context.destructuredRegistrySources.add(close + 2);
         index = close + 1;
         continue;
       }
@@ -1174,9 +1235,8 @@ function skipTypeArguments(
 }
 
 /** 두 번째 순회: 브리지 API 호출·멤버 호출을 사실로 모은다. */
-function collectCalls(context: ScanContext): void {
+function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>): void {
   const { tokens } = context;
-  const importPositions = importStatementPositions(tokens);
   const namespaces = context.reactNativeNamespaces;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
@@ -1209,7 +1269,12 @@ function collectCalls(context: ScanContext): void {
       continue;
     }
     if (token.text === 'TurboModuleRegistry') {
-      index = collectRegistryCall(context, index);
+      const next = collectRegistryCall(context, index);
+      // 조회 호출이 아닌 레지스트리 값(`const registry = TurboModuleRegistry`)은 스캔이 따라가지 않는다.
+      if (next === index && !isNameOnlyPosition(context, index, importPositions)) {
+        noteModuleValue(context, index, index);
+      }
+      index = next;
       continue;
     }
     // `function NAME(...)`·`function* NAME(...)`의 선언부는 호출이 아니다 —
@@ -1219,6 +1284,11 @@ function collectCalls(context: ScanContext): void {
         tokens[index - 2]?.text === 'function');
     if (declarationSite) continue;
     if (moduleImportCalls.has(token.text)) {
+      // 호출하지 않고 값으로 넘긴 조회 API(`const load = requireNativeModule`)의 결과는 스캔이 따라가지 않는다.
+      if (!boundaryCallOpens(context, index)) {
+        if (!isNameOnlyPosition(context, index, importPositions)) noteModuleValue(context, index, index);
+        continue;
+      }
       index = collectBoundaryCall(context, index, 'module-import', token.text);
       continue;
     }
@@ -1238,6 +1308,11 @@ function collectCalls(context: ScanContext): void {
         moduleImportCalls.has(aliasedApi) ? 'module-import' : 'component-require',
         aliasedApi);
       continue;
+    }
+    // 별칭으로 가져온 조회 API를 값으로 넘기는 것도 같다. 멤버 호출 후보 수집은 그대로 이어 간다.
+    if (aliasedApi !== undefined && moduleImportCalls.has(aliasedApi) && !property &&
+      !isNameOnlyPosition(context, index, importPositions)) {
+      noteModuleValue(context, index, index);
     }
     const next = tokens[index + 1];
     if (next?.text === '.' || next?.text === '?.' || next?.text === '[') {
@@ -1392,13 +1467,18 @@ function collectNativeModulesAccess(
   const member = tokens[start + 1];
   if (member?.text === '.' || member?.text === '?.') {
     const name = tokens[start + 2];
-    if (name?.kind !== 'identifier' && name?.kind !== 'keyword') return start;
+    if (name?.kind !== 'identifier' && name?.kind !== 'keyword') {
+      // `NativeModules?.['X']`처럼 읽지 않는 접근도 레지스트리의 모듈을 꺼낸다 — 사실 없이 추적을 벗어난다.
+      noteModuleValue(context, start, start);
+      return start;
+    }
     context.facts.push({
       kind: 'module-import',
       channel: name.text,
       dynamic: false,
       token: name,
     });
+    noteModuleValue(context, start, start + 2);
     return collectChainedCall(context, { name: name.text }, start + 2)
       ?? start + 2;
   }
@@ -1417,7 +1497,12 @@ function collectNativeModulesAccess(
       token: member,
     });
     const close = findMatching(tokens, start + 1, '[', ']');
-    if (close === undefined) return arg.endIndex;
+    if (close === undefined) {
+      // 식의 끝을 찾지 못하면 쓰임을 판정할 수 없다 — 추적한다고 단정하지 않는다.
+      context.counts.escapedModuleReferences++;
+      return arg.endIndex;
+    }
+    noteModuleValue(context, start, close);
     return collectChainedCall(context, bound, close) ?? close;
   }
   // 앞 토큰이 `.`·키워드면 큰 식의 일부다 — 베어 접근만 세어 중복을 피한다.
@@ -1435,6 +1520,10 @@ function collectNativeModulesAccess(
       token: tokens[start]!,
     });
     context.counts.dynamicModuleNames++;
+  } else if (!context.destructuredRegistrySources.has(start)) {
+    // 동적 사실로 세지 않은 레지스트리 값(`RN.NativeModules`, 이름별 바인딩을 만들지 못한 구조 분해 원천)은
+    // 스캔이 따라가지 않는 곳으로 넘어간다. 동적 사실로 센 베어 접근은 dynamic-module-names가 이미 센다.
+    noteModuleValue(context, start, start);
   }
   return start;
 }
@@ -1470,7 +1559,11 @@ function collectRegistryCall(context: ScanContext, start: number): number {
     token: method,
   });
   const close = findMatching(tokens, open, '(', ')');
-  if (close === undefined) return arg.endIndex;
+  if (close === undefined) {
+    context.counts.escapedModuleReferences++;
+    return arg.endIndex;
+  }
+  noteModuleValue(context, start, close);
   return collectChainedCall(context, bound, close) ?? close;
 }
 
@@ -1539,7 +1632,11 @@ function collectBoundaryCall(
   });
   if (kind !== 'module-import') return arg.endIndex;
   const close = findMatching(tokens, open, '(', ')');
-  if (close === undefined) return arg.endIndex;
+  if (close === undefined) {
+    context.counts.escapedModuleReferences++;
+    return arg.endIndex;
+  }
+  noteModuleValue(context, start, close);
   return collectChainedCall(context, bound, close) ?? close;
 }
 
@@ -1818,6 +1915,470 @@ function isShadowed(
   index: number,
 ): boolean {
   return context.paramShadows.has(name, index);
+}
+
+// ── 범위 밖 바인딩 계수(js-binding-scope) ──────────────────────────────────────
+//
+// 스캔은 모듈 값을 같은 파일의 선언·상대 import·export까지만 따라간다. 그 밖의 바인딩(함수 결과, 인스턴스
+// 상태, 인자, 재대입·구조 분해한 이름, 다른 값의 속성)으로 넘어간 값 위의 멤버 호출은 귀속되지 않는다.
+// 아래 판정은 인식한 모듈 값의 쓰임을 허용 목록으로 분류한다 — 귀속 호출·추적 바인딩·export·원시값 소비가
+// 아니면 추적을 벗어난 것으로 센다. 판정할 수 없는 위치도 벗어난 것으로 센다(과소 계수보다 과다 계수 쪽).
+
+/** 모듈 값 한 번의 쓰임이다. */
+type ModuleValueUse = 'call' | 'tracked' | 'consumed' | 'escape';
+
+/** 대입 연산자다. 뒤에 오면 앞 식은 대입 대상이고, 괄호 안 깊이 0에 있으면 값이 다른 바인딩으로 넘어간다. */
+const assignmentOperators = new Set([
+  '=', '+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '>>>=', '&=', '|=', '^=', '&&=', '||=', '??=',
+]);
+
+/** 앞에 오면 값을 원시값으로 바꿔 소비하는 연산자다. `!`는 단항일 때만이다(피연산자 뒤면 TS non-null). */
+const consumingPrefixes = new Set(['!', 'typeof', 'void', 'delete', 'in', '==', '===', '!=', '!==']);
+
+/**
+ * 뒤에 오면 값을 소비하는 연산자다. `&&`의 왼쪽은 거짓 값일 때만 결과로 넘어가고 거짓 값은 모듈 객체가
+ * 아니다. `?`는 삼항의 검사 위치다. 대입 연산자 앞의 식은 값이 아니라 대입 대상이다.
+ */
+const consumingSuffixes = new Set(['==', '===', '!=', '!==', '&&', '?', 'instanceof', ...assignmentOperators]);
+
+/** 괄호 깊이 0에 있으면 피연산자 값이 괄호 결과가 아닌 다른 곳(대입 대상·함수 본문·생성기 밖)으로 가는 토큰이다. */
+const divertingTokens = new Set([...assignmentOperators, '=>', 'yield']);
+
+/**
+ * 뒤에 `(`가 와도 호출이 아닌 키워드다(조건·연산·선언). 그 밖의 키워드(`get`·`from`·`async` 같은 문맥
+ * 키워드, 동적 `import`)는 호출 대상일 수 있어 호출로 본다.
+ */
+const nonCallKeywords = new Set([
+  'if', 'while', 'for', 'switch', 'catch', 'with', 'return', 'typeof', 'void', 'delete', 'await', 'yield',
+  'in', 'of', 'instanceof', 'new', 'case', 'throw', 'else', 'do', 'function', 'class', 'extends', 'export',
+  'default', 'const', 'let', 'var', 'try', 'finally', 'break', 'continue', 'debugger',
+]);
+
+/** 멤버 체인 시작을 찾을 때 거슬러 오르는 토큰 수 상한이다. 넘으면 판정하지 않고 추적을 벗어난 것으로 센다. */
+const MAX_CHAIN_LOOKBEHIND = 256;
+
+/** 같은 모듈을 가리키는 바인딩 값인지 본다. */
+function sameBoundName(left: BoundName | undefined, right: BoundName): boolean {
+  if (left === undefined) return false;
+  if ('name' in left) return 'name' in right && left.name === right.name;
+  return 'dynamicExpression' in right && left.dynamicExpression === right.dynamicExpression;
+}
+
+/** 인식한 모듈 식의 쓰임을 분류해 추적을 벗어나면 센다. `anchor`는 식의 첫 인식 토큰, `end`는 식의 끝이다. */
+function noteModuleValue(context: ScanContext, anchor: number, end: number): void {
+  const start = chainStart(context.tokens, anchor);
+  if (start === undefined || classifyModuleValue(context, start, end, false) === 'escape') {
+    context.counts.escapedModuleReferences++;
+  }
+}
+
+/**
+ * 모듈 값이 `start`..`end` 구간에 쓰인 방식을 분류한다.
+ *
+ * 멤버 호출은 스캐너가 귀속하는 형태와 같게 본다 — `bracketCall`은 식 바로 뒤의 `[k](…)`를 귀속하는지
+ * (바인딩 식별자는 귀속하고, `NativeModules.X` 같은 모듈 식은 귀속하지 않는다)를 나타낸다. 호출 없는 멤버
+ * 읽기는 메서드 값인지 상수인지 구분하지 않고, 원시값으로 소비되지 않으면 추적을 벗어난 것으로 센다.
+ */
+function classifyModuleValue(
+  context: ScanContext,
+  start: number,
+  end: number,
+  bracketCall: boolean,
+): ModuleValueUse {
+  const { tokens } = context;
+  const after = tokens[end + 1]?.text;
+  if (after === '.' || after === '?.') {
+    const member = tokens[end + 2];
+    if (member?.kind === 'identifier' || member?.kind === 'keyword') {
+      if (isCallAt(tokens, end + 3)) return 'call';
+      return isValueConsumed(context, start, end + 2) ? 'consumed' : 'escape';
+    }
+    if (after === '?.' && member?.text === '[') {
+      return classifyBracketMember(context, start, end + 2, true);
+    }
+    return 'escape';
+  }
+  if (after === '[') return classifyBracketMember(context, start, end + 1, bracketCall);
+  if (context.trackedValueStarts.has(start)) return 'tracked';
+  return isValueConsumed(context, start, end) ? 'consumed' : 'escape';
+}
+
+/** `value[k]` 접근(여는 `[` 위치 `open`)을 호출·소비·이탈로 분류한다. */
+function classifyBracketMember(
+  context: ScanContext,
+  start: number,
+  open: number,
+  callAttributed: boolean,
+): ModuleValueUse {
+  const close = findMatching(context.tokens, open, '[', ']');
+  if (close === undefined) return 'escape';
+  if (isCallAt(context.tokens, close + 1)) {
+    return callAttributed && readArgument(context, open + 1) !== undefined ? 'call' : 'escape';
+  }
+  return isValueConsumed(context, start, close) ? 'consumed' : 'escape';
+}
+
+/**
+ * `start`..`end` 식의 값이 원시값으로 소비되는지 본다.
+ *
+ * 앞뒤 연산자로 바로 정해지지 않으면 감싼 괄호 그룹으로 올라간다. 그룹 깊이 0에 대입·화살표·yield가 없으면
+ * 피연산자 값은 소비되거나 그룹 결과로만 가므로, 그룹이 if/while 조건이거나 그룹 자체가 소비되면 소비다.
+ * 호출 괄호의 인자는 소비가 아니다. 재귀 대신 반복으로 올라가고 그룹별 결과를 기억해 깊은 중첩에서도
+ * 스택을 쓰지 않고 그룹마다 한 번만 판정한다.
+ */
+function isValueConsumed(context: ScanContext, start: number, end: number): boolean {
+  const { tokens } = context;
+  const visited: number[] = [];
+  let currentStart = start;
+  let currentEnd = end;
+  let consumed: boolean;
+  for (;;) {
+    // 뒤에 멤버 접근·호출·non-null이 이어지면 값은 객체·호출 대상으로 쓰인다 — 그 위의 호출은 귀속되지 않는다.
+    if (continuesAsOperand(tokens, currentEnd)) {
+      consumed = false;
+      break;
+    }
+    if (isDirectlyConsumed(tokens, currentStart, currentEnd)) {
+      consumed = true;
+      break;
+    }
+    const open = enclosingOpen(tokens, currentStart);
+    const close = open === undefined || tokens[open]!.text !== '('
+      ? undefined
+      : findMatching(tokens, open, '(', ')');
+    if (open === undefined || close === undefined || close <= currentEnd ||
+      groupDiverts(context, open, close) || isCallParen(tokens, open)) {
+      consumed = false;
+      break;
+    }
+    if (isConditionGroup(tokens, open)) {
+      consumed = true;
+      break;
+    }
+    const known = context.consumedGroups.get(open);
+    if (known !== undefined) {
+      consumed = known;
+      break;
+    }
+    visited.push(open);
+    currentStart = open;
+    currentEnd = close;
+  }
+  for (const open of visited) context.consumedGroups.set(open, consumed);
+  return consumed;
+}
+
+/** `end` 뒤에 멤버 접근·호출·TS non-null·태그 템플릿이 이어져 식이 더 큰 피연산자의 일부인지 본다. */
+function continuesAsOperand(tokens: readonly JsToken[], end: number): boolean {
+  const after = tokens[end + 1];
+  return after !== undefined &&
+    (['.', '?.', '[', '(', '!'].includes(after.text) || after.kind === 'template');
+}
+
+/** 앞뒤 연산자만으로 값이 소비되는지 본다. */
+function isDirectlyConsumed(tokens: readonly JsToken[], start: number, end: number): boolean {
+  const before = tokens[start - 1];
+  if (before !== undefined && consumingPrefixes.has(before.text) &&
+    (before.text !== '!' || !isOperandEnd(tokens[start - 2]))) {
+    return true;
+  }
+  return consumingSuffixes.has(tokens[end + 1]?.text ?? '');
+}
+
+/** 괄호 그룹 깊이 0에 값을 다른 곳으로 넘기는 토큰이 있는지 본다. 짝 없는 안쪽 괄호도 넘기는 것으로 본다. */
+function groupDiverts(context: ScanContext, open: number, close: number): boolean {
+  const known = context.divertingGroups.get(open);
+  if (known !== undefined) return known;
+  const { tokens } = context;
+  let diverts = false;
+  for (let cursor = open + 1; cursor < close; cursor++) {
+    const text = tokens[cursor]!.text;
+    if (text === '(' || text === '[' || text === '{') {
+      const inner = findMatching(tokens, cursor, text, bracketPairs.get(text)!);
+      if (inner === undefined || inner >= close) {
+        diverts = true;
+        break;
+      }
+      cursor = inner;
+      continue;
+    }
+    if (divertingTokens.has(text)) {
+      diverts = true;
+      break;
+    }
+  }
+  context.divertingGroups.set(open, diverts);
+  return diverts;
+}
+
+/** 여는 `(`가 호출 인자 목록인지 본다. 판정이 애매한 `>`(제네릭 호출)·`}`도 호출로 본다(소비로 단정하지 않는다). */
+function isCallParen(tokens: readonly JsToken[], open: number): boolean {
+  const before = tokens[open - 1];
+  if (before === undefined) return false;
+  if (before.kind === 'keyword') {
+    return !nonCallKeywords.has(before.text) || ['.', '?.'].includes(tokens[open - 2]?.text ?? '');
+  }
+  return isOperandEnd(before) || ['>', '?.', '}'].includes(before.text);
+}
+
+/** 여는 `(`가 `if`·`while` 조건 괄호인지 본다. */
+function isConditionGroup(tokens: readonly JsToken[], open: number): boolean {
+  const before = tokens[open - 1];
+  return before?.kind === 'keyword' && (before.text === 'if' || before.text === 'while') &&
+    !['.', '?.'].includes(tokens[open - 2]?.text ?? '');
+}
+
+/** 피연산자의 끝이 될 수 있는 토큰인지 본다 — 뒤의 `(`는 호출, `!`는 TS non-null이다. */
+function isOperandEnd(token: JsToken | undefined): boolean {
+  if (token === undefined) return false;
+  return token.kind === 'identifier' || token.kind === 'number' || token.kind === 'string' ||
+    token.kind === 'template' || token.text === ')' || token.text === ']';
+}
+
+/**
+ * `index` 토큰이 끝에 오는 멤버 체인(`a.b(c)[d].NativeModules`)의 첫 토큰 위치다.
+ *
+ * 앞뒤 문맥 판정은 체인 전체를 한 식으로 보고 한다. 상한 안에서 시작을 찾지 못하거나 체인 모양이 아니면
+ * undefined다.
+ */
+function chainStart(tokens: readonly JsToken[], index: number): number | undefined {
+  let start = index;
+  while (['.', '?.'].includes(tokens[start - 1]?.text ?? '')) {
+    let cursor = start - 2;
+    while ([')', ']'].includes(tokens[cursor]?.text ?? '')) {
+      const open = openingOf(tokens, cursor);
+      if (open === undefined) return undefined;
+      const before = tokens[open - 1];
+      // 앞이 피연산자 끝(또는 `.` 뒤 키워드 메서드 이름)이 아니면 그룹 괄호다 — 그 괄호가 식의 시작이다.
+      if (before?.text === '?.') cursor = open - 2;
+      else if (isOperandEnd(before) ||
+        (before?.kind === 'keyword' && ['.', '?.'].includes(tokens[open - 2]?.text ?? ''))) {
+        cursor = open - 1;
+      } else {
+        return index - open > MAX_CHAIN_LOOKBEHIND ? undefined : open;
+      }
+      if (index - cursor > MAX_CHAIN_LOOKBEHIND) return undefined;
+    }
+    const base = tokens[cursor];
+    if (base === undefined || (base.kind !== 'identifier' && base.kind !== 'keyword' &&
+      base.kind !== 'string' && base.kind !== 'template' && base.kind !== 'number')) {
+      return undefined;
+    }
+    start = cursor;
+    if (index - start > MAX_CHAIN_LOOKBEHIND) return undefined;
+  }
+  return start;
+}
+
+/**
+ * 식별자가 값이 아니라 이름 자리에 있는지 본다 — import·재수출 절, 선언자·함수·클래스 이름, 구조 분해 선언
+ * 패턴, 객체 키, 대입 대상, 식 본문 화살표의 매개변수. 속성 자리(`.` 뒤)는 호출자가 따로 판정한다.
+ */
+function isNameOnlyPosition(
+  context: ScanContext,
+  index: number,
+  importPositions: ReadonlySet<number>,
+): boolean {
+  const { tokens } = context;
+  const before = tokens[index - 1]?.text ?? '';
+  const after = tokens[index + 1]?.text ?? '';
+  if (importPositions.has(index) || context.declaratorNames.has(index)) return true;
+  if (['const', 'let', 'var', 'function', 'class'].includes(before) ||
+    (before === '*' && tokens[index - 2]?.text === 'function')) {
+    return true;
+  }
+  if (assignmentOperators.has(after) || ['++', '--'].includes(after) || ['++', '--'].includes(before)) return true;
+  if (after === ':' && (before === '{' || before === ',')) return true;
+  if (after === '=>' || isArrowParameter(tokens, index)) return true;
+  return isPatternDeclarator(tokens, index);
+}
+
+/** `(a, M) => …`처럼 화살표 매개변수 목록의 이름 자리인지 본다. 기본값 식(`= …` 뒤)은 값이다. */
+function isArrowParameter(tokens: readonly JsToken[], index: number): boolean {
+  if (!['(', ',', '...'].includes(tokens[index - 1]?.text ?? '') ||
+    ![',', ')', '=', ':', '?'].includes(tokens[index + 1]?.text ?? '')) {
+    return false;
+  }
+  const open = enclosingOpen(tokens, index);
+  if (open === undefined || tokens[open]!.text !== '(') return false;
+  const close = findMatching(tokens, open, '(', ')');
+  return close !== undefined && tokens[close + 1]?.text === '=>';
+}
+
+/**
+ * 바인딩·상대 import 이름의 값 사용을 분류해 추적을 벗어난 횟수를 이름별로 센다.
+ *
+ * 패키지 import는 스캔 집합 안에서 해석될 수 없어 후보가 아니다(문서 단계가 출처 모름으로 센다).
+ */
+function collectIdentifierEscapes(context: ScanContext, importPositions: ReadonlySet<number>): void {
+  const { tokens } = context;
+  const candidates = new Set(context.bindings.keys());
+  for (const entry of context.imports) {
+    if (entry.specifier.startsWith('.')) candidates.add(entry.localName);
+  }
+  if (candidates.size === 0) return;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (token.kind !== 'identifier' || !candidates.has(token.text)) continue;
+    if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    if (isShadowed(context, token.text, index) || isNameOnlyPosition(context, index, importPositions)) continue;
+    if (classifyModuleValue(context, index, index, true) === 'escape') {
+      context.identifierEscapes.set(token.text, (context.identifierEscapes.get(token.text) ?? 0) + 1);
+    }
+  }
+}
+
+/**
+ * 출처를 스캔이 따라가지 못하는 값의 입구를 센다 — 네임스페이스 import, 값을 쓰는 `require()` 호출,
+ * 동적 `import()` 호출. 이 값들이 네이티브 모듈을 담는지는 토큰 스캔으로 알 수 없다.
+ */
+function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet<number>): void {
+  const { tokens } = context;
+  const requireIsLocal = context.localNames.has('require');
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    if (token.kind === 'keyword' && token.text === 'import') {
+      if (tokens[index + 1]?.text === '(') {
+        context.counts.untracedBindings++;
+        continue;
+      }
+      // import 목록이 기록한 이름은 문서 단계가 센다. `import X, * as NS`는 목록이 NS만 default로 남기고
+      // X를 빠뜨리므로 목록에 없는 이름만 여기서 센다.
+      for (const name of namespaceImportNames(tokens, index)) {
+        if (!context.importsByLocalName.has(name)) context.counts.untracedBindings++;
+      }
+      continue;
+    }
+    if (token.kind === 'identifier' && token.text === 'require' && tokens[index + 1]?.text === '(' &&
+      !requireIsLocal && !importPositions.has(index) && !isShadowed(context, 'require', index)) {
+      context.counts.untracedBindings += requireEntryCount(tokens, index);
+    }
+  }
+}
+
+/**
+ * 네임스페이스 import 절이 묶는 이름이다 — `import * as NS`는 [NS], `import X, * as NS`는 [X, NS]. 네임스페이스
+ * 절은 이 두 자리에만 올 수 있어 고정 위치만 본다 — `import` 토큰마다 앞으로 훑으면 `import.meta`가 많은
+ * 입력에서 이차 시간이 든다. 타입 전용 import(`import type * as T`)는 값이 아니다.
+ */
+function namespaceImportNames(tokens: readonly JsToken[], index: number): string[] {
+  const star = tokens[index + 1]?.text === '*'
+    ? index + 1
+    : tokens[index + 2]?.text === ',' && tokens[index + 3]?.text === '*' ? index + 3 : undefined;
+  if (star === undefined || tokens[star + 1]?.text !== 'as') return [];
+  const names = [tokens[star + 2], ...(star === index + 3 ? [tokens[index + 1]] : [])];
+  return names.flatMap((name) => name?.kind === 'identifier' || name?.kind === 'keyword' ? [name.text] : []);
+}
+
+/**
+ * `require(…)` 호출 하나가 출처 모를 값을 들이는지(1) 아닌지(0)다.
+ *
+ * 문장 단독 호출(부작용 전용), `require('…').NativeModules` 레지스트리 접근, 스캔이 이름으로 읽는 API만
+ * 구조 분해한 호출은 값의 출처를 안다. 그 밖은 결과가 스캔이 따라가지 않는 값이다.
+ */
+function requireEntryCount(tokens: readonly JsToken[], index: number): number {
+  const close = findMatching(tokens, index + 1, '(', ')');
+  if (close === undefined) return 1;
+  const after = tokens[close + 1]?.text;
+  if ((after === '.' || after === '?.') && tokens[close + 2]?.text === 'NativeModules') return 0;
+  const before = tokens[index - 1];
+  // 문장 시작 — 문장 경계 토큰 뒤이거나, 앞 줄이 피연산자로 끝나 ASI가 문장을 나눈 자리다.
+  const statementStart = before === undefined || [';', '{', '}'].includes(before.text) ||
+    (before.line < tokens[index]!.line && isOperandEnd(before));
+  if (statementStart && endsExpression(tokens, close)) return 0;
+  if (before?.text === '=' && tokens[index - 2]?.text === '}') {
+    const open = openingOf(tokens, index - 2);
+    if (open !== undefined &&
+      destructuresOnlyScannedApis(tokens, open, index - 2, readRequireSpecifier(tokens, index))) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+/**
+ * `{ … }` 구조 분해 패턴의 이름이 모두 스캔이 이름 그대로 읽는 API인지 본다. 별칭·기본값·중첩·나머지
+ * 패턴이 있으면 아니다 — CJS 구조 분해의 별칭은 스캔이 API로 읽지 않는다.
+ */
+function destructuresOnlyScannedApis(
+  tokens: readonly JsToken[],
+  open: number,
+  close: number,
+  specifier: string | undefined,
+): boolean {
+  let names = 0;
+  for (let cursor = open + 1; cursor < close; cursor++) {
+    const token = tokens[cursor]!;
+    if (token.text === ',') continue;
+    if (token.kind !== 'identifier' && token.kind !== 'keyword') return false;
+    if (tokens[cursor + 1]?.text !== ',' && cursor + 1 !== close) return false;
+    if (!isScannedApiName(token.text, token.text, specifier)) return false;
+    names++;
+  }
+  return names > 0;
+}
+
+/**
+ * import·require로 들인 이름을 스캔이 이름 그대로 읽는 API인지 본다 — 조회·컴포넌트 API(별칭 포함, 출처
+ * 무관), 이름으로 읽는 `TurboModuleRegistry`, react-native의 `NativeModules`(별칭 포함).
+ */
+function isScannedApiName(localName: string, exportedName: string, specifier: string | undefined): boolean {
+  return moduleImportCalls.has(exportedName) || componentRequireCalls.has(exportedName) ||
+    moduleImportCalls.has(localName) || componentRequireCalls.has(localName) ||
+    localName === 'TurboModuleRegistry' ||
+    (exportedName === 'NativeModules' && specifier === 'react-native');
+}
+
+/**
+ * import 바인딩이 스캔이 이름으로 읽는 API인지 본다. 해석되지 않아도 출처를 아는 값이라 범위 밖 바인딩
+ * 하한 근거로 세지 않는다.
+ */
+export function isScannedApiImport(entry: ScannedImport): boolean {
+  return isScannedApiName(entry.localName, entry.exportedName, entry.specifier);
+}
+
+/** 토큰 열마다 한 번 만든 감싼 괄호 표다(위치 → 가장 안쪽 여는 괄호, 없으면 -1). */
+const enclosingTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/** 토큰 열마다 한 번 만든 닫는 괄호 → 여는 괄호 표다(짝이 없으면 -1). */
+const openingTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/**
+ * 위치 `index`를 감싼 가장 안쪽 여는 괄호 위치다. 짝 표로 한 번에 만든다 — 위치마다 거슬러 오르면 긴
+ * 괄호 그룹 안의 참조가 많은 입력에서 이차 시간이 든다. 짝 없는 여는 괄호는 감싸는 것으로 보지 않는다.
+ */
+function enclosingOpen(tokens: readonly JsToken[], index: number): number | undefined {
+  let table = enclosingTables.get(tokens);
+  if (table === undefined) {
+    const matches = matchingTable(tokens);
+    table = new Int32Array(tokens.length).fill(-1);
+    const stack: number[] = [];
+    for (let cursor = 0; cursor < tokens.length; cursor++) {
+      while (stack.length > 0 && matches[stack.at(-1)!]! < cursor) stack.pop();
+      table[cursor] = stack.at(-1) ?? -1;
+      if (bracketPairs.has(tokens[cursor]!.text) && matches[cursor]! !== -1) stack.push(cursor);
+    }
+    enclosingTables.set(tokens, table);
+  }
+  const open = table[index] ?? -1;
+  return open === -1 ? undefined : open;
+}
+
+/** 닫는 괄호 위치 `close`의 여는 괄호 위치다. */
+function openingOf(tokens: readonly JsToken[], close: number): number | undefined {
+  let table = openingTables.get(tokens);
+  if (table === undefined) {
+    const matches = matchingTable(tokens);
+    table = new Int32Array(tokens.length).fill(-1);
+    for (let open = 0; open < tokens.length; open++) {
+      const match = matches[open]!;
+      if (match !== -1) table[match] = open;
+    }
+    openingTables.set(tokens, table);
+  }
+  const open = table[close] ?? -1;
+  return open === -1 ? undefined : open;
 }
 
 /** 짝 표로 답하는 괄호 종류다 — 여는 텍스트 → 닫는 텍스트. */

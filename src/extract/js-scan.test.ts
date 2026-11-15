@@ -755,3 +755,143 @@ test('react-native 모듈 객체에서 구조 분해한 NativeModules도 레지�
     assert.deepEqual(flatten(source), [], source);
   }
 });
+
+test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로 센다', () => {
+  // 귀속되는 멤버 호출, 스캔이 기록한 선언·export, 값이 원시값으로 소비되는 존재 검사·비교·typeof·대입 대상은
+  // 모듈 값을 다른 바인딩으로 넘기지 않는다.
+  for (const source of [
+    'NativeModules.Cam.take();',
+    'NativeModules.Cam?.take();',
+    "NativeModules['Cam'].take();",
+    "TurboModuleRegistry.getEnforcing<Spec>('Cam').take();",
+    "requireNativeModule('Cam')?.['take']();",
+    'const Cam = NativeModules.Cam;',
+    'export default NativeModules.Cam;',
+    'module.exports = NativeModules.Cam;',
+    "exports.Cam = requireNativeModule('Cam');",
+    "export const Cam = TurboModuleRegistry.get('Cam');",
+    'const { Cam } = NativeModules;',
+    'if (NativeModules.Cam) {}',
+    'if (!NativeModules.Cam.take) {}',
+    "if (typeof NativeModules.Cam.take === 'function' && NativeModules.Cam.ready) {}",
+    'const ok = NativeModules.Cam != null;',
+    'const ok = null !== NativeModules.Cam;',
+    'const label = NativeModules.Cam ? 1 : 2;',
+    'NativeModules.Cam && NativeModules.Cam.take();',
+    'while ((NativeModules.Cam || NativeModules.Other)) {}',
+    "if ('take' in NativeModules.Cam) {}",
+    'NativeModules.Cam.take = mock;',
+    'delete NativeModules.Cam.take;',
+    "import { TurboModuleRegistry, NativeModules } from 'react-native';",
+    "const { requireNativeModule } = require('expo-modules-core');",
+    'jest.mock(name, () => ({ requireNativeModule: mock }));',
+    'export { requireNativeModule };',
+  ]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 0, source);
+  }
+  // 인자·반환·인스턴스 상태·객체 값·대체값 연산·구조 분해·메서드 값 추출·귀속하지 않는 호출 형태·재대입·
+  // 레지스트리와 조회 API 자체를 다른 이름에 담는 것은 하나씩 센다.
+  for (const source of [
+    'register(NativeModules.Cam);',
+    'function load() { return NativeModules.Cam; }',
+    'this.cam = NativeModules.Cam;',
+    'const holder = [NativeModules.Cam];',
+    'const Cam = NativeModules.Cam || {};',
+    'const { take } = NativeModules.Cam;',
+    'const take = NativeModules.Cam.take;',
+    'NativeModules.Cam.take.call(null);',
+    "NativeModules.Cam['take']();",
+    "NativeModules?.['Cam'].take();",
+    'NativeModules.Cam?.();',
+    'if (NativeModules.Cam || [) {}',
+    'NativeModules.Cam!.take();',
+    '(NativeModules.Cam as Spec).take();',
+    'NativeModules.Cam?.take?.();',
+    'let Cam = NativeModules.Cam;\nCam = other;',
+    'new NativeEventEmitter(NativeModules.Cam);',
+    'if ((cached = NativeModules.Cam)) {}',
+    "const Cam = TurboModuleRegistry.get<Spec>('Cam') as Spec | null;",
+    "const Cam = await requireNativeModule('Cam');",
+    'const Screen = () => { const Cam = NativeModules.Cam; };',
+    "import { NativeModules as NM } from 'react-native';\nconst { Cam } = NM;",
+    'const registry = TurboModuleRegistry;',
+    'const load = requireNativeModule;',
+    "import * as RN from 'react-native';\nconst modules = RN.NativeModules;",
+    // 조건 괄호 안이어도 값이나 그 괄호 그룹이 멤버 호출·호출의 대상이면 귀속되지 않는 호출이다.
+    'if ((NativeModules.Cam as Spec).take()) {}',
+    'if (NativeModules.Cam!.take()) {}',
+    'if (!NativeModules.Cam.settings.read()) {}',
+    'if (get(NativeModules.Cam)) {}',
+    'const a = maybe!\nNativeModules.Cam?.take?.();',
+  ]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 1, source);
+  }
+});
+
+test('모듈 바인딩 이름의 값 사용 중 추적을 벗어난 것만 이름별로 센다', () => {
+  const scan = scanJsSource([
+    "import Local from './local';",
+    "import Pkg from 'package';",
+    "const Cam = requireNativeModule('Cam');",
+    'Cam.take();',
+    'Cam?.[method]();',
+    'if (Cam && typeof Cam.take === "function") Cam.take();',
+    'const Alias = Cam;',
+    'export default Cam;',
+    'export { Cam as Camera };',
+    'register(Cam, Local, Pkg);',
+    'const { take } = Local;',
+    'function shadow(Cam) { return Cam; }',
+    'const holder = { Cam: 1, other: Local };',
+    // `=` 재대입은 바인딩 자체를 지운다. 복합 대입의 대상과 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다.
+    'Cam ||= replacement;',
+    'const later = () => { const Cam = other; };',
+  ].join('\n'));
+  // Cam: register 인자 1회. Local: register 인자·구조 분해 원천·객체 값 3회. 패키지 import는 해석될 수 없어 후보가 아니다.
+  assert.deepEqual(Object.fromEntries(scan.identifierEscapes), { Cam: 1, Local: 3 });
+});
+
+test('출처를 따라가지 못하는 import 밖 값의 입구를 센다', () => {
+  // ES import 바인딩의 해석은 문서 단계가 한다. 스캐너는 네임스페이스 import·require·동적 import의 입구만 센다.
+  for (const [source, expected] of [
+    ["import * as Lib from 'lib';", 1],
+    ["import type * as Types from 'lib';", 0],
+    ["import Lib from 'lib';", 0],
+    ['import Lib', 0],
+    // `import X, * as NS`는 import 목록이 NS만 default로 기록해 문서 단계가 센다 — 스캐너는 빠진 X만 센다.
+    ["import Main, * as Lib from 'lib';", 1],
+    ['import * as', 0],
+    ["import * as Lib from 'lib';\nconst url = import.meta.url;", 1],
+    ["const Lib = require('lib');", 1],
+    ["const { a, b: c } = require('lib');", 1],
+    ["const { NativeModules } = require('react-native');", 0],
+    ["const { NativeModules: NM } = require('react-native');", 1],
+    ["const { requireNativeModule, TurboModuleRegistry } = require('expo');", 0],
+    ["require('./setup');", 0],
+    ["const ready = true\nrequire('./setup')\nstart()", 0],
+    ["register(require('./camera'));", 1],
+    ["const broken = require('./camera'", 1],
+    ["const Cam = require('react-native').NativeModules.Cam;", 0],
+    ["const mod = await import('./camera');", 1],
+    ["function f(require) { return require('x'); }", 0],
+    ["const require = createRequire(url);\nconst x = require('x');", 0],
+    ['loader.require("x");', 0],
+  ] as const) {
+    assert.equal(scanJsSource(source).counts.untracedBindings, expected, source);
+  }
+});
+
+test('쓰임을 판정할 수 없는 모듈 식은 추적한다고 단정하지 않고 센다', () => {
+  // 식의 끝(닫는 괄호)을 찾지 못하면 뒤 문맥을 볼 수 없다.
+  for (const source of ["requireNativeModule('Cam'", "NativeModules['Cam'", "TurboModuleRegistry.get('Cam'"]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 1, source);
+  }
+  // 멤버 체인의 시작은 상한(256토큰) 안에서만 찾는다. 상한을 넘으면 조건 안이어도 소비로 판정하지 않는다.
+  // 링크 수가 홀수여야 속성 위치의 NativeModules가 앞 링크의 멤버 후보로 먹히지 않고 읽힌다(사실로 확인한다).
+  const chain = (links: number) => `if (root${'.link'.repeat(links)}.NativeModules.Cam) {}`;
+  for (const [links, escaped] of [[101, 0], [201, 1]] as const) {
+    const scan = scanJsSource(chain(links));
+    assert.deepEqual(scan.facts.map((fact) => fact.channel), ['Cam'], String(links));
+    assert.equal(scan.counts.escapedModuleReferences, escaped, String(links));
+  }
+});
