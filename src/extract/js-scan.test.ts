@@ -817,6 +817,7 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     'const registry = TurboModuleRegistry;',
     'const load = requireNativeModule;',
     "import * as RN from 'react-native';\nconst modules = RN.NativeModules;",
+    "import * as Core from 'expo-modules-core';\nconst load = Core.requireNativeModule;",
     // 조건 괄호 안이어도 값이나 그 괄호 그룹이 멤버 호출·호출의 대상이면 귀속되지 않는 호출이다.
     'if ((NativeModules.Cam as Spec).take()) {}',
     'if (NativeModules.Cam!.take()) {}',
