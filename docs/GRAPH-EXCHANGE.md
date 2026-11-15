@@ -433,6 +433,14 @@ import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조
 매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
 `unattributed-js-native-modules:` 한계로 센다.
+속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
+`TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
+인라인 `require('react-native')`), Expo 조회 API(`requireNativeModule` 계열·`requireNativeViewManager`)는 Expo
+패키지의 네임스페이스 import·`require` 바인딩·인라인 `require`이며 이 경로는 `mechanism: "expo"`다. 출처를 모르는
+객체(`foo.NativeModules`, 더 긴 체인, 다른 호출의 결과, 다른 모듈의 네임스페이스, 매개변수가 가린 이름)의 같은
+이름은 API로 읽지 않고 그 접근 수(대입 대상 제외)를 같은 `unattributed-js-native-modules:` 한계로 센다. 이 판정은
+앞 체인 길이와 무관하다. 속성 자리의 이름은 파일 바인딩·별칭 import로도 읽지 않는다(`obj.Camera.take()`의 Camera는
+파일의 `const Camera = …`가 아니다).
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
 동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·
@@ -456,8 +464,7 @@ require에는 싣지 않는다.
 모듈 바인딩으로 해석된 이름 — 이 귀속되는 멤버 호출, 스캔이 기록한 선언·export,
 값이 원시값으로 소비되는 위치(`if`/`while` 조건, `!`·`typeof`·비교·`in`, `&&`의
 왼쪽, 삼항 검사, 대입 대상) 밖에서 쓰인 횟수다. 호출 없는 멤버 읽기는 메서드 값과
-상수를 구분하지 못해 세고, 판정할 수 없는 위치(짝 없는 괄호, 256토큰을 넘는 멤버
-체인)도 센다. 뒤 절의 수는 스캔이 네이티브 모듈 바인딩까지 따라가지 못하는 값의
+상수를 구분하지 못해 세고, 판정할 수 없는 위치(짝 없는 괄호)도 센다. 뒤 절의 수는 스캔이 네이티브 모듈 바인딩까지 따라가지 못하는 값의
 입구다 — 모듈 바인딩으로 해석되지 않은 import 이름(스캔이 이름으로 읽는
 `NativeModules`·`TurboModuleRegistry`·조회·컴포넌트 API는 제외), 네임스페이스 import,
 값을 쓰는 `require()` 호출, 동적 `import()` 호출. 이 값이 모듈을 담는지는 알 수 없으므로

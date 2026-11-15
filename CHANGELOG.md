@@ -8,7 +8,7 @@
   sentence. The line now starts with the number of native module references the scan recognized whose
   value leaves the bindings it follows: passed to a function, returned, stored in instance state or in
   another value, reassigned or destructured, read as a member without a call, or used where the scan
-  cannot decide (an unbalanced bracket, a member chain longer than 256 tokens). Attributed member calls,
+  cannot decide (an unbalanced bracket). Attributed member calls,
   recorded declarations and exports, and value-free tests (`if`/`while` conditions, `!`, `typeof`,
   comparisons, `in`, the left side of `&&`, a ternary test, an assignment target) do not count. Imports
   that do not resolve to a native module binding (other than `NativeModules`, `TurboModuleRegistry` and
@@ -111,6 +111,21 @@
   neither attributed nor counted) and `NS` was recorded as a default import. `NS` is now recognized as
   a namespace import in both forms, so `import RN, * as All from 'react-native'` reads `RN.NativeModules`
   and `All.NativeModules` alike.
+
+- `extract-js` decides bridge API names in property position (`OBJ.NativeModules`, `OBJ.TurboModuleRegistry`,
+  `OBJ.requireNativeModule(…)`, …) by what `OBJ` is, not by the length of the chain before it. The
+  member-call collector used to swallow every other link of a chain, so `foo.NativeModules.Camera` was
+  ignored while `foo.bar.NativeModules.Camera` was read as the registry; `RN.TurboModuleRegistry.get(…)`
+  through a react-native namespace was ignored; and at odd positions a property such as `a.b.Camera.take()`
+  was attributed to a file binding `Camera`, and `a.b.load('X')` was read as an Expo lookup alias, producing
+  false facts. Now a property name is read as the API only when `OBJ` is the module that exports it: a
+  react-native module object (`import * as RN`, `import RN`, `const RN = require('react-native')`, or an
+  inline `require('react-native')`) for `NativeModules`, `TurboModuleRegistry`, `requireNativeComponent` and
+  `codegenNativeComponent`; an Expo namespace import or `require` binding for the Expo lookups, which then
+  carry `mechanism: "expo"`. Any other object (`foo`, a longer chain, another call's result such as
+  `jest.requireActual(…)`, another module's namespace, a shadowed parameter) yields no fact, and its
+  accesses are counted in `unattributed-js-native-modules:`, whose message now covers both barrel imports
+  and untraced objects. A property name is never read as a file binding or an import alias.
 
 ## [0.14.0] - 2026-11-03
 

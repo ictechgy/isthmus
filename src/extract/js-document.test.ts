@@ -349,3 +349,9 @@ test('Expo mechanism이 조립된 문서 사실까지 보존된다', () => {
   const reparsed = parseBridgeFactsDocument(JSON.parse(JSON.stringify(document)));
   assert.equal(reparsed.facts[0]?.mechanism, 'expo');
 });
+
+test('출처를 모르는 객체의 NativeModules 속성 접근은 레지스트리로 읽지 않고 한계로 센다', () => {
+  const document = assemble({ 'src/app.ts': 'foo.bar.NativeModules.Camera.open();\nfoo.NativeModules.Torch.on();' });
+  assert.deepEqual(flat(document), []);
+  assert.ok(document.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 2 ')));
+});

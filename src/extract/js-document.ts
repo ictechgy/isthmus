@@ -263,12 +263,12 @@ function buildLimitations(
   let dynamicModuleNames = 0;
   let dynamicComponentNames = 0;
   let dynamicMethodNames = 0;
-  let importedNativeModulesAccesses = 0;
+  let untracedApiAccesses = 0;
   for (const scan of scans.values()) {
     dynamicModuleNames += scan.counts.dynamicModuleNames;
     dynamicComponentNames += scan.counts.dynamicComponentNames;
     dynamicMethodNames += scan.counts.dynamicMethodNames;
-    importedNativeModulesAccesses += scan.counts.importedNativeModulesAccesses;
+    untracedApiAccesses += scan.counts.untracedApiAccesses;
   }
   const limitations: string[] = [];
   // 측정한 이탈 수가 0이어도 출처 모를 값이 있으면 그 값이 모듈을 담는지 알 수 없다 — 0을 "없음"으로
@@ -315,11 +315,12 @@ function buildLimitations(
       + 'calls on package imports could not be attributed to a module name',
     );
   }
-  if (importedNativeModulesAccesses > 0) {
+  if (untracedApiAccesses > 0) {
     limitations.push(
-      `unattributed-js-native-modules: ${importedNativeModulesAccesses} NativeModules accesses use a binding `
-      + 'imported from another module (a barrel re-export or a stand-in), so they are not read as the '
-      + 'react-native registry',
+      `unattributed-js-native-modules: ${untracedApiAccesses} accesses to NativeModules or another bridge API go `
+      + 'through a binding imported from another module (a barrel re-export or a stand-in) or through an object '
+      + 'the scan does not trace to the module that exports it (react-native or Expo), so they are not read as '
+      + 'bridge APIs',
     );
   }
   if (fileCount === 0) {

@@ -886,14 +886,6 @@ test('쓰임을 판정할 수 없는 모듈 식은 추적한다고 단정하지 
   for (const source of ["requireNativeModule('Cam'", "NativeModules['Cam'", "TurboModuleRegistry.get('Cam'"]) {
     assert.equal(scanJsSource(source).counts.escapedModuleReferences, 1, source);
   }
-  // 멤버 체인의 시작은 상한(256토큰) 안에서만 찾는다. 상한을 넘으면 조건 안이어도 소비로 판정하지 않는다.
-  // 링크 수가 홀수여야 속성 위치의 NativeModules가 앞 링크의 멤버 후보로 먹히지 않고 읽힌다(사실로 확인한다).
-  const chain = (links: number) => `if (root${'.link'.repeat(links)}.NativeModules.Cam) {}`;
-  for (const [links, escaped] of [[101, 0], [201, 1]] as const) {
-    const scan = scanJsSource(chain(links));
-    assert.deepEqual(scan.facts.map((fact) => fact.channel), ['Cam'], String(links));
-    assert.equal(scan.counts.escapedModuleReferences, escaped, String(links));
-  }
 });
 
 test('선언 초기값의 객체 리터럴·함수 본문 안 이름은 로컬 선언으로 기록하지 않는다', () => {
@@ -981,4 +973,66 @@ test('default와 네임스페이스를 함께 가져오는 import는 default 이
       { kind: 'method-invoke', channel: 'Torch', method: 'on', dynamic: false },
     ],
   );
+});
+
+test('속성 위치의 브리지 API 이름은 앞 링크 수와 무관하게 객체가 그 API의 모듈일 때만 읽는다', () => {
+  const camera = [
+    { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+  ];
+  // react-native 모듈 객체(네임스페이스·default import·require 바인딩·인라인 require)를 거친 레지스트리는 읽는다.
+  for (const source of [
+    "import * as RN from 'react-native';\nRN.NativeModules.Camera.open();",
+    "import RN from 'react-native';\nRN.NativeModules.Camera.open();",
+    "const RN = require('react-native');\nRN.NativeModules.Camera.open();",
+    "require('react-native').NativeModules.Camera.open();",
+  ]) {
+    assert.deepEqual(flatten(source), camera, source);
+  }
+  // 그 API를 내보내는 모듈 객체를 거치면 TurboModuleRegistry·조회·컴포넌트 API도 같은 규칙으로 읽는다.
+  assert.deepEqual(flatten("import * as RN from 'react-native';\nRN.TurboModuleRegistry.getEnforcing('Camera').open();"), camera);
+  const expo = scanJsSource("import * as Core from 'expo-modules-core';\nCore.requireNativeModule('Camera').open();");
+  assert.deepEqual(expo.facts.map(({ kind, channel, mechanism }) => [kind, channel, mechanism ?? null]),
+    [['module-import', 'Camera', 'expo'], ['method-invoke', 'Camera', null]]);
+  assert.deepEqual(flatten("require('react-native').requireNativeComponent('Grid');"),
+    [{ kind: 'component-require', channel: 'Grid', method: undefined, dynamic: false }]);
+  // Expo 모듈 객체를 거친 조회는 같은 파일의 동명 래퍼 import와 무관하게 expo 경로다.
+  for (const source of [
+    "const Core = require('expo-modules-core');\nCore.requireNativeModule('Camera');",
+    "import { requireNativeModule } from './wrapper';\nimport * as Core from 'expo';\nCore.requireNativeModule('Camera');",
+  ]) {
+    assert.deepEqual(scanJsSource(source).facts.map(({ channel, mechanism }) => [channel, mechanism ?? null]),
+      [['Camera', 'expo']], source);
+  }
+  // 출처를 모르거나 그 API의 모듈이 아닌 객체의 속성은 링크 수와 무관하게 읽지 않는다 — 사실 없이 센다.
+  for (const source of [
+    'foo.NativeModules.Camera.open();',
+    'foo.bar.NativeModules.Camera.open();',
+    'this.NativeModules.Camera.open();',
+    "require('./mock').NativeModules.Camera.open();",
+    "jest.requireActual('react-native').NativeModules.Camera.open();",
+    "import * as Shim from './shim';\nShim.NativeModules.Camera.open();",
+    "import * as RN from 'react-native';\nfunction f(RN) { return RN.NativeModules.Camera.open(); }",
+    "foo.TurboModuleRegistry.get('Camera');",
+    "foo.bar.TurboModuleRegistry.get('Camera');",
+    "foo.requireNativeModule('Camera');",
+    "foo.bar.requireNativeModule('Camera');",
+    "foo.bar.requireNativeComponent('Grid');",
+    "import * as RN from 'react-native';\nRN.requireNativeModule('Camera');",
+    "function require(name) { return mocks[name]; }\nrequire('react-native').NativeModules.Camera.open();",
+    "import * as RN from 'react-native';\nfoo.RN.NativeModules.Camera.open();",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual(scan.facts, [], source);
+    assert.equal(scan.counts.untracedApiAccesses, 1, source);
+  }
+  // 대입 대상은 읽기가 아니다.
+  assert.equal(scanJsSource('foo.NativeModules = mock;').counts.untracedApiAccesses, 0);
+});
+
+test('속성 위치의 이름은 파일 바인딩·별칭 import가 아니다', () => {
+  // 전에는 앞 링크 수가 홀수면 obj.Cam이 파일 바인딩 Cam으로, a.b.load가 Expo 조회 별칭으로 읽혀 거짓 사실이 생겼다.
+  const bound = scanJsSource("const Cam = requireNativeModule('Cam');\nobj.Cam.take();\na.b.Cam.take();\na.b.c.Cam.take();");
+  assert.deepEqual(bound.memberCalls, []);
+  assert.deepEqual(flatten("import { requireNativeModule as load } from 'expo';\na.load('X');\na.b.load('X');"), []);
 });

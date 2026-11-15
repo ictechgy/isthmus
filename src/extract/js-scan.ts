@@ -80,8 +80,11 @@ export interface JsScanCounts {
   readonly dynamicModuleNames: number;
   readonly dynamicComponentNames: number;
   readonly dynamicMethodNames: number;
-  /** 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`의 멤버 접근 수다. 레지스트리로 귀속하지 않는다. */
-  readonly importedNativeModulesAccesses: number;
+  /**
+   * 브리지 API로 읽지 않은 접근 수다 — 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`의 멤버 접근과,
+   * 그 API를 내보내는 모듈(react-native·Expo)로 추적되지 않는 객체의 속성으로 쓴 브리지 API 이름이다.
+   */
+  readonly untracedApiAccesses: number;
   /**
    * 인식한 모듈 식(`NativeModules.X`·조회 호출·레지스트리·조회 API 값)이 귀속 호출·추적 바인딩·export·원시값
    * 소비가 아닌 위치에 쓰여 스캔이 따라가지 않는 바인딩으로 넘어간 수다.
@@ -177,7 +180,7 @@ interface ScanContext {
     dynamicModuleNames: number;
     dynamicComponentNames: number;
     dynamicMethodNames: number;
-    importedNativeModulesAccesses: number;
+    untracedApiAccesses: number;
     escapedModuleReferences: number;
     untracedBindings: number;
   };
@@ -217,6 +220,8 @@ interface ScanContext {
    * 판정한다.
    */
   readonly requireSpecifiers: Map<string, string>;
+  /** `const X = require('spec')`처럼 초기값이 require 호출 하나인 이름의 specifier다(모듈 객체 판정용). */
+  readonly requireModules: Map<string, string>;
   /**
    * `const { P: local } = SOURCE`처럼 식별자 하나에서 구조 분해한 로컬 이름의 원천이다(속성 이름·원천 식별자·원천
    * 토큰 위치). `const { NativeModules } = RN`의 RN이 react-native 모듈 객체인지는 import가 뒤에 와도 알 수 있도록
@@ -308,7 +313,7 @@ function createBoundContext(source: string): ScanContext {
       dynamicModuleNames: 0,
       dynamicComponentNames: 0,
       dynamicMethodNames: 0,
-      importedNativeModulesAccesses: 0,
+      untracedApiAccesses: 0,
       escapedModuleReferences: 0,
       untracedBindings: 0,
     },
@@ -322,6 +327,7 @@ function createBoundContext(source: string): ScanContext {
     paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
     localNames: new Set(),
     requireSpecifiers: new Map(),
+    requireModules: new Map(),
     destructuredSources: new Map(),
     namespaceImports,
     reactNativeNamespaces: new Set([...namespaceImports].flatMap(([name, specifier]) =>
@@ -851,6 +857,9 @@ function collectDeclaration(context: ScanContext, start: number): number {
         const required = readRequireSpecifier(tokens, cursor + 1);
         if (required !== undefined) {
           context.requireSpecifiers.set(token.text, required);
+          if (endsExpression(tokens, cursor + 4) && !isShadowed(context, 'require', cursor + 1)) {
+            context.requireModules.set(token.text, required);
+          }
         }
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
@@ -1285,13 +1294,13 @@ function skipTypeArguments(
 /** 두 번째 순회: 브리지 API 호출·멤버 호출을 사실로 모은다. */
 function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>): void {
   const { tokens } = context;
-  const namespaces = context.reactNativeNamespaces;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (token.kind !== 'identifier') continue;
     const property = ['.', '?.'].includes(tokens[index - 1]?.text ?? '');
-    if (token.text === 'NativeModules' && property) {
-      index = collectNativeModulesAccess(context, index);
+    // 속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈일 때만 읽는다.
+    if (property && propertyApiNames.has(token.text)) {
+      index = collectPropertyApi(context, index);
       continue;
     }
     if (!property && (token.text === 'NativeModules' || nativeModulesAlias(context, token.text) ||
@@ -1307,13 +1316,8 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
       // 접근을 세어 문서 한계로 낸다 — 빈 결과가 청정으로 읽히지 않게.
       if (importedFromOtherModule(context, token.text, index) &&
         ['.', '?.', '['].includes(tokens[index + 1]?.text ?? '')) {
-        context.counts.importedNativeModulesAccesses++;
+        context.counts.untracedApiAccesses++;
       }
-      continue;
-    }
-    if (!property && ['.', '?.'].includes(tokens[index + 1]?.text ?? '') && tokens[index + 2]?.text === 'NativeModules' &&
-      isReactNativeNamespace(context, namespaces, token.text, index)) {
-      index = collectNativeModulesAccess(context, index + 2);
       continue;
     }
     if (token.text === 'TurboModuleRegistry') {
@@ -1347,7 +1351,8 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
     // `import { api as alias }`로 들어온 경계 API — 사실의 mechanism 판정은
     // 로컬 별칭이 아니라 원본 export 이름을 기준으로 한다. 같은 이름의
     // 매개변수가 가리는 구간에서는 import 바인딩이 적용되지 않는다.
-    const aliasedApi = isShadowed(context, token.text, index)
+    // 별칭은 로컬 import 이름이다 — 속성 자리(`obj.load`)의 같은 이름은 별칭이 아니다.
+    const aliasedApi = property || isShadowed(context, token.text, index)
       ? undefined
       : boundaryAliasOf(context, token.text);
     if (aliasedApi !== undefined && boundaryCallOpens(context, index)) {
@@ -1509,6 +1514,74 @@ function isPatternDeclarator(tokens: readonly JsToken[], index: number): boolean
   return false;
 }
 
+/** 속성 자리(`OBJ.NAME`)에서 읽는 브리지 API 이름이다. */
+const propertyApiNames = new Set([
+  'NativeModules', 'TurboModuleRegistry', ...moduleImportCalls, ...componentRequireCalls,
+]);
+
+/**
+ * 속성 자리(`OBJ.NAME`)의 브리지 API 이름을 읽는다.
+ *
+ * OBJ가 그 API를 내보내는 모듈 객체일 때만 API로 읽는다 — Expo 조회 API(`requireNativeModule` 계열·
+ * `requireNativeViewManager`)는 Expo 패키지, 나머지(`NativeModules`·`TurboModuleRegistry`·코어 컴포넌트 API)는
+ * react-native. 그 밖의 객체(출처 모름·다른 모듈·매개변수)의 같은 이름은 API로 단정하지 않고 사실 없이 센다.
+ */
+function collectPropertyApi(context: ScanContext, index: number): number {
+  const { tokens } = context;
+  const name = tokens[index]!.text;
+  const specifier = propertyBaseSpecifier(context, index);
+  const traced = specifier !== undefined &&
+    (expoApiCalls.has(name) ? expoSpecifierPattern.test(specifier) : specifier === 'react-native');
+  // 속성 자리(`.` 뒤)는 선언·패턴·키 이름이 될 수 없다 — 이름 자리는 대입·증감 대상뿐이다.
+  const after = tokens[index + 1]?.text ?? '';
+  const valueUse = !assignmentOperators.has(after) && !['++', '--'].includes(after) &&
+    !['++', '--'].includes(tokens[index - 3]?.text ?? '');
+  if (!traced) {
+    if (valueUse) context.counts.untracedApiAccesses++;
+    return index;
+  }
+  if (name === 'NativeModules') return collectNativeModulesAccess(context, index);
+  if (name === 'TurboModuleRegistry') {
+    const next = collectRegistryCall(context, index);
+    if (next === index && valueUse) noteModuleValue(context, index, index);
+    return next;
+  }
+  const kind = moduleImportCalls.has(name) ? 'module-import' : 'component-require';
+  if (!boundaryCallOpens(context, index)) {
+    if (kind === 'module-import' && valueUse) noteModuleValue(context, index, index);
+    return index;
+  }
+  return collectBoundaryCall(context, index, kind, name, true);
+}
+
+/**
+ * 속성 자리 토큰 앞 객체가 가리키는 모듈의 specifier다. 객체가 식별자 하나(react-native 모듈 객체, 네임스페이스
+ * import, `const X = require('spec')`)이거나 인라인 `require('spec')`일 때만 알고, 그 밖(더 긴 체인, 다른 호출의
+ * 결과, 매개변수가 가린 이름)은 undefined다.
+ */
+function propertyBaseSpecifier(context: ScanContext, index: number): string | undefined {
+  const { tokens } = context;
+  const base = tokens[index - 2];
+  const requireIsLocal = context.localNames.has('require');
+  if (base?.text === ')') {
+    const open = openingOf(tokens, index - 2);
+    const callee = open === undefined ? undefined : open - 1;
+    if (callee === undefined || tokens[callee]?.kind !== 'identifier' || tokens[callee]!.text !== 'require' ||
+      ['.', '?.'].includes(tokens[callee - 1]?.text ?? '') || requireIsLocal ||
+      isShadowed(context, 'require', callee)) {
+      return undefined;
+    }
+    return readRequireSpecifier(tokens, callee);
+  }
+  if (base?.kind !== 'identifier' || ['.', '?.'].includes(tokens[index - 3]?.text ?? '') ||
+    isShadowed(context, base.text, index - 2)) {
+    return undefined;
+  }
+  if (isReactNativeNamespace(context, context.reactNativeNamespaces, base.text, index - 2)) return 'react-native';
+  return context.namespaceImports.get(base.text) ??
+    (requireIsLocal ? undefined : context.requireModules.get(base.text));
+}
+
 /**
  * `NativeModules.N` 멤버 접근과 뒤따르는 메서드 호출을 처리한다.
  * 레지스트리 자체가 값으로 쓰이는 베어 `NativeModules`는 어느 모듈인지
@@ -1657,6 +1730,7 @@ function collectBoundaryCall(
   start: number,
   kind: 'module-import' | 'component-require',
   apiName: string,
+  viaModuleObject = false,
 ): number {
   const { tokens } = context;
   let open = start + 1;
@@ -1676,7 +1750,10 @@ function collectBoundaryCall(
   const bound: BoundName = dynamic
     ? { dynamicExpression: arg.expression }
     : { name: arg.value! };
-  const mechanism = mechanismOf(context, apiName, tokens[start]!.text, start);
+  // 그 API를 내보내는 모듈 객체를 거친 호출(`Core.requireNativeModule`)은 해석 경로가 객체로 정해진다.
+  const mechanism = viaModuleObject
+    ? (expoApiCalls.has(apiName) ? 'expo' : undefined)
+    : mechanismOf(context, apiName, tokens[start]!.text, start);
   context.facts.push({
     kind,
     channel: boundChannel(bound),
@@ -1794,12 +1871,17 @@ function recordDirectMethodCall(
 
 /**
  * 바인딩 식별자의 `M.foo()`·`M[expr]()` 멤버 호출을 후보로 기록한다.
- * 로컬 바인딩이나 import 바인딩이 없는 식별자는 모듈 근거가 없어 건너뛴다.
+ * 로컬 바인딩이나 import 바인딩이 없는 식별자는 모듈 근거가 없어 건너뛴다. 속성 자리(`obj.M`)의
+ * 이름은 바인딩 M이 아니다.
+ *
+ * `.` 뒤의 멤버 이름은 건너뛰지 않고 다음 순회가 읽게 한다 — 건너뛰면 `a.b.c` 체인의 이름이 링크 수의 홀짝에
+ * 따라 읽히거나 빠져, 속성 자리의 브리지 API 판정이 체인 길이에 좌우된다.
  */
 function collectBoundMemberCall(context: ScanContext, start: number): number {
   const { tokens } = context;
   const token = tokens[start]!;
-  const bound = !isShadowed(context, token.text, start) &&
+  const bound = !['.', '?.'].includes(tokens[start - 1]?.text ?? '') &&
+    !isShadowed(context, token.text, start) &&
     (context.bindings.has(token.text) ||
       context.importsByLocalName.has(token.text));
   const accessor = tokens[start + 1];
@@ -1826,8 +1908,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
   const method = tokens[start + 2];
   if (method === undefined) return start;
   if (method.kind === 'identifier' || method.kind === 'keyword') {
-    if (!isCallAt(tokens, start + 3)) return start + 2;
-    if (bound) {
+    if (bound && isCallAt(tokens, start + 3)) {
       context.memberCalls.push({
         ident: token.text,
         method: method.text,
@@ -1835,7 +1916,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
         token: method,
       });
     }
-    return start + 2;
+    return start + 1;
   }
   if (method.text === '[') {
     const arg = readArgument(context, start + 3);
@@ -2009,8 +2090,6 @@ const nonCallKeywords = new Set([
   'default', 'const', 'let', 'var', 'try', 'finally', 'break', 'continue', 'debugger',
 ]);
 
-/** 멤버 체인 시작을 찾을 때 거슬러 오르는 토큰 수 상한이다. 넘으면 판정하지 않고 추적을 벗어난 것으로 센다. */
-const MAX_CHAIN_LOOKBEHIND = 256;
 
 /** 같은 모듈을 가리키는 바인딩 값인지 본다. */
 function sameBoundName(left: BoundName | undefined, right: BoundName): boolean {
@@ -2191,38 +2270,15 @@ function isOperandEnd(token: JsToken | undefined): boolean {
 }
 
 /**
- * `index` 토큰이 끝에 오는 멤버 체인(`a.b(c)[d].NativeModules`)의 첫 토큰 위치다.
- *
- * 앞뒤 문맥 판정은 체인 전체를 한 식으로 보고 한다. 상한 안에서 시작을 찾지 못하거나 체인 모양이 아니면
- * undefined다.
+ * 인식한 모듈 식의 첫 토큰 위치다(앞뒤 문맥 판정은 식 전체를 기준으로 한다). 속성 자리 식은 앞 객체부터
+ * 시작한다 — collectPropertyApi는 객체가 식별자 하나이거나 인라인 `require('spec')`일 때만 API로 읽으므로 그
+ * 두 형태만 거슬러 오르면 된다. 짝을 찾지 못하면 undefined다.
  */
 function chainStart(tokens: readonly JsToken[], index: number): number | undefined {
-  let start = index;
-  while (['.', '?.'].includes(tokens[start - 1]?.text ?? '')) {
-    let cursor = start - 2;
-    while ([')', ']'].includes(tokens[cursor]?.text ?? '')) {
-      const open = openingOf(tokens, cursor);
-      if (open === undefined) return undefined;
-      const before = tokens[open - 1];
-      // 앞이 피연산자 끝(또는 `.` 뒤 키워드 메서드 이름)이 아니면 그룹 괄호다 — 그 괄호가 식의 시작이다.
-      if (before?.text === '?.') cursor = open - 2;
-      else if (isOperandEnd(before) ||
-        (before?.kind === 'keyword' && ['.', '?.'].includes(tokens[open - 2]?.text ?? ''))) {
-        cursor = open - 1;
-      } else {
-        return index - open > MAX_CHAIN_LOOKBEHIND ? undefined : open;
-      }
-      if (index - cursor > MAX_CHAIN_LOOKBEHIND) return undefined;
-    }
-    const base = tokens[cursor];
-    if (base === undefined || (base.kind !== 'identifier' && base.kind !== 'keyword' &&
-      base.kind !== 'string' && base.kind !== 'template' && base.kind !== 'number')) {
-      return undefined;
-    }
-    start = cursor;
-    if (index - start > MAX_CHAIN_LOOKBEHIND) return undefined;
-  }
-  return start;
+  if (!['.', '?.'].includes(tokens[index - 1]?.text ?? '')) return index;
+  if (tokens[index - 2]?.text !== ')') return index - 2;
+  const open = openingOf(tokens, index - 2);
+  return open === undefined ? undefined : open - 1;
 }
 
 /**
