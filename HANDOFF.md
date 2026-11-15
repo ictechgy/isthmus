@@ -34,6 +34,18 @@ _Last updated: 2026-11-15_
   스펙+수신 문서). 실제 앱 소스는 거의 항상 패키지를 import해 줄이 남는다(expo-haptics 14.1.4: 사실 동일, `0 …;
   lower bound because 7`). conformance 벡터·생산자 8곳은 이 줄을 참조하지 않고, 드리프트는 없다(생산자 7곳 current,
   schemagraph not-vendored). `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
+- 2026-11-15 같은 브랜치 후속(미푸시): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
+  회귀 테스트를 먼저 두고 변이 검사로 확인했다(CHANGELOG `[Unreleased]` `### Fixed`).
+  - `7f6eb19` 선언 초기값의 객체 리터럴·함수 본문 이름을 로컬 선언으로 기록하지 않는다 — import 없이 전역으로
+    읽는 파일의 NativeModules 사실 전체가 사라지던 문제. 타입 주석의 이름도 선언자로 읽지 않는다.
+  - `c66eee5` 선언이 문장 끝(ASI 줄바꿈, for 머리의 `)`, 블록 끝 `}`)에서 끝난다 — 세미콜론 없는 코드·for-of 뒤에서
+    첫 선언이 파일 끝까지 이어져 뒤의 바인딩·export가 수집되지 않던 문제(원래 후보 목록 밖, 같은 함수에서 발견).
+  - `42fd6fd` `import X, * as NS`의 default X를 잃지 않고, 두 네임스페이스 형태를 모두 인식한다.
+  - `98c4d03` 속성 자리 브리지 API 이름(`OBJ.NativeModules`·`OBJ.TurboModuleRegistry`·`OBJ.requireNativeModule(…)`)은
+    체인 길이가 아니라 OBJ가 그 API를 내보내는 모듈(react-native·Expo)인지로 판정한다. 그 밖의 객체는 사실 없이
+    `unattributed-js-native-modules:`로 센다(메시지 확장). 속성 자리 이름은 파일 바인딩·별칭으로 읽지 않아 홀수
+    체인 위치의 거짓 method-invoke·module-import가 없어졌다.
+  - expo-haptics 14.1.4 사실은 수정마다 바이트 단위로 같았다. 적대 입력 시간은 수정 전 트리와 같은 범위다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -45,15 +57,16 @@ _Last updated: 2026-11-15_
   필요하며 출력 계약 설계가 먼저다.
 - 새 공유 suite(열 인코딩, persistence 이름, limitation 접두사 목록): 생산자 8곳이 함께 바뀐다.
 - bridge 문서가 스캔한 target을 밝히는 선택 필드(`scannedTargets` 초안, GRAPH-EXCHANGE)의 생산자 합의.
-- extract-js 수집 공백(js-binding-scope 측정 중 발견, 기존 동작): `const`·`let`·`var` 초기값의 함수 본문
+- extract-js 거짓 사실(기존 동작, 우선순위 높음): 바인딩 지도가 파일 전역이라 서로 다른 함수 본문이 같은 이름을
+  다른 모듈에 묶으면 마지막 선언이 이긴다. `function A() { const M = NativeModules.A; M.x(); }`와
+  `function B() { const M = NativeModules.B; M.y(); }`가 한 파일에 있으면 A의 호출이 거짓 `B.x`로 귀속된다.
+  건전한 최소 수정 후보: 한 파일에서 같은 이름이 서로 다른 모듈에 묶이면 그 이름을 바인딩에서 빼고(호출은 미귀속,
+  초기값은 js-binding-scope로 셈) — 사실이 줄어드는 출력 변경이라 사용자 결정이 필요하다.
+- extract-js 수집 공백(기존 동작, 이번에 고치지 않음): `const`·`let`·`var` 초기값의 함수 본문
   (`const Screen = () => { … }`) 안 선언을 수집하지 않아 함수형 컴포넌트 안 `const M = NativeModules.X`의 호출이
   귀속되지 않고, 그 안의 `const { X } = NativeModules`는 module-import 사실도 내지 않는다. 지금은 js-binding-scope로
-  세지만, 수집을 고치면 사실이 늘어 `check --strict` 결과가 바뀔 수 있다.
-- extract-js 오인(기존 동작): 선언 초기값의 객체 리터럴(`const api = { cam: NativeModules.X }`)과 초기값 함수
-  본문의 `, NativeModules`를 구조 분해 로컬로 기록해, import 없이 전역으로 읽는 파일에서는 그 파일의
-  NativeModules 사실 전체가 사라진다(react-native에서 import한 파일은 영향 없음). 같은 계열로 `X.NativeModules.Y`
-  속성 경로는 앞 링크 수의 홀짝에 따라 읽히거나 빠지고(문서화된 형태는 RN 모듈 객체뿐), `import X, * as NS`는
-  import 목록에 NS만 default로 남는다(js-binding-scope 계수는 X와 NS를 모두 센다).
+  센다. 위 거짓 사실 문제 때문에 본문 선언을 파일 전역 지도에 넣는 수정은 건전하지 않다 — 형제 컴포넌트의 같은
+  이름(`const module = NativeModules.A`/`…B`)이 거짓 사실이 된다. 블록 범위 바인딩(선언 구간 안에서만 적용)이 먼저다.
 - 발행 workflow·npm provenance(외부 권한 필요), 파일별 커버리지 하한.
 
 ## 머지 뒤 바로 알아 둘 것
@@ -64,10 +77,14 @@ _Last updated: 2026-11-15_
   검증 기록이 생긴 뒤에만 올린다.
 - js-binding-scope 줄의 문구가 바뀌었다. 고정 문구 전체를 맞추던 사용처는 `js-binding-scope:` 접두사로 바꿔야 한다
   (저장소 안 사용처는 없다. `experiments/real-corpus/results`의 옛 문구는 0.7.0 실행 기록이라 그대로 둔다).
+  `unattributed-js-native-modules:`(미발행) 메시지도 추적되지 않는 객체의 속성 접근까지 설명하도록 바뀌었다.
+- extract-js 수정으로 사실이 늘거나 줄 수 있다: 세미콜론 없는 코드·for-of 뒤·import 없는 전역 NativeModules
+  파일은 사실이 늘고, 출처 모를 객체의 속성 API(`jest.requireActual('react-native').NativeModules.X` 포함)와 홀수
+  체인 위치의 거짓 귀속은 사라진다. `check --strict` 결과가 바뀔 수 있다.
 
 ## Resume Prompt
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
-검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 2026-11-15 js-binding-scope 측정(`057a133`)은
-브랜치 `ccr-37904670-hxdjsx`에만 있고 PR·머지 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와
-릴리스는 내가 고르기 전에 착수하지 마.
+검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 2026-11-15 js-binding-scope 측정(`057a133`)과
+그 후속 extract-js 수정(`7f6eb19`·`c66eee5`·`42fd6fd`·`98c4d03`)은 브랜치 `ccr-37904670-hxdjsx`에만 있고
+PR·머지 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
