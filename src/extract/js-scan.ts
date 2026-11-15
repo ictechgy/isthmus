@@ -1295,13 +1295,33 @@ function readArgument(
   };
 }
 
-/** `<...>` 타입 인수 구간을 건너뛰어 닫는 `>`의 인덱스를 돌려준다. */
-function skipTypeArguments(
+/** 타입 인수 구간을 찾을 때 읽는 토큰 수 상한이다. 넘으면 타입 인수로 보지 않는다(그 호출은 이탈로 센다). */
+const TYPE_ARGUMENTS_TOKEN_LIMIT = 512;
+
+/**
+ * 안쪽 괄호 밖(타입 인수 깊이 0의 괄호 바깥)에 있으면 타입 인수일 수 없는 토큰이다 — 논리·대입·산술·비교 연산과
+ * 문장 끝. `>>`·`>>>`는 이 판정에서 중첩 제네릭으로 읽지 않는다(이전 판정과 같은 결과를 유지한다).
+ */
+const typeArgumentStops = new Set([
+  ';', '&&', '||', '??', '==', '===', '!=', '!==', '<=', '>=', '!', '+', '*', '/', '%', '**', '++', '--',
+  '<<', '>>', '>>>', '?.', ...assignmentOperatorTexts(),
+]);
+
+/**
+ * `<...>` 타입 인수 구간을 건너뛰어 닫는 `>`의 인덱스를 돌려준다.
+ *
+ * 비교 연산의 `<`(`M.x < 1 && M.y < 2`)를 타입 인수로 잘못 열면 짝 `>`를 찾아 파일 끝까지 훑어, `<`가 많은
+ * 입력에서 이차 시간이 들었다. 타입 인수에 올 수 없는 토큰(안쪽 괄호 밖의 연산자·`;`, 짝 없는 닫는 괄호)이나
+ * 상한에서 멈춘다. 타입 인수로 올 수 있는 구간의 판정은 바뀌지 않는다.
+ */
+export function skipTypeArguments(
   tokens: readonly JsToken[],
   start: number,
 ): number | undefined {
   let depth = 0;
-  for (let index = start; index < tokens.length; index++) {
+  const brackets: string[] = [];
+  const limit = Math.min(tokens.length, start + TYPE_ARGUMENTS_TOKEN_LIMIT);
+  for (let index = start; index < limit; index++) {
     const text = tokens[index]!.text;
     if (text === '<') depth++;
     else if (text === '>') {
@@ -1309,9 +1329,20 @@ function skipTypeArguments(
       if (depth === 0) return index;
     } else if (depth === 0) {
       return undefined;
+    } else if (bracketPairs.has(text)) {
+      brackets.push(bracketPairs.get(text)!);
+    } else if (text === ')' || text === ']' || text === '}') {
+      if (brackets.pop() !== text) return undefined;
+    } else if (brackets.length === 0 && typeArgumentStops.has(text)) {
+      return undefined;
     }
   }
   return undefined;
+}
+
+/** 대입 연산자 원문이다. 선언 순서상 아래 범위 계수 절의 집합보다 먼저 쓰이므로 함수로 둔다. */
+function assignmentOperatorTexts(): string[] {
+  return ['=', '+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '>>>=', '&=', '|=', '^=', '&&=', '||=', '??='];
 }
 
 /** 두 번째 순회: 브리지 API 호출·멤버 호출을 사실로 모은다. */
@@ -2087,9 +2118,7 @@ function isShadowed(
 type ModuleValueUse = 'call' | 'tracked' | 'consumed' | 'escape';
 
 /** 대입 연산자다. 뒤에 오면 앞 식은 대입 대상이고, 괄호 안 깊이 0에 있으면 값이 다른 바인딩으로 넘어간다. */
-const assignmentOperators = new Set([
-  '=', '+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '>>>=', '&=', '|=', '^=', '&&=', '||=', '??=',
-]);
+const assignmentOperators = new Set(assignmentOperatorTexts());
 
 /** 앞에 오면 값을 원시값으로 바꿔 소비하는 연산자다. `!`는 단항일 때만이다(피연산자 뒤면 TS non-null). */
 const consumingPrefixes = new Set(['!', 'typeof', 'void', 'delete', 'in', '==', '===', '!=', '!==']);
@@ -2160,6 +2189,16 @@ function classifyModuleValue(
   return isValueConsumed(context, start, end) ? 'consumed' : 'escape';
 }
 
+/**
+ * 위치 `start`에서 호출·색인 인자가 시작하는지 본다 — `readArgument(…) !== undefined`와 같은 판정을 상수 시간에
+ * 한다. readArgument는 인자 전체를 훑고 원문을 잘라 정리하므로, 중첩된 `M[M[…]]`의 이름마다 부르면 이차 시간이
+ * 든다.
+ */
+function hasArgument(tokens: readonly JsToken[], start: number): boolean {
+  const token = tokens[start];
+  return token !== undefined && ![')', ',', ']', '}'].includes(token.text);
+}
+
 /** `value[k]` 접근(여는 `[` 위치 `open`)을 호출·소비·이탈로 분류한다. */
 function classifyBracketMember(
   context: ScanContext,
@@ -2170,7 +2209,7 @@ function classifyBracketMember(
   const close = findMatching(context.tokens, open, '[', ']');
   if (close === undefined) return 'escape';
   if (isCallAt(context.tokens, close + 1)) {
-    return callAttributed && readArgument(context, open + 1) !== undefined ? 'call' : 'escape';
+    return callAttributed && hasArgument(context.tokens, open + 1) ? 'call' : 'escape';
   }
   return isValueConsumed(context, start, close) ? 'consumed' : 'escape';
 }

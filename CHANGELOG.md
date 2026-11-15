@@ -137,6 +137,14 @@
   introduced earlier in this release also no longer runs to the end of the file on nested generics
   (`Map<string, Array<number>>`, whose `>>` is a single token), which had dropped every later binding.
 
+- `extract-js` stops looking for the end of type arguments at tokens that cannot occur in them (an
+  operator or `;` outside inner brackets, an unmatched closing bracket) and after 512 tokens. A comparison
+  such as `M.x < 1 && M.y < 2` used to be scanned to the end of the file for a closing `>`, which made
+  files with many comparisons take time quadratic in their length, and could pair with an unrelated `>`
+  later in the file so that `if (M.x < y) { z = a > (b) }` read `M.x` as a generic call. Type arguments that
+  can occur in a call are matched as before. Classifying `M[…]` accesses for `js-binding-scope:` no longer
+  rescans the bracket argument, which was quadratic for deeply nested accesses.
+
 ## [0.14.0] - 2026-11-03
 
 - `scripts/conformance-drift.mjs` compares producer checkouts' vendored conformance vectors

@@ -6,6 +6,7 @@ import {
   type ParamShadow,
   ParamShadowIndex,
   scanJsSource,
+  skipTypeArguments,
 } from './js-scan.ts';
 import type { JsToken } from './lexer.ts';
 import { tokenizeJsSource } from './lexer.ts';
@@ -1058,4 +1059,25 @@ test('타입 주석만 있는 선언은 문장 끝에서 끝나 다음 선언의
   const continued = scanJsSource("let value: Foo\n  | Bar = requireNativeModule('Haptics')\nvalue.impact()");
   assert.deepEqual([...continued.bindings.keys()], ['value']);
   assert.deepEqual(continued.memberCalls.map((call) => `${call.ident}.${call.method}`), ['value.impact']);
+});
+
+test('타입 인수 판정은 비교 연산의 `<`에서 파일 끝까지 훑지 않고, 타입 인수로 올 수 있는 구간은 그대로 닫는다', () => {
+  // `<`마다 짝 `>`를 파일 끝까지 찾으면 비교가 많은 입력에서 이차 시간이 들었다(리뷰 S2: 6,000줄 160KB에 수 초).
+  const comparisons = tokenizeJsSource('if (M.x < 1 && M.y < 2) {}\n'.repeat(2000));
+  const counted = countingArray(comparisons);
+  const first = comparisons.findIndex((token) => token.text === '<');
+  assert.equal(skipTypeArguments(counted.items, first), undefined);
+  assert.ok(counted.reads() <= 4, String(counted.reads()));
+  // 객체·함수·튜플 타입과 중첩 괄호가 든 타입 인수는 닫는 `>`를 찾는다.
+  const valid = tokenizeJsSource('load<A, { b: C; d: E[] }, (x: X) => Y | null>(name)');
+  const close = skipTypeArguments(valid, 1);
+  assert.equal(valid[close!]?.text, '>');
+  assert.equal(valid[close! + 1]?.text, '(');
+  // 상한(512토큰)을 넘는 타입 인수는 타입 인수로 보지 않는다 — 그 호출은 사실 없이 이탈로 센다.
+  const long = tokenizeJsSource(`load<${Array.from({ length: 300 }, (_, i) => `T${i}`).join(' | ')}>(name)`);
+  assert.equal(skipTypeArguments(long, 1), undefined);
+  assert.equal(scanJsSource(`requireNativeModule<${Array.from({ length: 300 }, (_, i) => `T${i}`).join(' | ')}>('Cam');`)
+    .counts.escapedModuleReferences, 1);
+  // 짝 없는 닫는 괄호를 지나 뒤쪽의 `>`·`(`를 짝으로 삼으면 비교가 제네릭 호출(`M.x<…>(b)`)로 읽혀 거짓 호출이 된다.
+  assert.deepEqual(scanJsSource("const M = requireNativeModule('M');\nif (M.x < y) { z = a > (b) }").memberCalls, []);
 });
