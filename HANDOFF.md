@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-09_
+_Last updated: 2026-11-15_
 
 현재 재개 정보다. 규칙은 [AGENTS.md](AGENTS.md), 이전 발행·검증 원장은
 [HANDOFF-HISTORY.md](HANDOFF-HISTORY.md)에 보존한다(2026-09-20 인계 원문은 그 파일 끝 절). 과거 Next Steps는
@@ -26,6 +26,14 @@ _Last updated: 2026-11-09_
   - persistence `case-folded-relations:` 한계와 3부 이름 규칙 명시
   - COMPATIBILITY 발행 상태·설치 예제 핀 정정과 그 핀의 자동 검사
   - 계약 표·README·스킬 현행화, git 2.45 미만에서도 맞는 lazy fetch 격리 테스트
+- 2026-11-15: extract-js `js-binding-scope:` 한계를 측정한다 — 브랜치 `ccr-37904670-hxdjsx`의 `057a133`
+  (미푸시·미머지·미발행, CHANGELOG `[Unreleased]`). 첫 수는 인식한 모듈 값이 귀속 호출·기록된 선언과 export·
+  원시값 소비 밖에서 쓰인 횟수, 뒤 절은 출처를 따라갈 수 없는 값의 입구(해석되지 않은 import, 네임스페이스
+  import, 값을 쓰는 `require()`, 동적 `import()`) 수다. 뒤 수가 0이 아니면 첫 수가 0이어도 하한으로 남기고, 둘 다
+  0일 때만 줄이 빠진다. 그런 입력(codegen 스펙만 스캔 등)에서는 `impact --strict`가 1→0으로 바뀔 수 있다(재현:
+  스펙+수신 문서). 실제 앱 소스는 거의 항상 패키지를 import해 줄이 남는다(expo-haptics 14.1.4: 사실 동일, `0 …;
+  lower bound because 7`). conformance 벡터·생산자 8곳은 이 줄을 참조하지 않고, 드리프트는 없다(생산자 7곳 current,
+  schemagraph not-vendored). `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -37,7 +45,15 @@ _Last updated: 2026-11-09_
   필요하며 출력 계약 설계가 먼저다.
 - 새 공유 suite(열 인코딩, persistence 이름, limitation 접두사 목록): 생산자 8곳이 함께 바뀐다.
 - bridge 문서가 스캔한 target을 밝히는 선택 필드(`scannedTargets` 초안, GRAPH-EXCHANGE)의 생산자 합의.
-- extract-js의 `js-binding-scope:` 한계는 측정하지 않고 항상 싣는다. 측정하려면 범위 밖 바인딩 계수가 필요하다.
+- extract-js 수집 공백(js-binding-scope 측정 중 발견, 기존 동작): `const`·`let`·`var` 초기값의 함수 본문
+  (`const Screen = () => { … }`) 안 선언을 수집하지 않아 함수형 컴포넌트 안 `const M = NativeModules.X`의 호출이
+  귀속되지 않고, 그 안의 `const { X } = NativeModules`는 module-import 사실도 내지 않는다. 지금은 js-binding-scope로
+  세지만, 수집을 고치면 사실이 늘어 `check --strict` 결과가 바뀔 수 있다.
+- extract-js 오인(기존 동작): 선언 초기값의 객체 리터럴(`const api = { cam: NativeModules.X }`)과 초기값 함수
+  본문의 `, NativeModules`를 구조 분해 로컬로 기록해, import 없이 전역으로 읽는 파일에서는 그 파일의
+  NativeModules 사실 전체가 사라진다(react-native에서 import한 파일은 영향 없음). 같은 계열로 `X.NativeModules.Y`
+  속성 경로는 앞 링크 수의 홀짝에 따라 읽히거나 빠지고(문서화된 형태는 RN 모듈 객체뿐), `import X, * as NS`는
+  import 목록에 NS만 default로 남는다(js-binding-scope 계수는 X와 NS를 모두 센다).
 - 발행 workflow·npm provenance(외부 권한 필요), 파일별 커버리지 하한.
 
 ## 머지 뒤 바로 알아 둘 것
@@ -46,9 +62,12 @@ _Last updated: 2026-11-09_
   전까지 실패한다(예상된 신호). 그 PR들은 같은 계열 검토 배치(각 저장소 브랜치 `ccr-37904670-hxdjsx`)로 열려 있다.
 - 다음 릴리스(0.15.0 후보)는 `[Unreleased]`를 발행한다. `compatibility.json` 생산자 핀은 공식 설치·cold-cache
   검증 기록이 생긴 뒤에만 올린다.
+- js-binding-scope 줄의 문구가 바뀌었다. 고정 문구 전체를 맞추던 사용처는 `js-binding-scope:` 접두사로 바꿔야 한다
+  (저장소 안 사용처는 없다. `experiments/real-corpus/results`의 옛 문구는 0.7.0 실행 기록이라 그대로 둔다).
 
 ## Resume Prompt
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
-검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 발행 여부는 npm registry로 확인하고, 위 후속
-후보와 릴리스는 내가 고르기 전에 착수하지 마.
+검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 2026-11-15 js-binding-scope 측정(`057a133`)은
+브랜치 `ccr-37904670-hxdjsx`에만 있고 PR·머지 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와
+릴리스는 내가 고르기 전에 착수하지 마.
