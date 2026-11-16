@@ -140,7 +140,10 @@
   and untraced objects. A property name is never read as a file binding or an import alias. Babel and TS
   CommonJS output is traced too: `X = _interopRequireDefault(require('react-native'))` (or `__importDefault`)
   makes `X.default` the react-native module object, and `_interopRequireWildcard`/`__importStar` make `X`
-  a namespace, so `_reactNative.default.NativeModules.Camera` keeps its facts. A bridge API call in property
+  a namespace, so `_reactNative.default.NativeModules.Camera` keeps its facts. Only react-native's default
+  export is a module object (the same rule as `import RN from 'react-native'`), so a lookup under the
+  default-interop `.default` of an ESM package such as expo-modules-core is counted like
+  `import Core from 'expo-modules-core'` instead of being read; 0.14.0 read it only at odd chain positions. A bridge API call in property
   position is no longer also counted as an unattributed package member call.
 
 - `extract-js` ends a type-annotated declaration without an initializer at the end of its statement.
@@ -158,8 +161,13 @@
   such as `M.x < 1 && M.y < 2` used to be scanned to the end of the file for a closing `>`, which made
   files with many comparisons take time quadratic in their length, and could pair with an unrelated `>`
   later in the file so that `if (M.x < y) { z = a > (b) }` read `M.x` as a generic call. Type arguments that
-  can occur in a call are matched as before. Classifying `M[…]` accesses for `js-binding-scope:` no longer
-  rescans the bracket argument, which was quadratic for deeply nested accesses.
+  can occur in a call are matched as before. A `>` inside an inner bracket closes only generics opened in
+  that bracket, so `if (M.x < f(a > (b)))` no longer reads `M.x` as a generic call (0.14.0 did), and
+  generic-call type arguments in an initializer (below) no longer pair `width < 320` with a `> (limit)` in a
+  later function body and swallow the statements in between. Classifying `M[…]` accesses for
+  `js-binding-scope:` no longer rescans the bracket argument, which was quadratic for deeply nested
+  accesses, and template literals are checked for bridge API names in one pass rather than once per
+  interpolation.
 
 - `extract-js` reads an `import` word as an import statement only when its clause (names, `{`, `}`, `,`,
   `*`) reaches a specifier string. `import.meta`, an object key `{ import: X }` and the word in JSX text

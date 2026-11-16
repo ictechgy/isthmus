@@ -1368,22 +1368,26 @@ export function skipTypeArguments(
   nestedShifts = false,
 ): number | undefined {
   let depth = 0;
-  const brackets: string[] = [];
+  // 안쪽 괄호마다 닫는 텍스트와 그 괄호를 연 시점의 제네릭 깊이다.
+  const brackets: { readonly close: string; readonly depth: number }[] = [];
   const limit = Math.min(tokens.length, start + TYPE_ARGUMENTS_TOKEN_LIMIT);
   for (let index = start; index < limit; index++) {
     const text = tokens[index]!.text;
     if (text === '<') depth++;
     else if (text === '>' || (nestedShifts && (text === '>>' || text === '>>>'))) {
-      // `nestedShifts`면 한 토큰인 `>>`·`>>>`가 중첩 제네릭을 두세 단계 닫는다.
+      // `nestedShifts`면 한 토큰인 `>>`·`>>>`가 중첩 제네릭을 두세 단계 닫는다. 안쪽 괄호 안의 `>`는 그 괄호 안에서
+      // 연 제네릭만 닫는다 — 밖에서 연 `<`를 닫으면(`a < f(b > (c))`, `w < 10 … { x > (y) }`) 타입 인수가 아니다.
       depth -= text.length;
+      if (depth < (brackets.at(-1)?.depth ?? 0)) return undefined;
       if (depth === 0) return index;
-      if (depth < 0) return undefined;
     } else if (depth === 0) {
       return undefined;
     } else if (bracketPairs.has(text)) {
-      brackets.push(bracketPairs.get(text)!);
+      brackets.push({ close: bracketPairs.get(text)!, depth });
     } else if (text === ')' || text === ']' || text === '}') {
-      if (brackets.pop() !== text) return undefined;
+      // 괄호는 그 안에서 연 제네릭을 모두 닫은 뒤에만 닫힌다.
+      const open = brackets.pop();
+      if (open?.close !== text || open.depth !== depth) return undefined;
     } else if (brackets.length === 0 && typeArgumentStops.has(text)) {
       return undefined;
     }
@@ -1711,14 +1715,16 @@ function propertyBaseSpecifier(context: ScanContext, index: number): string | un
     }
     return readRequireSpecifier(tokens, callee);
   }
-  // `X.default.NAME` — X가 기본 import 변환 결과면 `X.default`는 그 모듈의 기본 export다.
+  // `X.default.NAME` — X가 기본 import 변환 결과면 `X.default`는 그 모듈의 기본 export다. 기본 export가 모듈 객체인
+  // 것은 react-native뿐이다(`import RN from 'react-native'`와 같은 규칙). ESM으로 빌드된 패키지(expo-modules-core 등)는
+  // `.default`가 실제 기본 export라 그 아래 이름을 API로 읽지 않는다 — `import Core from '…'`처럼 출처 모름으로 센다.
   if (base?.text === 'default' && ['.', '?.'].includes(tokens[index - 3]?.text ?? '')) {
     const object = tokens[index - 4];
     if (object?.kind !== 'identifier' || ['.', '?.'].includes(tokens[index - 5]?.text ?? '') ||
       isShadowed(context, object.text, index - 4) || requireIsLocal) {
       return undefined;
     }
-    return context.interopDefaultModules.get(object.text);
+    return context.interopDefaultModules.get(object.text) === 'react-native' ? 'react-native' : undefined;
   }
   if (base?.kind !== 'identifier' || ['.', '?.'].includes(tokens[index - 3]?.text ?? '') ||
     isShadowed(context, base.text, index - 2)) {
@@ -2521,9 +2527,19 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
   }
 }
 
-/** 보간(`${…}`) 뒤에 브리지 API 이름이 나오는 템플릿 원문이다. 보간 본문과 뒤 리터럴을 가르지 않는다(넓게 센다). */
-const bridgeApiInInterpolation =
-  /\$\{[\s\S]*\b(?:NativeModules|TurboModuleRegistry|requireNativeModule|requireOptionalNativeModule|requireNativeViewManager|requireNativeComponent|codegenNativeComponent)\b/u;
+/** 브리지 API 이름이다. 겹치는 반복이 없어 입력 길이에 선형으로 찾는다. */
+const bridgeApiWord =
+  /\b(?:NativeModules|TurboModuleRegistry|requireNativeModule|requireOptionalNativeModule|requireNativeViewManager|requireNativeComponent|codegenNativeComponent)\b/u;
+
+/**
+ * 템플릿 원문에서 첫 보간(`${`) 뒤에 브리지 API 이름이 나오는지 본다. 보간 본문과 뒤 리터럴을 가르지 않는다(넓게
+ * 센다). `${`를 한 번 찾고 나머지를 한 번 훑는다 — `/\$\{[\s\S]*\bName\b/`는 `${`마다 끝까지 되짚어 보간이 많은
+ * 템플릿에서 이차였다.
+ */
+export function interpolationMentionsBridgeApi(text: string): boolean {
+  const start = text.indexOf('${');
+  return start !== -1 && bridgeApiWord.test(text.slice(start + 2));
+}
 
 /**
  * 출처를 스캔이 따라가지 못하는 값의 입구를 센다 — 네임스페이스 import, 값을 쓰는 `require()` 호출,
@@ -2536,7 +2552,7 @@ function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
-    if (token.kind === 'template' && token.value === undefined && bridgeApiInInterpolation.test(token.text)) {
+    if (token.kind === 'template' && token.value === undefined && interpolationMentionsBridgeApi(token.text)) {
       // 템플릿 보간은 토큰으로 나누지 않아 읽지 않는다 — 브리지 API를 언급하면 놓친 참조가 있을 수 있다.
       context.counts.untracedBindings++;
       continue;

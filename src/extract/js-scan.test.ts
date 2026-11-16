@@ -4,6 +4,7 @@ import {
   createBraceClauseTracker,
   findMatching,
   type ParamShadow,
+  interpolationMentionsBridgeApi,
   ParamShadowIndex,
   scanJsSource,
   skipTypeArguments,
@@ -1110,4 +1111,56 @@ test('import 문 판정의 경계 형태를 읽는다', () => {
   // 파일 끝에서 끝나는 타입 주석, 초기값의 `a < b >> (c)`(제네릭이 아닌 비교·시프트)도 뒤 선언자를 잃지 않는다.
   assert.deepEqual([...scanJsSource("const Cam = requireNativeModule('Cam')\nlet timer: Timer").bindings.keys()], ['Cam']);
   assert.deepEqual([...scanJsSource("const x = a < b >> (c), Cam = requireNativeModule('Cam');").bindings.keys()], ['Cam']);
+});
+
+test('비교 `<` 뒤 안쪽 괄호에 든 `>`를 타입 인수의 끝으로 짝짓지 않는다', () => {
+  // 재검토 S-A: 초기값의 제네릭 덩어리 건너뛰기가 `width < 320` 뒤 함수 본문 안의 `> (limit)`과 짝지어, 세미콜론
+  // 없는 코드의 뒤 문장(선언·재대입·export)을 삼켰다.
+  const screen = scanJsSource(
+    "const isSmall = width < 320\nfunction Screen() {\n  const Cam = requireNativeModule('Cam')\n  if (Cam.count() > (limit)) Cam.take()\n}\n");
+  assert.deepEqual(screen.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Cam.count', 'Cam.take']);
+  // 삼켜진 재대입이 바인딩을 지우지 못해 거짓 A.go가 생겼다.
+  const swap = scanJsSource('let M = NativeModules.A\nconst small = w < 10\nfunction swap() { M = NativeModules.B }\nif (x > (y)) {}\nM.go()\n');
+  assert.equal(swap.bindings.has('M'), false);
+  assert.deepEqual(swap.memberCalls, []);
+  const exported = scanJsSource(
+    "const Cam = requireNativeModule('Cam')\nconst tiny = size < 10\nexport default Cam\nexport function big(x) { return x > (1) }\n");
+  assert.deepEqual(exported.exports.defaultName, { name: 'Cam' });
+  // 호출 판정도 같다 — 인자 안의 `>`를 짝으로 `M.x<…>(b)`를 제네릭 호출로 읽던 거짓 호출(main부터)이 없다.
+  assert.deepEqual(scanJsSource('const M = NativeModules.A;\nif (M.x < f(a > (b))) {}').memberCalls, []);
+  assert.equal(skipTypeArguments(tokenizeJsSource('a < (b > c) > (d)'), 1), undefined);
+  // 괄호 안에서 연 제네릭이 닫히기 전에 그 괄호가 닫혀도 타입 인수가 아니다.
+  assert.equal(skipTypeArguments(tokenizeJsSource('f < (b < c) > > (d)'), 1), undefined);
+  // 안쪽 괄호 안에서 열고 닫은 제네릭은 그대로 타입 인수다.
+  const nested = tokenizeJsSource('load<{ a: Array<string> }, (x: Map<K, V>) => void>(name)');
+  assert.equal(nested[skipTypeArguments(nested, 1)! + 1]?.text, '(');
+});
+
+test('템플릿 보간의 브리지 API 언급은 템플릿 길이에 선형으로 찾는다', () => {
+  // 재검토 S-B: `/\$\{[\s\S]*\bName\b/`는 `${`마다 끝까지 되짚어 보간이 많은 템플릿에서 이차였다(4만 개 약 9초).
+  // 시간 대신 읽은 글자 수로 잰다 — 원문 전체를 문자열로 바꿔 정규식에 넘기면 셀 수 없으므로 막는다.
+  const text = '`' + '${a} '.repeat(40_000) + '`';
+  let reads = 0;
+  const refuse = () => { throw new Error('the whole template must not be scanned as one string'); };
+  const counted = {
+    toString: refuse,
+    valueOf: refuse,
+    [Symbol.toPrimitive]: refuse,
+    indexOf(search: string, position = 0) {
+      const found = text.indexOf(search, position);
+      reads += (found === -1 ? text.length : found + search.length) - position;
+      return found;
+    },
+    slice(from?: number, to?: number) {
+      const part = text.slice(from, to);
+      reads += part.length;
+      return part;
+    },
+    get length() { return text.length; },
+  };
+  assert.equal(interpolationMentionsBridgeApi(counted as unknown as string), false);
+  assert.ok(reads <= 2 * text.length, `character reads ${reads} for ${text.length} characters`);
+  assert.equal(interpolationMentionsBridgeApi('`${a} ${NativeModules.Camera.getName()}`'), true);
+  assert.equal(interpolationMentionsBridgeApi('`NativeModules ${a}`'), false);
+  assert.equal(scanJsSource('const s = `${NativeModules.Camera.getName()}`').counts.untracedBindings, 1);
 });

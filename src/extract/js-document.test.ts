@@ -414,10 +414,19 @@ test('Babel 기본 import 변환(_interopRequireDefault)의 .default.NativeModul
       [['module-import', 'Camera', null], ['method-invoke', 'Camera', 'open']], source);
     assert.ok(!document.limitations.some((line) => line.startsWith('unattributed-js-native-modules:')), source);
   }
-  // 다른 모듈의 interop 결과는 react-native가 아니다.
-  const other = assemble({ 'src/a.js': "var _shim = _interopRequireDefault(require('./shim'));\n_shim.default.NativeModules.Camera.open();\n" });
-  assert.deepEqual(other.facts, []);
-  assert.ok(other.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')));
+  // 다른 모듈의 interop 결과는 react-native가 아니다. 기본 export가 모듈 객체인 것은 react-native뿐이라, Expo 패키지의
+  // 기본 변환 `.default` 아래 조회도 ES 기본 import(`import Core from 'expo-modules-core'`)처럼 읽지 않고 센다.
+  for (const source of [
+    "var _shim = _interopRequireDefault(require('./shim'));\n_shim.default.NativeModules.Camera.open();\n",
+    "var _core = _interopRequireDefault(require('expo-modules-core'));\n_core.default.requireNativeModule('Camera');\n",
+  ]) {
+    const other = assemble({ 'src/a.js': source });
+    assert.deepEqual(other.facts, [], source);
+    assert.ok(other.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')), source);
+  }
+  // Expo 패키지의 네임스페이스 변환은 모듈 객체다.
+  const wildcard = assemble({ 'src/a.js': "var _core = _interopRequireWildcard(require('expo-modules-core'));\n_core.requireNativeModule('Camera');\n" });
+  assert.deepEqual(wildcard.facts.map(({ channel, mechanism }) => [channel, mechanism ?? null]), [['Camera', 'expo']]);
 });
 
 test('속성 자리 브리지 API 호출은 패키지 멤버 호출로 겹쳐 세지 않는다', () => {

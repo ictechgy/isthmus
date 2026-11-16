@@ -436,10 +436,11 @@ import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조
 속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
 `TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
 인라인 `require('react-native')`, Babel·TS 변환의 `_interopRequireWildcard`·`__importStar` 결과와
-`_interopRequireDefault`·`__importDefault` 결과의 `.default`), Expo 조회 API(`requireNativeModule` 계열·
-`requireNativeViewManager`)는 Expo 패키지의 네임스페이스 import·`require` 바인딩·인라인 `require`이며 이 경로는
-`mechanism: "expo"`다. 이렇게 읽거나 센 호출은 패키지 멤버 호출 계수(`unattributed-js-package-calls:`)에 다시 넣지
-않는다. 출처를 모르는
+`_interopRequireDefault`·`__importDefault` 결과의 `.default` — 기본 export가 모듈 객체인 것은 react-native뿐이므로 다른
+패키지의 기본 변환 `.default` 아래 이름은 ES 기본 import처럼 출처 모름으로 센다), Expo 조회 API(`requireNativeModule` 계열·
+`requireNativeViewManager`)는 Expo 패키지의 네임스페이스 import·`require` 바인딩·인라인 `require`·네임스페이스 변환
+결과이며 이 경로는 `mechanism: "expo"`다. 이렇게 읽거나 센 호출은 패키지 멤버 호출 계수
+(`unattributed-js-package-calls:`)에 다시 넣지 않는다. 출처를 모르는
 객체(`foo.NativeModules`, 더 긴 체인, 다른 호출의 결과, 다른 모듈의 네임스페이스, 매개변수가 가린 이름)의 같은
 이름은 API로 읽지 않고 그 접근 수(대입 대상 제외)를 같은 `unattributed-js-native-modules:` 한계로 센다. 이 판정은
 앞 체인 길이와 무관하다. 속성 자리의 이름은 파일 바인딩·별칭 import로도 읽지 않는다(`obj.Camera.take()`의 Camera는
