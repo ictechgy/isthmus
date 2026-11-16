@@ -4,8 +4,10 @@ import {
   createBraceClauseTracker,
   findMatching,
   type ParamShadow,
+  interpolationMentionsBridgeApi,
   ParamShadowIndex,
   scanJsSource,
+  skipTypeArguments,
 } from './js-scan.ts';
 import type { JsToken } from './lexer.ts';
 import { tokenizeJsSource } from './lexer.ts';
@@ -754,4 +756,411 @@ test('react-native 모듈 객체에서 구조 분해한 NativeModules도 레지�
   ]) {
     assert.deepEqual(flatten(source), [], source);
   }
+});
+
+test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로 센다', () => {
+  // 귀속되는 멤버 호출, 스캔이 기록한 선언·export, 값이 원시값으로 소비되는 존재 검사·비교·typeof·대입 대상은
+  // 모듈 값을 다른 바인딩으로 넘기지 않는다.
+  for (const source of [
+    'NativeModules.Cam.take();',
+    'NativeModules.Cam?.take();',
+    "NativeModules['Cam'].take();",
+    "TurboModuleRegistry.getEnforcing<Spec>('Cam').take();",
+    "requireNativeModule('Cam')?.['take']();",
+    'const Cam = NativeModules.Cam;',
+    'export default NativeModules.Cam;',
+    'module.exports = NativeModules.Cam;',
+    "exports.Cam = requireNativeModule('Cam');",
+    "export const Cam = TurboModuleRegistry.get('Cam');",
+    'const { Cam } = NativeModules;',
+    'if (NativeModules.Cam) {}',
+    'if (!NativeModules.Cam.take) {}',
+    "if (typeof NativeModules.Cam.take === 'function' && NativeModules.Cam.ready) {}",
+    'const ok = NativeModules.Cam != null;',
+    'const ok = null !== NativeModules.Cam;',
+    'const label = NativeModules.Cam ? 1 : 2;',
+    'NativeModules.Cam && NativeModules.Cam.take();',
+    'while ((NativeModules.Cam || NativeModules.Other)) {}',
+    "if ('take' in NativeModules.Cam) {}",
+    'NativeModules.Cam.take = mock;',
+    'delete NativeModules.Cam.take;',
+    "requireNativeModule('Cam');",
+    "function warm() { requireNativeModule('Cam') }",
+    "const ready = true\nrequireNativeModule('Cam')\nstart()",
+    'NativeModules.Cam.take;',
+    "import { TurboModuleRegistry, NativeModules } from 'react-native';",
+    "const { requireNativeModule } = require('expo-modules-core');",
+    'jest.mock(name, () => ({ requireNativeModule: mock }));',
+    'export { requireNativeModule };',
+  ]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 0, source);
+  }
+  // 인자·반환·인스턴스 상태·객체 값·대체값 연산·구조 분해·메서드 값 추출·귀속하지 않는 호출 형태·재대입·
+  // 레지스트리와 조회 API 자체를 다른 이름에 담는 것은 하나씩 센다.
+  for (const source of [
+    'register(NativeModules.Cam);',
+    "() => requireNativeModule('Cam');",
+    'function load() { return NativeModules.Cam; }',
+    'this.cam = NativeModules.Cam;',
+    'const holder = [NativeModules.Cam];',
+    'const Cam = NativeModules.Cam || {};',
+    'const { take } = NativeModules.Cam;',
+    'const take = NativeModules.Cam.take;',
+    'NativeModules.Cam.take.call(null);',
+    "NativeModules.Cam['take']();",
+    "NativeModules?.['Cam'].take();",
+    'NativeModules.Cam?.();',
+    'if (NativeModules.Cam || [) {}',
+    'NativeModules.Cam!.take();',
+    '(NativeModules.Cam as Spec).take();',
+    'NativeModules.Cam?.take?.();',
+    'let Cam = NativeModules.Cam;\nCam = other;',
+    'new NativeEventEmitter(NativeModules.Cam);',
+    'if ((cached = NativeModules.Cam)) {}',
+    "const Cam = TurboModuleRegistry.get<Spec>('Cam') as Spec | null;",
+    "const Cam = await requireNativeModule('Cam');",
+    'const Screen = () => { const Cam = NativeModules.Cam; };',
+    "import { NativeModules as NM } from 'react-native';\nconst { Cam } = NM;",
+    'const registry = TurboModuleRegistry;',
+    'const load = requireNativeModule;',
+    "import * as RN from 'react-native';\nconst modules = RN.NativeModules;",
+    "import * as Core from 'expo-modules-core';\nconst load = Core.requireNativeModule;",
+    // 조건 괄호 안이어도 값이나 그 괄호 그룹이 멤버 호출·호출의 대상이면 귀속되지 않는 호출이다.
+    'if ((NativeModules.Cam as Spec).take()) {}',
+    'if (NativeModules.Cam!.take()) {}',
+    'if (!NativeModules.Cam.settings.read()) {}',
+    'if (get(NativeModules.Cam)) {}',
+    'const a = maybe!\nNativeModules.Cam?.take?.();',
+  ]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 1, source);
+  }
+});
+
+test('모듈 바인딩 이름의 값 사용 중 추적을 벗어난 것만 이름별로 센다', () => {
+  const scan = scanJsSource([
+    "import Local from './local';",
+    "import Pkg from 'package';",
+    "const Cam = requireNativeModule('Cam');",
+    'Cam.take();',
+    'Cam?.[method]();',
+    'if (Cam && typeof Cam.take === "function") Cam.take();',
+    'const Alias = Cam;',
+    'export default Cam;',
+    'export { Cam as Camera };',
+    'register(Cam, Local, Pkg);',
+    'const { take } = Local;',
+    'function shadow(Cam) { return Cam; }',
+    'const holder = { Cam: 1, other: Local };',
+    // `=` 재대입은 바인딩 자체를 지운다. 복합 대입의 대상과 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다.
+    'Cam ||= replacement;',
+    'const later = () => { const Cam = other; };',
+    // 문장 단독으로 버려지는 값은 넘어가지 않지만, `=` 뒤 `{ Cam }`은 블록이 아니라 객체 리터럴이다.
+    'Cam;',
+    'const wrap = { Cam };',
+  ].join('\n'));
+  // Cam: register 인자·객체 단축 속성 2회. Local: register 인자·구조 분해 원천·객체 값 3회. 패키지 import는 해석될 수
+  // 없어 후보가 아니다.
+  assert.deepEqual(Object.fromEntries(scan.identifierEscapes), { Cam: 2, Local: 3 });
+});
+
+test('출처를 따라가지 못하는 import 밖 값의 입구를 센다', () => {
+  // ES import 바인딩의 해석은 문서 단계가 한다. 스캐너는 네임스페이스 import·require·동적 import의 입구만 센다.
+  for (const [source, expected] of [
+    ["import * as Lib from 'lib';", 1],
+    ["import type * as Types from 'lib';", 0],
+    ["import Lib from 'lib';", 0],
+    // specifier에 닿지 못한 import는 무엇을 들이는지 알 수 없어 센다(리뷰 S3a).
+    ['import Lib', 1],
+    // `import X, * as NS`의 X는 import 목록에 남아 문서 단계가 센다 — 스캐너는 네임스페이스 NS만 센다.
+    ["import Main, * as Lib from 'lib';", 1],
+    ['import * as', 1],
+    ["import * as Lib from 'lib';\nconst url = import.meta.url;", 1],
+    ["const Lib = require('lib');", 1],
+    ["const { a, b: c } = require('lib');", 1],
+    ["const { NativeModules } = require('react-native');", 0],
+    ["const { NativeModules: NM } = require('react-native');", 1],
+    ["const { requireNativeModule, TurboModuleRegistry } = require('expo');", 0],
+    ["require('./setup');", 0],
+    ["const ready = true\nrequire('./setup')\nstart()", 0],
+    ["register(require('./camera'));", 1],
+    ["const broken = require('./camera'", 1],
+    ["const Cam = require('react-native').NativeModules.Cam;", 0],
+    ["const mod = await import('./camera');", 1],
+    ["function f(require) { return require('x'); }", 0],
+    ["const require = createRequire(url);\nconst x = require('x');", 0],
+    ['loader.require("x");', 0],
+  ] as const) {
+    assert.equal(scanJsSource(source).counts.untracedBindings, expected, source);
+  }
+});
+
+test('쓰임을 판정할 수 없는 모듈 식은 추적한다고 단정하지 않고 센다', () => {
+  // 식의 끝(닫는 괄호)을 찾지 못하면 뒤 문맥을 볼 수 없다.
+  for (const source of ["requireNativeModule('Cam'", "NativeModules['Cam'", "TurboModuleRegistry.get('Cam'"]) {
+    assert.equal(scanJsSource(source).counts.escapedModuleReferences, 1, source);
+  }
+});
+
+test('선언 초기값의 객체 리터럴·함수 본문 안 이름은 로컬 선언으로 기록하지 않는다', () => {
+  const torch = [
+    { kind: 'module-import', channel: 'Torch', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Torch', method: 'on', dynamic: false },
+  ];
+  // 초기값 안의 `NativeModules`를 구조 분해 로컬로 오인하면 import 없이 전역으로 읽는 파일의 레지스트리 사실이
+  // 전부 사라졌다. 타입 주석의 쉼표 뒤 이름도 선언자가 아니다.
+  for (const source of [
+    'const api = { cam: NativeModules.Cam };\nNativeModules.Torch.on();',
+    'const api = { NativeModules };\nNativeModules.Torch.on();',
+    'const api = register({ first: 1, NativeModules });\nNativeModules.Torch.on();',
+    'const run = () => { load(first, NativeModules.Cam); };\nNativeModules.Torch.on();',
+    'const table: Map<string, NativeModules> = new Map();\nNativeModules.Torch.on();',
+    'for (const key in { NativeModules }) {}\nNativeModules.Torch.on();',
+    'for (const item of [{ NativeModules }]) {}\nNativeModules.Torch.on();',
+  ]) {
+    assert.deepEqual(flatten(source).filter((fact) => fact.channel === 'Torch'), torch, source);
+  }
+  // 구조 분해 선언 패턴(배열 패턴 안의 객체 패턴 포함)과 로컬 shim 선언은 그대로 로컬이다.
+  for (const source of [
+    'const { NativeModules } = shim;\nNativeModules.Torch.on();',
+    'const [{ NativeModules }] = shims;\nNativeModules.Torch.on();',
+    'const NativeModules = { Torch: mock };\nNativeModules.Torch.on();',
+    'const first = 1, { NativeModules } = shim;\nNativeModules.Torch.on();',
+  ]) {
+    assert.deepEqual(flatten(source), [], source);
+  }
+  // 초기값 객체의 키는 Expo API 이름의 로컬 선언이 아니다 — 가져오기·선언 없는 호출은 expo로 읽는다.
+  const mechanisms = scanJsSource("const mocks = { requireNativeModule: fake };\nrequireNativeModule('Cam');")
+    .facts.map((fact) => fact.mechanism);
+  assert.deepEqual(mechanisms, ['expo']);
+});
+
+test('선언 수집은 문장 끝에서 멈춰 뒤 선언을 삼키지 않는다', () => {
+  // 세미콜론 없는 줄 끝(ASI)·for 머리의 닫는 괄호·감싼 블록의 끝에서 선언이 끝난다. 전에는 깊이 0의 `;`만
+  // 끝으로 봐서 첫 선언이 파일 끝까지 이어졌고, 뒤의 바인딩·export가 수집되지 않아 호출이 귀속되지 않았다.
+  for (const source of [
+    "const a = 1\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "let ready\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "const done = () => {}\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "for (const x of list) {}\nconst Cam = requireNativeModule('Cam');\nCam.take();",
+    "for (const key in table) use(key)\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "function f() { const a = 1 }\nconst Cam = requireNativeModule('Cam');\nCam.take();",
+    "function f() { const a = 1 } const Cam = requireNativeModule('Cam'); Cam.take();",
+    // 앞 줄이 TS non-null(`maybe!`)·`as const`로 끝나도 피연산자의 끝이다(리뷰 N1).
+    "const a = maybe!\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "const c = { k: 1 } as const\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual([...scan.bindings.keys()], ['Cam'], source);
+    assert.deepEqual(scan.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Cam.take'], source);
+  }
+  assert.deepEqual(
+    scanJsSource("const label = 'x'\nconst Cam = requireNativeModule('Cam')\nexport default Cam").exports.defaultName,
+    { name: 'Cam' },
+  );
+  // 다음 줄이 식이나 선언 목록을 잇는 토큰으로 시작하면 같은 선언이다 — 뒤 선언자까지 그대로 묶는다.
+  const continued = scanJsSource([
+    'const first = 1',
+    "  , Cam = requireNativeModule('Cam')",
+    'const Other = base',
+    '  .child',
+    'const Picked = ready',
+    '  ? first',
+    "  : Other, Second = requireNativeModule('Second')",
+    'Cam.take()',
+  ].join('\n'));
+  assert.deepEqual([...continued.bindings.keys()], ['Cam', 'Second']);
+  assert.deepEqual(continued.memberCalls.map((call) => call.ident), ['Cam']);
+});
+
+test('default와 네임스페이스를 함께 가져오는 import는 default 이름을 그대로 남긴다', () => {
+  // 전에는 `as`가 앞 default 항목의 이름을 네임스페이스 이름으로 바꿔 default 이름이 사라지고
+  // 네임스페이스가 default로 기록됐다.
+  const scan = scanJsSource("import Main, * as Lib from './lib';\nMain.go();\nLib.go();");
+  assert.deepEqual(scan.imports.map((entry) => [entry.localName, entry.specifier, entry.exportedName]),
+    [['Main', './lib', 'default']]);
+  assert.deepEqual(scan.memberCalls.map((call) => call.ident), ['Main']);
+  // react-native에서 함께 가져온 두 이름은 모두 모듈 객체다.
+  assert.deepEqual(
+    flatten("import RN, * as All from 'react-native';\nAll.NativeModules.Camera.open();\nRN.NativeModules.Torch.on();"),
+    [
+      { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+      { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+      { kind: 'module-import', channel: 'Torch', method: undefined, dynamic: false },
+      { kind: 'method-invoke', channel: 'Torch', method: 'on', dynamic: false },
+    ],
+  );
+});
+
+test('속성 위치의 브리지 API 이름은 앞 링크 수와 무관하게 객체가 그 API의 모듈일 때만 읽는다', () => {
+  const camera = [
+    { kind: 'module-import', channel: 'Camera', method: undefined, dynamic: false },
+    { kind: 'method-invoke', channel: 'Camera', method: 'open', dynamic: false },
+  ];
+  // react-native 모듈 객체(네임스페이스·default import·require 바인딩·인라인 require)를 거친 레지스트리는 읽는다.
+  for (const source of [
+    "import * as RN from 'react-native';\nRN.NativeModules.Camera.open();",
+    "import RN from 'react-native';\nRN.NativeModules.Camera.open();",
+    "const RN = require('react-native');\nRN.NativeModules.Camera.open();",
+    "require('react-native').NativeModules.Camera.open();",
+  ]) {
+    assert.deepEqual(flatten(source), camera, source);
+  }
+  // 그 API를 내보내는 모듈 객체를 거치면 TurboModuleRegistry·조회·컴포넌트 API도 같은 규칙으로 읽는다.
+  assert.deepEqual(flatten("import * as RN from 'react-native';\nRN.TurboModuleRegistry.getEnforcing('Camera').open();"), camera);
+  const expo = scanJsSource("import * as Core from 'expo-modules-core';\nCore.requireNativeModule('Camera').open();");
+  assert.deepEqual(expo.facts.map(({ kind, channel, mechanism }) => [kind, channel, mechanism ?? null]),
+    [['module-import', 'Camera', 'expo'], ['method-invoke', 'Camera', null]]);
+  assert.deepEqual(flatten("require('react-native').requireNativeComponent('Grid');"),
+    [{ kind: 'component-require', channel: 'Grid', method: undefined, dynamic: false }]);
+  // Expo 모듈 객체를 거친 조회는 같은 파일의 동명 래퍼 import와 무관하게 expo 경로다.
+  for (const source of [
+    "const Core = require('expo-modules-core');\nCore.requireNativeModule('Camera');",
+    "import { requireNativeModule } from './wrapper';\nimport * as Core from 'expo';\nCore.requireNativeModule('Camera');",
+  ]) {
+    assert.deepEqual(scanJsSource(source).facts.map(({ channel, mechanism }) => [channel, mechanism ?? null]),
+      [['Camera', 'expo']], source);
+  }
+  // 출처를 모르거나 그 API의 모듈이 아닌 객체의 속성은 링크 수와 무관하게 읽지 않는다 — 사실 없이 센다.
+  for (const source of [
+    'foo.NativeModules.Camera.open();',
+    'foo.bar.NativeModules.Camera.open();',
+    'this.NativeModules.Camera.open();',
+    "require('./mock').NativeModules.Camera.open();",
+    "jest.requireActual('react-native').NativeModules.Camera.open();",
+    "import * as Shim from './shim';\nShim.NativeModules.Camera.open();",
+    "import * as RN from 'react-native';\nfunction f(RN) { return RN.NativeModules.Camera.open(); }",
+    "foo.TurboModuleRegistry.get('Camera');",
+    "foo.bar.TurboModuleRegistry.get('Camera');",
+    "foo.requireNativeModule('Camera');",
+    "foo.bar.requireNativeModule('Camera');",
+    "foo.bar.requireNativeComponent('Grid');",
+    "import * as RN from 'react-native';\nRN.requireNativeModule('Camera');",
+    "function require(name) { return mocks[name]; }\nrequire('react-native').NativeModules.Camera.open();",
+    "import * as RN from 'react-native';\nfoo.RN.NativeModules.Camera.open();",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual(scan.facts, [], source);
+    assert.equal(scan.counts.untracedApiAccesses, 1, source);
+  }
+  // 대입 대상은 읽기가 아니다.
+  assert.equal(scanJsSource('foo.NativeModules = mock;').counts.untracedApiAccesses, 0);
+});
+
+test('속성 위치의 이름은 파일 바인딩·별칭 import가 아니다', () => {
+  // 전에는 앞 링크 수가 홀수면 obj.Cam이 파일 바인딩 Cam으로, a.b.load가 Expo 조회 별칭으로 읽혀 거짓 사실이 생겼다.
+  const bound = scanJsSource("const Cam = requireNativeModule('Cam');\nobj.Cam.take();\na.b.Cam.take();\na.b.c.Cam.take();");
+  assert.deepEqual(bound.memberCalls, []);
+  assert.deepEqual(flatten("import { requireNativeModule as load } from 'expo';\na.load('X');\na.b.load('X');"), []);
+});
+
+test('타입 주석만 있는 선언은 문장 끝에서 끝나 다음 선언의 초기값을 가져가지 않는다', () => {
+  // 타입 주석 건너뛰기가 문장 끝을 몰라 다음 줄 선언의 `=`까지 읽고 앞 이름에 그 초기값을 묶었다 — 앞 이름의
+  // 호출이 거짓 method-invoke가 되고 뒤 이름의 호출은 귀속되지 않았다. 중첩 제네릭의 `>>`도 깊이를 닫지 못했다.
+  for (const source of [
+    "let timer: Timer\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { timer.cancel(); Haptics.impact() }",
+    "let pending: Promise<void> | null\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { pending.cancel(); Haptics.impact() }",
+    "let pending: Promise<void>\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { pending.cancel(); Haptics.impact() }",
+    "let handler: () => void\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { handler.cancel(); Haptics.impact() }",
+    "function g() { let t: Timer }\nconst Haptics = requireNativeModule('Haptics')\nfunction f() { t.cancel(); Haptics.impact() }",
+    "const table: Map<string, Array<number>> = new Map();\nconst Haptics = requireNativeModule('Haptics');\nfunction f() { table.cancel(); Haptics.impact() }",
+    "const deep: A<B<C<D>>> = make();\nconst Haptics = requireNativeModule('Haptics');\nfunction f() { deep.cancel(); Haptics.impact() }",
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual([...scan.bindings.keys()], ['Haptics'], source);
+    assert.deepEqual(scan.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Haptics.impact'], source);
+  }
+  // 다음 줄이 타입을 잇는 토큰이면 같은 주석이고, 그 뒤 초기값은 그 이름의 것이다.
+  const continued = scanJsSource("let value: Foo\n  | Bar = requireNativeModule('Haptics')\nvalue.impact()");
+  assert.deepEqual([...continued.bindings.keys()], ['value']);
+  assert.deepEqual(continued.memberCalls.map((call) => `${call.ident}.${call.method}`), ['value.impact']);
+});
+
+test('타입 인수 판정은 비교 연산의 `<`에서 파일 끝까지 훑지 않고, 타입 인수로 올 수 있는 구간은 그대로 닫는다', () => {
+  // `<`마다 짝 `>`를 파일 끝까지 찾으면 비교가 많은 입력에서 이차 시간이 들었다(리뷰 S2: 6,000줄 160KB에 수 초).
+  const comparisons = tokenizeJsSource('if (M.x < 1 && M.y < 2) {}\n'.repeat(2000));
+  const counted = countingArray(comparisons);
+  const first = comparisons.findIndex((token) => token.text === '<');
+  assert.equal(skipTypeArguments(counted.items, first), undefined);
+  assert.ok(counted.reads() <= 4, String(counted.reads()));
+  // 객체·함수·튜플 타입과 중첩 괄호가 든 타입 인수는 닫는 `>`를 찾는다.
+  const valid = tokenizeJsSource('load<A, { b: C; d: E[] }, (x: X) => Y | null>(name)');
+  const close = skipTypeArguments(valid, 1);
+  assert.equal(valid[close!]?.text, '>');
+  assert.equal(valid[close! + 1]?.text, '(');
+  // 상한(512토큰)을 넘는 타입 인수는 타입 인수로 보지 않는다 — 그 호출은 사실 없이 이탈로 센다.
+  const long = tokenizeJsSource(`load<${Array.from({ length: 300 }, (_, i) => `T${i}`).join(' | ')}>(name)`);
+  assert.equal(skipTypeArguments(long, 1), undefined);
+  assert.equal(scanJsSource(`requireNativeModule<${Array.from({ length: 300 }, (_, i) => `T${i}`).join(' | ')}>('Cam');`)
+    .counts.escapedModuleReferences, 1);
+  // 짝 없는 닫는 괄호를 지나 뒤쪽의 `>`·`(`를 짝으로 삼으면 비교가 제네릭 호출(`M.x<…>(b)`)로 읽혀 거짓 호출이 된다.
+  assert.deepEqual(scanJsSource("const M = requireNativeModule('M');\nif (M.x < y) { z = a > (b) }").memberCalls, []);
+});
+
+test('import 문 판정의 경계 형태를 읽는다', () => {
+  // 부작용 전용 import는 이름을 남기지 않고 뒤 선언을 그대로 수집한다.
+  const sideEffect = scanJsSource("import './polyfill';\nconst Cam = requireNativeModule('Cam');\nCam.take();");
+  assert.deepEqual(sideEffect.imports, []);
+  assert.deepEqual([...sideEffect.bindings.keys()], ['Cam']);
+  // TS `import X = require('spec')`는 X 하나의 default import이고, 그 require는 따로 세지 않는다.
+  const equals = scanJsSource("import Cam = require('./cam');\nCam.take();");
+  assert.deepEqual(equals.imports.map((entry) => [entry.localName, entry.specifier, entry.exportedName]),
+    [['Cam', './cam', 'default']]);
+  assert.equal(equals.counts.untracedBindings, 0);
+  // `import X = Namespace.Y`(TS 별칭)는 모듈 import가 아니다.
+  assert.deepEqual(scanJsSource('import Alias = Shapes.Polygon;').imports, []);
+  // 파일 끝에서 끝나는 타입 주석, 초기값의 `a < b >> (c)`(제네릭이 아닌 비교·시프트)도 뒤 선언자를 잃지 않는다.
+  assert.deepEqual([...scanJsSource("const Cam = requireNativeModule('Cam')\nlet timer: Timer").bindings.keys()], ['Cam']);
+  assert.deepEqual([...scanJsSource("const x = a < b >> (c), Cam = requireNativeModule('Cam');").bindings.keys()], ['Cam']);
+});
+
+test('비교 `<` 뒤 안쪽 괄호에 든 `>`를 타입 인수의 끝으로 짝짓지 않는다', () => {
+  // 재검토 S-A: 초기값의 제네릭 덩어리 건너뛰기가 `width < 320` 뒤 함수 본문 안의 `> (limit)`과 짝지어, 세미콜론
+  // 없는 코드의 뒤 문장(선언·재대입·export)을 삼켰다.
+  const screen = scanJsSource(
+    "const isSmall = width < 320\nfunction Screen() {\n  const Cam = requireNativeModule('Cam')\n  if (Cam.count() > (limit)) Cam.take()\n}\n");
+  assert.deepEqual(screen.memberCalls.map((call) => `${call.ident}.${call.method}`), ['Cam.count', 'Cam.take']);
+  // 삼켜진 재대입이 바인딩을 지우지 못해 거짓 A.go가 생겼다.
+  const swap = scanJsSource('let M = NativeModules.A\nconst small = w < 10\nfunction swap() { M = NativeModules.B }\nif (x > (y)) {}\nM.go()\n');
+  assert.equal(swap.bindings.has('M'), false);
+  assert.deepEqual(swap.memberCalls, []);
+  const exported = scanJsSource(
+    "const Cam = requireNativeModule('Cam')\nconst tiny = size < 10\nexport default Cam\nexport function big(x) { return x > (1) }\n");
+  assert.deepEqual(exported.exports.defaultName, { name: 'Cam' });
+  // 호출 판정도 같다 — 인자 안의 `>`를 짝으로 `M.x<…>(b)`를 제네릭 호출로 읽던 거짓 호출(main부터)이 없다.
+  assert.deepEqual(scanJsSource('const M = NativeModules.A;\nif (M.x < f(a > (b))) {}').memberCalls, []);
+  assert.equal(skipTypeArguments(tokenizeJsSource('a < (b > c) > (d)'), 1), undefined);
+  // 괄호 안에서 연 제네릭이 닫히기 전에 그 괄호가 닫혀도 타입 인수가 아니다.
+  assert.equal(skipTypeArguments(tokenizeJsSource('f < (b < c) > > (d)'), 1), undefined);
+  // 안쪽 괄호 안에서 열고 닫은 제네릭은 그대로 타입 인수다.
+  const nested = tokenizeJsSource('load<{ a: Array<string> }, (x: Map<K, V>) => void>(name)');
+  assert.equal(nested[skipTypeArguments(nested, 1)! + 1]?.text, '(');
+});
+
+test('템플릿 보간의 브리지 API 언급은 템플릿 길이에 선형으로 찾는다', () => {
+  // 재검토 S-B: `/\$\{[\s\S]*\bName\b/`는 `${`마다 끝까지 되짚어 보간이 많은 템플릿에서 이차였다(4만 개 약 9초).
+  // 시간 대신 읽은 글자 수로 잰다 — 원문 전체를 문자열로 바꿔 정규식에 넘기면 셀 수 없으므로 막는다.
+  const text = '`' + '${a} '.repeat(40_000) + '`';
+  let reads = 0;
+  const refuse = () => { throw new Error('the whole template must not be scanned as one string'); };
+  const counted = {
+    toString: refuse,
+    valueOf: refuse,
+    [Symbol.toPrimitive]: refuse,
+    indexOf(search: string, position = 0) {
+      const found = text.indexOf(search, position);
+      reads += (found === -1 ? text.length : found + search.length) - position;
+      return found;
+    },
+    slice(from?: number, to?: number) {
+      const part = text.slice(from, to);
+      reads += part.length;
+      return part;
+    },
+    get length() { return text.length; },
+  };
+  assert.equal(interpolationMentionsBridgeApi(counted as unknown as string), false);
+  assert.ok(reads <= 2 * text.length, `character reads ${reads} for ${text.length} characters`);
+  assert.equal(interpolationMentionsBridgeApi('`${a} ${NativeModules.Camera.getName()}`'), true);
+  assert.equal(interpolationMentionsBridgeApi('`NativeModules ${a}`'), false);
+  assert.equal(scanJsSource('const s = `${NativeModules.Camera.getName()}`').counts.untracedBindings, 1);
 });

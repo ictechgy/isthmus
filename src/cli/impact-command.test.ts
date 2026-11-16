@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { createJsFactsDocument } from '../extract/js-document.ts';
 import { runImpactCommand } from './impact-command.ts';
 import { MAX_INPUT_TEXT_LENGTH } from './command-support.ts';
 
@@ -122,4 +123,33 @@ test('런타임·revision은 함께 지정해야 하며 잘못된 보조 입력�
     '--revision', 'current', 'dart.json', 'swift.json'], read);
   assert.equal(result.exitCode, 2);
   assert.equal(result.standardOutput, '');
+});
+
+test('타입 주석만 있는 선언 뒤의 RN 모듈 호출을 impact --strict가 실제 사실로 판정한다', async () => {
+  // 리뷰 재현(B1): 전에는 앞 줄 `let timer: Timer`가 다음 줄 선언의 초기값을 가져가 timer.cancel()이 거짓
+  // Haptics.cancel(미처리 error)이 되거나, Haptics.impact()가 빠진 채 한계도 없이 통과했다.
+  const project = '/project';
+  const kotlin = JSON.stringify({
+    format: 'bridge-facts', version: 1, tool: { name: 'kartograph', version: 'test' },
+    generatedAt: '2026-11-15T00:00:00.000Z', platform: 'kotlin', target: 'react-native', project, limitations: [],
+    facts: [
+      { kind: 'module-export', channel: 'Haptics', mechanism: 'expo', dynamic: false,
+        location: { path: 'android/HapticsModule.kt', line: 5, column: 1 } },
+      { kind: 'method-handle', channel: 'Haptics', method: 'impact', dynamic: false,
+        location: { path: 'android/HapticsModule.kt', line: 9, column: 3 } },
+    ],
+  });
+  for (const source of [
+    "let timer: Timer\nconst Haptics = requireNativeModule('Haptics')\nexport function f() { timer.cancel(); Haptics.impact() }\n",
+    "let pending: Promise<void> | null\nfunction reset() { pending = null }\nconst Haptics = requireNativeModule('Haptics')\nexport function f() { Haptics.impact() }\n",
+  ]) {
+    const js = JSON.stringify(createJsFactsDocument([{ path: 'src/a.ts', text: source }], '0',
+      '2026-11-15T00:00:00.000Z', project));
+    const documents = new Map([['js.json', js], ['kotlin.json', kotlin]]);
+    const result = await runImpactCommand(['impact', '--file', 'src/a.ts', '--strict', 'js.json', 'kotlin.json'],
+      async (path) => documents.get(path) ?? '');
+    const report = JSON.parse(result.standardOutput);
+    assert.equal(result.exitCode, 0, source);
+    assert.deepEqual([report.summary.errors, report.summary.warnings, report.summary.affectedMethods], [0, 0, 1], source);
+  }
 });

@@ -433,6 +433,18 @@ import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조
 매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
 `unattributed-js-native-modules:` 한계로 센다.
+속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
+`TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
+인라인 `require('react-native')`, Babel·TS 변환의 `_interopRequireWildcard`·`__importStar` 결과와
+`_interopRequireDefault`·`__importDefault` 결과의 `.default` — 기본 export가 모듈 객체인 것은 react-native뿐이므로 다른
+패키지의 기본 변환 `.default` 아래 이름은 ES 기본 import처럼 출처 모름으로 센다), Expo 조회 API(`requireNativeModule` 계열·
+`requireNativeViewManager`)는 Expo 패키지의 네임스페이스 import·`require` 바인딩·인라인 `require`·네임스페이스 변환
+결과이며 이 경로는 `mechanism: "expo"`다. 이렇게 읽거나 센 호출은 패키지 멤버 호출 계수
+(`unattributed-js-package-calls:`)에 다시 넣지 않는다. 출처를 모르는
+객체(`foo.NativeModules`, 더 긴 체인, 다른 호출의 결과, 다른 모듈의 네임스페이스, 매개변수가 가린 이름)의 같은
+이름은 API로 읽지 않고 그 접근 수(대입 대상 제외)를 같은 `unattributed-js-native-modules:` 한계로 센다. 이 판정은
+앞 체인 길이와 무관하다. 속성 자리의 이름은 파일 바인딩·별칭 import로도 읽지 않는다(`obj.Camera.take()`의 Camera는
+파일의 `const Camera = …`가 아니다).
 비리터럴 이름·메서드는 원문 표현식을 실은 `dynamic: true` 사실로 보존하고,
 계약이 허용하지 않는 리터럴(빈 이름·제어 문자 포함)도 정적 이름이 아니라
 동적 사실로 내린다. Expo 전용 API 이름(`requireNativeModule`·
@@ -448,11 +460,31 @@ specifier에서 가져온 동명 래퍼면 해석 경로를 알 수 없어 mecha
 관찰한 `module-import`에는 `optional: true`를 싣고, 던지는 조회
 (`requireNativeModule`, `getEnforcing`)·`NativeModules.X` 접근·컴포넌트
 require에는 싣지 않는다.
-스캔 집합을 벗어난 바인딩(패키지 import, 함수 결과,
-인스턴스 상태)은 `limitations`로만 보고한다 — 정적 이름을 추측해 연결하지
-않는다. 함수·메서드·`{…}` 본문을 가진 화살표의 매개변수는 그 본문 안에서
+스캔이 따라가지 않는 바인딩(함수 결과, 인스턴스 상태, 인자, 재대입·구조 분해한
+이름, 다른 값의 속성, 패키지 import)을 거친 멤버 호출은 정적 이름을 추측해 연결하지
+않고 `js-binding-scope:` 한계로 센다. 이 줄은 셀 것이 있을 때만 싣는다. 첫 수는
+스캔이 인식한 모듈 값 — 모듈 식(`NativeModules.X`·`NativeModules['X']`·조회 호출),
+레지스트리·조회 API 자체의 값(동적 사실로 세는 베어 `NativeModules`는 제외),
+모듈 바인딩으로 해석된 이름 — 이 귀속되는 멤버 호출, 스캔이 기록한 선언·export,
+값이 원시값으로 소비되는 위치(`if`/`while` 조건, `!`·`typeof`·비교·`in`, `&&`의
+왼쪽, 삼항 검사, 대입 대상, 값을 버리는 식 문장) 밖에서 쓰인 횟수다. 호출 없는 멤버
+읽기는 메서드 값과 상수를 구분하지 못해 세고, 판정할 수 없는 위치(짝 없는 괄호)도
+센다. 속성 자리 API로 만든 바인딩(`const Cam = RN.TurboModuleRegistry.get('Cam')`)은
+module-import 사실은 내지만 바인딩으로 추적하지 않으므로, 그 초기값을 이 수로 센다.
+뒤 절의 수는 스캔이 네이티브 모듈 바인딩까지 따라가지 못하는 입구다 — 모듈 바인딩으로
+해석되지 않은 import 이름(스캔이 이름으로 읽는 `NativeModules`·`TurboModuleRegistry`·
+조회·컴포넌트 API는 제외), 네임스페이스 import, 값을 쓰는 `require()` 호출, 동적
+`import()` 호출, specifier에 닿지 못한 `import` 낱말(JSX 글자, 깨진 문), 보간이 브리지
+API 이름을 언급하는 템플릿 리터럴. 템플릿 보간(`${…}`) 안은 토큰으로 읽지 않으므로 그
+안의 사실은 나오지 않고 이 수로만 드러난다. 이 입구가 모듈을 담는지는 알 수 없으므로 이
+수가 0이 아니면 첫 수가 0이어도 줄을 싣고 첫 수가 하한임을 밝힌다. 인식하지 않는
+API(전역 객체 등)와 스캔하지 않은 파일의 사용은 이 계수 밖이다. 함수·메서드·`{…}`
+본문을 가진 화살표의 매개변수는 그 본문 안에서
 파일 바인딩을 가리는 것으로 처리하지만, 식 본문 화살표(`M => M.x()`)·
 `for`/`catch` 등 선언문 밖의 바인딩·`export * from` 재수출은 추적하지 않는다.
+`const`·`let`·`var` 초기값의 함수 본문(`const Screen = () => { … }`) 안 선언도
+수집하지 않는다 — 그 선언의 초기값 모듈 식은 기록된 바인딩이 아니어서
+`js-binding-scope:`로 센다.
 토큰 스캔은 완전한 JS 의미 해석이 아니므로 이 추출기의 출력은 관찰 범위의
 근거다.
 

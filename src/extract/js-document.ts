@@ -9,7 +9,7 @@
 import { compareStrings } from '../compare.ts';
 import type { BridgeFact, BridgeFactsDocument, BridgeLocation } from '../exchange/parse.ts';
 import type { BoundName, ScannedImport } from './js-scan.ts';
-import { scanJsSource } from './js-scan.ts';
+import { isScannedApiImport, scanJsSource } from './js-scan.ts';
 import type { JsFileScan } from './js-scan.ts';
 
 /** 스캔 대상이 되는 JS/TS 확장자다. */
@@ -41,19 +41,32 @@ export function createJsFactsDocument(
   const facts: BridgeFact[] = [];
   let unattributedRelativeCalls = 0;
   let unattributedPackageCalls = 0;
+  let escapedModuleReferences = 0;
+  let untracedBindings = 0;
 
   for (const file of files) {
     const scan = scans.get(file.path)!;
     const resolvedIdents = new Map<string, BoundName>(scan.bindings);
+    // 모듈 바인딩으로 해석되지 않은 import 이름이다. 스캔이 이름으로 읽는 API가 아니면 값의 출처를 모른다.
+    const untracedImports = new Set<string>();
     for (const entry of scan.imports) {
       const bound = resolveImport(scans, file.path, entry);
       if (bound !== undefined) {
         resolvedIdents.set(entry.localName, bound);
-      } else if (entry.specifier.startsWith('.')) {
+        continue;
+      }
+      if (!isScannedApiImport(entry)) untracedImports.add(entry.localName);
+      if (entry.specifier.startsWith('.')) {
         unattributedRelativeCalls += countMemberCalls(scan, entry.localName);
       } else {
         unattributedPackageCalls += countMemberCalls(scan, entry.localName);
       }
+    }
+    untracedBindings += untracedImports.size + scan.counts.untracedBindings;
+    escapedModuleReferences += scan.counts.escapedModuleReferences;
+    // 이름별 이탈은 그 이름이 이 파일·다른 파일의 모듈 바인딩으로 해석될 때만 모듈 참조다.
+    for (const [ident, count] of scan.identifierEscapes) {
+      if (resolvedIdents.has(ident)) escapedModuleReferences += count;
     }
     for (const fact of scan.facts) {
       facts.push(toFact(file.path, fact));
@@ -76,6 +89,8 @@ export function createJsFactsDocument(
   const limitations = buildLimitations(files.length, scans, {
     unattributedRelativeCalls,
     unattributedPackageCalls,
+    escapedModuleReferences,
+    untracedBindings,
   });
 
   return {
@@ -234,30 +249,42 @@ function dedupeFacts(facts: readonly BridgeFact[]): BridgeFact[] {
   });
 }
 
-/** 집계 계수와 고정 범위 설명을 생산자 limitation 문자열로 바꾼다. */
+/** 집계 계수를 생산자 limitation 문자열로 바꾼다. 계수가 0인 한계는 싣지 않는다. */
 function buildLimitations(
   fileCount: number,
   scans: ReadonlyMap<string, JsFileScan>,
   extra: {
     unattributedRelativeCalls: number;
     unattributedPackageCalls: number;
+    escapedModuleReferences: number;
+    untracedBindings: number;
   },
 ): string[] {
   let dynamicModuleNames = 0;
   let dynamicComponentNames = 0;
   let dynamicMethodNames = 0;
-  let importedNativeModulesAccesses = 0;
+  let untracedApiAccesses = 0;
   for (const scan of scans.values()) {
     dynamicModuleNames += scan.counts.dynamicModuleNames;
     dynamicComponentNames += scan.counts.dynamicComponentNames;
     dynamicMethodNames += scan.counts.dynamicMethodNames;
-    importedNativeModulesAccesses += scan.counts.importedNativeModulesAccesses;
+    untracedApiAccesses += scan.counts.untracedApiAccesses;
   }
-  const limitations: string[] = [
-    'js-binding-scope: member calls through bindings that leave the scan set '
-      + '(package imports, function results, instance state) are not attributed '
-      + 'to a module name',
-  ];
+  const limitations: string[] = [];
+  // 측정한 이탈 수가 0이어도 출처 모를 값이 있으면 그 값이 모듈을 담는지 알 수 없다 — 0을 "없음"으로
+  // 내지 않고 하한임을 밝혀 싣는다.
+  if (extra.escapedModuleReferences > 0 || extra.untracedBindings > 0) {
+    limitations.push(
+      `js-binding-scope: ${extra.escapedModuleReferences} native module references leave the bindings `
+      + 'the scan follows (passed to a function, returned, stored in instance state or another value, '
+      + 'reassigned or destructured, or a member read without a call), so member calls through them are '
+      + 'not attributed to a module name'
+      + (extra.untracedBindings === 0 ? '' : `; this is a lower bound because ${extra.untracedBindings} `
+        + 'entries the scan does not trace may also hold native modules (imports that do not resolve to a '
+        + 'native module binding, require()/import() calls, unparsed import words, template interpolations '
+        + 'that mention a bridge API)'),
+    );
+  }
   if (dynamicModuleNames > 0) {
     limitations.push(
       `dynamic-module-names: ${dynamicModuleNames} module references use a `
@@ -289,11 +316,12 @@ function buildLimitations(
       + 'calls on package imports could not be attributed to a module name',
     );
   }
-  if (importedNativeModulesAccesses > 0) {
+  if (untracedApiAccesses > 0) {
     limitations.push(
-      `unattributed-js-native-modules: ${importedNativeModulesAccesses} NativeModules accesses use a binding `
-      + 'imported from another module (a barrel re-export or a stand-in), so they are not read as the '
-      + 'react-native registry',
+      `unattributed-js-native-modules: ${untracedApiAccesses} accesses to NativeModules or another bridge API go `
+      + 'through a binding imported from another module (a barrel re-export or a stand-in) or through an object '
+      + 'the scan does not trace to the module that exports it (react-native or Expo), so they are not read as '
+      + 'bridge APIs',
     );
   }
   if (fileCount === 0) {
