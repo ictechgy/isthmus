@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-15_
+_Last updated: 2026-11-16_
 
 현재 재개 정보다. 규칙은 [AGENTS.md](AGENTS.md), 이전 발행·검증 원장은
 [HANDOFF-HISTORY.md](HANDOFF-HISTORY.md)에 보존한다(2026-09-20 인계 원문은 그 파일 끝 절). 과거 Next Steps는
@@ -27,14 +27,14 @@ _Last updated: 2026-11-15_
   - COMPATIBILITY 발행 상태·설치 예제 핀 정정과 그 핀의 자동 검사
   - 계약 표·README·스킬 현행화, git 2.45 미만에서도 맞는 lazy fetch 격리 테스트
 - 2026-11-15: extract-js `js-binding-scope:` 한계를 측정한다 — 브랜치 `ccr-37904670-hxdjsx`의 `057a133`
-  (미푸시·미머지·미발행, CHANGELOG `[Unreleased]`). 첫 수는 인식한 모듈 값이 귀속 호출·기록된 선언과 export·
+  (PR #164로 열림, 미머지·미발행, CHANGELOG `[Unreleased]`). 첫 수는 인식한 모듈 값이 귀속 호출·기록된 선언과 export·
   원시값 소비 밖에서 쓰인 횟수, 뒤 절은 출처를 따라갈 수 없는 값의 입구(해석되지 않은 import, 네임스페이스
   import, 값을 쓰는 `require()`, 동적 `import()`) 수다. 뒤 수가 0이 아니면 첫 수가 0이어도 하한으로 남기고, 둘 다
   0일 때만 줄이 빠진다. 그런 입력(codegen 스펙만 스캔 등)에서는 `impact --strict`가 1→0으로 바뀔 수 있다(재현:
   스펙+수신 문서). 실제 앱 소스는 거의 항상 패키지를 import해 줄이 남는다(expo-haptics 14.1.4: 사실 동일, `0 …;
   lower bound because 7`). conformance 벡터·생산자 8곳은 이 줄을 참조하지 않고, 드리프트는 없다(생산자 7곳 current,
   schemagraph not-vendored). `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
-- 2026-11-15 같은 브랜치 후속(미푸시): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
+- 2026-11-15 같은 브랜치 후속(PR #164에 포함, origin `1ee98a5`): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
   회귀 테스트를 먼저 두고 변이 검사로 확인했다(CHANGELOG `[Unreleased]` `### Fixed`).
   - `7f6eb19` 선언 초기값의 객체 리터럴·함수 본문 이름을 로컬 선언으로 기록하지 않는다 — import 없이 전역으로
     읽는 파일의 NativeModules 사실 전체가 사라지던 문제. 타입 주석의 이름도 선언자로 읽지 않는다.
@@ -46,6 +46,17 @@ _Last updated: 2026-11-15_
     `unattributed-js-native-modules:`로 센다(메시지 확장). 속성 자리 이름은 파일 바인딩·별칭으로 읽지 않아 홀수
     체인 위치의 거짓 method-invoke·module-import가 없어졌다.
   - expo-haptics 14.1.4 사실은 수정마다 바이트 단위로 같았다. 적대 입력 시간은 수정 전 트리와 같은 범위다.
+- 2026-11-16 PR #164 독립 리뷰("수정 후 머지 가능") 반영 — 로컬 커밋, 아직 푸시하지 않았다(origin은 `1ee98a5`):
+  - `5a6949a` B1: 초기값 없는 타입 주석 선언(`let timer: Timer`)이 다음 줄 선언의 초기값을 가져가 거짓
+    `Haptics.cancel`과 사라진 한계를 만들던 문제. 같은 수정이 이번 릴리스의 주석 건너뛰기가 `Map<string, Array<number>>`의
+    `>>`에서 파일 끝까지 넘어가던 회귀(리뷰 밖에서 재현)도 고친다. impact --strict 종단 테스트 포함.
+  - `e4fc95a` S1·S2: 대괄호 분류의 인자 재탐색(이차)과 비교 `<`에서 파일 끝까지 가던 타입 인수 탐색을 없앴다.
+    리뷰 입력 nestcall 32k head 약 20초 → 0.3~0.75초, lt 6000 main 약 7초·head 약 15초 → 0.2~0.4초.
+  - `c57965d` S3a import 문이 아닌 `import` 낱말(import.meta·객체 키·JSX 글자)이 뒤 코드를 삼키던 문제와 그 계수,
+    S3b 템플릿 보간의 브리지 API 언급 계수·문서, S3c 초기값 제네릭 호출 인수의 쉼표, S4 Babel·TS interop
+    (`_interopRequireDefault(require('react-native'))`의 `.default.NativeModules`) 사실 유지, N2 이중 계수 제거,
+    N3 버려지는 식 문장 비계수, N1 `as const`·non-null 줄 끝 ASI와 CHANGELOG 정정, N5 문서.
+  - 실제 패키지 7개(react-native 0.88.1, screens 4.30.1, vision-camera 5.2.4 등)에서 리뷰 반영 전후 사실 차이 없음.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -67,6 +78,9 @@ _Last updated: 2026-11-15_
   귀속되지 않고, 그 안의 `const { X } = NativeModules`는 module-import 사실도 내지 않는다. 지금은 js-binding-scope로
   센다. 위 거짓 사실 문제 때문에 본문 선언을 파일 전역 지도에 넣는 수정은 건전하지 않다 — 형제 컴포넌트의 같은
   이름(`const module = NativeModules.A`/`…B`)이 거짓 사실이 된다. 블록 범위 바인딩(선언 구간 안에서만 적용)이 먼저다.
+- extract-js 남은 관찰 공백(리뷰 반영 중 확인, 모두 js-binding-scope로 셈): 중첩 제네릭 인수를 둔 API 호출
+  (`requireNativeModule<A<B>>('X')`, `>>` 한 토큰)은 호출로 읽지 않는다. JSX는 토큰으로 나누지 않아 `</Text>`의 `/`가
+  정규식으로 읽힐 수 있고, 줄 끝 JSX `>`·`/>`는 ASI 피연산자 끝으로 보지 않는다(비교 `>`와 구분 불가).
 - 발행 workflow·npm provenance(외부 권한 필요), 파일별 커버리지 하한.
 
 ## 머지 뒤 바로 알아 둘 것
@@ -86,5 +100,5 @@ _Last updated: 2026-11-15_
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
 검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 2026-11-15 js-binding-scope 측정(`057a133`)과
-그 후속 extract-js 수정(`7f6eb19`·`c66eee5`·`42fd6fd`·`98c4d03`)은 브랜치 `ccr-37904670-hxdjsx`에만 있고
-PR·머지 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
+그 후속 extract-js 수정은 PR #164(브랜치 `ccr-37904670-hxdjsx`)로 열려 있고, 2026-11-16 리뷰 반영 커밋은 아직
+푸시 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
