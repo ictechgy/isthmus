@@ -783,6 +783,10 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     "if ('take' in NativeModules.Cam) {}",
     'NativeModules.Cam.take = mock;',
     'delete NativeModules.Cam.take;',
+    "requireNativeModule('Cam');",
+    "function warm() { requireNativeModule('Cam') }",
+    "const ready = true\nrequireNativeModule('Cam')\nstart()",
+    'NativeModules.Cam.take;',
     "import { TurboModuleRegistry, NativeModules } from 'react-native';",
     "const { requireNativeModule } = require('expo-modules-core');",
     'jest.mock(name, () => ({ requireNativeModule: mock }));',
@@ -794,6 +798,7 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
   // 레지스트리와 조회 API 자체를 다른 이름에 담는 것은 하나씩 센다.
   for (const source of [
     'register(NativeModules.Cam);',
+    "() => requireNativeModule('Cam');",
     'function load() { return NativeModules.Cam; }',
     'this.cam = NativeModules.Cam;',
     'const holder = [NativeModules.Cam];',
@@ -848,9 +853,13 @@ test('모듈 바인딩 이름의 값 사용 중 추적을 벗어난 것만 이�
     // `=` 재대입은 바인딩 자체를 지운다. 복합 대입의 대상과 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다.
     'Cam ||= replacement;',
     'const later = () => { const Cam = other; };',
+    // 문장 단독으로 버려지는 값은 넘어가지 않지만, `=` 뒤 `{ Cam }`은 블록이 아니라 객체 리터럴이다.
+    'Cam;',
+    'const wrap = { Cam };',
   ].join('\n'));
-  // Cam: register 인자 1회. Local: register 인자·구조 분해 원천·객체 값 3회. 패키지 import는 해석될 수 없어 후보가 아니다.
-  assert.deepEqual(Object.fromEntries(scan.identifierEscapes), { Cam: 1, Local: 3 });
+  // Cam: register 인자·객체 단축 속성 2회. Local: register 인자·구조 분해 원천·객체 값 3회. 패키지 import는 해석될 수
+  // 없어 후보가 아니다.
+  assert.deepEqual(Object.fromEntries(scan.identifierEscapes), { Cam: 2, Local: 3 });
 });
 
 test('출처를 따라가지 못하는 import 밖 값의 입구를 센다', () => {
@@ -859,10 +868,11 @@ test('출처를 따라가지 못하는 import 밖 값의 입구를 센다', () =
     ["import * as Lib from 'lib';", 1],
     ["import type * as Types from 'lib';", 0],
     ["import Lib from 'lib';", 0],
-    ['import Lib', 0],
+    // specifier에 닿지 못한 import는 무엇을 들이는지 알 수 없어 센다(리뷰 S3a).
+    ['import Lib', 1],
     // `import X, * as NS`의 X는 import 목록에 남아 문서 단계가 센다 — 스캐너는 네임스페이스 NS만 센다.
     ["import Main, * as Lib from 'lib';", 1],
-    ['import * as', 0],
+    ['import * as', 1],
     ["import * as Lib from 'lib';\nconst url = import.meta.url;", 1],
     ["const Lib = require('lib');", 1],
     ["const { a, b: c } = require('lib');", 1],
@@ -934,6 +944,9 @@ test('선언 수집은 문장 끝에서 멈춰 뒤 선언을 삼키지 않는다
     "for (const key in table) use(key)\nconst Cam = requireNativeModule('Cam')\nCam.take()",
     "function f() { const a = 1 }\nconst Cam = requireNativeModule('Cam');\nCam.take();",
     "function f() { const a = 1 } const Cam = requireNativeModule('Cam'); Cam.take();",
+    // 앞 줄이 TS non-null(`maybe!`)·`as const`로 끝나도 피연산자의 끝이다(리뷰 N1).
+    "const a = maybe!\nconst Cam = requireNativeModule('Cam')\nCam.take()",
+    "const c = { k: 1 } as const\nconst Cam = requireNativeModule('Cam')\nCam.take()",
   ]) {
     const scan = scanJsSource(source);
     assert.deepEqual([...scan.bindings.keys()], ['Cam'], source);
@@ -1080,4 +1093,21 @@ test('타입 인수 판정은 비교 연산의 `<`에서 파일 끝까지 훑지
     .counts.escapedModuleReferences, 1);
   // 짝 없는 닫는 괄호를 지나 뒤쪽의 `>`·`(`를 짝으로 삼으면 비교가 제네릭 호출(`M.x<…>(b)`)로 읽혀 거짓 호출이 된다.
   assert.deepEqual(scanJsSource("const M = requireNativeModule('M');\nif (M.x < y) { z = a > (b) }").memberCalls, []);
+});
+
+test('import 문 판정의 경계 형태를 읽는다', () => {
+  // 부작용 전용 import는 이름을 남기지 않고 뒤 선언을 그대로 수집한다.
+  const sideEffect = scanJsSource("import './polyfill';\nconst Cam = requireNativeModule('Cam');\nCam.take();");
+  assert.deepEqual(sideEffect.imports, []);
+  assert.deepEqual([...sideEffect.bindings.keys()], ['Cam']);
+  // TS `import X = require('spec')`는 X 하나의 default import이고, 그 require는 따로 세지 않는다.
+  const equals = scanJsSource("import Cam = require('./cam');\nCam.take();");
+  assert.deepEqual(equals.imports.map((entry) => [entry.localName, entry.specifier, entry.exportedName]),
+    [['Cam', './cam', 'default']]);
+  assert.equal(equals.counts.untracedBindings, 0);
+  // `import X = Namespace.Y`(TS 별칭)는 모듈 import가 아니다.
+  assert.deepEqual(scanJsSource('import Alias = Shapes.Polygon;').imports, []);
+  // 파일 끝에서 끝나는 타입 주석, 초기값의 `a < b >> (c)`(제네릭이 아닌 비교·시프트)도 뒤 선언자를 잃지 않는다.
+  assert.deepEqual([...scanJsSource("const Cam = requireNativeModule('Cam')\nlet timer: Timer").bindings.keys()], ['Cam']);
+  assert.deepEqual([...scanJsSource("const x = a < b >> (c), Cam = requireNativeModule('Cam');").bindings.keys()], ['Cam']);
 });

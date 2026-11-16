@@ -223,6 +223,11 @@ interface ScanContext {
   /** `const X = require('spec')`처럼 초기값이 require 호출 하나인 이름의 specifier다(모듈 객체 판정용). */
   readonly requireModules: Map<string, string>;
   /**
+   * Babel·TS 기본 import 변환(`X = _interopRequireDefault(require('spec'))`)의 이름 → specifier다. `X.default`가
+   * 그 모듈의 기본 export다.
+   */
+  readonly interopDefaultModules: Map<string, string>;
+  /**
    * `const { P: local } = SOURCE`처럼 식별자 하나에서 구조 분해한 로컬 이름의 원천이다(속성 이름·원천 식별자·원천
    * 토큰 위치). `const { NativeModules } = RN`의 RN이 react-native 모듈 객체인지는 import가 뒤에 와도 알 수 있도록
    * 사용 시점에 판정한다.
@@ -328,6 +333,7 @@ function createBoundContext(source: string): ScanContext {
     localNames: new Set(),
     requireSpecifiers: new Map(),
     requireModules: new Map(),
+    interopDefaultModules: new Map(),
     destructuredSources: new Map(),
     namespaceImports,
     reactNativeNamespaces: new Set([...namespaceImports].flatMap(([name, specifier]) =>
@@ -393,9 +399,8 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
     (exportedName === 'DeviceEventEmitter' || exportedName === 'NativeEventEmitter'));
   const importPositions = new Set<number>();
   for (let index = 0; index < tokens.length; index++) {
-    if (tokens[index]?.text !== 'import' || tokens[index + 1]?.text === '(') continue;
-    let end = index + 1;
-    while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+    const end = tokens[index]?.text === 'import' ? importStatementEnd(tokens, index) : undefined;
+    if (end === undefined) continue;
     for (let cursor = index; cursor <= end; cursor++) importPositions.add(cursor);
     index = end;
   }
@@ -606,6 +611,13 @@ function collectBindings(context: ScanContext): void {
 /** `import ... from 'spec'` 절의 로컬 바인딩을 기록한다. */
 function collectImport(context: ScanContext, start: number): number {
   const { tokens } = context;
+  const end = importStatementEnd(tokens, start);
+  // import 문이 아닌 `import`(import.meta, 객체 키, JSX 낱말)는 문자열까지 읽어 뒤 코드를 삼키지 않는다.
+  if (end === undefined) return start;
+  // TS `import X = require('spec')`는 X 하나의 default import다.
+  if (tokens[start + 2]?.text === '=') {
+    return recordImport(context, [{ name: tokens[start + 1]!.text, exported: 'default' }], tokens[end - 1]!, end);
+  }
   let index = start + 1;
   const clause: { name: string; exported: string | 'default' }[] = [];
   const inBraceClause = createBraceClauseTracker(tokens, start + 1);
@@ -828,6 +840,15 @@ function collectDeclaration(context: ScanContext, start: number): number {
       index++;
       continue;
     }
+    // 초기값 안의 제네릭 호출·화살표 타입 인수(`useMemo<Record<string, unknown>>(…)`, `<T,>(x) => …`)는 한 덩어리로
+    // 건너뛴다 — 그 안의 `,`를 선언자 구분으로 읽으면 대상 구간이 다시 열려 뒤 객체 리터럴이 패턴이 된다.
+    if (!target && token.text === '<') {
+      const close = skipTypeArguments(tokens, index, true);
+      if (close !== undefined && tokens[close + 1]?.text === '(') {
+        index = close + 1;
+        continue;
+      }
+    }
     if (token.text === '(' || token.text === '[') {
       depth++;
       index++;
@@ -863,6 +884,7 @@ function collectDeclaration(context: ScanContext, start: number): number {
             context.requireModules.set(token.text, required);
           }
         }
+        recordInteropRequire(context, token.text, cursor + 1);
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
           context.bindings.set(token.text, bound.value);
@@ -928,8 +950,33 @@ function endsByLineBreak(tokens: readonly JsToken[], start: number, index: numbe
   if (depth !== 0 || index <= start + 1 || previous === undefined || tokens[index]!.line === previous.line) {
     return false;
   }
-  const operandEnd = isOperandEnd(previous) || ['}', '++', '--'].includes(previous.text);
+  // 피연산자 뒤의 `!`는 TS non-null 후위 연산이고, `as const`의 `const`는 단언의 끝이다.
+  const operandEnd = isOperandEnd(previous) || ['}', '++', '--'].includes(previous.text) ||
+    (previous.text === '!' && isOperandEnd(tokens[index - 2])) ||
+    (previous.text === 'const' && tokens[index - 2]?.text === 'as');
   return operandEnd && tokens[index]!.text !== ',' && !expressionContinuations.has(tokens[index]!.text);
+}
+
+/** Babel·TS의 CommonJS import 변환 도우미와 그 결과의 모양(기본 export를 감싼 객체, 네임스페이스)이다. */
+const interopHelpers: ReadonlyMap<string, 'default' | 'namespace'> = new Map([
+  ['_interopRequireDefault', 'default'], ['__importDefault', 'default'],
+  ['_interopRequireWildcard', 'namespace'], ['__importStar', 'namespace'],
+]);
+
+/**
+ * `NAME = HELPER(require('spec'))`(위치 `start`가 HELPER)를 모듈 객체로 기록한다. 네임스페이스 변환은 NAME이 모듈
+ * 객체이고, 기본 변환은 `NAME.default`가 기본 export다 — react-native의 기본 export는 모듈 객체다(`import RN`과 같다).
+ */
+function recordInteropRequire(context: ScanContext, name: string, start: number): void {
+  const { tokens } = context;
+  const shape = interopHelpers.get(tokens[start]?.text ?? '');
+  const specifier = readRequireSpecifier(tokens, start + 2);
+  if (shape === undefined || tokens[start]!.kind !== 'identifier' || tokens[start + 1]?.text !== '(' ||
+    specifier === undefined || tokens[start + 6]?.text !== ')' || !endsExpression(tokens, start + 6) ||
+    isShadowed(context, 'require', start + 2)) {
+    return;
+  }
+  (shape === 'namespace' ? context.requireModules : context.interopDefaultModules).set(name, specifier);
 }
 
 /**
@@ -1308,7 +1355,8 @@ const typeArgumentStops = new Set([
 ]);
 
 /**
- * `<...>` 타입 인수 구간을 건너뛰어 닫는 `>`의 인덱스를 돌려준다.
+ * `<...>` 타입 인수 구간을 건너뛰어 닫는 `>`의 인덱스를 돌려준다. `nestedShifts`가 없으면 `>>`·`>>>`에서 멈춘다
+ * (호출 사실 판정은 중첩 제네릭 인수를 읽지 않던 이전 결과를 유지한다).
  *
  * 비교 연산의 `<`(`M.x < 1 && M.y < 2`)를 타입 인수로 잘못 열면 짝 `>`를 찾아 파일 끝까지 훑어, `<`가 많은
  * 입력에서 이차 시간이 들었다. 타입 인수에 올 수 없는 토큰(안쪽 괄호 밖의 연산자·`;`, 짝 없는 닫는 괄호)이나
@@ -1317,6 +1365,7 @@ const typeArgumentStops = new Set([
 export function skipTypeArguments(
   tokens: readonly JsToken[],
   start: number,
+  nestedShifts = false,
 ): number | undefined {
   let depth = 0;
   const brackets: string[] = [];
@@ -1324,9 +1373,11 @@ export function skipTypeArguments(
   for (let index = start; index < limit; index++) {
     const text = tokens[index]!.text;
     if (text === '<') depth++;
-    else if (text === '>') {
-      depth--;
+    else if (text === '>' || (nestedShifts && (text === '>>' || text === '>>>'))) {
+      // `nestedShifts`면 한 토큰인 `>>`·`>>>`가 중첩 제네릭을 두세 단계 닫는다.
+      depth -= text.length;
       if (depth === 0) return index;
+      if (depth < 0) return undefined;
     } else if (depth === 0) {
       return undefined;
     } else if (bracketPairs.has(text)) {
@@ -1509,15 +1560,48 @@ function namespaceImportSpecifiers(tokens: readonly JsToken[]): Map<string, stri
   return specifiers;
 }
 
+/** 토큰 열마다 한 번 만든 import 절 종결 표다(위치 → 그 위치부터 처음 만나는 문자열·절 밖 토큰). */
+const importStopTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/**
+ * `import` 토큰(위치 `start`)이 정적 import 문이면 그 문의 마지막 토큰(specifier 문자열, `import X =
+ * require('spec')`의 `)`) 위치를, 아니면 undefined를 돌려준다.
+ *
+ * 절에는 이름·키워드와 `{`·`}`·`,`·`*`만 올 수 있다. 문자열 전에 다른 토큰을 만나면 import 문이 아니다 —
+ * `import.meta`·동적 `import(…)`·객체 키 `{ import: X }`·JSX 낱말을 문자열이 나올 때까지 import 문으로 읽으면
+ * 그 사이 코드(NativeModules 접근 등)가 바인딩·사실 수집에서 빠졌다. 종결 위치는 뒤에서 한 번 계산한 표로
+ * 찾아, import 낱말이 많은 입력에서도 문마다 다시 훑지 않는다.
+ */
+export function importStatementEnd(tokens: readonly JsToken[], start: number): number | undefined {
+  if (tokens[start]?.text !== 'import' || ['.', '?.'].includes(tokens[start - 1]?.text ?? '') ||
+    ['(', '.', ':'].includes(tokens[start + 1]?.text ?? '')) {
+    return undefined;
+  }
+  if (tokens[start + 2]?.text === '=') {
+    return readRequireSpecifier(tokens, start + 3) === undefined ? undefined : start + 6;
+  }
+  let table = importStopTables.get(tokens);
+  if (table === undefined) {
+    table = new Int32Array(tokens.length + 1).fill(-1);
+    for (let index = tokens.length - 1; index >= 0; index--) {
+      const token = tokens[index]!;
+      const name = token.kind === 'identifier' || token.kind === 'keyword' || ['{', '}', ',', '*'].includes(token.text);
+      table[index] = name && token.kind !== 'string' ? table[index + 1]! : index;
+    }
+    importStopTables.set(tokens, table);
+  }
+  const stop = table[start + 1] ?? -1;
+  return stop !== -1 && tokens[stop]!.kind === 'string' ? stop : undefined;
+}
+
 /** 정적 `import … from '…'` 문(동적 `import(…)` 제외)과 재수출 절(`export { … } from`·`export * from`)이 차지한 토큰 위치다. */
 function importStatementPositions(tokens: readonly JsToken[]): Set<number> {
   const positions = new Set<number>();
   for (let index = 0; index < tokens.length; index++) {
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
     let end: number | undefined;
-    if (tokens[index]?.text === 'import' && tokens[index + 1]?.text !== '(') {
-      end = index + 1;
-      while (end < tokens.length && tokens[end]?.kind !== 'string' && tokens[end]?.text !== ';') end++;
+    if (tokens[index]?.text === 'import') {
+      end = importStatementEnd(tokens, index);
     } else if (tokens[index]?.text === 'export') {
       end = reexportClauseEnd(tokens, index);
     }
@@ -1610,8 +1694,8 @@ function collectPropertyApi(context: ScanContext, index: number): number {
 
 /**
  * 속성 자리 토큰 앞 객체가 가리키는 모듈의 specifier다. 객체가 식별자 하나(react-native 모듈 객체, 네임스페이스
- * import, `const X = require('spec')`)이거나 인라인 `require('spec')`일 때만 알고, 그 밖(더 긴 체인, 다른 호출의
- * 결과, 매개변수가 가린 이름)은 undefined다.
+ * import, `const X = require('spec')`, 네임스페이스 import 변환), 기본 import 변환 결과의 `X.default`, 인라인
+ * `require('spec')`일 때만 알고, 그 밖(더 긴 체인, 다른 호출의 결과, 매개변수가 가린 이름)은 undefined다.
  */
 function propertyBaseSpecifier(context: ScanContext, index: number): string | undefined {
   const { tokens } = context;
@@ -1626,6 +1710,15 @@ function propertyBaseSpecifier(context: ScanContext, index: number): string | un
       return undefined;
     }
     return readRequireSpecifier(tokens, callee);
+  }
+  // `X.default.NAME` — X가 기본 import 변환 결과면 `X.default`는 그 모듈의 기본 export다.
+  if (base?.text === 'default' && ['.', '?.'].includes(tokens[index - 3]?.text ?? '')) {
+    const object = tokens[index - 4];
+    if (object?.kind !== 'identifier' || ['.', '?.'].includes(tokens[index - 5]?.text ?? '') ||
+      isShadowed(context, object.text, index - 4) || requireIsLocal) {
+      return undefined;
+    }
+    return context.interopDefaultModules.get(object.text);
   }
   if (base?.kind !== 'identifier' || ['.', '?.'].includes(tokens[index - 3]?.text ?? '') ||
     isShadowed(context, base.text, index - 2)) {
@@ -1962,7 +2055,9 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
   const method = tokens[start + 2];
   if (method === undefined) return start;
   if (method.kind === 'identifier' || method.kind === 'keyword') {
-    if (bound && isCallAt(tokens, start + 3)) {
+    // 브리지 API 이름 멤버(`RN.requireNativeComponent(…)`)는 속성 자리 판정이 사실로 읽거나 출처 모름으로 센다 —
+    // 패키지 멤버 호출 후보로 또 남기면 같은 호출을 두 한계에 겹쳐 센다.
+    if (bound && isCallAt(tokens, start + 3) && !propertyApiNames.has(method.text)) {
       context.memberCalls.push({
         ident: token.text,
         method: method.text,
@@ -2264,6 +2359,28 @@ function isValueConsumed(context: ScanContext, start: number, end: number): bool
   return consumed;
 }
 
+/**
+ * `start`..`end` 식이 문장 하나 전체인지(값을 버리는 식 문장, `requireNativeModule('Y');`) 본다. 문장 시작은 파일
+ * 처음·`;`·`}`·블록을 여는 `{` 뒤이거나 ASI로 앞 줄이 끝난 자리, 끝은 `;`·`}`·파일 끝이거나 식을 잇지 않는 줄바꿈이다.
+ * 객체 리터럴의 `{`(`= { M }`)는 블록이 아니다.
+ */
+function isDiscardedStatement(tokens: readonly JsToken[], start: number, end: number): boolean {
+  const before = tokens[start - 1];
+  const after = tokens[end + 1];
+  const startsStatement = before === undefined || before.text === ';' || before.text === '}' ||
+    (before.text === '{' && opensBlock(tokens, start - 1)) ||
+    (before.line < tokens[start]!.line && (isOperandEnd(before) || ['++', '--'].includes(before.text)));
+  const endsStatement = after === undefined || after.text === ';' || after.text === '}' ||
+    (after.line > tokens[end]!.line && !expressionContinuations.has(after.text));
+  return startsStatement && endsStatement;
+}
+
+/** 위치 `open`의 `{`가 블록(함수·제어문 본문, 블록 문)을 여는지 본다. 앞 토큰으로만 판정한다. */
+function opensBlock(tokens: readonly JsToken[], open: number): boolean {
+  const before = tokens[open - 1];
+  return before === undefined || [')', ';', '{', '}', '=>', 'else', 'do', 'try', 'finally'].includes(before.text);
+}
+
 /** `end` 뒤에 멤버 접근·호출·TS non-null·태그 템플릿이 이어져 식이 더 큰 피연산자의 일부인지 본다. */
 function continuesAsOperand(tokens: readonly JsToken[], end: number): boolean {
   const after = tokens[end + 1];
@@ -2271,8 +2388,9 @@ function continuesAsOperand(tokens: readonly JsToken[], end: number): boolean {
     (['.', '?.', '[', '(', '!'].includes(after.text) || after.kind === 'template');
 }
 
-/** 앞뒤 연산자만으로 값이 소비되는지 본다. */
+/** 앞뒤 연산자만으로 값이 소비되는지 본다. 문장 단독으로 버려지는 값도 어디로도 넘어가지 않는다. */
 function isDirectlyConsumed(tokens: readonly JsToken[], start: number, end: number): boolean {
+  if (isDiscardedStatement(tokens, start, end)) return true;
   const before = tokens[start - 1];
   if (before !== undefined && consumingPrefixes.has(before.text) &&
     (before.text !== '!' || !isOperandEnd(tokens[start - 2]))) {
@@ -2333,11 +2451,13 @@ function isOperandEnd(token: JsToken | undefined): boolean {
 
 /**
  * 인식한 모듈 식의 첫 토큰 위치다(앞뒤 문맥 판정은 식 전체를 기준으로 한다). 속성 자리 식은 앞 객체부터
- * 시작한다 — collectPropertyApi는 객체가 식별자 하나이거나 인라인 `require('spec')`일 때만 API로 읽으므로 그
- * 두 형태만 거슬러 오르면 된다. 짝을 찾지 못하면 undefined다.
+ * 시작한다 — collectPropertyApi는 객체가 식별자 하나, 기본 import 변환의 `X.default`, 인라인 `require('spec')`일
+ * 때만 API로 읽으므로 그 세 형태만 거슬러 오르면 된다. 짝을 찾지 못하면 undefined다.
  */
 function chainStart(tokens: readonly JsToken[], index: number): number | undefined {
   if (!['.', '?.'].includes(tokens[index - 1]?.text ?? '')) return index;
+  // `X.default.NAME`(기본 import 변환 결과)은 X부터 시작한다.
+  if (tokens[index - 2]?.text === 'default' && ['.', '?.'].includes(tokens[index - 3]?.text ?? '')) return index - 4;
   if (tokens[index - 2]?.text !== ')') return index - 2;
   const open = openingOf(tokens, index - 2);
   return open === undefined ? undefined : open - 1;
@@ -2401,9 +2521,14 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
   }
 }
 
+/** 보간(`${…}`) 뒤에 브리지 API 이름이 나오는 템플릿 원문이다. 보간 본문과 뒤 리터럴을 가르지 않는다(넓게 센다). */
+const bridgeApiInInterpolation =
+  /\$\{[\s\S]*\b(?:NativeModules|TurboModuleRegistry|requireNativeModule|requireOptionalNativeModule|requireNativeViewManager|requireNativeComponent|codegenNativeComponent)\b/u;
+
 /**
  * 출처를 스캔이 따라가지 못하는 값의 입구를 센다 — 네임스페이스 import, 값을 쓰는 `require()` 호출,
- * 동적 `import()` 호출. 이 값들이 네이티브 모듈을 담는지는 토큰 스캔으로 알 수 없다.
+ * 동적 `import()` 호출, 문자열에 닿지 못한 `import` 낱말, 브리지 API를 언급하는 템플릿 보간. 이 값·코드가
+ * 네이티브 모듈을 담는지는 토큰 스캔으로 알 수 없다.
  */
 function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet<number>): void {
   const { tokens } = context;
@@ -2411,8 +2536,18 @@ function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
+    if (token.kind === 'template' && token.value === undefined && bridgeApiInInterpolation.test(token.text)) {
+      // 템플릿 보간은 토큰으로 나누지 않아 읽지 않는다 — 브리지 API를 언급하면 놓친 참조가 있을 수 있다.
+      context.counts.untracedBindings++;
+      continue;
+    }
     if (token.kind === 'keyword' && token.text === 'import') {
       if (tokens[index + 1]?.text === '(') {
+        context.counts.untracedBindings++;
+        continue;
+      }
+      // 문자열에 닿지 못한 `import`(JSX 낱말, 깨진 문)는 무엇인지 알 수 없다 — import.meta·객체 키가 아니면 센다.
+      if (!['.', ':'].includes(tokens[index + 1]?.text ?? '') && importStatementEnd(tokens, index) === undefined) {
         context.counts.untracedBindings++;
         continue;
       }

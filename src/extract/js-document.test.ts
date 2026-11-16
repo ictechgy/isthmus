@@ -74,7 +74,7 @@ test('해석 못 한 상대·패키지 import 위의 호출은 한계로만 보�
   // 두 import 모두 스캔이 모듈 바인딩으로 따라가지 못한 값이라 범위 한계의 하한 근거로도 센다.
   const scope = bindingScope(document) ?? '';
   assert.ok(scope.startsWith('js-binding-scope: 0 native module references '), scope);
-  assert.ok(scope.includes('lower bound because 2 imports and require()/import() calls'), scope);
+  assert.ok(scope.includes('lower bound because 2 entries'), scope);
 });
 
 /** js-binding-scope 한계 줄을 찾는다. */
@@ -169,7 +169,7 @@ test('스캔이 출처를 따라가지 못하는 값이 있으면 0이어도 js-
   });
   const scope = bindingScope(document) ?? '';
   assert.ok(scope.startsWith('js-binding-scope: 0 native module references '), scope);
-  assert.ok(scope.includes('lower bound because 4 imports and require()/import() calls'), scope);
+  assert.ok(scope.includes('lower bound because 4 entries'), scope);
 
   // 측정한 이탈과 출처 모름이 함께 있으면 둘 다 싣는다.
   const mixed = assemble({
@@ -177,7 +177,7 @@ test('스캔이 출처를 따라가지 못하는 값이 있으면 0이어도 js-
   });
   const mixedScope = bindingScope(mixed) ?? '';
   assert.ok(mixedScope.startsWith('js-binding-scope: 1 native module references '), mixedScope);
-  assert.ok(mixedScope.includes('lower bound because 1 imports and require()/import() calls'), mixedScope);
+  assert.ok(mixedScope.includes('lower bound because 1 entries'), mixedScope);
 });
 
 test('배럴로 다시 내보낸 react-native NativeModules 접근은 조용히 버리지 않고 한계로 센다', () => {
@@ -364,4 +364,68 @@ test('타입 주석만 있는 선언 뒤의 모듈 선언은 앞 이름이 아�
   });
   assert.deepEqual(document.facts.map(({ kind, channel, method }) => [kind, channel, method ?? null]),
     [['module-import', 'Haptics', null], ['method-invoke', 'Haptics', 'impact']]);
+});
+
+test('import 문이 아닌 import 낱말과 템플릿 보간은 사실을 삼키지 않고, 읽지 못한 부분은 범위 한계로 센다', () => {
+  const camera = [['module-import', 'Camera', null], ['method-invoke', 'Camera', 'open']];
+  // import.meta·객체 키·JSX 낱말의 `import`가 import 문처럼 문자열까지 이어져 뒤의 NativeModules 사실을 삼켰다(리뷰 S3a).
+  for (const [source, untraced] of [
+    ['const env = import.meta.env\nNativeModules.Camera.open()\n', 0],
+    ['const x = { import: X }\nNativeModules.Camera.open()\n', 0],
+    ['const v = <Text>import</Text>\nNativeModules.Camera.open()\n', 1],
+  ] as const) {
+    const document = assemble({ 'src/a.tsx': source });
+    assert.deepEqual(document.facts.map(({ kind, channel, method }) => [kind, channel, method ?? null]), camera, source);
+    const scope = bindingScope(document);
+    if (untraced === 0) assert.equal(scope, undefined, source);
+    else assert.ok(scope?.includes(`lower bound because ${untraced} entries`), scope);
+  }
+  // 문장 자리의 그 낱말을 import 문으로 읽어 뒤 문자열까지 삼키지 않는다 — 뒤 선언도 바인딩으로 수집한다.
+  const bound = assemble({
+    'src/a.tsx': "function Hint() {\n  return (\n    <Text>\n      import\n    </Text>\n  )\n}\n"
+      + "const Cam = requireNativeModule('Cam')\nCam.take()\n",
+  });
+  assert.deepEqual(bound.facts.map(({ kind, channel, method }) => [kind, channel, method ?? null]),
+    [['module-import', 'Cam', null], ['method-invoke', 'Cam', 'take']]);
+  // 템플릿 보간 안은 읽지 않는다 — 브리지 API를 언급하는 보간은 범위 한계의 하한 근거로 센다(리뷰 S3b).
+  const template = assemble({ 'src/a.ts': 'const s = `${NativeModules.Camera.getName()}`\n' });
+  assert.deepEqual(template.facts, []);
+  assert.ok(bindingScope(template)?.includes('lower bound because 1 entries'), bindingScope(template));
+  // 쉼표가 든 제네릭 호출 인수는 선언자 목록이 아니다 — 뒤 객체 리터럴을 구조 분해 패턴으로 읽지 않는다(리뷰 S3c).
+  for (const source of [
+    'const api = useMemo<Record<string, unknown>>(() => ({ cam: NativeModules.Camera }), [])\nNativeModules.Torch.on()\n',
+    'const pick = <T,>(value: T) => ({ first: 1, NativeModules })\nNativeModules.Torch.on()\n',
+  ]) {
+    const document = assemble({ 'src/a.tsx': source });
+    assert.deepEqual(document.facts.filter((fact) => fact.channel === 'Torch').map(({ kind }) => kind),
+      ['module-import', 'method-invoke'], source);
+  }
+});
+
+test('Babel 기본 import 변환(_interopRequireDefault)의 .default.NativeModules도 react-native 레지스트리로 읽는다', () => {
+  // 리뷰 S4: main은 체인 홀짝 덕에 읽었고 이 브랜치는 출처 모름으로 셌다.
+  for (const source of [
+    "var _reactNative = _interopRequireDefault(require('react-native'));\n_reactNative.default.NativeModules.Camera.open();\n",
+    'const react_native_1 = __importDefault(require("react-native"));\nreact_native_1.default.NativeModules.Camera.open();\n',
+    "var _reactNative = _interopRequireWildcard(require('react-native'));\n_reactNative.NativeModules.Camera.open();\n",
+  ]) {
+    const document = assemble({ 'src/a.js': source });
+    assert.deepEqual(document.facts.map(({ kind, channel, method }) => [kind, channel, method ?? null]),
+      [['module-import', 'Camera', null], ['method-invoke', 'Camera', 'open']], source);
+    assert.ok(!document.limitations.some((line) => line.startsWith('unattributed-js-native-modules:')), source);
+  }
+  // 다른 모듈의 interop 결과는 react-native가 아니다.
+  const other = assemble({ 'src/a.js': "var _shim = _interopRequireDefault(require('./shim'));\n_shim.default.NativeModules.Camera.open();\n" });
+  assert.deepEqual(other.facts, []);
+  assert.ok(other.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')));
+});
+
+test('속성 자리 브리지 API 호출은 패키지 멤버 호출로 겹쳐 세지 않는다', () => {
+  // 리뷰 N2: 속성 자리 판정이 사실로 읽거나 출처 모름으로 센 호출을 unattributed-js-package-calls에도 셌다.
+  const read = assemble({ 'src/a.ts': "import RN from 'react-native';\nRN.requireNativeComponent('View');\n" });
+  assert.deepEqual(read.facts.map(({ kind, channel }) => [kind, channel]), [['component-require', 'View']]);
+  assert.ok(!read.limitations.some((line) => line.startsWith('unattributed-js-package-calls:')), read.limitations.join('\n'));
+  const counted = assemble({ 'src/a.ts': "import Core from 'expo-modules-core';\nCore.requireNativeModule('X');\n" });
+  assert.ok(counted.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')));
+  assert.ok(!counted.limitations.some((line) => line.startsWith('unattributed-js-package-calls:')), counted.limitations.join('\n'));
 });

@@ -10,12 +10,15 @@
   another value, reassigned or destructured, read as a member without a call, or used where the scan
   cannot decide (an unbalanced bracket). Attributed member calls,
   recorded declarations and exports, and value-free tests (`if`/`while` conditions, `!`, `typeof`,
-  comparisons, `in`, the left side of `&&`, a ternary test, an assignment target) do not count. Imports
-  that do not resolve to a native module binding (other than `NativeModules`, `TurboModuleRegistry` and
-  the lookup and component APIs the scan reads by name), namespace imports, value-producing `require()`
-  calls and dynamic `import()` calls bring in values the scan cannot trace; when any are present the
-  line adds their number and states that the first number is a lower bound, and it is kept even when
-  the first number is 0. The line is omitted only when both numbers are 0. Output changes accordingly:
+  comparisons, `in`, the left side of `&&`, a ternary test, an assignment target, a statement that
+  discards the value) do not count. Imports that do not resolve to a native module binding (other than
+  `NativeModules`, `TurboModuleRegistry` and the lookup and component APIs the scan reads by name),
+  namespace imports, value-producing `require()` calls, dynamic `import()` calls, `import` words that do
+  not form an import statement (JSX text, a broken statement), and template literals whose interpolation
+  mentions a bridge API (the scan does not read inside `${…}`) are entries the scan cannot trace; when
+  any are present the line adds their number and states that the first number is a lower bound, and it
+  is kept even when the first number is 0. The line is omitted only when both numbers are 0. Output
+  changes accordingly:
   a scan in which every native module value is tracked and every import is traced (for example a
   directory of codegen specs) no longer reports the line, so `impact --strict` (CLI and MCP) on such
   inputs can exit 0 instead of 1 when no other relevant limitation remains. Anything matching the old
@@ -94,7 +97,9 @@
   registry without an import silently disappeared. The same misreading made an object key such as
   `{ requireNativeModule: mock }` hide the `expo` mechanism of real calls, and treated names after a
   comma in a type annotation (`Map<string, T>`) as declarators. A `{` is now a pattern only before the
-  declarator's `=` (or `of`/`in`), and type annotations are skipped. Destructuring patterns, including
+  declarator's `=` (or `of`/`in`), and the type annotation of a name declarator (`const x: T = …`) is
+  skipped; an annotation on a destructuring pattern (`const { a }: { … } = x`) is still read with the
+  pattern. Destructuring patterns, including
   object patterns inside array patterns, and local shim declarations are still local.
 
 - `extract-js` ends a `const`/`let`/`var` declaration at the end of its statement. It used to end only
@@ -103,8 +108,15 @@
   the end of the file and every later binding and export was never collected; member calls through
   them and imports of them were not attributed. A declaration now also ends at the `)`/`]`/`}` that
   closes an enclosing bracket or block, and at a line break where the previous line ends an operand and
-  the next line does not continue the expression or the declaration list (ASI). Code that uses
-  semicolons is unchanged; code without them now yields the method-invoke facts it was missing.
+  the next line does not continue the expression or the declaration list (ASI); a line ending in a TS
+  non-null `!` or `as const` also ends an operand. Code without semicolons now yields the method-invoke
+  facts it was missing, and so does code with semicolons that contains a `for (const x of …)` or
+  `for (var k in …)` header — Babel's `_extends` helper has one, so the rest of many compiled files used
+  to be skipped (react-native-screens 4.30.1: `unattributed-js-package-calls` 123 → 231 and
+  `unattributed-js-relative-calls` 36 → 48 against 0.14.0, from this fix alone). A line that ends in a
+  JSX closing `>` or `/>` is not treated as an operand end, because a line-final `>` can be a comparison,
+  so the next statement is still read as part of the declaration (the references it hides are counted
+  in `js-binding-scope:`).
 
 - `extract-js` keeps the default name of `import X, * as NS from 'spec'`. The namespace's `as` used to
   rename the preceding default entry, so `X` vanished from the import list (its member calls were
@@ -125,7 +137,11 @@
   carry `mechanism: "expo"`. Any other object (`foo`, a longer chain, another call's result such as
   `jest.requireActual(…)`, another module's namespace, a shadowed parameter) yields no fact, and its
   accesses are counted in `unattributed-js-native-modules:`, whose message now covers both barrel imports
-  and untraced objects. A property name is never read as a file binding or an import alias.
+  and untraced objects. A property name is never read as a file binding or an import alias. Babel and TS
+  CommonJS output is traced too: `X = _interopRequireDefault(require('react-native'))` (or `__importDefault`)
+  makes `X.default` the react-native module object, and `_interopRequireWildcard`/`__importStar` make `X`
+  a namespace, so `_reactNative.default.NativeModules.Camera` keeps its facts. A bridge API call in property
+  position is no longer also counted as an unattributed package member call.
 
 - `extract-js` ends a type-annotated declaration without an initializer at the end of its statement.
   `let timer: Timer⏎const Haptics = requireNativeModule('Haptics')` used to skip the annotation up to the
@@ -144,6 +160,19 @@
   later in the file so that `if (M.x < y) { z = a > (b) }` read `M.x` as a generic call. Type arguments that
   can occur in a call are matched as before. Classifying `M[…]` accesses for `js-binding-scope:` no longer
   rescans the bracket argument, which was quadratic for deeply nested accesses.
+
+- `extract-js` reads an `import` word as an import statement only when its clause (names, `{`, `}`, `,`,
+  `*`) reaches a specifier string. `import.meta`, an object key `{ import: X }` and the word in JSX text
+  used to be read up to the next string in the file, so the code in between — `NativeModules` accesses
+  and declarations — was skipped for facts and bindings. An `import` word that reaches no specifier is
+  counted as an untraced entry of `js-binding-scope:`; `import.meta` and object keys are not. TS
+  `import X = require('spec')` records `X` alone instead of also recording `require` as an import name.
+
+- `extract-js` skips the type arguments of a generic call or arrow in an initializer
+  (`useMemo<Record<string, unknown>>(…)`, `<T,>(x) => …`) when looking for declarators. Their commas used to
+  reopen the declarator list, so a following object literal was read as a destructuring pattern again and,
+  in a file without an import of `NativeModules`, hid every registry fact as in the object-literal fix
+  above.
 
 ## [0.14.0] - 2026-11-03
 

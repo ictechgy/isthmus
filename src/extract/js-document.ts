@@ -280,8 +280,9 @@ function buildLimitations(
       + 'reassigned or destructured, or a member read without a call), so member calls through them are '
       + 'not attributed to a module name'
       + (extra.untracedBindings === 0 ? '' : `; this is a lower bound because ${extra.untracedBindings} `
-        + 'imports and require()/import() calls bring in values the scan does not trace to a native '
-        + 'module binding'),
+        + 'entries the scan does not trace may also hold native modules (imports that do not resolve to a '
+        + 'native module binding, require()/import() calls, unparsed import words, template interpolations '
+        + 'that mention a bridge API)'),
     );
   }
   if (dynamicModuleNames > 0) {
