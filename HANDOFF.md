@@ -34,7 +34,7 @@ _Last updated: 2026-11-16_
   스펙+수신 문서). 실제 앱 소스는 거의 항상 패키지를 import해 줄이 남는다(expo-haptics 14.1.4: 사실 동일, `0 …;
   lower bound because 7`). conformance 벡터·생산자 8곳은 이 줄을 참조하지 않고, 드리프트는 없다(생산자 7곳 current,
   schemagraph not-vendored). `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
-- 2026-11-15 같은 브랜치 후속(PR #164에 포함, origin `1ee98a5`): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
+- 2026-11-15 같은 브랜치 후속(PR #164에 포함): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
   회귀 테스트를 먼저 두고 변이 검사로 확인했다(CHANGELOG `[Unreleased]` `### Fixed`).
   - `7f6eb19` 선언 초기값의 객체 리터럴·함수 본문 이름을 로컬 선언으로 기록하지 않는다 — import 없이 전역으로
     읽는 파일의 NativeModules 사실 전체가 사라지던 문제. 타입 주석의 이름도 선언자로 읽지 않는다.
@@ -46,7 +46,8 @@ _Last updated: 2026-11-16_
     `unattributed-js-native-modules:`로 센다(메시지 확장). 속성 자리 이름은 파일 바인딩·별칭으로 읽지 않아 홀수
     체인 위치의 거짓 method-invoke·module-import가 없어졌다.
   - expo-haptics 14.1.4 사실은 수정마다 바이트 단위로 같았다. 적대 입력 시간은 수정 전 트리와 같은 범위다.
-- 2026-11-16 PR #164 독립 리뷰("수정 후 머지 가능") 반영 — 로컬 커밋, 아직 푸시하지 않았다(origin은 `1ee98a5`):
+- 2026-11-16 PR #164 독립 리뷰("수정 후 머지 가능") 반영 — 아래 커밋은 PR에 푸시됐다. 이후 재검토 반영처럼 그 뒤에
+  쌓인 커밋의 푸시 여부는 `git status`(origin 대비 ahead)로 확인한다:
   - `5a6949a` B1: 초기값 없는 타입 주석 선언(`let timer: Timer`)이 다음 줄 선언의 초기값을 가져가 거짓
     `Haptics.cancel`과 사라진 한계를 만들던 문제. 같은 수정이 이번 릴리스의 주석 건너뛰기가 `Map<string, Array<number>>`의
     `>>`에서 파일 끝까지 넘어가던 회귀(리뷰 밖에서 재현)도 고친다. impact --strict 종단 테스트 포함.
@@ -57,6 +58,9 @@ _Last updated: 2026-11-16_
     (`_interopRequireDefault(require('react-native'))`의 `.default.NativeModules`) 사실 유지, N2 이중 계수 제거,
     N3 버려지는 식 문장 비계수, N1 `as const`·non-null 줄 끝 ASI와 CHANGELOG 정정, N5 문서.
   - 실제 패키지 7개(react-native 0.88.1, screens 4.30.1, vision-camera 5.2.4 등)에서 리뷰 반영 전후 사실 차이 없음.
+- 2026-11-16 PR #164 델타 재검토("수정 후 머지 가능") 반영: S-A 초기값 제네릭 덩어리 건너뛰기가 안쪽 괄호의 `>`와
+  짝지어 세미콜론 없는 뒤 문장을 삼키던 문제(안쪽 괄호는 그 안에서 연 제네릭만 닫는다 — main부터 있던 거짓 `M.x` 호출도
+  사라짐), S-B 템플릿 정규식의 이차 시간, N-b 기본 import 변환 `.default`를 react-native로 한정(Expo 패키지는 센다) — `ecf87ea`.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -80,7 +84,10 @@ _Last updated: 2026-11-16_
   이름(`const module = NativeModules.A`/`…B`)이 거짓 사실이 된다. 블록 범위 바인딩(선언 구간 안에서만 적용)이 먼저다.
 - extract-js 남은 관찰 공백(리뷰 반영 중 확인, 모두 js-binding-scope로 셈): 중첩 제네릭 인수를 둔 API 호출
   (`requireNativeModule<A<B>>('X')`, `>>` 한 토큰)은 호출로 읽지 않는다. JSX는 토큰으로 나누지 않아 `</Text>`의 `/`가
-  정규식으로 읽힐 수 있고, 줄 끝 JSX `>`·`/>`는 ASI 피연산자 끝으로 보지 않는다(비교 `>`와 구분 불가).
+  정규식으로 읽힐 수 있고, 줄 끝 JSX `>`·`/>`는 ASI 피연산자 끝으로 보지 않는다(비교 `>`와 구분 불가). JSX 형제 자식
+  `{a}{NativeModules.Info.version}`의 두 번째 `{…}`는 블록으로 보여 그 값이 버려지는 식 문장으로 분류된다(재검토 N-d).
+  타입 매개변수 기본값이 있는 제네릭 화살표 `<T = X,>(x) => {…}`는 `=` 때문에 한 덩어리로 건너뛰지 못해, 쉼표가
+  선언자 목록을 다시 열고 뒤 객체 리터럴을 패턴으로 읽는다(재검토 N-c, import 없이 전역 NativeModules를 읽는 파일만 영향).
 - 발행 workflow·npm provenance(외부 권한 필요), 파일별 커버리지 하한.
 
 ## 머지 뒤 바로 알아 둘 것
@@ -100,5 +107,5 @@ _Last updated: 2026-11-16_
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
 검토 후속은 #162로 main에 머지됐으나 미발행(`[Unreleased]`)이다. 2026-11-15 js-binding-scope 측정(`057a133`)과
-그 후속 extract-js 수정은 PR #164(브랜치 `ccr-37904670-hxdjsx`)로 열려 있고, 2026-11-16 리뷰 반영 커밋은 아직
-푸시 전이다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
+그 후속 extract-js 수정·리뷰 반영은 PR #164(브랜치 `ccr-37904670-hxdjsx`)로 열려 있다. 마지막 로컬 커밋이 푸시됐는지는
+`git status`로 확인한다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
