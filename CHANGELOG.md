@@ -151,9 +151,13 @@
   (`{ Camera: { take } }`) keeps the `Camera` fact and counts the destructured module in
   `js-binding-scope:`, and a computed key (`{ [name]: M }`) is a dynamic fact like `NativeModules[name]`.
   Lookups stay near-linear for many same-name declarations, blocks and nesting levels. Bridge facts and
-  limitation counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
+  `js-binding-scope:` counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
   react-native-vision-camera 5.2.4, expo-haptics 14.1.4, expo-camera 58.0.14, react-native-svg 15.16.1
-  and six others) are unchanged; they bind native modules at module scope.
+  and six others) are unchanged; they bind native modules at module scope. One other count changes:
+  react-native-gesture-handler 3.5.0's `unattributed-js-package-calls` goes 78 → 80, because parameter
+  type annotations no longer declare names, so two `React.cloneElement` calls whose parameter type
+  mentions `React` are now counted as package calls (they were hidden by the annotation before this
+  change, too).
 
 - `extract-js` collects declarations, reassignments and exports inside function bodies, object literals
   and class bodies of `const`/`let`/`var` initializers. `const Screen = () => { const Camera =
