@@ -25,9 +25,9 @@
   fixed text must match the `js-binding-scope:` prefix instead. Real app sources nearly always import
   packages and keep the line, now with counts. The count also surfaces gaps that were silent before:
   the `NativeModules.X ? NativeModules.X : fallback` library template,
-  `new NativeEventEmitter(NativeModules.X)`, `NativeModules.X!.m()` and `NativeModules.X?.m?.()` calls,
-  and declarations inside function bodies of `const`/`let`/`var` initializers, which the scan does not
-  collect.
+  `new NativeEventEmitter(NativeModules.X)`, `NativeModules.X!.m()` and `NativeModules.X?.m?.()` calls.
+  (Declarations inside function bodies of `const`/`let`/`var` initializers, which this count first
+  surfaced, are now collected; see Fixed.)
 
 - persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
   declarations with different spellings fold into one join key, such as `public.Users` and
@@ -90,6 +90,114 @@
 
 ### Fixed
 
+- `extract-js` resolves declaration bindings and one-level string constants by block scope instead of
+  one file-wide map. When two function bodies, blocks or methods bound the same name to different
+  native modules (`function A() { const M = NativeModules.A; M.x(); }` and
+  `function B() { const M = NativeModules.B; M.y(); }`), the last declaration won and A's call became a
+  false `B.x` `method-invoke`; the same happened to `const name = 'Alpha'` /
+  `requireNativeModule(name)` in sibling functions (a false `module-import Beta`). A non-module
+  declaration of the same name in an inner scope (a local fake, a destructured or array-destructured
+  name, a `for…of` variable, a parameter) was ignored, so its calls were attributed to the outer binding
+  or to an import (a false `Outer.fake` or `Camera.take`). Each use now resolves to the innermost
+  declaration or parameter list that covers it: `const`/`let` apply in their block (a `for` header
+  declaration in its loop), and `var` applies its value in the block that declares it while claiming the
+  name in the whole enclosing function body. A function body or parameter list is treated as certain
+  only when a token proves it: a `function` head (generic parameters with defaults such as
+  `<T = {}>`, return type annotations and conditional types included), an arrow (`) =>`, or `(…): T =>`
+  where an arrow function can start — not after a call or an operator such as `c ? !(p) : M => {…}`,
+  where `M` is the arrow's parameter — and only when no unmatched `?` or `case` precedes it at the same
+  depth, so `a ? b ? c : (x) : M => {…}` and `case 1, (x): M => {…}` stay tentative), a class static
+  block or a TS namespace. A method shorthand body
+  and its parameters (`run(M) {…}`, `catch(M) {…}`, `run?(M): void {…}`) are inferred only from the
+  following `{`, so they are tentative. Parameters of certain functions hide outer bindings, including
+  parameters of functions nested in a single-parameter arrow body (`items => { function f(M) {…} }`);
+  parameter names are only the names after modifiers, decorators (`@Inject<Svc>()` included) and `...`,
+  plus pattern binding names, so type annotations, defaults and pattern keys no longer hide outer
+  bindings. A named function expression's name hides outer bindings inside its body
+  (`const x = function M() { M.take(); }`); a named class expression's name does so tentatively. `case`/`default` clause blocks are blocks even when the clause expression ends in `)`
+  (`case kind(): {` used to be read as a function body). These are not parameter lists: a call in a
+  conditional branch (`busy ? wrap(x) : e => {…}`) and a class heritage call (`class A extends
+  withEvents(M) {`). A return type annotation also ends at a line break after a complete type, so a
+  semicolon-less overload or abstract signature (`open(Camera: string): void` followed by another method)
+  is no longer read up to the next method's `{`. `var` hoists past every block that is not a
+  certain function body. When it passes a block whose kind the scan cannot decide — a method shorthand
+  body, a labeled block, a block after `}` or after a line without a semicolon (including a call line),
+  a class or object body — its value is applied nowhere. Its uses are counted in `js-binding-scope:`
+  instead of attributed to it or to an outer binding, and so are uses of a same-name block declaration
+  between it and the function body (the `var` would win over that declaration if the block were a
+  function body). A `var` that redeclares a parameter of its function is treated the same way (before
+  the declaration the value is the argument).
+  A tentative parameter list hides outer bindings only tentatively. Examples are a method shorthand,
+  `wrap(M)` followed by a `{` line and `c ? (x): T => {`. Uses that would otherwise reach a module
+  binding, an import or the `NativeModules` registry are counted. A name redeclared in the same scope
+  with a different module, or reassigned, is not attributed (its initializers are counted in
+  `js-binding-scope:`, as before for reassignment).
+  Reassignment now also covers compound assignment (`&&=`, `||=`, `+=` and the rest), `++`/`--`,
+  destructuring assignment (`({ M } = mocks)`, `[a, M] = pair`, `if (c) [M, N] = [N, M]`,
+  `case 'x': [M] = mocks`, `for ([k, M] of pairs)`, nested patterns), a parenthesized target (`(M) = x`),
+  a bare `for (M of xs)` target and assignments inside a declaration's initializer (`const r = (M = x)`)
+  or inside a declaration pattern's defaults and computed keys (`const [a = (M = x)] = arr`,
+  `let { [M = 'k']: v } = o`), which used to leave a false `A.go`. A parameter pattern's default
+  (`function f({ M } = {})`) and an enum member initializer (`enum E { M = 1 }`) are not assignments,
+  but an assignment inside an enum initializer (`enum E { A = M++ }`) is. A reassignment in a function
+  declared earlier in the file now also clears a later declaration, and reassignments are resolved
+  again once all declarations are known, so
+  an assignment taken by a `var` hoisted later in the same function no longer clears the outer binding.
+  An assignment to a parameter of a certain function does not clear outer bindings. Where the target is
+  not certain, the outer binding is cleared and its uses are counted. The uncertain cases are:
+  - after a `for` header declaration whose body is not a block (the scan widens that declaration to the
+    enclosing block instead of finding the end of the body statement);
+  - inside an undecided block;
+  - beyond a tentative parameter list, such as a method's.
+
+  Uses whose value the scope cannot decide are not attributed and are counted in `js-binding-scope:`:
+  a `var` read outside its declaring block, or a name after such a widened `for` declaration, including
+  a call that may go through an import. The message now also names redeclared bindings, uses outside
+  the block a declaration is scoped to, and uses where the scan cannot tell which declaration or
+  parameter applies. A name whose scope ranges cannot be told apart (overlapping or too deeply widened)
+  has its module uses counted instead of dropped.
+  Escape counting follows the same scopes, so a same-name use in another function is no longer counted
+  as a module reference. A local `NativeModules`, Expo lookup API or `require` stand-in declared with
+  `const`/`let`/`var` now changes the global reading only inside its scope (function and class
+  declaration names still apply to the whole file), and inside that scope it wins over a react-native
+  `NativeModules` import: a test helper's `const NativeModules = mock` used to yield a bare registry fact
+  for its own declarator and false facts for its accesses. `const { A } = NativeModules` now produces
+  `module-import` facts and bindings only when `NativeModules` at that position is the react-native
+  registry and the initializer's value is the registry itself (`= NativeModules`, a `|| {}`/`?? {}`
+  fallback, an `as` assertion or a `satisfies` check): destructuring a same-name parameter or local stand-in yields nothing
+  (it used to yield false facts), destructuring a `NativeModules` imported from another module counts
+  each name in `unattributed-js-native-modules:` like a member access, and `const { getConstants } =
+  NativeModules.PlatformConstants` destructures members of that module — the member access yields the
+  `PlatformConstants` fact and the destructured module value is counted (it used to yield a false
+  `module-import getConstants`, and `t2.x()` after `const { take: t2 } = NativeModules.Camera` a false
+  `take.x`). In a registry pattern, a nested target
+  (`{ Camera: { take } }`) keeps the `Camera` fact and counts the destructured module in
+  `js-binding-scope:`, and a computed key (`{ [name]: M }`) is a dynamic fact like `NativeModules[name]`.
+  Lookups stay near-linear for many same-name declarations, blocks and nesting levels, and for deeply
+  nested destructuring assignments. Bridge facts and
+  `js-binding-scope:` counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
+  react-native-vision-camera 5.2.4, expo-haptics 14.1.4, expo-camera 58.0.14, react-native-svg 15.16.1
+  and six others) are unchanged; they bind native modules at module scope. One other count changes:
+  react-native-gesture-handler 3.5.0's `unattributed-js-package-calls` goes 78 → 80, because parameter
+  type annotations no longer declare names, so two `React.cloneElement` calls whose parameter type
+  mentions `React` are now counted as package calls (they were hidden by the annotation before this
+  change, too).
+
+- `extract-js` collects declarations, reassignments and exports inside function bodies, object literals
+  and class bodies of `const`/`let`/`var` initializers. `const Screen = () => { const Camera =
+  NativeModules.Camera; Camera.take(); }` used to skip the body: the call was not attributed (it was
+  counted in `js-binding-scope:`), `const { Torch } = NativeModules` inside it produced no `module-import`
+  fact, and a reassignment inside it (`const reset = () => { M = other(); }`) did not invalidate the outer
+  binding. Function components and hooks now yield the same facts as `function` declarations. The scan
+  pauses the declaration at the body and resumes it after the closing brace without recursion, so deeply
+  nested bodies do not exhaust the call stack. A `const`/`let`/`var` keyword starts a declaration only
+  when a declarator follows (a name followed by `=`, `,`, `;`, `:`, `!`, `of`, `in`, a closing bracket or
+  a line break, or a pattern followed by `=`, `:`, `of`, `in`), so an object key (`{ var: 1 }`),
+  `as const`, `const enum` and JSX text (`We will let you know when {name} is ready`) no longer declare
+  names that hide an outer binding; `const enum` member names are not counted as module references. Destructuring patterns declare only their binding names: property
+  keys of nested patterns (`{ Haptics: { enabled } }` declares `enabled`) and a pattern's type
+  annotation (`const { a }: { Haptics?: boolean } = props`) are not declarations.
+
 - `extract-js` no longer records names inside a declaration's initializer as local declarations. An
   object literal or function body in an initializer (`const api = { cam: NativeModules.Camera }`,
   `const run = () => { load(a, NativeModules.Camera) }`) used to be read as a destructuring pattern, so
@@ -98,8 +206,8 @@
   `{ requireNativeModule: mock }` hide the `expo` mechanism of real calls, and treated names after a
   comma in a type annotation (`Map<string, T>`) as declarators. A `{` is now a pattern only before the
   declarator's `=` (or `of`/`in`), and the type annotation of a name declarator (`const x: T = …`) is
-  skipped; an annotation on a destructuring pattern (`const { a }: { … } = x`) is still read with the
-  pattern. Destructuring patterns, including
+  skipped; an annotation on a destructuring pattern (`const { a }: { … } = x`) is skipped too (see the
+  initializer-body entry above). Destructuring patterns, including
   object patterns inside array patterns, and local shim declarations are still local.
 
 - `extract-js` ends a `const`/`let`/`var` declaration at the end of its statement. It used to end only

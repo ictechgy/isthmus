@@ -46,13 +46,18 @@ export function createJsFactsDocument(
 
   for (const file of files) {
     const scan = scans.get(file.path)!;
-    const resolvedIdents = new Map<string, BoundName>(scan.bindings);
+    // 이 파일의 선언 바인딩은 블록 범위라 스캐너가 호출 위치마다 해석해 두었다(memberCalls[].binding). 여기서는
+    // 그 위치의 이름을 어떤 선언도 차지하지 않은 import 이름만 해석한다.
+    const importBindings = new Map<string, BoundName>();
+    // 모듈 바인딩으로 해석되는 이름이다(이 파일의 선언 또는 해석된 import). 이름별 이탈 계수에 쓴다.
+    const moduleNames = new Set<string>(scan.bindings.keys());
     // 모듈 바인딩으로 해석되지 않은 import 이름이다. 스캔이 이름으로 읽는 API가 아니면 값의 출처를 모른다.
     const untracedImports = new Set<string>();
     for (const entry of scan.imports) {
       const bound = resolveImport(scans, file.path, entry);
       if (bound !== undefined) {
-        resolvedIdents.set(entry.localName, bound);
+        importBindings.set(entry.localName, bound);
+        moduleNames.add(entry.localName);
         continue;
       }
       if (!isScannedApiImport(entry)) untracedImports.add(entry.localName);
@@ -66,13 +71,18 @@ export function createJsFactsDocument(
     escapedModuleReferences += scan.counts.escapedModuleReferences;
     // 이름별 이탈은 그 이름이 이 파일·다른 파일의 모듈 바인딩으로 해석될 때만 모듈 참조다.
     for (const [ident, count] of scan.identifierEscapes) {
-      if (resolvedIdents.has(ident)) escapedModuleReferences += count;
+      if (moduleNames.has(ident)) escapedModuleReferences += count;
     }
     for (const fact of scan.facts) {
       facts.push(toFact(file.path, fact));
     }
     for (const call of scan.memberCalls) {
-      const bound = resolvedIdents.get(call.ident);
+      // 베이스가 import인지 정하지 못한 호출은 import가 모듈로 해석되면 귀속하지 않고 범위 밖 참조로 센다.
+      if (call.uncertain === true) {
+        if (importBindings.has(call.ident)) escapedModuleReferences++;
+        continue;
+      }
+      const bound = call.binding ?? importBindings.get(call.ident);
       if (bound === undefined) continue;
       const name = 'name' in bound ? bound.name : bound.dynamicExpression;
       facts.push({
@@ -106,9 +116,9 @@ export function createJsFactsDocument(
   };
 }
 
-/** 한 식별자에 대한 멤버 호출 수를 센다(미귀속 한계 계수용). */
+/** 한 import 이름에 대한 멤버 호출 수를 센다(미귀속 한계 계수용). 로컬 선언이 묶은 호출은 import 호출이 아니다. */
 function countMemberCalls(scan: JsFileScan, ident: string): number {
-  return scan.memberCalls.filter((call) => call.ident === ident).length;
+  return scan.memberCalls.filter((call) => call.ident === ident && call.binding === undefined).length;
 }
 
 /**
@@ -277,8 +287,9 @@ function buildLimitations(
     limitations.push(
       `js-binding-scope: ${extra.escapedModuleReferences} native module references leave the bindings `
       + 'the scan follows (passed to a function, returned, stored in instance state or another value, '
-      + 'reassigned or destructured, or a member read without a call), so member calls through them are '
-      + 'not attributed to a module name'
+      + 'reassigned, redeclared or destructured, used outside the block a declaration is scoped to or where the scan '
+      + 'cannot tell which declaration or parameter applies, or a member read without a call), so member calls through '
+      + 'them are not attributed to a module name'
       + (extra.untracedBindings === 0 ? '' : `; this is a lower bound because ${extra.untracedBindings} `
         + 'entries the scan does not trace may also hold native modules (imports that do not resolve to a '
         + 'native module binding, require()/import() calls, unparsed import words, template interpolations '

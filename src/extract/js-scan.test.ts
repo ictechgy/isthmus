@@ -792,6 +792,8 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     "const { requireNativeModule } = require('expo-modules-core');",
     'jest.mock(name, () => ({ requireNativeModule: mock }));',
     'export { requireNativeModule };',
+    // 선언 초기값의 함수 본문 안 선언도 수집하는 바인딩이다(전에는 본문을 건너뛰어 이탈로 셌다).
+    'const Screen = () => { const Cam = NativeModules.Cam; };',
   ]) {
     assert.equal(scanJsSource(source).counts.escapedModuleReferences, 0, source);
   }
@@ -819,7 +821,6 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     'if ((cached = NativeModules.Cam)) {}',
     "const Cam = TurboModuleRegistry.get<Spec>('Cam') as Spec | null;",
     "const Cam = await requireNativeModule('Cam');",
-    'const Screen = () => { const Cam = NativeModules.Cam; };',
     "import { NativeModules as NM } from 'react-native';\nconst { Cam } = NM;",
     'const registry = TurboModuleRegistry;',
     'const load = requireNativeModule;',
@@ -851,8 +852,7 @@ test('모듈 바인딩 이름의 값 사용 중 추적을 벗어난 것만 이�
     'const { take } = Local;',
     'function shadow(Cam) { return Cam; }',
     'const holder = { Cam: 1, other: Local };',
-    // `=` 재대입은 바인딩 자체를 지운다. 복합 대입의 대상과 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다.
-    'Cam ||= replacement;',
+    // 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다(재대입·복합 대입은 바인딩 자체를 지운다 — 따로 본다).
     'const later = () => { const Cam = other; };',
     // 문장 단독으로 버려지는 값은 넘어가지 않지만, `=` 뒤 `{ Cam }`은 블록이 아니라 객체 리터럴이다.
     'Cam;',
@@ -1163,4 +1163,85 @@ test('템플릿 보간의 브리지 API 언급은 템플릿 길이에 선형으�
   assert.equal(interpolationMentionsBridgeApi('`${a} ${NativeModules.Camera.getName()}`'), true);
   assert.equal(interpolationMentionsBridgeApi('`NativeModules ${a}`'), false);
   assert.equal(scanJsSource('const s = `${NativeModules.Camera.getName()}`').counts.untracedBindings, 1);
+});
+
+test('멤버 호출 후보는 호출 위치에서 선언이 묶은 모듈 값을 싣고 import 이름은 문서 단계에 맡긴다', () => {
+  const scan = scanJsSource([
+    "import Shared from './shared';",
+    "function a() { const M = requireNativeModule('A'); M.x(); Shared.s(); }",
+    "function b() { const M = requireNativeModule('B'); M.y(); const Shared = local(); Shared.t(); }",
+  ].join('\n'));
+  assert.deepEqual(scan.memberCalls.map((call) => [call.ident, call.method, call.binding ?? null]), [
+    ['M', 'x', { name: 'A' }],
+    ['Shared', 's', null],
+    ['M', 'y', { name: 'B' }],
+  ]);
+});
+
+test('선언 초기값 본문을 읽은 뒤 같은 선언의 뒤 선언자와 export를 이어 수집한다', () => {
+  const scan = scanJsSource([
+    "export const run = () => { const Inner = requireNativeModule('Inner'); Inner.go(); }, Cam = requireNativeModule('Cam');",
+    'const wrapped = memo(function () { const Local = NativeModules.Local; Local.ping(); }), Late = NativeModules.Late;',
+    'Cam.take(); Late.tick();',
+  ].join('\n'));
+  assert.deepEqual(scan.exports.named.get('Cam'), { name: 'Cam' });
+  assert.equal(scan.exports.named.has('Inner'), false);
+  assert.deepEqual(scan.memberCalls.map((call) => `${call.binding && 'name' in call.binding ? call.binding.name : '?'}.${call.method}`),
+    ['Inner.go', 'Local.ping', 'Cam.take', 'Late.tick']);
+});
+
+test('초기값의 객체 리터럴 키로 쓴 선언 키워드는 선언이 아니다', () => {
+  // 순회가 초기값의 객체 리터럴도 읽으므로 `var:` 키를 선언으로 읽으면 뒤 속성·메서드 본문 이름이 선언이 된다.
+  const scan = scanJsSource("const M = NativeModules.A;\nconst config = { var: 1, M, run() { M.go(); }, const: 2 };");
+  assert.deepEqual(scan.memberCalls.map((call) => [call.method, call.binding ?? null]), [['go', { name: 'A' }]]);
+});
+
+test('초기값 본문 안의 재대입은 그 위치를 차지한 바인딩을 지운다', () => {
+  // 전에는 본문을 건너뛰어 재대입을 보지 못하고 바깥 호출을 First로 귀속했다.
+  const scan = scanJsSource("let M = requireNativeModule('First');\nconst reset = () => { M = other(); };\nM.call();");
+  assert.deepEqual(scan.memberCalls, []);
+  assert.equal(scan.counts.escapedModuleReferences, 1);
+});
+
+test('깊게 중첩된 선언 초기값 본문과 블록도 호출 스택을 넘기지 않고 안쪽 바인딩을 귀속한다', () => {
+  const depth = 10_000;
+  for (const source of [
+    `${'const a = () => {'.repeat(depth)}const M = NativeModules.X; M.go();${'};'.repeat(depth)}`,
+    `${'{ const M = NativeModules.X; '.repeat(depth)}M.go();${'}'.repeat(depth)}`,
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual(scan.memberCalls.map((call) => [call.method, call.binding ?? null]), [['go', { name: 'X' }]]);
+  }
+});
+
+test('같은 범위의 var 재선언·깊은 블록의 var가 많아도 스캔이 선형에 가깝다', () => {
+  // 리뷰 재현: `var M = NativeModules.A;` 3만 2천 번 뒤 `M.go();` 3만 2천 번(한 함수)이 38초, 1만 6천 단계 블록마다 var가
+  // 2.5초였다(main 0.5초·0.1초). 묶음 요약·var 범위 기억으로 선형이다. 시간 상한은 이차 구현과 넉넉히 가르는 값이다.
+  const count = 32_000;
+  let started = performance.now();
+  const redeclared = scanJsSource(`function f() {\n${'var M = NativeModules.A;\n'.repeat(count)}${'M.go();\n'.repeat(count)}}`);
+  assert.equal(redeclared.memberCalls.length, count);
+  assert.deepEqual(redeclared.memberCalls[0]?.binding, { name: 'A' });
+  let elapsed = performance.now() - started;
+  assert.ok(elapsed < 6_000, `redeclared: elapsed ${elapsed.toFixed(0)} ms`);
+  started = performance.now();
+  const depth = 24_000;
+  const deep = scanJsSource(`${'{ var a = 1;\n'.repeat(depth)}${'}\n'.repeat(depth)}`);
+  assert.equal(deep.memberCalls.length, 0);
+  elapsed = performance.now() - started;
+  assert.ok(elapsed < 3_000, `deep: elapsed ${elapsed.toFixed(0)} ms`);
+});
+
+test('깊게 중첩된 구조 분해 대입도 선형 시간에 대상 이름을 지운다', () => {
+  // 3차 리뷰 SHOULD-FIX 1: `[[[…[M] = x] = x …] = x`의 `=`마다 감싼 괄호를 다시 오르고 패턴을 다시 훑어 1만 6천 단계에
+  // 16초였다(7d663be 0.1초). 감싼 대입 패턴의 직접 대상은 바깥 패턴이 함께 지우고 오른 결과를 기억해 0.1초 안팎이다.
+  const depth = 16_000;
+  const started = performance.now();
+  const scan = scanJsSource(
+    `let M = NativeModules.A;\n${'['.repeat(depth)}M${'] = x'.repeat(depth)};\nM.go();`);
+  const elapsed = performance.now() - started;
+  // M은 재대입돼 바인딩이 아니다 — 호출 후보가 없고 초기값이 범위 밖 참조로 세어진다.
+  assert.deepEqual(scan.memberCalls, []);
+  assert.equal(scan.counts.escapedModuleReferences, 1);
+  assert.ok(elapsed < 3_000, `elapsed ${elapsed.toFixed(0)} ms`);
 });

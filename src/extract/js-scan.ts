@@ -13,6 +13,8 @@ import type { BridgeFact, BridgeMechanism } from '../exchange/parse.ts';
 import { isSafeNonEmptyString } from '../exchange/parse.ts';
 import type { JsToken } from './lexer.ts';
 import { tokenizeJsSource } from './lexer.ts';
+import type { ScopedResolution, TokenRange } from './js-scopes.ts';
+import { sameBoundName, ScopedBindingTable } from './js-scopes.ts';
 
 /** `requireNativeModule` 계열 — 모듈을 부르는 호출 측 API 이름이다. */
 const moduleImportCalls = new Set([
@@ -58,9 +60,12 @@ export interface JsFileScan {
    * 해석해 메서드 호출 사실로 바꾼다.
    */
   readonly memberCalls: readonly ScannedMemberCall[];
-  /** 같은 파일에서 식별자가 가리키는 모듈·컴포넌트 이름이다. */
+  /**
+   * 이 파일의 선언이 모듈 값에 묶은 이름의 요약이다(이름 → 그 이름의 마지막 실효 선언 값). 바인딩은 선언의 블록
+   * 범위에만 적용되므로 위치별 해석이 아니다 — 멤버 호출의 귀속은 `memberCalls[].binding`이 담는다.
+   */
   readonly bindings: ReadonlyMap<string, BoundName>;
-  /** 한 단계 문자열 상수(`const X = 'lit'` / 백틱)다. */
+  /** 한 단계 문자열 상수(`const X = 'lit'` / 백틱)의 같은 요약이다. 인자 해석은 선언 범위 안에서만 한다. */
   readonly constStrings: ReadonlyMap<string, string>;
   /** `import X from 'spec'` 바인딩이다. 문서 단계에서 파일 해석을 거친다. */
   readonly imports: readonly ScannedImport[];
@@ -118,6 +123,16 @@ export type BoundName =
 export interface ScannedMemberCall {
   /** 베이스 식별자다. */
   readonly ident: string;
+  /**
+   * 호출 위치에서 이 파일의 선언이 베이스 식별자를 묶은 모듈 값이다. 없으면 그 위치의 이름은 어떤 선언도
+   * 차지하지 않은 import 이름이라 문서 단계가 import를 해석한다.
+   */
+  readonly binding?: BoundName;
+  /**
+   * 호출 위치가 넓게 잡힌 선언(본문이 블록이 아닌 for 머리 등)의 값 적용 구간 밖이라 베이스가 import 이름인지 로컬
+   * 이름인지 정하지 못했다는 표시다. 문서 단계는 import가 모듈로 해석돼도 귀속하지 않고 범위 밖 참조로 센다.
+   */
+  readonly uncertain?: true;
   /** 리터럴이면 메서드명, 아니면 원문 표현식이다. */
   readonly method: string;
   readonly dynamicMethod: boolean;
@@ -157,13 +172,33 @@ interface DestructuredSource {
   readonly sourceIndex: number;
 }
 
+/**
+ * 초기값의 `{…}`(함수 본문·객체 리터럴·클래스 본문)를 바깥 순회가 읽는 동안 멈춰 둔 선언문이다. 바깥 순회가
+ * 닫는 `}`에 오면 선언을 그 뒤부터 이어 읽는다 — 본문 안의 선언·재대입·export를 최상위 코드와 같은 규칙으로
+ * 수집하면서 재귀 없이(깊게 중첩된 본문에서도 호출 스택을 쓰지 않고) 원문 순서를 지킨다.
+ */
+interface SuspendedDeclaration {
+  /** 선언 키워드 위치다. */
+  readonly start: number;
+  /** 멈춘 `{`의 짝 `}` 위치다. */
+  readonly close: number;
+  /** 멈춘 위치의 선언 안 괄호 깊이다. */
+  readonly depth: number;
+  /** `export const …`의 선언인지다. */
+  readonly exported: boolean;
+}
+
 interface ScanContext {
   readonly source: string;
   readonly tokens: readonly JsToken[];
   readonly facts: ScannedFact[];
   readonly memberCalls: ScannedMemberCall[];
-  readonly bindings: Map<string, BoundName>;
-  readonly constStrings: Map<string, string>;
+  /** 선언의 블록 범위 바인딩·문자열 상수 표다. 수집이 끝나면 동결한다. */
+  readonly scopes: ScopedBindingTable;
+  /** 동결한 표의 이름별 모듈 바인딩 요약이다(JsFileScan.bindings). 수집 중에는 비어 있다. */
+  moduleBindings: ReadonlyMap<string, BoundName>;
+  /** 바깥 순회가 본문을 읽는 동안 멈춘 선언문 더미다(닫는 위치가 안쪽일수록 위). */
+  readonly suspendedDeclarations: SuspendedDeclaration[];
   readonly imports: ScannedImport[];
   /**
    * `imports`를 로컬 이름별로 나눈 색인이다(각 목록은 수집 순서). 식별자마다 import
@@ -186,11 +221,9 @@ interface ScanContext {
   };
   /**
    * 바인딩·export가 값을 따라가는 식의 시작 토큰 위치다. 선언 초기값은 수집이 끝난 뒤 바인딩이 살아 있을
-   * 때만 넣는다 — 재대입·같은 이름의 다른 선언으로 바뀐 바인딩은 그 초기값을 따라가지 않는다.
+   * 때만 넣는다 — 재대입·같은 범위의 다른 선언으로 바뀐 바인딩은 그 초기값을 따라가지 않는다.
    */
   readonly trackedValueStarts: Set<number>;
-  /** 선언 초기값으로 바인딩한 기록(초기값 시작 위치·이름·값)이다. */
-  readonly initializers: { readonly start: number; readonly name: string; readonly value: BoundName }[];
   /** 선언문이 묶은 선언자 이름 토큰 위치다. 값 사용이 아니다. */
   readonly declaratorNames: Set<number>;
   /** `const { A } = NativeModules`로 이름별 바인딩을 만든 레지스트리 토큰 위치다. */
@@ -203,17 +236,26 @@ interface ScanContext {
   readonly identifierEscapes: Map<string, number>;
   /**
    * 매개변수가 가리는 토큰 구간의 이름별 색인이다. `function f(M) {…}`·`f(M) {…}`·
-   * `(M) => {…}` 형태의 `{…}` 본문 구간과 매개변수 이름을 담는다 — 파일
-   * 전역 바인딩 지도는 스코프를 모르기 때문에 이 구간 안에서는 같은 이름의
-   * 바인딩을 적용하지 않는다.
+   * `(M) => {…}` 형태의 `{…}` 본문 구간과 매개변수 이름을 담는다. 블록 범위 선언과 함께 resolveLocal이
+   * 더 안쪽 것을 고른다 — 이 구간 안의 더 안쪽 선언은 매개변수를 이기고, 매개변수는 바깥 선언을 가린다.
    */
   readonly paramShadows: ParamShadowIndex;
   /**
-   * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등).
-   * Expo API와 동명인 이름이 로컬에 선언됐으면 그 호출은 Expo API가 아니므로
-   * mechanism 표시를 억제한다 — 스코프를 구분하지 않고 넓게 억제한다.
+   * 매개변수 가림을 만든 괄호 목록의 여는 `(` 위치 → 함수 머리인지 정하지 못한 목록인지다(구조 분해 대입과 매개변수
+   * 패턴을 가른다).
+   */
+  readonly parameterListOpens: ReadonlyMap<number, boolean>;
+  /** 구조 분해 패턴 괄호(여는 위치)마다 감싼 패턴을 따라 올라 닿는 첫 괄호의 계산 결과다(-1 없음). 한 번만 오른다. */
+  readonly patternRoots: Map<number, number>;
+  /** 괄호(여는 위치·for 머리 여부)마다 구조 분해 대입 대상인지의 판정 결과다. */
+  readonly assignmentPatterns: Map<number, boolean>;
+  /**
+   * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등). 위치별 판정은 declaredLocallyAt을 쓴다 —
+   * `const`·`let`·`var` 선언은 블록 범위 표로, 함수·클래스 선언은 파일 전체로 본다.
    */
   readonly localNames: Set<string>;
+  /** `function NAME`·`class NAME` 선언 이름이다. 범위를 계산하지 않아 파일 전체의 로컬 이름으로 본다. */
+  readonly functionOrClassNames: Set<string>;
   /**
    * `const X = require('spec')`·`const {X} = require('spec')`의 이름별
    * specifier다. CJS 구조 분해로 가져온 Expo API를 import와 같은 규칙으로
@@ -246,6 +288,8 @@ export interface ParamShadow {
   readonly from: number;
   readonly to: number;
   readonly names: ReadonlySet<string>;
+  /** 함수 머리인지 정하지 못한 목록(호출 뒤 다음 줄 블록일 수도 있다)의 가림인지다. */
+  readonly uncertain?: true;
 }
 
 /**
@@ -255,9 +299,46 @@ export interface ParamShadow {
  * 이차가 된다. 이름별 구간을 from 오름차순으로 두고 to의 앞쪽 최댓값을 함께
  * 저장해, "from ≤ index < to인 구간이 하나라도 있는가"를 이분 탐색 한 번으로
  * 답한다 — 구간 목록 전체를 훑는 판정과 결과가 같고 구간의 중첩 여부를 가정하지 않는다.
+ * 가장 안쪽 구간의 시작(`innermostFrom`)은 구간이 중첩·분리일 때 감싼 구간을 건너뛰기 포인터로 따라 올라 찾고,
+ * 그렇지 않은 이름은 구간을 훑는다. 정하지 못한 가림(`uncertain`)을 뺀 확실한 가림만의 색인도 둔다.
  */
 export class ParamShadowIndex {
-  readonly #byName = new Map<string, { readonly froms: number[]; readonly prefixMaxTo: number[] }>();
+  readonly #all: ShadowRanges;
+  readonly #certain: ShadowRanges;
+
+  constructor(shadows: Iterable<ParamShadow>) {
+    const list = [...shadows];
+    this.#all = new ShadowRanges(list);
+    this.#certain = list.some((shadow) => shadow.uncertain === true)
+      ? new ShadowRanges(list.filter((shadow) => shadow.uncertain !== true))
+      : this.#all;
+  }
+
+  /** 위치 `index`의 `name`이 어떤 매개변수 구간(정하지 못한 가림 포함)에 가려졌는지 판정한다. */
+  has(name: string, index: number): boolean {
+    return this.#all.has(name, index);
+  }
+
+  /** 위치 `index`의 `name`을 가린 가장 안쪽 매개변수 구간(정하지 못한 가림 포함)의 시작이다. 가리지 않으면 undefined다. */
+  innermostFrom(name: string, index: number): number | undefined {
+    return this.#all.innermostFrom(name, index);
+  }
+
+  /** `innermostFrom`과 같되 정하지 못한 가림을 뺀다. */
+  innermostCertainFrom(name: string, index: number): number | undefined {
+    return this.#certain.innermostFrom(name, index);
+  }
+}
+
+/** 이름별 가림 구간 색인 하나다(ParamShadowIndex 참고). */
+class ShadowRanges {
+  readonly #byName = new Map<string, {
+    readonly froms: number[];
+    readonly tos: number[];
+    readonly prefixMaxTo: number[];
+    /** 감싼 구간(정렬 순번, 없으면 -1)과 건너뛰기 포인터다. 중첩·분리를 어기면 undefined다. */
+    readonly forest?: { readonly parents: Int32Array; readonly jumps: Int32Array };
+  }>();
 
   constructor(shadows: Iterable<ParamShadow>) {
     const rangesByName = new Map<string, { from: number; to: number }[]>();
@@ -272,44 +353,97 @@ export class ParamShadowIndex {
       }
     }
     for (const [name, ranges] of rangesByName) {
-      ranges.sort((left, right) => left.from - right.from);
+      ranges.sort((left, right) => left.from - right.from || right.to - left.to);
       const froms: number[] = [];
+      const tos: number[] = [];
       const prefixMaxTo: number[] = [];
       for (const { from, to } of ranges) {
         froms.push(from);
+        tos.push(to);
         prefixMaxTo.push(Math.max(to, prefixMaxTo.at(-1) ?? to));
       }
-      this.#byName.set(name, { froms, prefixMaxTo });
+      const forest = rangeForest(froms, tos);
+      this.#byName.set(name, { froms, tos, prefixMaxTo, ...(forest === undefined ? {} : { forest }) });
     }
   }
 
-  /** 위치 `index`의 `name`이 어떤 매개변수 구간에 가려졌는지 판정한다. */
   has(name: string, index: number): boolean {
     const ranges = this.#byName.get(name);
     if (ranges === undefined) return false;
-    // from ≤ index인 구간 수를 찾는다 — 그 구간들의 to 최댓값이 index보다 커야 가려진다.
-    let low = 0;
-    let high = ranges.froms.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (ranges.froms[middle]! <= index) low = middle + 1;
-      else high = middle;
-    }
-    return low > 0 && ranges.prefixMaxTo[low - 1]! > index;
+    const count = startedBefore(ranges.froms, index);
+    return count > 0 && ranges.prefixMaxTo[count - 1]! > index;
   }
+
+  innermostFrom(name: string, index: number): number | undefined {
+    const ranges = this.#byName.get(name);
+    if (ranges === undefined) return undefined;
+    const { froms, tos, forest } = ranges;
+    let cursor = startedBefore(froms, index) - 1;
+    if (forest === undefined) {
+      let best: number | undefined;
+      for (; cursor >= 0; cursor--) if (tos[cursor]! > index) best = Math.max(best ?? -Infinity, froms[cursor]!);
+      return best;
+    }
+    while (cursor !== -1 && tos[cursor]! <= index) {
+      const jump = forest.jumps[cursor]!;
+      cursor = jump !== cursor && tos[jump]! <= index ? jump : forest.parents[cursor]!;
+    }
+    return cursor === -1 ? undefined : froms[cursor];
+  }
+}
+
+/** 오름차순 시작 위치 중 `index` 이하인 것의 수다. */
+function startedBefore(froms: readonly number[], index: number): number {
+  let low = 0;
+  let high = froms.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (froms[middle]! <= index) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/**
+ * 시작 오름차순(같으면 바깥 먼저)으로 정렬한 반열린 구간의 감싼 구간과 사향 이진 건너뛰기 포인터다. 겹치기만 하는
+ * 쌍이 있으면 undefined다.
+ */
+function rangeForest(froms: readonly number[], tos: readonly number[]):
+  { readonly parents: Int32Array; readonly jumps: Int32Array } | undefined {
+  const parents = new Int32Array(froms.length).fill(-1);
+  const depths = new Int32Array(froms.length);
+  const jumps = new Int32Array(froms.length);
+  const stack: number[] = [];
+  for (let index = 0; index < froms.length; index++) {
+    while (stack.length > 0 && tos[stack.at(-1)!]! <= froms[index]!) stack.pop();
+    const parent = stack.at(-1);
+    if (parent === undefined) {
+      jumps[index] = index;
+    } else {
+      if (tos[parent]! < tos[index]!) return undefined;
+      parents[index] = parent;
+      depths[index] = depths[parent]! + 1;
+      const jump = jumps[parent]!;
+      jumps[index] = depths[parent]! - depths[jump]! === depths[jump]! - depths[jumps[jump]!]! ? jumps[jump]! : parent;
+    }
+    stack.push(index);
+  }
+  return { parents, jumps };
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
 function createBoundContext(source: string): ScanContext {
   const tokens = tokenizeJsSource(source);
   const namespaceImports = namespaceImportSpecifiers(tokens);
+  const paramShadows = collectParamShadows(tokens);
   const context: ScanContext = {
     source,
     tokens,
     facts: [],
     memberCalls: [],
-    bindings: new Map(),
-    constStrings: new Map(),
+    scopes: new ScopedBindingTable(),
+    moduleBindings: new Map(),
+    suspendedDeclarations: [],
     imports: [],
     importsByLocalName: new Map(),
     namedExports: new Map(),
@@ -323,14 +457,18 @@ function createBoundContext(source: string): ScanContext {
       untracedBindings: 0,
     },
     trackedValueStarts: new Set(),
-    initializers: [],
     declaratorNames: new Set(),
     destructuredRegistrySources: new Set(),
     consumedGroups: new Map(),
     divertingGroups: new Map(),
     identifierEscapes: new Map(),
-    paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
+    paramShadows: new ParamShadowIndex(paramShadows),
+    parameterListOpens: new Map(paramShadows.flatMap(({ from, uncertain }) =>
+      (tokens[from]?.text === '(' ? [[from, uncertain === true] as const] : []))),
+    patternRoots: new Map(),
+    assignmentPatterns: new Map(),
     localNames: new Set(),
+    functionOrClassNames: new Set(),
     requireSpecifiers: new Map(),
     requireModules: new Map(),
     interopDefaultModules: new Map(),
@@ -345,9 +483,9 @@ function createBoundContext(source: string): ScanContext {
       .map((token) => token.text)),
   };
   collectBindings(context);
-  for (const { start, name, value } of context.initializers) {
-    if (sameBoundName(context.bindings.get(name), value)) context.trackedValueStarts.add(start);
-  }
+  context.scopes.freeze();
+  context.moduleBindings = context.scopes.moduleBindings();
+  for (const start of context.scopes.trackedInitializerStarts()) context.trackedValueStarts.add(start);
   return context;
 }
 
@@ -361,8 +499,8 @@ export function scanJsSource(source: string): JsFileScan {
   return {
     facts: context.facts,
     memberCalls: context.memberCalls,
-    bindings: context.bindings,
-    constStrings: context.constStrings,
+    bindings: context.moduleBindings,
+    constStrings: context.scopes.literalBindings(),
     imports: context.imports,
     exports: {
       ...(context.defaultExport === undefined
@@ -439,7 +577,7 @@ export function scanJsEvents(source: string): { facts: ScannedJsEvent[]; unsuppo
   };
   for (const declaration of declarations) {
     const { nameIndex, valueIndex } = declaration;
-    if (!declaration.fileScope || context.localNames.has('require') ||
+    if (!declaration.fileScope || declaredLocallyAt(context, 'require', valueIndex) ||
       isShadowed(context, 'require', valueIndex) || readRequireSpecifier(tokens, valueIndex) !== 'react-native' ||
       !endsExpression(tokens, valueIndex + 3)) continue;
     namespace(tokens[nameIndex]!.text, nameIndex, valueIndex + 4);
@@ -537,10 +675,16 @@ function eventDeclarations(tokens: readonly JsToken[]) {
  *
  * 호출 해석보다 선언 수집을 먼저 끝내야 선언보다 앞선 호출 위치도 같은
  * 바인딩으로 해석된다(TDZ 오류 코드는 실행 시 죽으므로 정적 탐지엔 무해하다).
+ * 선언 초기값의 함수 본문도 이 순회가 읽는다(collectDeclaration이 멈춰 둔 선언을 본문 끝에서 이어 읽는다).
  */
 function collectBindings(context: ScanContext): void {
   const { tokens } = context;
   for (let index = 0; index < tokens.length; index++) {
+    const resumed = resumeDeclaration(context, index);
+    if (resumed !== undefined) {
+      index = resumed;
+      continue;
+    }
     const token = tokens[index]!;
     if (token.kind === 'keyword' && token.text === 'import') {
       index = collectImport(context, index);
@@ -550,10 +694,7 @@ function collectBindings(context: ScanContext): void {
       index = collectExport(context, index);
       continue;
     }
-    if (
-      token.kind === 'keyword' &&
-      (token.text === 'const' || token.text === 'let' || token.text === 'var')
-    ) {
+    if (isDeclarationKeyword(tokens, index)) {
       index = collectDeclaration(context, index);
       continue;
     }
@@ -566,16 +707,11 @@ function collectBindings(context: ScanContext): void {
       if (name !== undefined &&
         (name.kind === 'identifier' || name.kind === 'keyword')) {
         context.localNames.add(name.text);
+        context.functionOrClassNames.add(name.text);
       }
       continue;
     }
-    // 모듈 객체의 재대입은 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다.
-    // `obj.prop = v`의 prop은 로컬 바인딩이 아니라 속성명이므로 제외한다.
-    if (token.kind === 'identifier' && tokens[index + 1]?.text === '=' &&
-      tokens[index - 1]?.text !== '.' && tokens[index - 1]?.text !== '?.') {
-      context.bindings.delete(token.text);
-      context.constStrings.delete(token.text);
-    }
+    noteReassignment(context, index);
     // CommonJS `module.exports = <expr>`는 default export와 같다.
     if (
       token.kind === 'identifier' && token.text === 'module' &&
@@ -606,6 +742,208 @@ function collectBindings(context: ScanContext): void {
       }
     }
   }
+}
+
+/**
+ * 위치 `index`의 토큰이 재대입이면 표에 반영한다. 바깥 순회, 선언 초기값 구간(`const r = (M = x)`·`const s = [N] = a`
+ * — 선언 수집이 읽고 바깥 순회는 건너뛴다), 선언 패턴의 기본값·계산 키에서 부른다.
+ *
+ * 모듈 객체의 재대입은 그 위치에서 이름을 차지한 선언의 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다. 대입·
+ * 복합 대입(`&&=`·`+=` 등)·증감과 for-of/in의 선언 없는 대상이다. `obj.prop = v`의 prop은 로컬 바인딩이 아니라 속성명이다.
+ * 구조 분해 대입(`({ M } = mocks)`·`[a, M] = pair`·`if (c) [M, N] = [N, M]`·`for ([k, M] of pairs)`)의 대상 이름도
+ * 재대입이다. 감싼 대입 패턴의 직접 대상인 안쪽 패턴(`[[M] = x] = y`의 `[M]`)은 바깥 패턴이 함께 무효로 한다 — 패턴마다
+ * 다시 훑으면 깊게 중첩된 대입에서 이차 시간이 든다.
+ */
+function noteReassignment(context: ScanContext, index: number): void {
+  const { tokens } = context;
+  const token = tokens[index]!;
+  if (token.kind === 'identifier' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+    reassignsName(tokens, index)) {
+    invalidateBinding(context, token.text, index);
+  }
+  if ((token.text === '=' || (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in'))) &&
+    (tokens[index - 1]?.text === '}' || tokens[index - 1]?.text === ']')) {
+    const open = openingOf(tokens, index - 1);
+    if (open !== undefined && !coveredByEnclosingPattern(context, open) &&
+      isAssignmentPattern(context, open, token.text !== '=')) {
+      for (const { index: at } of patternBindingNames(tokens, open, index - 1)) {
+        invalidateBinding(context, tokens[at]!.text, at);
+      }
+    }
+  }
+}
+
+/**
+ * 위치 `index`의 이름이 재대입되는지 본다 — 대입 연산자(복합 대입 포함) 앞, 같은 줄의 후위·앞의 전위 증감,
+ * for-of/in 머리의 선언 없는 대상(`for (M of xs)`), 괄호로 감싼 대상(`(M) = x`). enum 멤버 초기값(`enum E { M = 1 }`)은
+ * 대입이 아니다.
+ */
+function reassignsName(tokens: readonly JsToken[], index: number): boolean {
+  const after = tokens[index + 1];
+  const before = tokens[index - 1]?.text;
+  if (after !== undefined && (assignmentOperators.has(after.text) ||
+    ((after.text === '++' || after.text === '--') && after.line === tokens[index]!.line))) {
+    return !isEnumMemberName(tokens, index);
+  }
+  if (before === '++' || before === '--') return true;
+  if (before === '(' && after?.text === ')' && assignmentOperators.has(tokens[index + 2]?.text ?? '') &&
+    (!isOperandEnd(tokens[index - 2]) || closesControlHead(tokens, index - 2))) {
+    return true;
+  }
+  return before === '(' && isForHeader(tokens, index - 1) && after?.kind === 'keyword' &&
+    (after.text === 'of' || after.text === 'in');
+}
+
+/** 위치 `close`의 `)`가 제어문 머리(`if (…)`·`while (…)`·`for (…)`·`with (…)`)를 닫는지 본다 — 뒤는 문장의 시작이다. */
+function closesControlHead(tokens: readonly JsToken[], close: number): boolean {
+  if (tokens[close]?.text !== ')') return false;
+  const open = openingOf(tokens, close);
+  if (open === undefined) return false;
+  const head = tokens[open - 1]?.text ?? '';
+  return isForHeader(tokens, open) ||
+    (['if', 'while', 'with'].includes(head) && !['.', '?.'].includes(tokens[open - 2]?.text ?? ''));
+}
+
+/**
+ * 위치의 재대입을 표에 반영한다. 그 위치를 확실히 가린 매개변수가 있으면 대입은 그 매개변수(나 그 함수 안 선언)의
+ * 것이라 바깥 바인딩에 닿지 않는다. 함수 머리인지 정하지 못한 목록의 매개변수 바깥 바인딩은 대상이 확실하지 않다.
+ */
+function invalidateBinding(context: ScanContext, name: string, index: number): void {
+  context.scopes.invalidate(name, index, context.paramShadows.innermostFrom(name, index) ?? -Infinity,
+    context.paramShadows.innermostCertainFrom(name, index) ?? -Infinity);
+}
+
+/**
+ * 여는 괄호 `open`의 `{…}`·`[…]`가 대입(또는 for-of/in, `forHead`)의 구조 분해 대상인지 본다. 선언 패턴은 선언 수집이
+ * 읽고, 확실한 함수 머리의 매개변수 패턴(`function f({ M } = {})`)은 대입이 아니다(함수 머리인지 정하지 못한 목록의
+ * 패턴은 대입으로 보고, 그 매개변수 목록 바깥의 바인딩은 대상이 확실하지 않다고 둔다). `x[i] = v`의 `[`(피연산자 뒤)는
+ * 멤버 접근이다 — 제어문 머리 `)` 뒤(`if (c) [M, N] = …`)는 문장 시작이다. `:` 뒤의 `{…}`는 타입 주석이나 중첩 패턴의
+ * 기본값이라 보지 않는다(`case 'x': [M] = …`의 `[`는 본다). 결과는 괄호마다 기억한다.
+ */
+function isAssignmentPattern(context: ScanContext, open: number, forHead: boolean): boolean {
+  const key = open * 2 + (forHead ? 1 : 0);
+  const known = context.assignmentPatterns.get(key);
+  if (known !== undefined) return known;
+  const result = decideAssignmentPattern(context, open, forHead);
+  context.assignmentPatterns.set(key, result);
+  return result;
+}
+
+/** isAssignmentPattern의 판정 본체다(기억하지 않는다). */
+function decideAssignmentPattern(context: ScanContext, open: number, forHead: boolean): boolean {
+  const { tokens } = context;
+  const before = tokens[open - 1];
+  if (forHead) return before?.text === '(' && isForHeader(tokens, open - 1);
+  if (before !== undefined && (['const', 'let', 'var'].includes(before.text) || (tokens[open]!.text === '['
+    ? isOperandEnd(before) && !closesControlHead(tokens, open - 1)
+    : before.text === ':' || !['(', ',', '=', '[', ';', '{', '}'].includes(before.text)))) {
+    return false;
+  }
+  const root = patternRoot(context, open);
+  return root === -1 || tokens[root]!.text !== '(' || parameterListCertainty(context, root) !== 'certain';
+}
+
+/** 패턴 자리의 괄호(`[`, 여는 괄호·`,`·`[`·`:` 뒤의 `{`)인지 본다. */
+function isPatternBracket(tokens: readonly JsToken[], open: number): boolean {
+  const text = tokens[open]?.text;
+  return text === '[' || (text === '{' && ['(', ',', '[', ':'].includes(tokens[open - 1]?.text ?? ''));
+}
+
+/**
+ * 감싼 패턴 괄호를 따라 올라 처음 만나는 패턴 아닌 괄호의 위치다(없으면 -1). 함수 본문·블록의 `{`에서 멈춘다 — 기본값
+ * 화살표 본문 안의 대입(`f(a = () => { [M] = x; })`)은 대입이다. 지나간 패턴 괄호마다 결과를 기억해 다시 오르지 않는다.
+ */
+function patternRoot(context: ScanContext, open: number): number {
+  const { tokens } = context;
+  const path: number[] = [];
+  let cursor = enclosingOpen(tokens, open);
+  let root: number | undefined;
+  while (cursor !== undefined && isPatternBracket(tokens, cursor)) {
+    root = context.patternRoots.get(cursor);
+    if (root !== undefined) break;
+    path.push(cursor);
+    cursor = enclosingOpen(tokens, cursor);
+  }
+  root ??= cursor ?? -1;
+  for (const passed of path) context.patternRoots.set(passed, root);
+  return root;
+}
+
+/**
+ * 패턴 괄호 `open`이 감싼 대입 패턴의 직접 대상(요소·`...` 뒤·속성 값)이면 바깥 패턴이 그 이름까지 무효로 하므로 따로
+ * 보지 않는다. 바깥 패턴의 기본값 식 안 대입(`[a = [M] = z] = y`)은 직접 대상이 아니라 따로 본다.
+ */
+function coveredByEnclosingPattern(context: ScanContext, open: number): boolean {
+  const { tokens } = context;
+  if (!['[', ',', ':', '...'].includes(tokens[open - 1]?.text ?? '')) return false;
+  const enclosing = enclosingOpen(tokens, open);
+  if (enclosing === undefined || (tokens[enclosing]!.text !== '[' && tokens[enclosing]!.text !== '{')) return false;
+  const close = findMatching(tokens, enclosing, tokens[enclosing]!.text, tokens[enclosing]!.text === '[' ? ']' : '}');
+  const after = close === undefined ? undefined : tokens[close + 1];
+  if (after?.text === '=') return isAssignmentPattern(context, enclosing, false);
+  return after?.kind === 'keyword' && (after.text === 'of' || after.text === 'in') &&
+    isAssignmentPattern(context, enclosing, true);
+}
+
+/**
+ * 여는 `(`가 매개변수 목록인지와 그 확실성이다. 'certain'은 `function` 머리·화살표(`) =>`, 화살표 함수 식이 올 자리의
+ * `(…): T =>`), 'tentative'는 뒤 `{`로만 추론한 메서드 약칭·삼항 `?` 바로 뒤의 `(…): T =>`, 'none'은 매개변수 목록이
+ * 아닌 경우다.
+ */
+function parameterListCertainty(context: ScanContext, open: number): 'certain' | 'tentative' | 'none' {
+  const known = context.parameterListOpens.get(open);
+  if (known !== undefined) return known ? 'tentative' : 'certain';
+  const { tokens } = context;
+  const close = findMatching(tokens, open, '(', ')');
+  if (close === undefined) return 'none';
+  if (tokens[close + 1]?.text === '=>') return 'certain';
+  if (tokens[close + 1]?.text !== ':' || tokens[returnTypeEnd(tokens, close + 2) ?? -1]?.text !== '=>') return 'none';
+  const kind = arrowParameterKind(tokens, open, true);
+  return kind === 'function' ? 'certain' : kind === 'ambiguous' ? 'tentative' : 'none';
+}
+
+/**
+ * 위치 `index`가 바깥 순회가 멈춰 둔 선언문의 본문 끝이면 그 선언을 이어 읽고 끝 위치를 돌려준다. 순회가 본문
+ * 끝을 건너뛰었으면(끝나지 않은 타입 주석이 파일 끝까지 간 경우 등) 그 선언은 이어 읽지 않는다.
+ */
+function resumeDeclaration(context: ScanContext, index: number): number | undefined {
+  const pending = context.suspendedDeclarations;
+  while (pending.length > 0 && pending.at(-1)!.close < index) pending.pop();
+  const top = pending.at(-1);
+  if (top === undefined || top.close !== index) return undefined;
+  pending.pop();
+  return collectDeclaration(context, top.start, top.exported, top);
+}
+
+/**
+ * `const`·`let`·`var` 키워드가 선언문을 시작하는지 본다. 속성 이름(`obj.var`)과 `as const` 단언은 선언이 아니고, 뒤가
+ * 선언자 모양이 아니면 — 객체 리터럴 키 `{ const: 1 }`(순회가 초기값의 객체 리터럴도 읽는다), `const enum E {`,
+ * `<const T>`, JSX 글자 `let you know` — 선언으로 읽지 않는다. 잘못 읽은 선언자는 같은 이름의 바깥 바인딩을 가려 참
+ * 사실을 조용히 지운다.
+ */
+function isDeclarationKeyword(tokens: readonly JsToken[], index: number): boolean {
+  const token = tokens[index]!;
+  if (token.kind !== 'keyword' || (token.text !== 'const' && token.text !== 'let' && token.text !== 'var')) return false;
+  return !['.', '?.', 'as'].includes(tokens[index - 1]?.text ?? '') && index + 1 < tokens.length &&
+    declaratorStarts(tokens, index + 1);
+}
+
+/** 선언자 이름 뒤에 올 수 있는 토큰이다(초기값·다음 선언자·문장 끝·타입 주석·확정 할당 `!`·for 머리·감싼 괄호 끝). */
+const declaratorFollowers = new Set(['=', ',', ';', ':', '!', 'of', 'in', ')', '}']);
+
+/**
+ * 위치 `at`에서 선언자가 시작하는지 본다 — 이름 뒤에 선언자를 잇는 토큰이나 줄바꿈(ASI)이 오거나, 구조 분해 패턴
+ * 뒤에 `=`·`:`·`of`·`in`이 온다.
+ */
+function declaratorStarts(tokens: readonly JsToken[], at: number): boolean {
+  const first = tokens[at]!;
+  if (first.text === '{' || first.text === '[') {
+    const close = findMatching(tokens, at, first.text, first.text === '{' ? '}' : ']');
+    return close !== undefined && ['=', ':', 'of', 'in'].includes(tokens[close + 1]?.text ?? '');
+  }
+  if (first.kind !== 'identifier' && first.kind !== 'keyword') return false;
+  const after = tokens[at + 1];
+  return after === undefined || after.line !== first.line || declaratorFollowers.has(after.text);
 }
 
 /** `import ... from 'spec'` 절의 로컬 바인딩을 기록한다. */
@@ -739,7 +1077,7 @@ function collectExport(context: ScanContext, start: number): number {
     // `export default M` — 로컬 바인딩을 거치는 형태다.
     const ident = tokens[start + 2];
     if (ident?.kind === 'identifier') {
-      const resolved = context.bindings.get(ident.text);
+      const resolved = boundValueAt(context, ident.text, start + 2);
       if (resolved !== undefined) {
         context.defaultExport = resolved;
         context.trackedValueStarts.add(start + 2);
@@ -750,15 +1088,8 @@ function collectExport(context: ScanContext, start: number): number {
   }
   if (next.kind === 'keyword' &&
     (next.text === 'const' || next.text === 'let' || next.text === 'var')) {
-    // `export const X = <moduleExpr>` — 이 선언이 새로 만든 바인딩만 named export다.
-    const before = new Set(context.bindings.keys());
-    const declEnd = collectDeclaration(context, start + 1);
-    for (const name of context.bindings.keys()) {
-      if (!before.has(name)) {
-        context.namedExports.set(name, context.bindings.get(name)!);
-      }
-    }
-    return declEnd;
+    // `export const X = <moduleExpr>` — 이 선언이 모듈 값에 묶은 이름이 named export다.
+    return collectDeclaration(context, start + 1, true);
   }
   if (next.text === '{') {
     // `export { A, B as C }`(로컬)와 `export { A as B } from 'spec'`(배럴) 둘 다다.
@@ -795,7 +1126,7 @@ function collectExport(context: ScanContext, start: number): number {
       return close + 2;
     }
     for (const pair of pairs) {
-      const bound = context.bindings.get(pair.source);
+      const bound = boundValueAt(context, pair.source, start);
       if (bound !== undefined) context.namedExports.set(pair.exported, bound);
     }
     return close;
@@ -811,14 +1142,25 @@ function collectExport(context: ScanContext, start: number): number {
  * 선언자로 오인돼 바인딩이 파일 전역으로 새어 나간다. 같은 이유로 `{`는 선언자의
  * 대상 구간(초기값 `=` 앞)에서만 구조 분해 패턴이다 — 초기값 안의 객체 리터럴·함수
  * 본문 이름을 로컬 선언으로 기록하면 그 이름(`NativeModules` 등)의 해석이 파일 전체에서 바뀐다.
+ *
+ * 선언자마다 블록 범위 표에 선언을 넣는다 — 모듈 값·문자열 상수가 아니어도 이름을 차지해 바깥 바인딩을 가린다.
+ * 초기값의 `{…}`(함수 본문·객체 리터럴)를 만나면 선언을 멈추고 `{` 위치를 돌려준다. 바깥 순회가 본문을 최상위
+ * 코드처럼 읽고 짝 `}`에서 `resume` 상태로 다시 부른다. `exported`면 모듈 값에 묶은 이름을 named export로 남긴다.
  */
-function collectDeclaration(context: ScanContext, start: number): number {
+function collectDeclaration(
+  context: ScanContext,
+  start: number,
+  exported = false,
+  resume?: SuspendedDeclaration,
+): number {
   const { tokens } = context;
-  let index = start + 1;
+  const scope = declarationScope(tokens, start);
+  let index = resume === undefined ? start + 1 : resume.close + 1;
   // 선언자의 `,`는 깊이 0에만 온다 — `f(x, y = z)` 인자 안의 `,`는 무관하다.
-  let depth = 0;
+  let depth = resume?.depth ?? 0;
   // 지금 위치가 선언자의 대상(이름·패턴) 구간인지다. 깊이 0의 `=`·`of`·`in`에서 끝나고 `,`에서 다시 시작한다.
-  let target = true;
+  // 멈춘 곳은 항상 초기값 안이다.
+  let target = resume === undefined;
   while (index < tokens.length) {
     const token = tokens[index]!;
     if (token.text === ';' && depth === 0) return index;
@@ -829,6 +1171,8 @@ function collectDeclaration(context: ScanContext, start: number): number {
       endsByLineBreak(tokens, start, index, depth)) {
       return index - 1;
     }
+    // 초기값 구간의 재대입(`const r = (M = x)`, 멈췄던 본문 뒤 `} = defaults`)은 바깥 순회가 보지 못한다.
+    if (!target) noteReassignment(context, index);
     if (depth === 0 && (token.text === '=' ||
       (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in')))) {
       target = false;
@@ -848,6 +1192,13 @@ function collectDeclaration(context: ScanContext, start: number): number {
         index = close + 1;
         continue;
       }
+    }
+    // 대상 구간의 `[`는 배열 구조 분해 패턴이다 — 그 이름도 선언이다.
+    if (target && depth === 0 && token.text === '[') {
+      const next = collectPattern(context, index, scope, exported);
+      if (next === undefined) return index;
+      index = next;
+      continue;
     }
     if (token.text === '(' || token.text === '[') {
       depth++;
@@ -873,7 +1224,10 @@ function collectDeclaration(context: ScanContext, start: number): number {
       if (declarator && tokens[cursor]?.text === ':') {
         cursor = skipTypeAnnotation(tokens, cursor + 1);
         // 주석이 ASI 줄바꿈에서 끝났으면 선언문도 끝났다 — 다음 줄 선언의 `=`를 이 이름의 초기값으로 읽지 않는다.
-        if (endsTypeByLineBreak(tokens, cursor)) return cursor - 1;
+        if (endsTypeByLineBreak(tokens, cursor)) {
+          declareName(context, token.text, scope);
+          return cursor - 1;
+        }
       }
       if (declarator && tokens[cursor]?.text === '=') {
         // `const X = require('spec')…`의 specifier를 기록한다.
@@ -887,8 +1241,8 @@ function collectDeclaration(context: ScanContext, start: number): number {
         recordInteropRequire(context, token.text, cursor + 1);
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
-          context.bindings.set(token.text, bound.value);
-          context.initializers.push({ start: cursor + 1, name: token.text, value: bound.value });
+          declareName(context, token.text, scope, { value: bound.value, initializerStart: cursor + 1 });
+          if (exported) context.namedExports.set(token.text, bound.value);
           // 초기값 식 내부의 괄호는 depth에 반영되지 않았으니 마지막 토큰까지
           // 건너뛴다 — `)`를 다시 처리하면 depth가 음수로 내려간다.
           index = bound.endIndex + 1;
@@ -896,11 +1250,12 @@ function collectDeclaration(context: ScanContext, start: number): number {
         }
         const literal = readLiteralExpression(context, cursor + 1);
         if (literal !== undefined && endsExpression(tokens, literal.endIndex)) {
-          context.constStrings.set(token.text, literal.value);
+          declareName(context, token.text, scope, { literal: literal.value });
           index = literal.endIndex + 1;
           continue;
         }
       }
+      if (declarator) declareName(context, token.text, scope);
       // 타입 주석은 이름 자리가 아니다 — 그 안의 `{`·`,`를 패턴·선언자로 읽지 않게 주석 뒤로 건너뛴다.
       index = declarator && cursor > index + 1 ? cursor : index + 1;
       continue;
@@ -909,36 +1264,367 @@ function collectDeclaration(context: ScanContext, start: number): number {
       const close = findMatching(tokens, index, '{', '}');
       if (close === undefined) return index;
       if (!target) {
-        // 초기값 안의 객체 리터럴·함수 본문이다. 구조 분해 패턴이 아니므로 이름을 기록하지 않는다.
-        index = close + 1;
-        continue;
+        // 초기값 안의 객체 리터럴·함수 본문이다. 구조 분해 패턴이 아니므로 이 선언의 이름으로 기록하지 않고, 바깥
+        // 순회가 본문의 선언·재대입을 최상위 코드처럼 읽도록 선언을 멈춘다.
+        context.suspendedDeclarations.push({ start, close, depth, exported });
+        return index;
       }
-      // `const { A, ... } = NativeModules`인지 확인한다.
-      const source = tokens[close + 2];
-      const isNativeModules = tokens[close + 1]?.text === '=' &&
-        source?.kind === 'identifier' && source.text === 'NativeModules';
-      if (isNativeModules) {
-        collectDestructuredBindings(context, index, close);
-        context.destructuredRegistrySources.add(close + 2);
-        index = close + 1;
-        continue;
-      }
-      // 그 외 원천의 구조 분해도 로컬 이름을 선언한다 — `require('spec')`
-      // 원천이면 이름별 specifier까지 남겨 mechanism 판정에 쓴다.
-      const required = tokens[close + 1]?.text === '='
-        ? readRequireSpecifier(tokens, close + 2)
-        : undefined;
-      // `const { … } = SOURCE;`처럼 식별자 하나가 원천이면 그 식별자를 남긴다(모듈 객체 판정용).
-      const sourceToken = tokens[close + 2];
-      const sourceIndex = tokens[close + 1]?.text === '=' && sourceToken?.kind === 'identifier' &&
-        endsExpression(tokens, close + 2) ? close + 2 : undefined;
-      recordDestructuredLocals(context, index, close, required, sourceIndex);
-      index = close + 1;
+      const next = collectPattern(context, index, scope, exported);
+      if (next === undefined) return index;
+      index = next;
       continue;
     }
     index++;
   }
   return index;
+}
+
+/** 선언 하나가 이름을 차지하는 구간과 값이 적용되는 구간이다(ScopedDeclarationInput의 범위 부분). */
+interface DeclarationScope {
+  readonly shadow: TokenRange;
+  readonly bind?: TokenRange;
+  readonly uncertainExtent?: true;
+  readonly undecidedAt?: number;
+  /** 범위가 확실한 `var`의 키워드 위치다. 그 함수의 매개변수를 다시 선언하는지 볼 때 쓴다(declareName). */
+  readonly varAt?: number;
+}
+
+/**
+ * 선언자 이름 하나를 블록 범위 표에 넣는다. 범위가 확실한 `var`가 감싼 함수의 같은 이름 매개변수를 다시 선언하면
+ * (`function f(M) { M.go(); var M = …; }`) 선언 앞의 값은 인자다 — 값 적용 구간을 정할 수 없어 범위를 정하지 못한
+ * 선언으로 넣는다(그 쓰임은 모듈이면 센다).
+ */
+function declareName(
+  context: ScanContext,
+  name: string,
+  scope: DeclarationScope,
+  extra: { readonly value?: BoundName; readonly literal?: string; readonly initializerStart?: number } = {},
+): void {
+  const { shadow, bind, uncertainExtent, undecidedAt, varAt } = scope;
+  const redeclared = varAt !== undefined && redeclaresParameter(context, name, varAt, shadow);
+  context.scopes.declare({
+    name,
+    shadow,
+    ...(bind === undefined || redeclared ? {} : { bind }),
+    ...(uncertainExtent === true || redeclared ? { uncertainExtent: true as const } : {}),
+    ...(undecidedAt !== undefined ? { undecidedAt } : redeclared ? { undecidedAt: varAt } : {}),
+    ...extra,
+  });
+}
+
+/** 위치 `at`의 `var` 이름이 그 `var`가 끌어올려지는 함수 본문(`body`)의 매개변수인지 본다. */
+function redeclaresParameter(context: ScanContext, name: string, at: number, body: TokenRange): boolean {
+  const { tokens } = context;
+  const from = context.paramShadows.innermostFrom(name, at);
+  if (from === undefined || body.from < 0) return false;
+  if (tokens[from]!.text !== '(') return tokens[from + 1]?.text === '=>' && from + 2 === body.from;
+  const close = findMatching(tokens, from, '(', ')');
+  return close !== undefined && bodyAfterParameters(tokens, close)?.body === body.from;
+}
+
+/**
+ * 선언문(위치 `keyword`의 `const`·`let`·`var`)의 범위다.
+ *
+ * `let`·`const`는 감싼 블록(`{…}`, 없으면 파일)이다. for 머리의 `let`·`const`는 그 for 문(머리의 `(`부터 본문
+ * 블록 끝)이고, 본문이 블록이 아니면 값은 머리 안에만 적용하고 가림은 감싼 블록 끝까지 넓힌다(본문 문장의 끝을
+ * 찾지 않는다 — 범위가 넓게 잡힌 선언). `var`는 같은 함수 안 어디서든 다른 `var`·대입으로 값이 바뀔 수 있어 값은
+ * 선언한 블록에만 적용하고, 이름은 감싼 함수 본문 전체를 차지한다(varScope). 끌어올리는 길에 함수 본문인지 정하지
+ * 못한 블록을 지났으면 범위를 정하지 못한 선언이다 — 값을 어디에도 적용하지 않는다.
+ */
+function declarationScope(tokens: readonly JsToken[], keyword: number): DeclarationScope {
+  const isVar = tokens[keyword]!.text === 'var';
+  const open = enclosingOpen(tokens, keyword);
+  if (open !== undefined && tokens[open]!.text === '(' && isForHeader(tokens, open)) {
+    const block = blockRange(tokens, enclosingBrace(tokens, open));
+    if (isVar) return varDeclarationScope(tokens, open, keyword, block);
+    const close = findMatching(tokens, open, '(', ')')!;
+    const bodyClose = tokens[close + 1]?.text === '{' ? findMatching(tokens, close + 1, '{', '}') : undefined;
+    if (bodyClose !== undefined) {
+      const loop = { from: open, to: bodyClose };
+      return { shadow: loop, bind: loop };
+    }
+    return { shadow: { from: open, to: block.to }, bind: { from: open, to: close }, uncertainExtent: true };
+  }
+  const block = blockRange(tokens, enclosingBrace(tokens, keyword));
+  return isVar ? varDeclarationScope(tokens, keyword, keyword, block) : { shadow: block, bind: block };
+}
+
+/** 위치 `from`의 `var`(키워드 위치 `keyword`, 선언한 블록 `block`)의 범위다. */
+function varDeclarationScope(tokens: readonly JsToken[], from: number, keyword: number, block: TokenRange): DeclarationScope {
+  const { shadow, undecided } = varScope(tokens, from);
+  return undecided ? { shadow, uncertainExtent: true, undecidedAt: keyword } : { shadow, bind: block, varAt: keyword };
+}
+
+/** 여는 `(`가 `for (…)`·`for await (…)` 머리인지 본다. */
+function isForHeader(tokens: readonly JsToken[], open: number): boolean {
+  const keyword = tokens[open - 1]?.text === 'await' ? open - 2 : open - 1;
+  return tokens[keyword]?.text === 'for' && !['.', '?.'].includes(tokens[keyword - 1]?.text ?? '');
+}
+
+/** 여는 `{`(없으면 파일 전체)의 구간이다. 파일은 어떤 블록보다 바깥이 되도록 양 끝 밖까지 잡는다. */
+function blockRange(tokens: readonly JsToken[], open: number | undefined): TokenRange {
+  if (open === undefined) return { from: -1, to: tokens.length };
+  return { from: open, to: findMatching(tokens, open, '{', '}')! };
+}
+
+/**
+ * 토큰 열마다 한 번 만든 `var` 범위 표다 — 여는 `{` → 그 블록의 `var`가 끌어올려지는 함수 본문의 여는 `{`(-1 파일,
+ * -2 미계산)와, 그 길에 함수 본문인지 정하지 못한 블록이 있었는지.
+ */
+const varOwnerTables = new WeakMap<readonly JsToken[], { readonly owner: Int32Array; readonly undecided: Uint8Array }>();
+
+/**
+ * 위치의 `var`가 이름을 차지하는 범위다 — 감싼 블록을 따라 오르며 처음 만나는 함수 본문(없으면 파일)이다. `var`는
+ * 함수 범위라 함수 본문이 아닌 블록은 모두 지나친다. 그 길에 함수 본문인지 정하지 못한 블록(classifyBrace의 'other' —
+ * 라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음 줄 블록, 알아보지 못한 함수 형태)을 지났으면 `undecided`다. 그 블록에서
+ * 멈추면 블록 뒤 같은 함수의 쓰임이 바깥 바인딩으로 귀속되고(블록이면 거짓), 지나치기만 하면 그 블록이 함수 본문일 때
+ * 안쪽 쓰임이 사이의 같은 이름 블록 선언으로 귀속된다 — 어느 쪽도 단정하지 않고 표가 그 쓰임을 센다. 블록마다 결과를
+ * 기억해 깊이에 비례해 다시 오르지 않는다.
+ */
+function varScope(tokens: readonly JsToken[], index: number): { shadow: TokenRange; undecided: boolean } {
+  let table = varOwnerTables.get(tokens);
+  if (table === undefined) {
+    table = { owner: new Int32Array(tokens.length).fill(-2), undecided: new Uint8Array(tokens.length) };
+    varOwnerTables.set(tokens, table);
+  }
+  const path: { readonly brace: number; readonly other: boolean }[] = [];
+  let brace = enclosingBrace(tokens, index);
+  let owner = -1;
+  let undecided = 0;
+  while (brace !== undefined) {
+    if (table.owner[brace]! !== -2) {
+      owner = table.owner[brace]!;
+      undecided = table.undecided[brace]!;
+      break;
+    }
+    const kind = classifyBrace(tokens, brace);
+    if (kind === 'function') {
+      owner = brace;
+      table.owner[brace] = owner;
+      table.undecided[brace] = 0;
+      break;
+    }
+    path.push({ brace, other: kind === 'other' });
+    brace = enclosingBrace(tokens, brace);
+  }
+  // 바깥(함수 본문 쪽)부터 내려오며 지난 블록마다 그 위로 정하지 못한 블록이 있었는지 기억한다.
+  for (let at = path.length - 1; at >= 0; at--) {
+    const passed = path[at]!;
+    if (passed.other) undecided = 1;
+    table.owner[passed.brace] = owner;
+    table.undecided[passed.brace] = undecided;
+  }
+  return { shadow: blockRange(tokens, owner === -1 ? undefined : owner), undecided: undecided === 1 };
+}
+
+/** 함수 본문을 열지 않는 `(…) {` 앞 키워드다 — 제어문의 블록이다. */
+const controlHeadKeywords = new Set(['if', 'for', 'while', 'switch', 'catch', 'with']);
+
+/** 앞에 오면 그 `{`가 함수가 아닌 문장 블록임이 확실한 토큰이다(`catch {`는 바인딩 없는 catch 절). */
+const blockOpeners = new Set([';', '{', 'else', 'do', 'try', 'finally', 'catch']);
+
+/** 반환 타입 주석에 올 수 없어 거꾸로 건너기를 멈추는 문장 키워드다. */
+const statementKeywords = new Set([
+  'class', 'function', 'return', 'const', 'let', 'var', 'if', 'else', 'for', 'while', 'do', 'try', 'catch', 'finally',
+  'switch', 'case', 'break', 'continue', 'throw', 'export', 'static', 'delete', 'debugger', 'default', 'yield', 'await',
+]);
+
+/**
+ * 여는 `{`를 `var` 범위 판정용으로 나눈다. 'function'은 함수 본문임을 토큰이 확실히 보이는 블록(화살표 `=>` 뒤,
+ * `function` 머리의 매개변수 목록 뒤 — 제네릭·반환 타입 포함, 클래스 정적 블록, TS namespace), 'block'은 함수가 아님이
+ * 확실한 문장 블록(제어문·`try`·`else`·`do`·문장 사이·`case`/`default` 절의 블록), 'other'는 그 밖(메서드 약칭처럼 뒤
+ * `{`로만 추론하는 본문, 라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음 줄 블록, 클래스 본문·객체 리터럴, 알아보지 못한
+ * 형태)이다. `case kind(): {`·삼항 갈래의 `f(x) : T {`처럼 `(…):` 뒤 블록이 절·삼항의 `:` 뒤이면 반환 타입 주석이 아니다.
+ */
+function classifyBrace(tokens: readonly JsToken[], open: number): 'function' | 'block' | 'other' {
+  const before = tokens[open - 1];
+  if (before === undefined) return 'block';
+  if (before.text === '=>' || before.text === 'static') return 'function';
+  if (blockOpeners.has(before.text)) return 'block';
+  if (before.text === ':' && (tokens[open - 2]?.text === 'default' || clauseBefore(tokens, open - 2) === 'case')) {
+    return 'block';
+  }
+  if (before.kind === 'identifier' && isNamespaceHead(tokens, open - 1)) return 'function';
+  if (before.text === ')') {
+    const paren = openingOf(tokens, open - 1);
+    const kind = paren === undefined ? 'none' : parameterListKind(tokens, paren, open - 1, open, false);
+    return kind === 'function' ? 'function' : kind === 'block' ? 'block' : 'other';
+  }
+  const close = returnTypeParamsClose(tokens, open);
+  const paren = close === undefined ? undefined : openingOf(tokens, close);
+  return paren !== undefined && parameterListKind(tokens, paren, close!, open, true) === 'function' ? 'function' : 'other';
+}
+
+/**
+ * 매개변수 목록처럼 보이는 괄호(`open`..`close`) 뒤 `body`의 `{`가 무엇의 본문인지다. 'function'은 `function` 키워드가
+ * 함수 머리임을 확실히 보이는 경우, 'block'은 제어문 머리(`try` 블록 뒤의 `catch` 포함), 'ambiguous'는 메서드 약칭처럼
+ * 뒤 `{`로만 함수 머리로 추론하는 경우(호출 뒤 블록일 수도, 클래스 상속절의 호출일 수도, 줄바꿈 뒤 다른 메서드의
+ * `{`일 수도 있다), 'none'은 함수 머리가 아닌 경우(`case …(…):`·같은 줄 삼항 갈래의 `(…):`, `extends mixin(…) {`의
+ * 상속절 호출, 이름이 아닌 앞 토큰)다. `returnType`은 `)`와 본문 사이에 반환 타입 주석이 있는지다. 함수 머리가 확실할
+ * 때만 그 매개변수가 재대입을 막고 `var`의 함수 본문이 된다 — 추론한 머리의 쓰임은 모듈에 닿으면 센다.
+ */
+function parameterListKind(
+  tokens: readonly JsToken[],
+  open: number,
+  close: number,
+  body: number,
+  returnType: boolean,
+): 'function' | 'block' | 'ambiguous' | 'none' {
+  const head = tokens[open - 1];
+  if (head === undefined) return 'none';
+  const catchMethod = head.text === 'catch' && !isCatchClause(tokens, open - 1);
+  if ((controlHeadKeywords.has(head.text) && !catchMethod) || isForHeader(tokens, open)) return returnType ? 'none' : 'block';
+  // `name<T>(…)` — 이름은 타입 매개변수 앞이다. `name?(…)`는 선택 메서드다.
+  let name = open - 1;
+  if (head.text === '>' || head.text === '>>') {
+    const typeOpen = typeParametersOpen(tokens, open - 1);
+    if (typeOpen === undefined) return 'none';
+    name = typeOpen - 1;
+  }
+  if (tokens[name]?.text === '?') name--;
+  const nameToken = tokens[name];
+  if (nameToken === undefined) return 'none';
+  const declared = nameToken.text === 'function' || tokens[name - 1]?.text === 'function' ||
+    (nameToken.text === '*' && tokens[name - 1]?.text === 'function') ||
+    (tokens[name - 1]?.text === '*' && tokens[name - 2]?.text === 'function');
+  if (declared) return 'function';
+  if (!isMethodHead(nameToken) && !(catchMethod && nameToken === head)) return 'none';
+  if (isHeritageCall(tokens, name)) return 'none';
+  if (returnType) {
+    const clause = clauseBefore(tokens, name);
+    if (clause === 'case' || clause === 'ternary') return 'none';
+  }
+  return 'ambiguous';
+}
+
+/** 위치 `index`의 `catch`가 `try {…}` 뒤의 catch 절인지 본다(아니면 `catch(…) {…}` 메서드다). */
+function isCatchClause(tokens: readonly JsToken[], index: number): boolean {
+  if (tokens[index - 1]?.text !== '}') return false;
+  const open = openingOf(tokens, index - 1);
+  return open !== undefined && tokens[open - 1]?.text === 'try';
+}
+
+/** 위치 `name`의 이름(`a.b.mixin`의 끝)이 클래스 상속절 `extends` 뒤 호출의 대상인지 본다. */
+function isHeritageCall(tokens: readonly JsToken[], name: number): boolean {
+  let cursor = name;
+  while (['.', '?.'].includes(tokens[cursor - 1]?.text ?? '') && tokens[cursor - 2]?.kind === 'identifier') cursor -= 2;
+  return tokens[cursor - 1]?.text === 'extends';
+}
+
+/** 거슬러 볼 토큰 수 상한이다(`clauseBefore`). 넘으면 정하지 못한 것으로 본다. */
+const CLAUSE_LOOKBEHIND = 256;
+
+/**
+ * 위치 `from`부터 거슬러 같은 깊이의 식이 `case` 절이나 삼항의 `?` 갈래 안인지 본다. 괄호 그룹은 짝으로 건너뛰고,
+ * 식을 끝내는 토큰(`;`·`,`·`=`·`=>`·`:`·여는 괄호·`}`)이나 문장 키워드에서 멈춘다(undefined). 상한을 넘으면 'unknown'이다.
+ * `case kind(): {`·`busy ? wrap(x) : e => {…}`의 `(…):`는 반환 타입 주석이 아니라 절·삼항의 `:`다.
+ */
+function clauseBefore(tokens: readonly JsToken[], from: number): 'case' | 'ternary' | 'unknown' | undefined {
+  for (let cursor = from, steps = 0; cursor >= 0; cursor--, steps++) {
+    if (steps > CLAUSE_LOOKBEHIND) return 'unknown';
+    const token = tokens[cursor]!;
+    const text = token.text;
+    if (text === ')' || text === ']') {
+      const opening = openingOf(tokens, cursor);
+      if (opening === undefined) return undefined;
+      cursor = opening;
+      continue;
+    }
+    // 줄 끝의 `?`는 삼항일 수도, 세미콜론 없는 선택 속성 선언(`label?`)일 수도 있다.
+    if (text === '?') return tokens[cursor + 1]?.line === token.line ? 'ternary' : 'unknown';
+    if (token.kind === 'keyword' && text === 'case' && !['.', '?.'].includes(tokens[cursor - 1]?.text ?? '')) {
+      return 'case';
+    }
+    // 식 안의 연산자 키워드(`await`·`yield`·`delete`)는 문장 경계가 아니다.
+    if (['(', '[', '{', '}', ';', ',', ':', '=>'].includes(text) || assignmentOperators.has(text) ||
+      (token.kind === 'keyword' && statementKeywords.has(text) && !['await', 'yield', 'delete'].includes(text))) {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** `namespace A.B {`·`module A {`의 이름 끝(위치 `index`)인지 본다. */
+function isNamespaceHead(tokens: readonly JsToken[], index: number): boolean {
+  let cursor = index;
+  while (tokens[cursor - 1]?.text === '.' && tokens[cursor - 2]?.kind === 'identifier') cursor -= 2;
+  const keyword = tokens[cursor - 1];
+  return keyword?.kind === 'identifier' && (keyword.text === 'namespace' || keyword.text === 'module') &&
+    !['.', '?.'].includes(tokens[cursor - 2]?.text ?? '');
+}
+
+/** 토큰 열마다 한 번 만든 반환 타입 본문 표다(본문 `{` 위치 → 그 앞 매개변수 목록의 `)` 위치, 없으면 -1). */
+const returnTypeBodyTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/**
+ * `{` 앞이 반환 타입 주석이면(`(…): T {`) 매개변수 목록의 `)` 위치를 돌려준다. `):`마다 앞으로 반환 타입을 건너
+ * (returnTypeEnd — 매개변수 가림과 같은 판정이다) 닿은 본문 `{`를 한 번에 표로 만든다. 거꾸로 건너면 조건 타입
+ * (`T extends U ? A : B`)의 `:`에서 멈춰 그 함수 본문을 알아보지 못했다.
+ */
+function returnTypeParamsClose(tokens: readonly JsToken[], open: number): number | undefined {
+  let table = returnTypeBodyTables.get(tokens);
+  if (table === undefined) {
+    table = new Int32Array(tokens.length).fill(-1);
+    for (let close = 0; close < tokens.length; close++) {
+      if (tokens[close]!.text !== ')' || tokens[close + 1]?.text !== ':') continue;
+      const end = returnTypeEnd(tokens, close + 2);
+      if (end !== undefined && tokens[end]!.text === '{' && table[end] === -1) table[end] = close;
+    }
+    returnTypeBodyTables.set(tokens, table);
+  }
+  const close = table[open] ?? -1;
+  return close === -1 ? undefined : close;
+}
+
+/**
+ * 타입 매개변수 목록의 닫는 `>`(위치 `close`)에 짝인 `<` 위치다. 괄호 그룹은 짝으로 건너뛴다 — 기본값의 객체 타입
+ * (`<T = {}>`)·함수 타입에서 멈추면 `function f<T = {}>(M) {…}`의 매개변수를 알아보지 못했다.
+ */
+function typeParametersOpen(tokens: readonly JsToken[], close: number): number | undefined {
+  let depth = 0;
+  const limit = Math.max(0, close - TYPE_ARGUMENTS_TOKEN_LIMIT);
+  for (let cursor = close; cursor >= limit; cursor--) {
+    const text = tokens[cursor]!.text;
+    if (text === ')' || text === ']' || text === '}') {
+      const opening = openingOf(tokens, cursor);
+      if (opening === undefined) return undefined;
+      cursor = opening;
+      continue;
+    }
+    if (text === '>') depth++;
+    else if (text === '>>' || text === '>>>') depth += text.length;
+    else if (text === '<' && --depth === 0) return cursor;
+    else if (text === ';' || text === '{' || text === '(' || text === '[') return undefined;
+  }
+  return undefined;
+}
+
+/** 위치 `index`에서 이 파일의 선언이 이름을 묶은 모듈 값이다. 차지한 선언이 없거나 모듈이 아니면 undefined다. */
+function boundValueAt(context: ScanContext, name: string, index: number): BoundName | undefined {
+  const resolution = resolveLocal(context, name, index);
+  return resolution.claimed ? resolution.value : undefined;
+}
+
+/**
+ * 위치의 이름을 매개변수 가림과 블록 범위 선언을 함께 보고 해석한다 — 더 안쪽에서 시작한 쪽이 이긴다. 매개변수를
+ * 둔 함수 안쪽 본문의 같은 이름 선언(`function f(M) { const run = () => { const M = …; } }`)은 매개변수를 가리고,
+ * 매개변수는 바깥 선언을 가린다(그때 해석은 `parameter`다). 가장 안쪽 매개변수 목록이 함수 머리인지 정하지 못한
+ * 것이면(`wrap(M)` 뒤 다음 줄 블록) 그 목록이 없을 때의 해석도 본다 — 모듈 바인딩·import에 닿으면 귀속하지 않고 센다.
+ */
+function resolveLocal(context: ScanContext, name: string, index: number): ScopedResolution {
+  const floor = context.paramShadows.innermostFrom(name, index);
+  const resolution = context.scopes.resolve(name, index, floor ?? -Infinity);
+  if (floor === undefined || !resolution.claimed || resolution.value !== undefined ||
+    resolution.hidesModule === true || resolution.hidesOuter === true) {
+    return resolution;
+  }
+  const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
+  if (certainFloor === floor) return resolution;
+  const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
+  // 그 목록이 없으면 import·전역(레지스트리 `NativeModules` 포함)일 수 있다.
+  if (!alternative.claimed) return { claimed: true, hidesOuter: true };
+  if (alternative.value !== undefined || alternative.hidesModule === true) return { claimed: true, hidesModule: true };
+  return alternative.hidesOuter === true ? { claimed: true, hidesOuter: true } : resolution;
 }
 
 /**
@@ -1028,6 +1714,10 @@ function skipTypeAnnotation(
     } else if (typeClosers.has(text)) {
       depth -= typeClosers.get(text)!;
       if (depth < 0) return index;
+    } else if (assigningTypeClosers.has(text)) {
+      // 렉서는 `Array<string>= []`의 `>=`를 한 토큰으로 낸다 — 제네릭을 닫고 기본값을 여는 끝이다.
+      depth -= assigningTypeClosers.get(text)!;
+      if (depth <= 0) return index;
     } else if (depth === 0 &&
       (text === '=' || text === ',' || text === ';')) {
       return index;
@@ -1035,6 +1725,9 @@ function skipTypeAnnotation(
   }
   return tokens.length;
 }
+
+/** 제네릭을 닫으며 곧바로 기본값·초기값을 여는 한 토큰(`>=`·`>>=`·`>>>=`)과 닫는 단계 수다. */
+const assigningTypeClosers: ReadonlyMap<string, number> = new Map([['>=', 1], ['>>=', 2], ['>>>=', 3]]);
 
 /** 타입 깊이를 닫는 토큰과 닫는 단계 수다. `>>`·`>>>`는 중첩 제네릭 두세 단계를 한 번에 닫는다. */
 const typeClosers: ReadonlyMap<string, number> = new Map([
@@ -1057,6 +1750,187 @@ function endsTypeByLineBreak(tokens: readonly JsToken[], index: number): boolean
 }
 
 /**
+ * 선언 대상 자리의 구조 분해 패턴(여는 `{`·`[` 위치 `open`)을 기록하고 패턴 뒤 위치를 돌려준다(짝이 없으면 undefined).
+ * 패턴의 타입 주석(`const { a }: T = …`)은 패턴이 아니므로 건너뛴다. 원천이 그 위치의 react-native 레지스트리이고 초기값의
+ * 값이 레지스트리 자체인 `const { A } = NativeModules`만 module-import 사실과 모듈 바인딩을 만든다 — 같은 이름의 매개변수·
+ * 로컬 대역·다른 모듈 import에서 꺼낸 이름은 모듈이 아니고(다른 모듈 import는 `unattributed-js-native-modules:`로 센다),
+ * `= NativeModules.Camera`에서 꺼낸 이름은 그 모듈의 속성이다.
+ */
+function collectPattern(context: ScanContext, open: number, scope: DeclarationScope, exported: boolean): number | undefined {
+  const { tokens } = context;
+  const object = tokens[open]!.text === '{';
+  const close = findMatching(tokens, open, object ? '{' : '[', object ? '}' : ']');
+  if (close === undefined) return undefined;
+  noteDeclarationPatternReassignments(context, open, close);
+  const after = tokens[close + 1]?.text === ':' ? skipTypeAnnotation(tokens, close + 2) : close + 1;
+  const sourceIndex = tokens[after]?.text === '=' ? after + 1 : undefined;
+  const source = sourceIndex === undefined ? undefined : tokens[sourceIndex];
+  // 원천 식의 값이 레지스트리 자체일 때만 레지스트리 구조 분해다(`= NativeModules`, `?? {}`·`|| {}` 대체값, `as`·`satisfies`).
+  // `= NativeModules.Camera`의 이름은 그 모듈의 속성이다 — 모듈 사실은 멤버 접근이 내고, 구조 분해한 값은 센다.
+  if (object && source?.kind === 'identifier' && source.text === 'NativeModules' &&
+    registryValueEnds(tokens, sourceIndex!)) {
+    if (isNativeModulesRegistry(context, source.text, sourceIndex!)) {
+      collectDestructuredBindings(context, open, close, scope, exported);
+      context.destructuredRegistrySources.add(sourceIndex!);
+      return after;
+    }
+    // 다른 모듈에서 가져온 NativeModules(배럴·대역)는 멤버 접근처럼 꺼낸 이름마다 센다.
+    if (importedFromOtherModule(context, source.text, sourceIndex!)) {
+      context.counts.untracedApiAccesses += topLevelPatternEntries(tokens, open, close).length;
+    }
+  }
+  // 그 외 원천의 구조 분해도 로컬 이름을 선언한다 — `require('spec')` 원천이면 이름별 specifier까지 남겨 mechanism
+  // 판정에 쓰고, `const { … } = SOURCE;`처럼 식별자 하나가 원천이면 그 식별자를 남긴다(모듈 객체 판정용).
+  const required = sourceIndex === undefined ? undefined : readRequireSpecifier(tokens, sourceIndex);
+  const traced = source?.kind === 'identifier' && endsExpression(tokens, sourceIndex!) ? sourceIndex : undefined;
+  recordDestructuredLocals(context, open, close, scope, required, traced);
+  return after;
+}
+
+/**
+ * 선언 패턴(`open`..`close`) 안 기본값·계산 키의 재대입(`const [a = (M = x)] = arr`, `const { b = M++ } = o`,
+ * `let { [M = 'k']: v } = o`)을 반영한다. 패턴의 바인딩 이름은 선언이라 재대입이 아니다.
+ */
+function noteDeclarationPatternReassignments(context: ScanContext, open: number, close: number): void {
+  const bindings = new Set(patternBindingNames(context.tokens, open, close).map(({ index }) => index));
+  for (let index = open + 1; index < close; index++) {
+    if (!bindings.has(index)) noteReassignment(context, index);
+  }
+}
+
+/** 위치 `index`의 레지스트리 이름이 식의 값으로 끝나는지 본다 — 멤버 접근·호출·`&&`가 이어지면 값은 다른 것이다. */
+function registryValueEnds(tokens: readonly JsToken[], index: number): boolean {
+  const next = tokens[index + 1]?.text;
+  if (next === '||' || next === '??' || next === 'as' || next === 'satisfies') return true;
+  return next === '!' ? endsExpression(tokens, index + 1) : endsExpression(tokens, index);
+}
+
+/** 구조 분해 패턴의 최상위 항목 하나다. 위치는 모두 토큰 위치다. */
+interface PatternEntry {
+  /** `...rest` 항목인지다. */
+  readonly rest: boolean;
+  /** 객체 패턴의 이름·문자열 키 위치다(단축 속성이면 대상과 같다). */
+  readonly key?: number;
+  /** 계산 키 `[식]`의 구간이다. */
+  readonly computedKey?: TokenRange;
+  /** 대상이 이름이면 그 위치다. */
+  readonly target?: number;
+  /** 대상이 중첩 패턴이면 그 구간이다. */
+  readonly nested?: TokenRange;
+}
+
+/**
+ * 구조 분해 패턴 `{…}`·`[…]`(여는 위치 `open`, 닫는 위치 `close`)의 최상위 항목이다. 객체 패턴은 `키`(단축)·`키: 대상`·
+ * `[식]: 대상`·`...대상`, 배열 패턴은 `대상`·`...대상`·빈 자리이고, 대상은 이름이나 중첩 패턴이다. 기본값(`= 식`)은
+ * 건너뛴다.
+ */
+function topLevelPatternEntries(tokens: readonly JsToken[], open: number, close: number): PatternEntry[] {
+  const object = tokens[open]!.text === '{';
+  const entries: PatternEntry[] = [];
+  let index = open + 1;
+  while (index < close) {
+    if (tokens[index]!.text === ',') {
+      index++;
+      continue;
+    }
+    const rest = tokens[index]!.text === '...';
+    if (rest) index++;
+    let key: number | undefined;
+    let computedKey: TokenRange | undefined;
+    if (object && !rest) {
+      if (tokens[index]!.text === '[') {
+        const keyClose = findMatching(tokens, index, '[', ']');
+        if (keyClose === undefined || keyClose >= close) break;
+        computedKey = { from: index, to: keyClose };
+        index = keyClose + 1;
+      } else {
+        key = index++;
+      }
+      if (tokens[index]?.text === ':') {
+        index++;
+      } else {
+        // 단축 속성(`{ a }`·`{ a = 1 }`)은 키가 곧 대상이다.
+        const token = tokens[key ?? -1];
+        if (token !== undefined && (token.kind === 'identifier' || token.kind === 'keyword')) {
+          entries.push({ rest, key: key!, target: key! });
+        }
+        index = patternElementEnd(tokens, index, close);
+        continue;
+      }
+    }
+    const token = tokens[index];
+    let target: number | undefined;
+    let nested: TokenRange | undefined;
+    if (token?.text === '{' || token?.text === '[') {
+      const nestedClose = findMatching(tokens, index, token.text, token.text === '{' ? '}' : ']');
+      if (nestedClose === undefined || nestedClose >= close) break;
+      nested = { from: index, to: nestedClose };
+    } else if (token !== undefined && (token.kind === 'identifier' || token.kind === 'keyword')) {
+      target = index;
+    }
+    entries.push({
+      rest,
+      ...(key === undefined ? {} : { key }),
+      ...(computedKey === undefined ? {} : { computedKey }),
+      ...(target === undefined ? {} : { target }),
+      ...(nested === undefined ? {} : { nested }),
+    });
+    index = patternElementEnd(tokens, nested === undefined ? index + 1 : nested.to + 1, close);
+  }
+  return entries;
+}
+
+/** 패턴 항목의 끝(같은 깊이의 `,` 또는 패턴의 닫는 괄호) 위치다. 기본값 식의 괄호는 짝까지 건너뛴다. */
+function patternElementEnd(tokens: readonly JsToken[], from: number, close: number): number {
+  let index = from;
+  while (index < close && tokens[index]!.text !== ',') {
+    const text = tokens[index]!.text;
+    if (bracketPairs.has(text)) {
+      const inner = findMatching(tokens, index, text, bracketPairs.get(text)!);
+      if (inner === undefined || inner >= close) return close;
+      index = inner;
+    }
+    index++;
+  }
+  return index;
+}
+
+/** 구조 분해 패턴이 선언한 이름 하나다. */
+interface PatternName {
+  /** 이름 토큰 위치다. */
+  readonly index: number;
+  /** 최상위 객체 속성에서 바로 온 이름이면 그 속성 이름이다(`{ P: local }`·`{ P }`의 P). */
+  readonly property?: string;
+}
+
+/**
+ * 구조 분해 패턴이 선언한 이름을 모은다 — 키·기본값·계산 키는 이름이 아니고, 중첩 패턴은 그 안의 대상만 이름이다.
+ * 깊은 중첩에서도 호출 스택을 쓰지 않도록 패턴 더미로 따라간다.
+ */
+function patternBindingNames(tokens: readonly JsToken[], open: number, close: number): PatternName[] {
+  const names: PatternName[] = [];
+  const pending: { readonly range: TokenRange; readonly top: boolean }[] = [{ range: { from: open, to: close }, top: true }];
+  for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
+    for (const entry of topLevelPatternEntries(tokens, item.range.from, item.range.to)) {
+      if (entry.nested !== undefined) {
+        pending.push({ range: entry.nested, top: false });
+        continue;
+      }
+      if (entry.target === undefined) continue;
+      const property = item.top && !entry.rest && entry.key !== undefined ? propertyName(tokens[entry.key]!) : undefined;
+      names.push({ index: entry.target, ...(property === undefined ? {} : { property }) });
+    }
+  }
+  return names;
+}
+
+/** 객체 패턴 키 토큰의 속성 이름이다(이름·키워드·문자열 리터럴). */
+function propertyName(token: JsToken): string | undefined {
+  if (token.kind === 'identifier' || token.kind === 'keyword') return token.text;
+  return token.kind === 'string' && token.value !== undefined && isSafeNonEmptyString(token.value) ? token.value : undefined;
+}
+
+/**
  * `NativeModules` 구조 분해의 각 속성을 module-import로 확정하고 바인딩한다.
  * `...rest`는 이름을 열거할 수 없어 원문을 실은 동적 사실로 남긴다.
  */
@@ -1064,47 +1938,77 @@ function collectDestructuredBindings(
   context: ScanContext,
   open: number,
   close: number,
+  scope: DeclarationScope,
+  exported: boolean,
 ): void {
   const { tokens } = context;
-  for (let index = open + 1; index < close; index++) {
-    const token = tokens[index]!;
-    if (token.text === ',') continue;
-    if (token.text === '...') {
-      // open·close는 토큰 인덱스다 — 문자 오프셋으로 환산해 원문을 뗀다.
+  for (const entry of topLevelPatternEntries(tokens, open, close)) {
+    if (entry.rest) {
+      // 나머지 객체는 남은 모듈을 담는다 — 열거할 수 없어 패턴 원문을 실은 동적 사실로 남기고, 이름은 값 없이 선언한다.
       const begin = tokens[open]!.offset;
       const end = tokens[close]!.offset + tokens[close]!.text.length;
       context.facts.push({
         kind: 'module-import',
         channel: sanitizeExpression(context.source.slice(begin, end)),
         dynamic: true,
-        token,
+        token: tokens[(entry.target ?? open + 1) - 1]!,
       });
       context.counts.dynamicModuleNames++;
-      break;
+      declarePatternTargets(context, entry, scope);
+      continue;
     }
-    if (token.kind === 'identifier' || token.kind === 'keyword') {
-      const name = token.text;
-      let localName = name;
-      let cursor = index;
-      // `A: alias` 형태와 기본값 `A = expr`를 구분한다.
-      if (tokens[index + 1]?.text === ':') {
-        const alias = tokens[index + 2];
-        if (alias?.kind === 'identifier' || alias?.kind === 'keyword') {
-          localName = alias.text;
-          cursor = index + 2;
-        }
-      }
-      while (cursor < close && tokens[cursor]!.text !== ',') cursor++;
-      index = cursor - 1;
-      context.facts.push({
-        kind: 'module-import',
-        channel: name,
-        dynamic: false,
-        token,
-      });
-      context.bindings.set(localName, { name });
-      context.localNames.add(localName);
+    if (entry.computedKey !== undefined) {
+      // `{ [name]: M } = NativeModules`는 `NativeModules[name]`과 같다 — 이름이 정해지지 않은 동적 사실이다.
+      const { from, to } = entry.computedKey;
+      const expression = sanitizeExpression(
+        context.source.slice(tokens[from + 1]!.offset, tokens[to - 1]!.offset + tokens[to - 1]!.text.length));
+      context.facts.push({ kind: 'module-import', channel: expression, dynamic: true, token: tokens[from]! });
+      context.counts.dynamicModuleNames++;
+      bindPatternTarget(context, entry, scope, exported, { dynamicExpression: expression });
+      continue;
     }
+    const keyToken = entry.key === undefined ? undefined : tokens[entry.key];
+    const name = keyToken === undefined ? undefined : propertyName(keyToken);
+    if (name === undefined) {
+      declarePatternTargets(context, entry, scope);
+      continue;
+    }
+    context.facts.push({ kind: 'module-import', channel: name, dynamic: false, token: keyToken! });
+    bindPatternTarget(context, entry, scope, exported, { name });
+  }
+}
+
+/**
+ * 레지스트리 구조 분해 항목의 대상에 모듈 값을 묶는다. 대상이 중첩 패턴(`{ Camera: { take } }`)이면 모듈 값을 다시
+ * 구조 분해한 것이라 그 이름들은 값 없이 선언하고 모듈 값을 범위 밖 참조로 센다.
+ */
+function bindPatternTarget(
+  context: ScanContext,
+  entry: PatternEntry,
+  scope: DeclarationScope,
+  exported: boolean,
+  value: BoundName,
+): void {
+  if (entry.target !== undefined) {
+    const localName = context.tokens[entry.target]!.text;
+    declareName(context, localName, scope, { value });
+    if (exported) context.namedExports.set(localName, value);
+    context.localNames.add(localName);
+    return;
+  }
+  if (entry.nested !== undefined) context.counts.escapedModuleReferences++;
+  declarePatternTargets(context, entry, scope);
+}
+
+/** 패턴 항목이 선언한 이름(중첩 패턴 안 이름 포함)을 값 없이 선언한다. */
+function declarePatternTargets(context: ScanContext, entry: PatternEntry, scope: DeclarationScope): void {
+  const names = entry.nested !== undefined
+    ? patternBindingNames(context.tokens, entry.nested.from, entry.nested.to).map(({ index }) => index)
+    : entry.target === undefined ? [] : [entry.target];
+  for (const index of names) {
+    const localName = context.tokens[index]!.text;
+    context.localNames.add(localName);
+    declareName(context, localName, scope);
   }
 }
 
@@ -1138,33 +2042,22 @@ function recordDestructuredLocals(
   context: ScanContext,
   open: number,
   close: number,
+  scope: DeclarationScope,
   specifier: string | undefined,
   sourceIndex?: number,
 ): void {
   const { tokens } = context;
-  for (let index = open + 1; index < close; index++) {
-    const token = tokens[index]!;
-    if (token.kind !== 'identifier' && token.kind !== 'keyword') continue;
-    let localName = token.text;
-    // `A: alias`의 로컬 이름은 alias다 — 속성명은 선언되지 않는다.
-    if (tokens[index + 1]?.text === ':') {
-      const alias = tokens[index + 2];
-      if (alias?.kind === 'identifier' || alias?.kind === 'keyword') {
-        localName = alias.text;
-      }
-    }
+  for (const { index, property } of patternBindingNames(tokens, open, close)) {
+    const localName = tokens[index]!.text;
     context.localNames.add(localName);
-    if (specifier !== undefined) {
-      context.requireSpecifiers.set(localName, specifier);
-    }
+    // 모듈 값이 아닌 이름도 그 범위에서 바깥의 같은 이름 바인딩을 가린다.
+    declareName(context, localName, scope);
+    // 원천의 속성 이름을 아는 최상위 항목만 이름별 specifier·원천을 남긴다(중첩 패턴의 이름은 원천의 속성이 아니다).
+    if (property === undefined) continue;
+    if (specifier !== undefined) context.requireSpecifiers.set(localName, specifier);
     if (sourceIndex !== undefined) {
-      context.destructuredSources.set(localName,
-        { property: token.text, source: tokens[sourceIndex]!.text, sourceIndex });
+      context.destructuredSources.set(localName, { property, source: tokens[sourceIndex]!.text, sourceIndex });
     }
-    // 기본값·중첩 패턴까지 포함해 다음 `,`까지 건너뛴다.
-    let cursor = index + 1;
-    while (cursor < close && tokens[cursor]!.text !== ',') cursor++;
-    index = cursor - 1;
   }
 }
 
@@ -1227,8 +2120,8 @@ function readModuleExpression(
   }
   // 바인딩된 식별자의 추적(`const N = M`)은 한 단계만 허용한다.
   // 같은 이름의 매개변수가 가리는 구간 안에서는 파일 바인딩을 적용하지 않는다.
-  if (token.kind === 'identifier' && !isShadowed(context, token.text, start)) {
-    const bound = context.bindings.get(token.text);
+  if (token.kind === 'identifier') {
+    const bound = boundValueAt(context, token.text, start);
     return bound === undefined
       ? undefined
       : { value: bound, endIndex: start };
@@ -1299,9 +2192,8 @@ function readArgument(
     end.text === ',' || end.text === ')' || end.text === ']';
   // 한 단계 상수 추적 — `const X = 'lit'` 같은 파일 선언만 본다.
   if (token.kind === 'identifier' && singleToken) {
-    const literal = isShadowed(context, token.text, start)
-      ? undefined
-      : context.constStrings.get(token.text);
+    const resolution = resolveLocal(context, token.text, start);
+    const literal = resolution.claimed ? resolution.literal : undefined;
     return literal === undefined || !isSafeNonEmptyString(literal)
       ? { expression: sanitizeExpression(token.text), endIndex: start }
       : { value: literal, expression: token.text, endIndex: start };
@@ -1416,9 +2308,15 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
       context.destructuredSources.get(token.text)?.property === 'NativeModules')) {
       // 레지스트리를 가져오는 import 절·구조 분해의 이름은 값 사용이 아니고, react-native 출처가 아닌 같은 이름은
       // RN 레지스트리가 아니다(로컬 shim·다른 모듈·매개변수).
-      if (importPositions.has(index) || isPatternDeclarator(tokens, index)) continue;
+      if (importPositions.has(index) || context.declaratorNames.has(index) || isPatternDeclarator(tokens, index)) continue;
       if (isNativeModulesRegistry(context, token.text, index)) {
         index = collectNativeModulesAccess(context, index);
+        continue;
+      }
+      // 그 위치를 가린 선언·매개변수가 잠정적이면(범위를 정하지 못한 `var`, 함수 머리인지 정하지 못한 목록) 레지스트리일
+      // 수도 있다 — 사실로 읽지 않고 범위 밖 참조로 센다.
+      if (registryUndecided(context, token.text, index)) {
+        context.counts.escapedModuleReferences++;
         continue;
       }
       // 다른 모듈에서 가져온 이름(배럴 재수출·대역)은 레지스트리로 단정하지 않는다. 그래도 조용히 버리지 않고 멤버
@@ -1495,22 +2393,66 @@ function nativeModulesAlias(context: ScanContext, name: string): boolean {
  * 값 위치의 `NativeModules`(또는 별칭)가 react-native 레지스트리를 가리키는지 본다.
  *
  * 같은 이름의 매개변수가 가리면, 다른 모듈에서 가져왔으면, react-native가 아닌 값으로 선언했으면(테스트 shim 등)
- * 레지스트리가 아니다. 이 파일에 import도 선언도 없으면 기존처럼 전역 레지스트리로 읽는다. 스코프는 구분하지 않고
- * 파일 단위로 판정한다 — 로컬 선언이 하나라도 있으면 그 이름은 레지스트리로 읽지 않는다.
+ * 레지스트리가 아니다. 그 위치를 차지한 로컬 선언도 import도 없으면 기존처럼 전역 레지스트리로 읽는다. 로컬 선언은
+ * 그 선언의 범위에서만 레지스트리를 가린다(함수·클래스 선언 이름은 파일 전체).
  */
 function isNativeModulesRegistry(context: ScanContext, name: string, index: number): boolean {
-  if (isShadowed(context, name, index)) return false;
+  // 그 위치를 차지한 매개변수는 레지스트리가 아니다. 그 위치를 차지한 `const`·`let`·`var` 선언은 import보다 안쪽이다
+  // — 그 선언이 react-native에서 꺼낸 값일 때만 레지스트리다(테스트 함수 안의 `const NativeModules = mock`는 import가
+  // 있어도 레지스트리가 아니다).
+  const local = resolveLocal(context, name, index);
+  if (local.claimed) {
+    if (local.parameter === true) return false;
+    return destructuredFromReactNative(context, name) ||
+      (name === 'NativeModules' && context.requireSpecifiers.get(name) === 'react-native');
+  }
   const imports = context.importsByLocalName.get(name) ?? [];
   if (imports.length > 0) return nativeModulesAlias(context, name);
   if (destructuredFromReactNative(context, name)) return true;
   if (name !== 'NativeModules') return false;
-  if (context.localNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
+  if (context.functionOrClassNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
   return true;
 }
 
-/** 이름이 react-native가 아닌 모듈에서 가져온 import 바인딩인지 본다. 매개변수가 가리면 아니다. */
+/**
+ * 위치의 레지스트리 이름(`NativeModules` 또는 react-native에서 가져온 별칭)을 잠정적인 선언·매개변수만 가리는지 본다 —
+ * 범위를 정하지 못한 `var NativeModules`(라벨 블록 안 등)나 `wrap(NativeModules)` 뒤 다음 줄 블록의 인자는 그 위치를 가릴
+ * 수도 아닐 수도 있다. 가려진 쪽이 전역·import 레지스트리이거나 이 파일의 레지스트리 선언(`require('react-native')`에서
+ * 꺼낸 `NativeModules`)이면 센다. 전역 레지스트리를 이 파일의 함수·클래스 선언이 가리면 아니다.
+ */
+function registryUndecided(context: ScanContext, name: string, index: number): boolean {
+  const local = resolveLocal(context, name, index);
+  if (local.claimed && local.parameter === true) {
+    // 잠정 매개변수 목록이 가린 이름이 그 목록이 없으면 이 파일의 레지스트리 선언(`const { NativeModules } =
+    // require('react-native')`)일 수도 있다.
+    const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
+    if (certainFloor === context.paramShadows.innermostFrom(name, index)) return false;
+    const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
+    return alternative.claimed && alternative.parameter !== true && (destructuredFromReactNative(context, name) ||
+      (name === 'NativeModules' && context.requireSpecifiers.get(name) === 'react-native'));
+  }
+  if (!local.claimed || (local.hidesOuter !== true && local.hidesModule !== true)) return false;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) return nativeModulesAlias(context, name);
+  return name === 'NativeModules' && !context.functionOrClassNames.has(name);
+}
+
+/**
+ * 이름이 위치 `index`에서 이 파일의 로컬 선언을 가리키는지 본다(수집이 끝난 뒤에만 부른다). `const`·`let`·`var`
+ * 선언은 그 선언의 범위 안에서만 로컬이다 — 한 함수의 테스트 대역 선언이 다른 함수의 같은 이름 해석을 바꾸지
+ * 않는다. 함수·클래스 선언 이름은 범위를 계산하지 않아 파일 전체에서 로컬로 본다.
+ */
+function declaredLocallyAt(context: ScanContext, name: string, index: number): boolean {
+  return context.functionOrClassNames.has(name) || context.scopes.resolve(name, index).claimed;
+}
+
+/**
+ * 이름이 react-native가 아닌 모듈에서 가져온 import 바인딩인지 본다. 매개변수나 로컬 선언이 가리면 아니다(넓게 잡힌
+ * 선언 너머라 import일 수도 있는 위치는 import로 본다 — 세는 쪽).
+ */
 function importedFromOtherModule(context: ScanContext, name: string, index: number): boolean {
-  if (isShadowed(context, name, index)) return false;
+  const local = resolveLocal(context, name, index);
+  if (local.claimed && local.hidesOuter !== true) return false;
   const imports = context.importsByLocalName.get(name) ?? [];
   return imports.length > 0 && imports.every(({ specifier }) => specifier !== 'react-native');
 }
@@ -1704,7 +2646,7 @@ function collectPropertyApi(context: ScanContext, index: number): number {
 function propertyBaseSpecifier(context: ScanContext, index: number): string | undefined {
   const { tokens } = context;
   const base = tokens[index - 2];
-  const requireIsLocal = context.localNames.has('require');
+  const requireIsLocal = declaredLocallyAt(context, 'require', index);
   if (base?.text === ')') {
     const open = openingOf(tokens, index - 2);
     const callee = open === undefined ? undefined : open - 1;
@@ -1956,7 +2898,7 @@ function mechanismOf(
   if (required !== undefined) {
     return expoSpecifierPattern.test(required) ? 'expo' : undefined;
   }
-  if (context.localNames.has(localName)) return undefined;
+  if (declaredLocallyAt(context, localName, start)) return undefined;
   return 'expo';
 }
 
@@ -2033,10 +2975,16 @@ function recordDirectMethodCall(
 function collectBoundMemberCall(context: ScanContext, start: number): number {
   const { tokens } = context;
   const token = tokens[start]!;
-  const bound = !['.', '?.'].includes(tokens[start - 1]?.text ?? '') &&
-    !isShadowed(context, token.text, start) &&
-    (context.bindings.has(token.text) ||
-      context.importsByLocalName.has(token.text));
+  // 그 위치에서 이름을 차지한 선언이 있으면 그 선언의 모듈 값만 쓴다(모듈이 아니면 import도 가려진다). 넓게 잡힌
+  // 선언 너머라 import일 수도 있는 위치의 호출은 불확실로 표시해 문서 단계가 귀속하지 않고 센다.
+  const resolution = ['.', '?.'].includes(tokens[start - 1]?.text ?? '')
+    ? undefined
+    : resolveLocal(context, token.text, start);
+  const binding = resolution?.claimed === true ? resolution.value : undefined;
+  const uncertain = resolution?.claimed === true && resolution.hidesOuter === true;
+  const bound = binding !== undefined ||
+    ((resolution?.claimed === false || uncertain) && context.importsByLocalName.has(token.text));
+  const resolved = binding !== undefined ? { binding } : uncertain ? { uncertain: true as const } : {};
   const accessor = tokens[start + 1];
   // `M[expr]()` — 대괄호 접근은 식별자 바로 뒤에 온다.
   if (accessor?.text === '[') {
@@ -2050,6 +2998,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
       if (dynamicMethod) context.counts.dynamicMethodNames++;
       context.memberCalls.push({
         ident: token.text,
+        ...resolved,
         method: dynamicMethod ? arg.expression : arg.value!,
         dynamicMethod,
         token: accessor,
@@ -2066,6 +3015,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
     if (bound && isCallAt(tokens, start + 3) && !propertyApiNames.has(method.text)) {
       context.memberCalls.push({
         ident: token.text,
+        ...resolved,
         method: method.text,
         dynamicMethod: false,
         token: method,
@@ -2083,6 +3033,7 @@ function collectBoundMemberCall(context: ScanContext, start: number): number {
       if (dynamicMethod) context.counts.dynamicMethodNames++;
       context.memberCalls.push({
         ident: token.text,
+        ...resolved,
         method: dynamicMethod ? arg.expression : arg.value!,
         dynamicMethod,
         token: method,
@@ -2110,93 +3061,332 @@ function boundChannel(bound: BoundName): string {
 /**
  * 매개변수가 파일 전역 바인딩을 가리는 본문 구간을 모은다.
  *
- * 인식하는 형태는 `function f(M) {…}`·`f(M) {…}`(메서드 약칭)·`(M) => {…}`·
- * `M => {…}`다. `foo(x) {…}`처럼 호출 뒤 블록이 오는 문장도 매개변수 목록으로
- * 보이지만, 그 경우의 과도한 가림은 사실을 놓칠 뿐 거짓 사실을 만들지 않는다.
+ * 인식하는 형태는 `function f(M) {…}`·`function f<T>(M: T): R {…}`·`f(M) {…}`(메서드 약칭, 반환 타입 주석
+ * 포함)·`(M) => {…}`·`(M): R => {…}`·`M => {…}`다. 함수 머리인지 정하지 못한 목록 — 호출 뒤 다음 줄 블록일 수 있는
+ * `name(M)` 줄바꿈 `{`, 삼항 `?` 바로 뒤의 `(M): T => {` — 은 정하지 못한 가림으로 표시한다(resolveLocal이 그 가림이
+ * 없을 때의 해석이 모듈에 닿으면 센다). `case …(…):`·삼항 갈래의 호출 `wrap(M) : e => {`는 매개변수 목록이 아니다.
  * 본문이 `{`로 시작하지 않는 화살표(`M => M.x()`)는 끝을 알 수 없어 건너뛴다.
  */
 function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
   const shadows: ParamShadow[] = [];
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
-    // `M => {…}` 단일 매개변수 화살표다.
+    // `M => {…}` 단일 매개변수 화살표다. 반환 타입 주석의 이름(`(x): T => {`의 T)은 매개변수가 아니다. 본문은 건너뛰지
+    // 않는다 — 본문 안 함수의 매개변수도 가린다.
     if ((token.kind === 'identifier' || token.kind === 'keyword') &&
       tokens[index + 1]?.text === '=>' && tokens[index + 2]?.text === '{') {
-      const close = findMatching(tokens, index + 2, '{', '}');
+      const role = arrowNameRole(tokens, index);
+      const close = role === 'type' ? undefined : findMatching(tokens, index + 2, '{', '}');
       if (close !== undefined) {
         // 매개변수 자신의 위치부터 가린다 — 그 이름 토큰은 바깥 바인딩의 값 사용이 아니다.
         shadows.push({
           from: index,
           to: close + 1,
           names: new Set([token.text]),
+          ...(role === 'ambiguous' ? { uncertain: true as const } : {}),
         });
-        index = close;
+      }
+      continue;
+    }
+    // 이름 있는 클래스(`const C = class M { run() { M.go(); } }`)의 이름은 그 본문 안에서 클래스 자신이다. 잠정 가림으로
+    // 둔다 — 클래스 본문은 함수 본문이 아니라, 메서드(잠정) 안 `var`가 본문 밖까지 끌어올려져 이 가림과 엇갈린다(그 `var`가
+    // 이길 수도 있다). 바깥 모듈에 닿을 수 있는 쓰임은 센다.
+    if (token.kind === 'keyword' && token.text === 'class' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '')) {
+      const body = classBody(tokens, index);
+      if (body !== undefined) {
+        shadows.push({ from: body.open, to: body.close + 1, names: new Set([tokens[index + 1]!.text]), uncertain: true });
       }
       continue;
     }
     if (token.text !== '(') continue;
-    const previous = tokens[index - 1];
-    // `function f(…)`·`function (…)`의 매개변수 목록이다.
-    let isParams = previous?.text === 'function' ||
-      (previous?.kind === 'identifier' &&
-        tokens[index - 2]?.text === 'function');
     const close = findMatching(tokens, index, '(', ')');
     if (close === undefined) continue;
-    if (!isParams) {
-      const afterClose = tokens[close + 1];
-      isParams = afterClose?.text === '=>' ||
-        // `f(M) {…}` 메서드 약칭 — `(` 앞이 식별자일 때만 본다.
-        // `if (M) {…}` 같은 키워드 조건절은 매개변수가 아니다.
-        (previous?.kind === 'identifier' && afterClose?.text === '{');
-    }
-    if (!isParams) continue;
-    let bodyIndex = close + 1;
-    if (tokens[bodyIndex]?.text === '=>') bodyIndex++;
-    if (tokens[bodyIndex]?.text !== '{') continue;
-    const bodyClose = findMatching(tokens, bodyIndex, '{', '}');
+    // 본문은 `)` 바로 뒤, 화살표 뒤, 또는 반환 타입 주석(`): T {`·`): T => {`) 뒤의 `{`다.
+    const after = bodyAfterParameters(tokens, close);
+    if (after === undefined) continue;
+    // 화살표, `function f(…)`·`function (…)`·`function f<T>(…)`, 메서드 약칭 `f(M) {…}`(이름·키워드·계산 키·
+    // 문자열 키 뒤)의 매개변수 목록이다. `if (M) {…}` 같은 제어문 조건절은 매개변수가 아니다.
+    const kind = after.arrow
+      ? arrowParameterKind(tokens, index, after.returnType)
+      : parameterListKind(tokens, index, close, after.body, after.returnType);
+    if (kind === 'none' || kind === 'block') continue;
+    const bodyClose = findMatching(tokens, after.body, '{', '}');
     if (bodyClose === undefined) continue;
     const names = parameterBindingNames(tokens, index, close);
+    // 이름 있는 함수식(`const x = function M() { M.go(); }`)의 이름은 그 본문 안에서 함수 자신이다.
+    const own = ownFunctionName(tokens, index);
+    if (own !== undefined) names.add(own);
     // 매개변수 목록부터 가린다 — 매개변수 이름 토큰과 뒤 매개변수의 기본값 식은 바깥 바인딩을 보지 않는다.
-    shadows.push({ from: index, to: bodyClose + 1, names });
+    shadows.push({ from: index, to: bodyClose + 1, names, ...(kind === 'ambiguous' ? { uncertain: true as const } : {}) });
     index = close;
   }
   return shadows;
 }
 
+/** 화살표 함수 식이 시작될 수 있는 자리의 앞 토큰이다(대입식이 오는 자리). 단항·이항 연산자 뒤에는 오지 않는다. */
+const arrowHeadPredecessors = new Set(['(', ',', ':', '=>', '{', '}', '[', ';', ...assignmentOperatorTexts()]);
+
+/** 화살표 함수 식 앞에 올 수 있는 키워드다. */
+const arrowHeadKeywords = new Set(['return', 'yield', 'throw', 'default', 'async', 'else', 'do']);
+
+/** 매개변수 목록(`open`)이 `function NAME(`·`function* NAME<T>(` 머리면 그 이름이다. */
+function ownFunctionName(tokens: readonly JsToken[], open: number): string | undefined {
+  let name = open - 1;
+  if (tokens[name]?.text === '>' || tokens[name]?.text === '>>') {
+    const typeOpen = typeParametersOpen(tokens, name);
+    if (typeOpen === undefined) return undefined;
+    name = typeOpen - 1;
+  }
+  const token = tokens[name];
+  if (token === undefined || (token.kind !== 'identifier' && token.kind !== 'keyword') || token.text === 'function') {
+    return undefined;
+  }
+  const keyword = tokens[name - 1]?.text === '*' ? name - 2 : name - 1;
+  return tokens[keyword]?.text === 'function' ? token.text : undefined;
+}
+
+/**
+ * `class NAME …{`(위치 `index`의 `class`)의 본문 괄호다. 이름이 없거나 본문을 찾지 못하면 undefined다. 상속절의 괄호
+ * 그룹은 짝으로 건너뛴다.
+ */
+function classBody(tokens: readonly JsToken[], index: number): { open: number; close: number } | undefined {
+  const name = tokens[index + 1];
+  if (name?.kind !== 'identifier' || name.text === 'extends' || name.text === 'implements') return undefined;
+  for (let cursor = index + 2, steps = 0; cursor < tokens.length && steps < CLAUSE_LOOKBEHIND; cursor++, steps++) {
+    const text = tokens[cursor]!.text;
+    if (text === '(' || text === '[') {
+      cursor = findMatching(tokens, cursor, text, text === '(' ? ')' : ']') ?? tokens.length;
+      continue;
+    }
+    if (text === ';' || text === '}' || text === ')') return undefined;
+    if (text === '{') {
+      const close = findMatching(tokens, cursor, '{', '}');
+      return close === undefined ? undefined : { open: cursor, close };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 화살표 앞 괄호(`open`)가 매개변수 목록인지다. 반환 타입 주석이 없으면(`) =>`) 확실하다. 있으면(`(x): T => {`) 괄호
+ * (제네릭 화살표는 `<`) 앞 토큰이 화살표 함수 식이 올 수 있는 자리(대입·인자·배열·객체 값·문장 시작·`return` 등)일 때만
+ * 확실하다. 그 밖(호출 대상·연산자·`case` 뒤 — `busy ? wrap(x) : e => {…}`, `c ? !(p) : M => {…}`)이면 `(…):`는
+ * 삼항·절의 `:` 앞이라 매개변수가 아니고, 삼항의 `?` 바로 뒤이거나 같은 깊이 앞에 짝 없는 `?`·`case`가 있으면
+ * (`c ? (x): T => {…} : d`, `a ? b ? c : (x) : M => {…}`) 정하지 않는다.
+ */
+function arrowParameterKind(tokens: readonly JsToken[], open: number, returnType: boolean): 'function' | 'ambiguous' | 'none' {
+  if (!returnType) return 'function';
+  let start = open;
+  if (tokens[open - 1]?.text === '>' || tokens[open - 1]?.text === '>>') start = typeParametersOpen(tokens, open - 1) ?? open;
+  const before = tokens[start - 1];
+  if (before === undefined) return 'function';
+  if (before.text === '?') return 'ambiguous';
+  if (!arrowHeadPredecessors.has(before.text) && !(before.kind === 'keyword' && arrowHeadKeywords.has(before.text)) &&
+    !closesControlHead(tokens, start - 1)) {
+    return 'none';
+  }
+  // 같은 깊이 앞에 짝 없는 `?`나 `case`가 있으면 `(…):`의 `:`가 삼항·절의 것일 수도 있다(`a ? b ? c : (x) : M => {…}`,
+  // `case 1, (x): M => {…}`) — 정하지 않는다.
+  return pendingConditional(tokens, start - 1) ? 'ambiguous' : 'function';
+}
+
+/**
+ * 위치 `from`부터 거슬러 같은 깊이에서 짝 없는 삼항 `?`(`:`보다 많은 `?`)나 `case` 절이 열려 있는지 본다. 괄호 그룹은
+ * 짝으로 건너뛰고, 여는 괄호·`;`·문장 키워드(식에 올 수 있는 `function`·`class`·연산자 키워드 제외)에서 멈춘다. 상한을
+ * 넘거나 짝을 찾지 못하면 열려 있다고 본다(정하지 않는 쪽).
+ */
+function pendingConditional(tokens: readonly JsToken[], from: number): boolean {
+  let questions = 0;
+  let colons = 0;
+  // `,` 앞의 `?`·`:`는 앞 피연산자의 것이다 — 그 뒤로는 `case`(`case 1, (x):`)만 찾고 앞 `:`에서 멈춘다. 긴 객체 리터럴·
+  // 인자 목록의 화살표가 상한에 닿아 잠정이 되지 않게 한다.
+  let afterComma = false;
+  for (let cursor = from, steps = 0; cursor >= 0; cursor--, steps++) {
+    if (steps > CLAUSE_LOOKBEHIND) return true;
+    const token = tokens[cursor]!;
+    const text = token.text;
+    if (text === ')' || text === ']' || text === '}') {
+      const opening = openingOf(tokens, cursor);
+      if (opening === undefined) return true;
+      cursor = opening;
+      continue;
+    }
+    if (text === '(' || text === '[' || text === '{' || text === ';') break;
+    if (text === ',') {
+      if (questions > colons) return true;
+      afterComma = true;
+      continue;
+    }
+    if (afterComma && (text === '?' || text === ':')) break;
+    if (text === '?') questions++;
+    else if (text === ':') colons++;
+    else if (token.kind === 'keyword' && !['.', '?.'].includes(tokens[cursor - 1]?.text ?? '')) {
+      if (text === 'case') return true;
+      // 식 안에 올 수 있는 키워드(함수식·클래스식·연산자)는 문장 경계가 아니다.
+      if (statementKeywords.has(text) && !['await', 'yield', 'delete', 'function', 'class'].includes(text)) break;
+    }
+  }
+  return questions > colons;
+}
+
+/**
+ * `NAME => {`의 NAME(위치 `index`)이 단일 매개변수인지 반환 타입 주석의 이름인지다. 앞이 `(…):`이고 그 괄호가 화살표
+ * 매개변수 목록이면 반환 타입(`(x): T => {`), 호출·`case` 절이면 삼항·절 뒤의 매개변수(`wrap(x) : e => {`)다.
+ */
+function arrowNameRole(tokens: readonly JsToken[], index: number): 'parameter' | 'type' | 'ambiguous' {
+  if (tokens[index - 1]?.text !== ':' || tokens[index - 2]?.text !== ')') return 'parameter';
+  const open = openingOf(tokens, index - 2);
+  const kind = open === undefined ? 'none' : arrowParameterKind(tokens, open, true);
+  return kind === 'function' ? 'type' : kind === 'ambiguous' ? 'ambiguous' : 'parameter';
+}
+
+/**
+ * `(` 앞 토큰이 메서드 약칭의 이름(이름·키워드·계산 키 `]`·문자열·숫자 키)인지 본다. 키워드도 메서드 이름이다
+ * (`delete(key) {…}`). 제어문 머리 키워드(`catch` 메서드는 parameterListKind가 따로 본다)와 `function`은 제외한다.
+ */
+function isMethodHead(token: JsToken | undefined): boolean {
+  if (token === undefined) return false;
+  return token.kind === 'identifier' || token.kind === 'string' || token.kind === 'number' || token.text === ']' ||
+    (token.kind === 'keyword' && !controlHeadKeywords.has(token.text) && token.text !== 'function');
+}
+
+/** 앞에 오면 그 `{`가 반환 타입 안의 객체 타입 리터럴인 토큰이다. */
+const typeLiteralOpeners = new Set([':', '|', '&', '<', ',', '(', '[', '=>', '?', 'extends', 'keyof', 'typeof']);
+
+/**
+ * 매개변수 목록의 `)`(위치 `close`) 뒤 함수 본문 `{`의 위치와 화살표·반환 타입 주석 여부다. 반환 타입 주석(`): T {`·
+ * `): T => {`)을 건너뛴다 — 타입 안의 객체 타입·함수 타입(`(): () => void {`)은 본문이 아니다. 본문이 없으면
+ * undefined다. `(…):`가 절·삼항의 `:`인지는 호출자가 머리로 판정한다.
+ */
+function bodyAfterParameters(
+  tokens: readonly JsToken[],
+  close: number,
+): { body: number; arrow: boolean; returnType: boolean } | undefined {
+  let index = close + 1;
+  const returnType = tokens[index]?.text === ':';
+  if (returnType) {
+    const end = returnTypeEnd(tokens, index + 1);
+    if (end === undefined) return undefined;
+    index = end;
+  }
+  const arrow = tokens[index]?.text === '=>';
+  if (arrow) index++;
+  return tokens[index]?.text === '{' ? { body: index, arrow, returnType } : undefined;
+}
+
+/** 타입에 올 수 없는 키워드다 — 반환 타입 주석으로 읽던 구간이 값 식(삼항 갈래의 함수식 등)이면 여기서 멈춘다. */
+const valueOnlyKeywords = new Set(['function', 'class', 'return', 'var', 'let', 'const']);
+
+/**
+ * 반환 타입 주석(시작 위치 `start`) 다음 위치 — 본문 `{` 또는 화살표 `=>` — 다. 괄호·제네릭은 짝까지 건너뛰고, 타입
+ * 자리의 `{`(객체 타입)와 타입 안 괄호 뒤의 `=>`(함수 타입)는 타입으로 본다. 문장 끝·완결된 타입 뒤 ASI 줄바꿈·상한에서
+ * undefined다.
+ */
+function returnTypeEnd(tokens: readonly JsToken[], start: number): number | undefined {
+  let angles = 0;
+  const limit = Math.min(tokens.length, start + TYPE_ARGUMENTS_TOKEN_LIMIT);
+  for (let index = start; index < limit; index++) {
+    const text = tokens[index]!.text;
+    // 완결된 타입 뒤 ASI 줄바꿈에서 주석이 끝난다 — 세미콜론 없는 오버로드·추상 시그니처(`open(x): void` 다음 줄
+    // 메서드)를 건너 다음 메서드의 `{`를 이 목록의 본문으로 읽지 않는다. 다음 줄 `{`(올맨 스타일 본문)만 이어 본다.
+    if (index > start && angles === 0 && text !== '{' && endsTypeByLineBreak(tokens, index)) return undefined;
+    if (text === '(' || text === '[' || (text === '{' && (angles > 0 || typeLiteralOpeners.has(tokens[index - 1]?.text ?? '')))) {
+      const inner = findMatching(tokens, index, text, bracketPairs.get(text)!);
+      if (inner === undefined) return undefined;
+      index = inner;
+      continue;
+    }
+    if (text === '<') angles++;
+    else if (text === '>' || text === '>>' || text === '>>>') angles -= text.length;
+    else if (angles > 0) continue;
+    else if (tokens[index]!.kind === 'keyword' && valueOnlyKeywords.has(text)) return undefined;
+    else if (text === '{') return index;
+    else if (text === '=>') {
+      // 타입 안에서 연 괄호 뒤의 `=>`는 함수 타입이다.
+      const paren = tokens[index - 1]?.text === ')' ? openingOf(tokens, index - 1) : undefined;
+      if (paren === undefined || paren < start) return index;
+    } else if (text === ';' || text === '=' || text === ',' || text === ')' || text === '}' || text === ']') {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /**
  * 매개변수 목록 `(`…`)`이 묶는 이름이다.
  *
- * 기본값 식(`=` 뒤부터 같은 괄호 깊이의 `,`나 그 깊이를 닫는 괄호까지)의 식별자는 매개변수 이름이 아니다 —
- * `(native = NativeModules.Camera)`의 `NativeModules`는 바깥 바인딩을 읽는다. 구조 분해 패턴의 속성 이름과 타입
- * 주석은 구분하지 않고 이름으로 센다(가림을 넓게 잡는 쪽).
+ * 매개변수마다 앞의 데코레이터(`@Dec()`)·접근 수식어(`public`·`readonly` 등)·`...`를 건너 첫 이름이나 구조 분해 패턴만
+ * 바인딩이다. 뒤의 `?`·타입 주석·기본값 식은 이름이 아니다 — `(config?: Animated.Options)`의 `Animated`,
+ * `(native = NativeModules.Camera)`의 `NativeModules`, `({ Camera: cam })`의 키 `Camera`는 바깥 바인딩을 읽는다(전에는
+ * 이름으로 세어 바깥 모듈·import를 조용히 가렸다). 패턴은 바인딩 이름만 모은다(patternBindingNames).
  */
 function parameterBindingNames(tokens: readonly JsToken[], open: number, close: number): Set<string> {
   const names = new Set<string>();
-  let depth = 0;
-  // 기본값 식을 연 깊이다. 그 깊이의 `,`나 그 깊이를 닫는 괄호에서 기본값이 끝난다.
-  let defaultDepth: number | undefined;
-  for (let cursor = open + 1; cursor < close; cursor++) {
-    const token = tokens[cursor]!;
-    if (token.text === '(' || token.text === '[' || token.text === '{') {
-      depth++;
-      continue;
+  let index = open + 1;
+  while (index < close) {
+    index = skipParameterPrefix(tokens, index, close);
+    const token = tokens[index];
+    if (token === undefined || index >= close) break;
+    if (token.text === '{' || token.text === '[') {
+      const end = findMatching(tokens, index, token.text, token.text === '{' ? '}' : ']');
+      if (end === undefined || end >= close) break;
+      for (const { index: at } of patternBindingNames(tokens, index, end)) names.add(tokens[at]!.text);
+      index = end + 1;
+    } else if (token.kind === 'identifier' || token.kind === 'keyword') {
+      names.add(token.text);
+      index++;
     }
-    if (token.text === ')' || token.text === ']' || token.text === '}') {
-      if (defaultDepth === depth) defaultDepth = undefined;
-      depth--;
-      continue;
-    }
-    if (defaultDepth !== undefined) {
-      if (token.text === ',' && depth === defaultDepth) defaultDepth = undefined;
-      continue;
-    }
-    if (token.text === '=') {
-      defaultDepth = depth;
-      continue;
-    }
-    if (token.kind === 'identifier' || token.kind === 'keyword') names.add(token.text);
+    index = parameterEnd(tokens, index, close);
   }
   return names;
+}
+
+/** 매개변수 이름 앞에 올 수 있는 TS 접근 수식어다(매개변수 속성). */
+const parameterModifiers = new Set(['public', 'private', 'protected', 'readonly', 'override']);
+
+/** 매개변수 하나의 이름 앞(데코레이터·수식어·`...`)을 건너 이름·패턴 위치를 돌려준다. */
+function skipParameterPrefix(tokens: readonly JsToken[], from: number, close: number): number {
+  let index = from;
+  for (;;) {
+    const text = tokens[index]?.text;
+    if (index >= close || text === undefined) return index;
+    if (text === '...') {
+      index++;
+    } else if (text === '@') {
+      // `@Dec`·`@ns.Dec(…)`·`@Inject<Svc>()` 데코레이터다.
+      index++;
+      while (tokens[index]?.kind === 'identifier' && ['.', '?.'].includes(tokens[index + 1]?.text ?? '')) index += 2;
+      index++;
+      if (tokens[index]?.text === '<') {
+        const closeAngle = skipTypeArguments(tokens, index);
+        if (closeAngle !== undefined) index = closeAngle + 1;
+      }
+      if (tokens[index]?.text === '(') index = (findMatching(tokens, index, '(', ')') ?? close) + 1;
+    } else if (parameterModifiers.has(text) && ['identifier', 'keyword'].includes(tokens[index + 1]?.kind ?? '') ||
+      (parameterModifiers.has(text) && ['{', '['].includes(tokens[index + 1]?.text ?? ''))) {
+      index++;
+    } else {
+      return index;
+    }
+  }
+}
+
+/**
+ * 매개변수 이름·패턴 뒤(`?`·타입 주석·기본값)를 건너 다음 매개변수 앞 `,` 다음 위치(없으면 목록 끝)를 돌려준다.
+ * 타입 주석은 제네릭의 `,`를 건너도록 skipTypeAnnotation으로, 기본값 식은 괄호 깊이로 건넌다.
+ */
+function parameterEnd(tokens: readonly JsToken[], from: number, close: number): number {
+  let index = from;
+  if (tokens[index]?.text === '?' || tokens[index]?.text === '!') index++;
+  if (tokens[index]?.text === ':') index = Math.min(skipTypeAnnotation(tokens, index + 1), close);
+  let depth = 0;
+  for (; index < close; index++) {
+    const text = tokens[index]!.text;
+    if (text === '(' || text === '[' || text === '{') depth++;
+    else if (text === ')' || text === ']' || text === '}') depth--;
+    else if (text === ',' && depth <= 0) return index + 1;
+  }
+  return close;
 }
 
 /** 위치 `index`의 `name`이 매개변수에 가려졌는지 판정한다. */
@@ -2243,13 +3433,6 @@ const nonCallKeywords = new Set([
   'default', 'const', 'let', 'var', 'try', 'finally', 'break', 'continue', 'debugger',
 ]);
 
-
-/** 같은 모듈을 가리키는 바인딩 값인지 본다. */
-function sameBoundName(left: BoundName | undefined, right: BoundName): boolean {
-  if (left === undefined) return false;
-  if ('name' in left) return 'name' in right && left.name === right.name;
-  return 'dynamicExpression' in right && left.dynamicExpression === right.dynamicExpression;
-}
 
 /** 인식한 모듈 식의 쓰임을 분류해 추적을 벗어나면 센다. `anchor`는 식의 첫 인식 토큰, `end`는 식의 끝이다. */
 function noteModuleValue(context: ScanContext, anchor: number, end: number): void {
@@ -2471,7 +3654,7 @@ function chainStart(tokens: readonly JsToken[], index: number): number | undefin
 
 /**
  * 식별자가 값이 아니라 이름 자리에 있는지 본다 — import·재수출 절, 선언자·함수·클래스 이름, 구조 분해 선언
- * 패턴, 객체 키, 대입 대상, 식 본문 화살표의 매개변수. 속성 자리(`.` 뒤)는 호출자가 따로 판정한다.
+ * 패턴, 객체 키, 대입 대상, 식 본문 화살표의 매개변수, enum 멤버 이름. 속성 자리(`.` 뒤)는 호출자가 따로 판정한다.
  */
 function isNameOnlyPosition(
   context: ScanContext,
@@ -2489,7 +3672,16 @@ function isNameOnlyPosition(
   if (assignmentOperators.has(after) || ['++', '--'].includes(after) || ['++', '--'].includes(before)) return true;
   if (after === ':' && (before === '{' || before === ',')) return true;
   if (after === '=>' || isArrowParameter(tokens, index)) return true;
+  if ((before === '{' || before === ',') && ['=', ',', '}'].includes(after) && isEnumMemberName(tokens, index)) return true;
   return isPatternDeclarator(tokens, index);
+}
+
+/** `enum E { NAME }`·`const enum E { NAME = 1 }`의 멤버 이름 자리(`{`·`,` 바로 뒤)인지 본다. 초기값 안 이름은 아니다. */
+function isEnumMemberName(tokens: readonly JsToken[], index: number): boolean {
+  if (!['{', ','].includes(tokens[index - 1]?.text ?? '')) return false;
+  const open = enclosingBrace(tokens, index);
+  return open !== undefined && tokens[open - 1]?.kind === 'identifier' && tokens[open - 2]?.text === 'enum' &&
+    enclosingOpen(tokens, index) === open;
 }
 
 /** `(a, M) => …`처럼 화살표 매개변수 목록의 이름 자리인지 본다. 기본값 식(`= …` 뒤)은 값이다. */
@@ -2507,21 +3699,37 @@ function isArrowParameter(tokens: readonly JsToken[], index: number): boolean {
 /**
  * 바인딩·상대 import 이름의 값 사용을 분류해 추적을 벗어난 횟수를 이름별로 센다.
  *
- * 패키지 import는 스캔 집합 안에서 해석될 수 없어 후보가 아니다(문서 단계가 출처 모름으로 센다).
+ * 그 위치에서 이름을 차지한 선언이 있으면 그 선언이 모듈 값일 때만, 없으면 상대 import 이름일 때만 센다 — 다른
+ * 함수의 같은 이름 바인딩은 이 위치의 값이 아니다. 패키지 import는 스캔 집합 안에서 해석될 수 없어 후보가
+ * 아니다(문서 단계가 출처 모름으로 센다).
  */
 function collectIdentifierEscapes(context: ScanContext, importPositions: ReadonlySet<number>): void {
   const { tokens } = context;
-  const candidates = new Set(context.bindings.keys());
+  const relativeImports = new Set<string>();
   for (const entry of context.imports) {
-    if (entry.specifier.startsWith('.')) candidates.add(entry.localName);
+    if (entry.specifier.startsWith('.')) relativeImports.add(entry.localName);
   }
-  if (candidates.size === 0) return;
+  // 모듈 값 선언이 하나라도 있는 이름이 후보다 — 위치별 해석이 값을 주지 않아도 정하지 못한 모듈 바인딩으로 셀 수 있다.
+  const moduleNames = context.scopes.moduleDeclarationNames();
+  if (moduleNames.size === 0 && relativeImports.size === 0) return;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
-    if (token.kind !== 'identifier' || !candidates.has(token.text)) continue;
+    if (token.kind !== 'identifier' || (!moduleNames.has(token.text) && !relativeImports.has(token.text))) {
+      continue;
+    }
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
-    if (isShadowed(context, token.text, index) || isNameOnlyPosition(context, index, importPositions)) continue;
-    if (classifyModuleValue(context, index, index, true) === 'escape') {
+    if (isNameOnlyPosition(context, index, importPositions)) continue;
+    const resolution = resolveLocal(context, token.text, index);
+    // 선언 범위가 정하지 못한 모듈 바인딩(블록 밖의 `var` 등)의 쓰임은 호출이어도 귀속되지 않으니 모두 센다. import일
+    // 수도 있는 위치는 import 이름처럼 센다(호출은 불확실 멤버 호출로 문서 단계가 센다).
+    // 정하지 못한 모듈 바인딩의 쓰임은 이 파일의 선언이 모듈임을 이미 아는 참조라 이름 해석과 무관하게 바로 센다.
+    if (resolution.claimed && resolution.hidesModule === true) {
+      context.counts.escapedModuleReferences++;
+      continue;
+    }
+    const outer = !resolution.claimed || resolution.hidesOuter === true;
+    const moduleReference = outer ? relativeImports.has(token.text) : resolution.value !== undefined;
+    if (moduleReference && classifyModuleValue(context, index, index, true) === 'escape') {
       context.identifierEscapes.set(token.text, (context.identifierEscapes.get(token.text) ?? 0) + 1);
     }
   }
@@ -2548,7 +3756,6 @@ export function interpolationMentionsBridgeApi(text: string): boolean {
  */
 function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet<number>): void {
   const { tokens } = context;
-  const requireIsLocal = context.localNames.has('require');
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
@@ -2572,7 +3779,8 @@ function countUntracedEntries(context: ScanContext, importPositions: ReadonlySet
       continue;
     }
     if (token.kind === 'identifier' && token.text === 'require' && tokens[index + 1]?.text === '(' &&
-      !requireIsLocal && !importPositions.has(index) && !isShadowed(context, 'require', index)) {
+      !declaredLocallyAt(context, 'require', index) && !importPositions.has(index) &&
+      !isShadowed(context, 'require', index)) {
       context.counts.untracedBindings += requireEntryCount(tokens, index);
     }
   }
@@ -2681,6 +3889,30 @@ function enclosingOpen(tokens: readonly JsToken[], index: number): number | unde
       if (bracketPairs.has(tokens[cursor]!.text) && matches[cursor]! !== -1) stack.push(cursor);
     }
     enclosingTables.set(tokens, table);
+  }
+  const open = table[index] ?? -1;
+  return open === -1 ? undefined : open;
+}
+
+/** 토큰 열마다 한 번 만든 감싼 중괄호 표다(위치 → 가장 안쪽 여는 `{`, 없으면 -1). */
+const enclosingBraceTables = new WeakMap<readonly JsToken[], Int32Array>();
+
+/**
+ * 위치 `index`를 감싼 가장 안쪽 `{` 위치다(괄호·대괄호는 건너뛴다). 선언의 블록 범위를 정한다. 중괄호는 짝 표가
+ * 같은 종류끼리만 맞추므로 다른 종류의 짝 없는 괄호에 흔들리지 않는다. 짝 없는 `{`는 감싸는 것으로 보지 않는다.
+ */
+function enclosingBrace(tokens: readonly JsToken[], index: number): number | undefined {
+  let table = enclosingBraceTables.get(tokens);
+  if (table === undefined) {
+    const matches = matchingTable(tokens);
+    table = new Int32Array(tokens.length).fill(-1);
+    const stack: number[] = [];
+    for (let cursor = 0; cursor < tokens.length; cursor++) {
+      while (stack.length > 0 && matches[stack.at(-1)!]! < cursor) stack.pop();
+      table[cursor] = stack.at(-1) ?? -1;
+      if (tokens[cursor]!.text === '{' && matches[cursor]! !== -1) stack.push(cursor);
+    }
+    enclosingBraceTables.set(tokens, table);
   }
   const open = table[index] ?? -1;
   return open === -1 ? undefined : open;
