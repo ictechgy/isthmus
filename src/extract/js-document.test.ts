@@ -1193,8 +1193,105 @@ test('잠정적인 선언·매개변수가 가린 레지스트리 접근은 사�
   assert.deepEqual(factLines(document), ['module-import Haptics@10', 'method-invoke Haptics.go@10']);
   // wrap 인자(호출이면 레지스트리 값)·Camera 접근·Torch 접근 셋이다.
   assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 3 native module references '), bindingScope(document));
+  // require로 꺼낸 레지스트리 선언을 잠정 매개변수가 가린 경우도 센다(4차 리뷰 S3 — 전에는 조용히 사라졌다).
+  const required = assemble({
+    'src/c.js': "const { NativeModules } = require('react-native');\nwrap(NativeModules)\n{ NativeModules.Camera.take(); }",
+  });
+  assert.deepEqual(required.facts, []);
+  assert.ok(bindingScope(required)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(required));
   // import 없이 전역 레지스트리를 읽는 파일도 같다.
   const global = assemble({ 'src/b.js': 'wrap(NativeModules)\n{\n  NativeModules.Camera.take();\n}' });
   assert.deepEqual(global.facts, []);
   assert.ok(bindingScope(global)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(global));
+});
+
+test('같은 깊이 앞에 짝 없는 삼항 `?`·`case`가 있으면 반환 타입 화살표 목록을 정하지 않는다', () => {
+  // 4차 리뷰 B1(349bd25 회귀): 화살표 함수 식이 올 자리 뒤면 `(…): T =>`를 확실한 매개변수 목록으로 보아, 중첩 삼항
+  // `a ? b ? c : (x) : M => {…}`(진실은 매개변수 M)에서 거짓 Camera.take가 났고, 거울 `(M) : T =>`(진실은 바깥 M)에서는 참
+  // 호출이 계수 없이 사라졌다. `yield`·`async`(JS에서는 호출)·`=>`·대입·`}`(함수식 끝)·`case 1, (x):`·`case a ? b : (x):`도
+  // 같다. 이런 목록은 잠정이라 그 쓰임을 센다.
+  const lines = [
+    'const f1 = a ? b ? c : (x) : M => { M.take(); };',
+    'function* g() { const f2 = a ? yield (x) : M => { M.take(); }; }',
+    'const f3 = a ? async (x) : M => { M.take(); };',
+    'const f4 = a ? y => (x) : M => { M.take(); };',
+    'let f5; const f6 = a ? f5 = (x) : M => { M.take(); };',
+    'switch (k) { case 1, (x): M => { M.take(); }; }',
+    'switch (k) { case a ? b : (x): M => { M.take(); }; }',
+    'const f7 = a ? b ? c : (M) : T => { M.take(); };',
+    'const f8 = a ? function () {}(M) : T => { M.take(); };',
+    // 같은 깊이를 거슬러 볼 때 함수식의 `function` 키워드는 문장 경계가 아니다.
+    'const f9 = a ? b ? function () {} : (x) : M => { M.take(); };',
+  ];
+  for (const line of lines) {
+    const document = assemble({ 'src/a.js': `import { NativeModules } from 'react-native';\nconst M = NativeModules.Camera;\n${line}` });
+    assert.deepEqual(factLines(document), ['module-import Camera@2'], line);
+    assert.ok(bindingScope(document)?.startsWith('js-binding-scope: '), line);
+  }
+  // 제어문 머리 뒤의 `(M): T => {…}`는 화살표 식 문장이라 매개변수가 확실하다(전에는 호출로 읽어 거짓 Camera.take).
+  const control = assemble({
+    'src/b.ts': "import { NativeModules } from 'react-native';\nconst M = NativeModules.Camera;\nif (c) (M): T => { M.take(); };",
+  });
+  assert.deepEqual(factLines(control), ['module-import Camera@2']);
+  assert.equal(bindingScope(control), undefined);
+});
+
+test('enum 멤버 초기값 안의 대입·증감은 재대입이다', () => {
+  // 4차 리뷰(349bd25 회귀): 멤버 이름 판정이 앞 토큰을 보지 않아 `enum E { A = M++ }`·`enum E { A = M = 1 }`의 M을 멤버
+  // 이름으로 읽고 재대입을 건너뛰었다(거짓 Camera.take).
+  for (const member of ['A = M++', 'A = M = 1']) {
+    const document = assemble({
+      'src/a.ts': `import { NativeModules } from 'react-native';\nlet M = NativeModules.Camera;\nenum E { ${member} }\nM.take();`,
+    });
+    assert.deepEqual(factLines(document), ['module-import Camera@2'], member);
+  }
+});
+
+test('선언 패턴의 기본값·계산 키 안 재대입도 바인딩을 지운다', () => {
+  // 4차 리뷰 B3(모든 트리의 거짓 Camera.take): 선언 수집이 패턴 구간을 건너뛰어 기본값 안 대입을 보지 못했다. 패턴의
+  // 바인딩 이름(a·b·v)과 중첩 패턴은 선언이라 재대입이 아니다.
+  for (const declaration of [
+    'const [a = (M = other)] = arr;', 'const { a = (M = other) } = obj;', 'for (const [a = (M = other)] of arr) {}',
+    'const z = 1, [b = (M = other)] = arr;', 'let { [M = "k"]: v } = obj;', 'const o = { a: 1 }, { b = M = other } = o;',
+    'const [b = M = other] = arr;', 'const { b = M++ } = obj;',
+  ]) {
+    const document = assemble({
+      'src/a.js': `import { NativeModules } from 'react-native';\nlet M = NativeModules.Camera;\n${declaration}\nM.take();`,
+    });
+    assert.deepEqual(factLines(document), ['module-import Camera@2'], declaration);
+  }
+  // 중첩 선언 패턴(`[[a] = x]`)은 바깥 M을 지우지 않는다.
+  const kept = assemble({
+    'src/b.js': "import { NativeModules } from 'react-native';\nlet M = NativeModules.Camera;\nconst [[a] = x, { b } = y] = arr;\nM.take();",
+  });
+  assert.deepEqual(factLines(kept), ['module-import Camera@2', 'method-invoke Camera.take@4']);
+});
+
+test('이름 있는 함수식·클래스식의 이름은 그 본문 안에서 바깥 바인딩을 가린다', () => {
+  // 4차 리뷰 S1(모든 트리의 거짓 Camera.take): `function M() { M.take(); }`·`class M { run() { M.take(); } }` 안의 M은 함수·
+  // 클래스 자신이다(node로 확인). 함수식 이름은 `function` 키워드와 함수 본문이 보이므로 확실한 가림이다. 클래스식 이름은
+  // 잠정 가림이다 — 메서드 안 `var M`이 클래스 본문 밖까지 끌어올려져 엇갈리므로 바깥 모듈에 닿는 쓰임은 센다(오라클이
+  // 찾은 경우). 본문 밖 M은 그대로 바깥 바인딩이다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'let M = NativeModules.Camera;',
+      'const x = function M() { M.take(); };',
+      '(function M() { M.open(); })();',
+      'const C = class M { run() { M.snap(); } };',
+      'M.close();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import Camera@2', 'method-invoke Camera.close@6']);
+  // 클래스식 안 M.snap 하나만 센다.
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 1 native module references '), bindingScope(document));
+  // 메서드 안 `var M`(범위를 정하지 못한 선언)과 클래스식 이름이 엇갈리면 그 쓰임은 귀속하지도 버리지도 않고 센다.
+  const crossed = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      'const K = class M { run() { { var M = NativeModules.C; } M.go(); } };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(crossed), ['module-import C@2']);
+  assert.ok(bindingScope(crossed)?.startsWith('js-binding-scope: '), crossed.limitations.join('\n'));
 });

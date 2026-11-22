@@ -105,13 +105,16 @@
   only when a token proves it: a `function` head (generic parameters with defaults such as
   `<T = {}>`, return type annotations and conditional types included), an arrow (`) =>`, or `(…): T =>`
   where an arrow function can start — not after a call or an operator such as `c ? !(p) : M => {…}`,
-  where `M` is the arrow's parameter), a class static block or a TS namespace. A method shorthand body
+  where `M` is the arrow's parameter — and only when no unmatched `?` or `case` precedes it at the same
+  depth, so `a ? b ? c : (x) : M => {…}` and `case 1, (x): M => {…}` stay tentative), a class static
+  block or a TS namespace. A method shorthand body
   and its parameters (`run(M) {…}`, `catch(M) {…}`, `run?(M): void {…}`) are inferred only from the
   following `{`, so they are tentative. Parameters of certain functions hide outer bindings, including
   parameters of functions nested in a single-parameter arrow body (`items => { function f(M) {…} }`);
   parameter names are only the names after modifiers, decorators (`@Inject<Svc>()` included) and `...`,
   plus pattern binding names, so type annotations, defaults and pattern keys no longer hide outer
-  bindings. `case`/`default` clause blocks are blocks even when the clause expression ends in `)`
+  bindings. A named function expression's name hides outer bindings inside its body
+  (`const x = function M() { M.take(); }`); a named class expression's name does so tentatively. `case`/`default` clause blocks are blocks even when the clause expression ends in `)`
   (`case kind(): {` used to be read as a function body). These are not parameter lists: a call in a
   conditional branch (`busy ? wrap(x) : e => {…}`) and a class heritage call (`class A extends
   withEvents(M) {`). A return type annotation also ends at a line break after a complete type, so a
@@ -132,9 +135,11 @@
   Reassignment now also covers compound assignment (`&&=`, `||=`, `+=` and the rest), `++`/`--`,
   destructuring assignment (`({ M } = mocks)`, `[a, M] = pair`, `if (c) [M, N] = [N, M]`,
   `case 'x': [M] = mocks`, `for ([k, M] of pairs)`, nested patterns), a parenthesized target (`(M) = x`),
-  a bare `for (M of xs)` target and assignments inside a declaration's initializer (`const r = (M = x)`),
-  which used to leave a false `A.go`. A parameter pattern's default (`function f({ M } = {})`) and an
-  enum member initializer (`enum E { M = 1 }`) are not assignments. A reassignment in a function
+  a bare `for (M of xs)` target and assignments inside a declaration's initializer (`const r = (M = x)`)
+  or inside a declaration pattern's defaults and computed keys (`const [a = (M = x)] = arr`,
+  `let { [M = 'k']: v } = o`), which used to leave a false `A.go`. A parameter pattern's default
+  (`function f({ M } = {})`) and an enum member initializer (`enum E { M = 1 }`) are not assignments,
+  but an assignment inside an enum initializer (`enum E { A = M++ }`) is. A reassignment in a function
   declared earlier in the file now also clears a later declaration, and reassignments are resolved
   again once all declarations are known, so
   an assignment taken by a `var` hoisted later in the same function no longer clears the outer binding.

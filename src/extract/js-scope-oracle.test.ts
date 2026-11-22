@@ -49,9 +49,10 @@ function programText(lines: readonly string[]): string {
 /**
  * 무작위 중첩 프로그램을 만든다 — 블록(제어문·`case` 절·라벨·`}`와 ASI 줄 뒤의 맨 블록)·함수(제네릭·기본값 있는
  * 제네릭·반환 타입·조건 반환 타입·화살표·단일 매개변수 화살표·함수식·삼항 갈래의 화살표·함수식(호출·연산자 뒤 괄호
- * 갈래 포함)·콜백·다음 줄 `{`)·클래스 메서드(상속절 호출, 세미콜론 없는 오버로드·추상 시그니처, 선택 속성·선택 메서드,
- * `catch` 메서드, 다음 줄 `{` 포함)·for-of(블록 본문과 문장 본문)·매개변수·구조 분해(레지스트리·모듈 멤버 원천 포함)·
- * 재대입(복합 대입·증감·구조 분해 대입과 그 중첩, 제어문 머리·`case` 절 뒤 배열 대입, 괄호 대상, 선언 초기값 안, for-of
+ * 갈래, 중첩 삼항과 그 거울, 함수식 호출 뒤 갈래 포함)·이름 있는 함수식·콜백·다음 줄 `{`)·클래스 메서드(이름 있는
+ * 클래스식, 상속절 호출, 세미콜론 없는 오버로드·추상 시그니처, 선택 속성·선택 메서드, `catch` 메서드, 다음 줄 `{` 포함)·
+ * for-of(블록 본문과 문장 본문)·매개변수·구조 분해(레지스트리·모듈 멤버 원천 포함)·재대입(복합 대입·증감·구조 분해 대입과
+ * 그 중첩, 제어문 머리·`case` 절 뒤 배열 대입, 괄호 대상, 선언 초기값·선언 패턴 기본값·계산 키 안, enum 초기값 안, for-of
  * 대상)과 선언자가 아닌 `const`·`let` 낱말을 섞는다. 호출 `M.go()`마다 JS 규칙(블록 범위
  * let/const, 함수 범위 var, 매개변수, 재대입되면 값을 모름, 매개변수를 다시 선언한 var는 인자일 수 있음)으로 기준
  * 모듈을 정한다.
@@ -160,9 +161,38 @@ function generateProgram(random: () => number): OracleProgram {
       [`function f${id}<T = {}>(${name}: T) {`, '}'],
       // 연산자 뒤 괄호 갈래 — `(p) : NAME =>`는 반환 타입이 아니라 삼항의 `:`와 단일 매개변수 화살표다.
       [`const f${id} = c ? ${pick(['!(p)', 'base + (o)', 'typeof (q)'])} : ${name} => {`, '};'],
+      // 중첩 삼항·함수식 호출 뒤 갈래 — JS에서 `(x) : NAME =>`의 NAME은 단일 매개변수다.
+      [`const f${id} = a ? b ? c : (y) : ${name} => {`, '};'],
+      [`const f${id} = a ? function () {}(y) : ${name} => {`, '};'],
+      // 제어문 머리 뒤의 화살표 식 문장 — 매개변수가 확실하다(TS).
+      [`if (c) (${name}): number => {`, '};'],
     ]);
     emit(head, depth);
     block(scope(current, true, parameter), depth + 1, budget);
+    emit(close, depth);
+  };
+  /**
+   * 매개변수가 `M`이 아닌 함수 형태다 — 중첩 삼항의 거울(`a ? b ? c : (M) : T => {`, JS에서 매개변수는 T이고 괄호 안 M은 바깥
+   * 값), 이름 있는 함수식(`function M(…) {` — 본문 안 M은 함수 자신, 바깥과 본문 사이의 이름 범위로 둔다).
+   */
+  const namedFunctionStatement = (current: OracleScope, depth: number, budget: number): void => {
+    outerModule(current, depth);
+    const parameter = random() < 0.3;
+    const id = functions++;
+    const form = random();
+    if (form < 0.4) {
+      emit(`const f${id} = a ? b ? c : (${pick(['M', 'y'])}) : T => {`, depth);
+      block(scope(current, true), depth + 1, budget);
+      emit('};', depth);
+      return;
+    }
+    const named = scope(current, false);
+    named.declarations = [{ kind: 'let', value: null }];
+    const [head, close] = form < 0.7
+      ? [`const f${id} = function M(${parameter ? 'M' : 'x'}) {`, '};']
+      : [`(function M(${parameter ? 'M' : 'x'}) {`, '})();'];
+    emit(head, depth);
+    block(scope(named, true, parameter), depth + 1, budget);
     emit(close, depth);
   };
   const statement = (current: OracleScope, depth: number, budget: number): void => {
@@ -207,13 +237,16 @@ function generateProgram(random: () => number): OracleProgram {
         emit(pick(['M = other();', 'M &&= other();', 'M += 1;', 'M++;', '({ M } = mocks);', '[M] = arr;',
           'for (M of xs) noop();', '[[M] = x] = y;', '({ a: [M] = x } = y);', 'if (c) [M] = arr;', '(M) = other();',
           `const r${functions++} = (M = other());`, `const s${functions++} = [M] = arr;`,
-          `const t${functions++} = c ? fn({ M } = d) : other => { other.x(); };`]), depth);
+          `const t${functions++} = c ? fn({ M } = d) : other => { other.x(); };`,
+          `const [a${functions++} = (M = other())] = arr;`, `const { b${functions++} = M++ } = o;`,
+          `let { [M = 'k']: v${functions++} } = o;`, `enum G${functions++} { A = M++ }`]), depth);
       }
       assignments.push(current);
     } else if (budget > 0 && choice < 0.54) {
       blockStatement(current, depth, budget);
     } else if (budget > 0 && choice < 0.68) {
-      functionStatement(current, depth, budget);
+      if (random() < 0.2) namedFunctionStatement(current, depth, budget);
+      else functionStatement(current, depth, budget);
     } else if (budget > 0 && choice < 0.75) {
       // for-of의 루프 변수는 for 문 범위의 모듈 아닌 선언이다.
       const loop = scope(current, false);
@@ -234,7 +267,11 @@ function generateProgram(random: () => number): OracleProgram {
       const list = parameter ? 'M' : '';
       const abstract = random() < 0.15;
       const heritage = random() < 0.25 ? ` extends mixin(${pick(['M', 'y'])})` : '';
-      emit(`${abstract ? 'abstract ' : ''}class K${heritage} {`, depth);
+      // 이름 있는 클래스식(`class M {`)의 이름은 본문 안에서 클래스 자신이다.
+      const expression = !abstract && random() < 0.2;
+      const owner = expression ? scope(current, false) : current;
+      if (expression) owner.declarations = [{ kind: 'let', value: null }];
+      emit(expression ? `const K${functions++} = class M${heritage} {` : `${abstract ? 'abstract ' : ''}class K${heritage} {`, depth);
       const member = random();
       if (member < 0.2) emit(`open(${pick(['M', 'x'])}): void`, depth + 1);
       else if (member < 0.3 && abstract) emit(`abstract open(${pick(['M', 'x'])}): void`, depth + 1);
@@ -250,9 +287,9 @@ function generateProgram(random: () => number): OracleProgram {
       } else {
         emit(`catch(${list}) {`, depth + 1);
       }
-      block(scope(current, true, parameter), depth + 2, budget);
+      block(scope(owner, true, parameter), depth + 2, budget);
       emit('}', depth + 1);
-      emit('}', depth);
+      emit(expression ? '};' : '}', depth);
     } else {
       emit('noop();', depth);
     }
@@ -363,14 +400,16 @@ function checkProgram(program: OracleProgram): { readonly problems: string[]; re
 
 /**
  * 시드마다 `ORACLE_ROUNDS`개 프로그램을 판정한다. 고친 결함을 하나씩 되돌린 변형마다 시드를 1,500회씩 돌려, 오라클이 볼 수
- * 있는 변형마다 실패하는 시드가 하나 이상 들도록 골랐다(3차 리뷰 반영 때 다시 골랐다): 추론한 메서드 머리를 확실하다고 본
- * 변형(7·32), 연산자 뒤 괄호 갈래(71·135), 제어문 머리 뒤 배열 대입(2), 괄호 대상(12), 기본값 있는 제네릭(5), 줄 끝 `?`(7·135),
- * 선택 메서드(71), 호출 인자 대입을 매개변수 패턴으로 본 변형(32), `case (1): {`를 함수 본문으로 읽은 변형(2·71), 사이 묶음
- * 표시(1), 단일 매개변수 화살표(리뷰 시드 14 포함 전부), var 가둠·구조 분해 원천·대입·복합 대입·매개변수 재선언·정하지 못한
- * 묶음 계수·`case` 절 뒤 배열 대입·초기값 안 대입·enum 초기값·`catch` 메서드(전부). 넓은 실행(시드 1~250 × 3,000회)은 이
- * 테스트 밖에서 했다.
+ * 있는 변형마다 실패하는 시드가 하나 이상 들도록 골랐다(생성기를 바꿀 때마다 다시 고른다 — 4차 리뷰 반영 때 마지막으로
+ * 골랐다): 중첩 삼항·`case` 앞 반환 타입 화살표(2·33·57·71·84), 제어문 머리 뒤 화살표(2·14·…), enum 초기값 안 증감(84), 선언
+ * 패턴 기본값 안 대입(2·14·…), 이름 있는 함수식(전부)·클래스식(2·18·…, 확실 가림으로 되돌리면 14·18·33), 추론한 메서드 머리를
+ * 확실하다고 본 변형(5), 괄호 대상(57), 줄 끝 `?`(18), `catch` 메서드(33), 호출 인자 대입(60), 기본값 있는 제네릭(2·57·71·84),
+ * `case (1): {`를 함수 본문으로 읽은 변형(5·71), 삼항 갈래(14·…), 단일 매개변수 화살표(33·60·135), 사이 묶음 표시(2·57·84),
+ * 매개변수 재선언 var(2·…), 잠정 가림 대체 해석(2·…), var 가둠·구조 분해 원천·대입·복합 대입·동결 때 무효 초기화·정하지 못한
+ * 묶음 계수·`case` 절 뒤 배열 대입·초기값 안 대입·enum 초기값·선택 메서드(전부). 넓은 실행(시드 1~250 × 3,000회)은 이 테스트
+ * 밖에서 했다.
  */
-const ORACLE_SEEDS = [1, 2, 5, 7, 12, 14, 32, 71, 135];
+const ORACLE_SEEDS = [2, 5, 14, 18, 33, 57, 60, 71, 84, 135];
 const ORACLE_ROUNDS = 1_500;
 
 test('생성한 중첩 프로그램에서 거짓 사실이 없고 기준이 모듈인 호출은 귀속하거나 하나씩 센다', () => {
@@ -393,5 +432,5 @@ test('생성한 중첩 프로그램에서 거짓 사실이 없고 기준이 모�
     }
   }
   // 생성기가 판정할 만한 프로그램과 귀속·계수 호출을 충분히 만들었는지 확인한다.
-  assert.ok(checked > 9_000 && attributed > 1_300 && counted > 100, `checked ${checked}, attributed ${attributed}, counted ${counted}`);
+  assert.ok(checked > 10_500 && attributed > 1_500 && counted > 150, `checked ${checked}, attributed ${attributed}, counted ${counted}`);
 });
