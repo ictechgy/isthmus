@@ -68,6 +68,52 @@ _Last updated: 2026-11-22_
     CLI 0/1/2/64·패키지 계약). 첫 실행은 부하 20~26에서 `js-scan.test.ts`의 선형 시간 테스트(상한 6초·3초)만 시간 초과로 실패했다 — 같은
     부하에서 main 기준 실행도 같은 테스트가 실패했고, 그 입력의 시간은 main/HEAD 0.61/0.66초·0.30/0.19초로 같다. 재실행은 모두 통과했다.
     GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
+- 2026-11-22 PR #167(헤드 `55aef42`, CI 통과) 독립 리뷰 반영(같은 브랜치, 미푸시). 리뷰는 새 거짓 사실·차단 요소는 없고 B2·S2가
+  불완전하다고 했다. 지적마다 `55aef42`와 main에서 먼저 재현했고(`node`로 확인), 고친 뒤 같은 입력은 사실 없음·계수·참 사실이다.
+  - 1(거짓 사실): 모듈 식 판정(`readModuleExpression`)이 `NativeModules.X`·`NativeModules['X']`를 출처 없이 바인딩해 jest 대역의
+    `const Camera = NativeModules['Camera']; Camera.take()`가 module-import 없는 거짓 method-invoke였다(main은 module-import까지 거짓).
+    끌어올린 `var` 대역·뒤의 `function NativeModules`·뒤의 다른 모듈 import·다른 함수의 레지스트리 재대입·블록 밖 레지스트리 `var`도
+    같았고, 레지스트리 구조 분해(`const { Camera } = NativeModules`)도 뒤의 재대입·import를 못 봐 거짓 사실이었다. 수집 중에는 뒤에
+    오는 것을 모르므로 수집 중에 판정하지 않는다 — 값을 만들어 그 자리(`registryReads`)에 기록하고, 동결·레지스트리 재반영 뒤
+    `validateRegistryReads`가 다시 판정한다. 레지스트리가 아니면 `ScopedBindingTable.withdraw(value)`로 그 값 객체를 가진 선언(별칭
+    `const D = C`도 같은 객체)의 묶음을 무효로 하고 export·구조 분해 사실을 거둔다. 레지스트리일 수도 있으면 불확실 무효라 쓰임마다
+    센다. 이 덕에 수집 중 판정이 놓치던 참 사실(구조 분해 뒤에 온 `import RN`, 다른 함수의 라벨 블록 `var`)도 남는다.
+  - 2(무계수 소실): `collectCalls`의 레지스트리 입구가 이름 단위(`destructuredSources` 마지막 쓰기·import 별칭)이고 그 갈래가 늘
+    `continue`해, 다른 함수의 레지스트리 별칭과 이름이 같은 로컬 모듈 바인딩(`const Cam = requireNativeModule('Cam'); Cam.take()`)의
+    참 호출이 계수 없이 사라졌다. 같은 갈래의 기존 형제(main부터): `const { NM } = props`가 다른 함수의 별칭 `NM.A.a()`를 지움, `import
+    { NativeModules as Cam }` 옆 로컬 `Cam`, 로컬 `const NativeModules = requireNativeModule('Torch')`. 입구를 `registryCandidates`·import
+    별칭으로 바꾸고 위치별 판정이 레지스트리·미정·다른 모듈 import가 아니면 일반 멤버 호출 경로로 넘긴다. `destructuredSources`는
+    지웠다.
+  - 3(거짓 사실): 보간 안 for-of/in 대상(`` `${(() => { for (M of fakes); })()}` ``)을 재대입으로 보지 않았다 — `for`가 있는 조각도
+    대입 조각으로 본다.
+  - 4(무계수 소실): 보간 안 레지스트리 별칭 쓰임(`` `${NM.Camera.take()}` ``)은 브리지 API 낱말 검사에 걸리지 않아 사라졌다 — 템플릿
+    위치에서 레지스트리이거나 미정인 별칭 쓰임을 첫 수로 센다(`countInterpolationRegistryReferences`, 브리지 API 낱말 그대로는 하한).
+  - 잔소리: 보간 재대입의 속성 이름·태그 호출 대상 제외를 테스트로 고정했다 — 중첩 템플릿 자리를 공백 대신 빈 템플릿(` `` `)으로
+    두어 태그 호출 제외가 실제로 닿게 했다. `const { NativeModules: NM } = require('react-native')`도 레지스트리다(전에는 사실 없음).
+  - 근거: 새·확장 테스트(문서 2 새 테스트와 보간 테스트 확장, lexer 1 확장)는 `55aef42`와 main에서 실패한다. 되돌림 변형 17종(검증
+    생략, 확실 무효만, 사실 남김, export 남김, 다른 모듈 계수 없음, 읽기의 수집 중 판정, 구조 분해의 수집 중 판정, 입구 뒤 계속,
+    별칭 후보 입구 없음, 보간 `for` 없음, 보간 별칭 계수 없음, 브리지 낱말도 계수, 속성 이름 제외 없음, 태그 제외 없음, require 별칭
+    출처 없음, 공백 자리, 불확실 무효 없음)이 모두 단위 테스트에 잡힌다. 오라클: `alias`(레지스트리 모드를 별칭 이름 `NM`으로, 보간 안 호출 포함)·
+    `collision`(본문 뒤 `function alias() { const { NativeModules: M } = RN; }`, 줄 번호 그대로) 선택을 더했고, 레지스트리 모드에
+    레지스트리·대역 멤버로 만든 바인딩(`const K = NativeModules.Cam`·`['Cam']` 뒤 `K.go()`, module-import는 선언 줄)을, 확장 모드에
+    보간 안 for-of 재대입을 더했다. 기본 생성기 프로그램은 바이트까지 같다(지문 `60c12e06…` 전후 동일). 고정 시드는 모드마다 볼 수 있는
+    변형을 모두 잡도록 다시 골랐다(× 1,500): 확장 {4, 37}(37만 `for` 변형을 잡는다), 레지스트리 {2, 29}, 별칭 {1, 2}, 충돌 {1, 2}.
+    넓은 실행(이 커밋, 문제 0): 레지스트리 1~120(133,749개), 별칭 1~120(131,509), 충돌 1~120(136,888), 확장 1~150(171,468), 충돌+확장
+    1~60(68,757), 기본 1~60(68,470). 같은 생성기 시드 1~10 × 300에서 실패 프로그램: `55aef42` 레지스트리 129·별칭 467·충돌 259·
+    충돌+확장 163(확장은 시드 1~40 × 1,500에서 37의 1개), main 269·525·1,708·1,526·확장 129.
+  - 공개 패키지 12개: 사실·`--events` 출력은 main과 모두 같고, 한계 수는 react-native 0.88.1의
+    js-binding-scope 첫 수(63 → 58)만 다르다 — 아래 후속 후보 "CommonJS로 가져온 `NativeModules`"의 두 내부 파일이다(대역으로 판정되는
+    로컬 선언에서 만든 바인딩의 쓰임 5개가 빠졌다). 나머지 차이는 js-binding-scope 문구뿐이다.
+  - 시간(부하 12~17, 세 번의 최솟값, 3만 2천 반복, main/`55aef42`/이 커밋): 거둔 읽기 1.66/1.72/1.57초,
+    남긴 읽기 0.84/0.77/0.86, 정하지 못한 읽기·별칭 1.86/0.95/1.61, 거둔 구조 분해 1.39/1.45/2.20, 거둔 export 0.50/0.57/0.63, 별칭 충돌
+    2.00/3.48/2.40, 보간 별칭·`for` 0.30/0.86/1.13, typescript.js 3.05/2.49/2.65. 리뷰 생성기(`mock`·`alias`·`aliassame`·`tmpl`·`tmplnames`·
+    `reassign`·`blockvar`·`deepblock`·`tmplmany`, `nested` 1만 6천)와 새 입력에 이차 항은 없다 — 6만 4천→12만 8천에서 `alias`는 main 2.5배·
+    `55aef42` 2.1배·이 커밋 1.7배, `blockvar`는 2.3·1.6·2.6배(부하 잡음 포함). 서로 다른 별칭 이름 입력에서 이 커밋은 상수배 느리다.
+  - `npm run verify` 통과(타입 검사, 호환성, conformance 352, 제품 테스트 1,430개·커버리지 라인 99.20/분기 95.31/함수 98.41 —
+    `js-scan.ts` 99.51/93.25/99.49, `js-scopes.ts` 100/96.42/100, `lexer.ts` 98.90/97.99/100, Phase 0 조인 15, clean build, 스크립트
+    225, CLI 0/1/2/64·패키지 계약). 앞의 두 실행은 부하 17~18에서 `js-scan.test.ts`의 선형 시간 테스트(재선언 상한 6초)만 7.1초로
+    실패했다 — 그 테스트를 커버리지로 따로 돌리면 이 커밋 1.85초·main 2.04초로 통과하고, 입력 시간은 main·이 커밋 모두 0.65초다.
+    그 두 실행에서 건너뛴 뒤 단계(조인·빌드·스크립트·계약)도 따로 통과했다. 부하가 내린 세 번째 실행은 전부 통과했다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -94,12 +140,23 @@ _Last updated: 2026-11-22_
 - extract-js 보간 경계(기존 동작, 토크나이저 한계): 보간 안 정규식 리터럴의 따옴표·백틱(`` `${s.replace(/"/g, '')}` ``)을 문자열
   시작으로 읽어 템플릿이 파일 뒤쪽까지 이어진다 — 그 뒤 코드의 사실·계수가 조용히 사라질 수 있다(템플릿 원문이 브리지 API 이름을
   언급하면 하한으로만 센다). react-native 0.88.1 `scripts/spm/*.js`에 이 꼴이 있다. 보간 건너뛰기에 정규식 위치 판정이 필요하다.
-- extract-js 보간 안 이름(이번 브랜치에서 넣은 근사): 보간은 이름을 찾는 데만 다시 토큰화한다. 대입·증감이 있는 보간은 대입 대상이
-  될 수 있는 이름을 모두 대상이 확실하지 않은 재대입으로 보고(`${a ? M : (N = 1)}`의 M도), 보간 안 함수의 매개변수·선언과 TS 템플릿
-  리터럴 타입 안 이름도 템플릿 위치의 바인딩으로 센다 — 과다 계수 쪽이다. 보간 안 호출은 귀속하지 않는다.
-- extract-js 레지스트리 출처의 수집 중 판정(이번 브랜치, 모듈 바인딩과 같은 한계): `const { A } = NativeModules`(레지스트리 구조
-  분해)는 수집 중에 판정한다. 그때까지 같은 이름의 범위를 정하지 못한 `var`가 있었거나 위치가 그 선언의 값 적용 구간 밖이면 사실을
-  내지 않고, 동결 뒤 그 원천 위치를 레지스트리 값으로 센다(조용히 사라지지 않는다).
+- extract-js 보간 안 이름(이번 브랜치에서 넣은 근사): 보간은 이름을 찾는 데만 다시 토큰화한다. 대입·증감·`for`가 있는 보간은 대입
+  대상이 될 수 있는 이름을 모두 대상이 확실하지 않은 재대입으로 보고(`${a ? M : (N = 1)}`의 M도), 보간 안 함수의 매개변수·선언과 TS
+  템플릿 리터럴 타입 안 이름도 템플릿 위치의 바인딩으로 센다 — 과다 계수 쪽이다. 보간 안 호출은 귀속하지 않는다.
+- extract-js 레지스트리 별칭에서 만든 바인딩(기존 동작): 모듈 식 판정은 이름 그대로인 `NativeModules.X`만 바인딩한다. 별칭의
+  `const C = NM.Cam`(`import { NativeModules as NM }`·`{ NativeModules: NM } = RN`)과 `const NM = require('react-native').NativeModules`·
+  `const NM = RN.NativeModules`는 사실·계수는 내지만(초기값을 한 번 센다) 바인딩하지 않아 그 뒤 `C.go()`·`NM.Cam.go()`는 쓰임마다
+  세지 않는다. 오라클 `alias` 모드는 이 꼴을 내지 않는다. 같은 쪽 기존 부정확: `const NativeModules = require('react-native')`(모듈
+  객체 전체)와 `const { NativeModules } = require('react-native').Foo`도 레지스트리로 읽는다(specifier만 본다).
+- extract-js CommonJS로 가져온 `NativeModules`(기존 동작, main부터): `const NativeModules = require('<react-native 아닌 모듈>')`은
+  react-native가 아닌 값의 로컬 선언이라 레지스트리가 아니고 그 멤버 접근은 세지 않는다. 같은 것을 ES import로 가져오면
+  `unattributed-js-native-modules:`로 센다(배럴·대역일 수 있다). react-native 0.88.1 내부 `PaperUIManager.js`·
+  `TurboModuleRegistry.js`가 이 꼴(`require('../BatchedBridge/NativeModules').default`)이고, 그 멤버로 만든 바인딩(`viewManager`·
+  `legacyModule`)의 쓰임 5개는 출처를 보지 않던 바인딩 때문에 세어졌다가 PR #167 리뷰 반영으로 빠졌다(js-binding-scope 63 → 58,
+  사실 동일). CommonJS 꼴도 import 꼴처럼 세려면 `importedFromOtherModule`이 다른 모듈 require 선언을 보게 하면 된다.
+- extract-js 객체 리터럴 키 `NativeModules:`(기존 동작, main부터): `const cfg = { NativeModules: 1 }`의 키를 베어 레지스트리 값으로 읽어
+  동적 `module-import NativeModules`를 낸다(`dynamic-module-names:`로 센다 — 정적 거짓 사실은 아니다). 단축 속성 `{ NativeModules }`는
+  값 쓰임이라 맞다. 키 자리(`{`·`,` 뒤, `:` 앞) 판정이 필요하다.
 - extract-js 잠정 분류의 과다 계수(3차 리뷰 반영, 건전성은 오라클로 확인): 메서드 약칭의 매개변수가 바깥 모듈 바인딩과 같은
   이름이면 그 쓰임을 세고, 메서드 본문의 `var`는 범위를 정하지 못한 선언이라 그 쓰임과 바깥 같은 이름 블록 선언의 쓰임을 센다.
   추상·오버로드 시그니처의 매개변수 이름은 값 쓰임으로 세어질 수 있다. JSX 글자 안의 `NAME = …`은 선언 초기값 안에서도 재대입으로
@@ -147,11 +204,13 @@ _Last updated: 2026-11-22_
 - (이 브랜치) js-binding-scope 문구에 "or used inside a template interpolation"이 더해졌다(접두사·수 위치 그대로). 테스트 도우미의
   `NativeModules` 대역·다른 함수의 별칭이 내던 거짓 module-import·method-invoke는 사라지고, 블록 밖 `var`·재대입한 레지스트리
   바인딩의 접근, 템플릿 보간 안의 모듈 쓰임은 사실 대신 계수가 된다. `foo.bar(M)` 뒤 다음 줄 블록 안 호출은 계수 대신 사실이 된다.
-  `check --strict`·`impact --strict` 결과가 바뀔 수 있다.
+  PR #167 리뷰 반영으로 대역에서 꺼낸 바인딩(`const Camera = NativeModules['Camera']`)의 거짓 method-invoke도 사라지고(정하지 못하면
+  쓰임마다 센다), 레지스트리 별칭과 이름이 같은 로컬 모듈 바인딩·`require('react-native')` 별칭 구조 분해의 호출은 사실이 되며,
+  보간 안 레지스트리 별칭 쓰임은 첫 수에 든다. `check --strict`·`impact --strict` 결과가 바뀔 수 있다.
 
 ## Resume Prompt
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
 검토 후속(#162)과 js-binding-scope 측정·extract-js 후속(#164)은 main에 머지됐으나 미발행(`[Unreleased]`)이다.
 2026-11-22 extract-js 블록 범위 바인딩(#165)도 main에 머지됐다(미발행). 레지스트리 출처·템플릿 보간·속성 자리 호출 수정은
-브랜치 `ccr-37904670-hxdjsx`에 있다 — 푸시·PR 여부는 `git status`와 GitHub로 확인한다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
+브랜치 `ccr-37904670-hxdjsx`(PR #167)에 있다 — 그 독립 리뷰 반영 커밋의 푸시 여부는 `git status`와 GitHub로 확인한다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
