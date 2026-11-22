@@ -274,8 +274,10 @@ test('보간 본문 코드를 조각마다 꺼내고 중첩 템플릿의 글자 
     // 보간 안 문자열·주석 속 중괄호·백틱은 경계가 아니고 조각에 그대로 남는다(다시 토큰화하면 문자열·주석이다).
     ['`${ f("}") /* } ` */ + g(\'{\') }`', [' f("}") /* } ` */ + g(\'{\') ']],
     ['`${ a // } `\n }`', [' a // } `\n ']],
-    // 중첩 템플릿의 글자 부분은 어느 조각에도 없고 자리는 공백 하나다. 그 안의 보간은 따로 한 조각이다.
-    ['`${ wrap(`x${M}y`) }`', [' wrap( ) ', 'M']],
+    // 중첩 템플릿의 글자 부분은 어느 조각에도 없고 자리는 빈 템플릿이다(다시 토큰화하면 템플릿 토큰 — 태그 호출 `tag\`…\``의
+    // 대상을 가른다). 그 안의 보간은 따로 한 조각이다.
+    ['`${ wrap(`x${M}y`) }`', [' wrap(``) ', 'M']],
+    ['`${ M`t`.length + (n = 1) }`', [' M``.length + (n = 1) ']],
     ['`${ { a: 1 }.a }`', [' { a: 1 }.a ']],
     // 이스케이프한 `${`는 보간이 아니고, 이스케이프한 백슬래시 뒤의 `${`는 보간이다.
     ['`\\${x}`', []],
@@ -297,7 +299,7 @@ test('깊게 중첩된 템플릿의 보간 코드도 원문 길이에 선형으�
   const { source, reads } = countingSource(text);
   const segments = templateInterpolationCode(source);
   assert.equal(segments.length, depth + 1);
-  assert.equal(segments[0], ' f( ) ');
+  assert.equal(segments[0], ' f(``) ');
   assert.equal(segments.at(-1), 'M = x');
   assert.ok(reads() <= 4 * text.length, `character reads ${reads()} for ${text.length} characters`);
 });

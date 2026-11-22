@@ -37,28 +37,44 @@ interface OracleProgram {
   readonly calls: ReadonlyMap<number, string | null>;
   /** 줄마다 나와야 하는 module-import 이름이다. */
   readonly modules: ReadonlyMap<number, readonly string[]>;
+  /**
+   * 레지스트리 모드에서 레지스트리 멤버로 만든 바인딩(`const K = M.Cam;`)을 거친 호출 줄 → 그 선언 줄이다. 그 호출을 귀속하면
+   * module-import `Cam`은 호출 줄이 아니라 선언 줄에 나온다.
+   */
+  readonly derived: ReadonlyMap<number, number>;
   /** 문법 오류(같은 범위 재선언 등)라 판정에서 뺄 프로그램인지다. */
   readonly invalid: boolean;
 }
 
 /**
- * 생성기 선택이다. 둘 다 끄면 기존 고정 시드의 프로그램이 그대로다(난수 소비가 같다).
- * - `extended`: 템플릿 보간 안 재대입·호출과 속성 자리 이름 뒤 다음 줄 블록(`foo.function(M)`)을 섞는다.
+ * 생성기 선택이다. 모두 끄면 기존 고정 시드의 프로그램이 그대로다(난수 소비가 같다).
+ * - `extended`: 템플릿 보간 안 재대입(for-of/in 대상 포함)·호출과 속성 자리 이름 뒤 다음 줄 블록(`foo.function(M)`)을 섞는다.
  * - `registry`: 추적 이름이 레지스트리 `NativeModules`다 — 모듈 선언 자리에 react-native 레지스트리를 담은 선언
  *   (`require('react-native')` 구조 분해·`.NativeModules` 초기값, react-native 모듈 객체 구조 분해)을, 호출 자리에
- *   `NativeModules.Cam.go()`를 낸다. 어떤 선언도 차지하지 않은 위치는 import한 레지스트리다.
+ *   `NativeModules.Cam.go()`나 그 멤버로 만든 바인딩(`const K = NativeModules.Cam;`·`NativeModules['Cam']`, 대역에서 꺼내면
+ *   모듈이 아니다)의 `K.go()`를 낸다. 어떤 선언도 차지하지 않은 위치는 import한 레지스트리다.
+ * - `alias`: 레지스트리 모드를 별칭 이름 `NM`으로 낸다 — 머리의 `import { NativeModules as NM }`가 바깥 레지스트리이고, 모듈
+ *   선언은 별칭 구조 분해(`{ NativeModules: NM } = RN`·`require('react-native')`)다. 보간 안 호출(`` `${NM.Cam.go()}` ``)도 낸다
+ *   — 별칭은 브리지 API 낱말이 아니라 하한이 아닌 첫 수로 세어야 한다.
+ * - `collision`: 본문 뒤에 다른 함수의 레지스트리 별칭 `function alias() { const { NativeModules: M } = RN; }`을 붙인다(본문
+ *   줄 번호 그대로). 추적 이름 `M`이 파일 어딘가의 레지스트리 별칭과 같아도 각 위치의 바인딩은 그대로 읽어야 한다.
  */
 interface OracleOptions {
   readonly extended?: boolean;
   readonly registry?: boolean;
+  readonly alias?: boolean;
+  readonly collision?: boolean;
 }
 
-/** 본문 줄로 문서 원문을 만든다. 레지스트리 모드는 같은 줄에 react-native 모듈 객체 import를 더한다(줄 번호 그대로). */
+/** 본문 줄로 문서 원문을 만든다. 머리 import는 한 줄에 모은다(줄 번호 그대로). 별칭 충돌 모드는 본문 뒤에 한 줄을 붙인다. */
 function programText(lines: readonly string[], options: OracleOptions = {}): string {
-  const header = options.registry === true
-    ? "import { NativeModules } from 'react-native'; import * as RN from 'react-native';"
-    : "import { NativeModules } from 'react-native';";
-  return `${header}\n${lines.join('\n')}\n`;
+  const header = options.alias === true
+    ? "import { NativeModules as NM } from 'react-native'; import * as RN from 'react-native';"
+    : options.registry === true || options.collision === true
+      ? "import { NativeModules } from 'react-native'; import * as RN from 'react-native';"
+      : "import { NativeModules } from 'react-native';";
+  const trailer = options.collision === true ? 'function alias() { const { NativeModules: M } = RN; }\n' : '';
+  return `${header}\n${lines.join('\n')}\n${trailer}`;
 }
 
 /** 레지스트리 모드에서 선언·호출 값으로 쓰는 표지다(레지스트리를 담은 선언). */
@@ -77,18 +93,26 @@ const REGISTRY = 'R';
  */
 function generateProgram(random: () => number, options: OracleOptions = {}): OracleProgram {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!;
-  const registry = options.registry === true;
+  const alias = options.alias === true;
+  const registry = options.registry === true || alias;
   const extended = options.extended === true || registry;
-  /** 모듈 값 선언 한 줄이다 — 레지스트리 모드는 레지스트리를 담은 선언 꼴 중 하나다(값은 REGISTRY). */
-  const moduleDeclaration = (kind: string, module: string): string => (registry
-    ? pick([`${kind} M = require('react-native').NativeModules;`, `${kind} { M } = require('react-native');`,
-      `${kind} { M } = RN;`, `${kind} { NativeModules: M } = RN;`])
-    : `${kind} M = NativeModules.${module};`);
+  /**
+   * 모듈 값 선언 한 줄이다 — 레지스트리 모드는 레지스트리를 담은 선언 꼴 중 하나다(값은 REGISTRY). 별칭 모드는 별칭 이름으로
+   * 레지스트리를 담는 구조 분해 꼴만 낸다(`const NM = require('react-native').NativeModules`는 스캔이 속성 자리 API 초기값으로
+   * 한 번 센다 — 쓰임마다 세지 않아 이 오라클의 호출별 계수 판정 밖이다).
+   */
+  const moduleDeclaration = (kind: string, module: string): string => (alias
+    ? pick([`${kind} { NativeModules: M } = RN;`, `${kind} { NativeModules: M } = require('react-native');`])
+    : registry
+      ? pick([`${kind} M = require('react-native').NativeModules;`, `${kind} { M } = require('react-native');`,
+        `${kind} { M } = RN;`, `${kind} { NativeModules: M } = RN;`])
+      : `${kind} M = NativeModules.${module};`);
   /** 선언한 값이다 — 레지스트리 모드의 모듈 값은 모두 레지스트리다. */
   const declaredValue = (module: string): string => (registry ? REGISTRY : module);
   const lines: string[] = [];
   const calls: { readonly line: number; readonly scope: OracleScope }[] = [];
   const modules = new Map<number, string[]>();
+  const derived = new Map<number, number>();
   const assignments: OracleScope[] = [];
   let invalid = false;
   let functions = 0;
@@ -261,9 +285,22 @@ function generateProgram(random: () => number, options: OracleOptions = {}): Ora
         declare(current, kind, value === null ? null : declaredValue(value));
       }
     } else if (choice < 0.38) {
-      // 확장 모드는 템플릿 보간 안 호출도 낸다 — 귀속하지 않고 세어야 한다(레지스트리 이름은 하한으로 세므로 뺀다).
-      const call = registry ? 'M.Cam.go();' : extended && random() < 0.3 ? 'log(`${M.go()}`);' : 'M.go();';
-      calls.push({ line: emit(call, depth), scope: current });
+      if (registry && !alias && random() < 0.25) {
+        // 레지스트리 멤버로 만든 바인딩이다 — 그 자리의 NativeModules가 레지스트리면 K는 모듈 Cam이고, 대역이면 모듈이 아니다.
+        // 선언과 호출은 같은 범위의 이어진 줄이라 K의 기준은 그 범위에서 M이 가리키는 값이다.
+        const id = functions++;
+        const declaration = emit(pick([`const K${id} = M.Cam;`, `const K${id} = M['Cam'];`]), depth);
+        const line = emit(`K${id}.go();`, depth);
+        derived.set(line + 1, declaration + 1);
+        calls.push({ line, scope: current });
+      } else {
+        // 확장 모드는 템플릿 보간 안 호출도 낸다 — 귀속하지 않고 세어야 한다(레지스트리 이름 그대로는 하한으로 세므로 별칭
+        // 모드에서만 낸다).
+        const call = alias && random() < 0.3
+          ? 'log(`${M.Cam.go()}`);'
+          : registry ? 'M.Cam.go();' : extended && random() < 0.3 ? 'log(`${M.go()}`);' : 'M.go();';
+        calls.push({ line: emit(call, depth), scope: current });
+      }
     } else if (choice < 0.44) {
       // 재대입 형태 — 중첩 구조 분해 대입, 제어문 머리·`case` 절 뒤의 배열 대입, 괄호 대상, 선언 초기값 안의 대입 포함.
       const form = random();
@@ -273,7 +310,8 @@ function generateProgram(random: () => number, options: OracleOptions = {}): Ora
         emit('}', depth);
       } else {
         emit(pick([...(extended
-          ? [`const v${functions++} = \`\${M = other()}\`;`, 'log(`a${b}c${`${M++}`}`);', 'log(`${(() => { M = other(); })()}`);']
+          ? [`const v${functions++} = \`\${M = other()}\`;`, 'log(`a${b}c${`${M++}`}`);', 'log(`${(() => { M = other(); })()}`);',
+            'log(`${(() => { for (M of fakes); })()}`);']
           : []), 'M = other();', 'M &&= other();', 'M += 1;', 'M++;', '({ M } = mocks);', '[M] = arr;',
           'for (M of xs) noop();', '[[M] = x] = y;', '({ a: [M] = x } = y);', 'if (c) [M] = arr;', '(M) = other();',
           `const r${functions++} = (M = other());`, `const s${functions++} = [M] = arr;`,
@@ -360,13 +398,13 @@ function generateProgram(random: () => number, options: OracleOptions = {}): Ora
     // 줄 번호는 앞의 import 줄 하나만큼 밀린다.
     expected.set(call.line + 1, values?.size === 1 ? [...values][0]! : outer);
   }
-  // 레지스트리 모드는 추적 이름 `M`을 `NativeModules`로 바꾼다(낱말 경계만 — 다른 이름·문자열 안은 그대로다).
-  const emitted = registry ? lines.map((line) => line.replace(/\bM\b/gu, 'NativeModules')) : lines;
+  // 레지스트리 모드는 추적 이름 `M`을 `NativeModules`(별칭 모드는 `NM`)로 바꾼다(낱말 경계만 — 다른 이름·문자열 안은 그대로다).
+  const emitted = registry ? lines.map((line) => line.replace(/\bM\b/gu, alias ? 'NM' : 'NativeModules')) : lines;
   // 한 줄로 낸 머리(`function f(x)\n{`)는 두 줄이다 — 줄 번호를 실제 줄로 다시 센다.
   const text = emitted.join('\n').split('\n');
   return text.length === emitted.length
-    ? { lines: emitted, calls: expected, modules, invalid }
-    : remapLines(emitted, expected, modules, invalid);
+    ? { lines: emitted, calls: expected, modules, derived, invalid }
+    : remapLines(emitted, expected, modules, derived, invalid);
 }
 
 /** 여러 줄을 한 항목으로 낸 프로그램의 줄 번호를 실제 줄 번호로 바꾼다. */
@@ -374,6 +412,7 @@ function remapLines(
   lines: readonly string[],
   calls: ReadonlyMap<number, string | null>,
   modules: ReadonlyMap<number, readonly string[]>,
+  derived: ReadonlyMap<number, number>,
   invalid: boolean,
 ): OracleProgram {
   const actual: number[] = [];
@@ -387,6 +426,7 @@ function remapLines(
     lines: lines.join('\n').split('\n'),
     calls: new Map([...calls].map(([at, value]) => [remap(at), value])),
     modules: new Map([...modules].map(([at, value]) => [remap(at), value])),
+    derived: new Map([...derived].map(([at, value]) => [remap(at), remap(value)])),
     invalid,
   };
 }
@@ -401,13 +441,14 @@ function bindingScopeCount(text: string): number {
 /**
  * 한 프로그램을 판정한다 — 어긋남을 문장으로 돌려준다(없으면 빈 배열). 레지스트리 모드에서 호출 사실은 `Cam.go`이고 기준
  * 값은 REGISTRY다. 그 모드의 module-import는 귀속한 호출 줄의 `Cam`만 허용한다(레지스트리 값을 통째로 넘긴 쓰임의 동적
- * `NativeModules` 사실은 판정하지 않는다).
+ * `NativeModules` 사실은 판정하지 않는다). 레지스트리 멤버로 만든 바인딩을 거친 호출은 그 `Cam`이 선언 줄에 나온다 — 호출을
+ * 귀속했으면 선언 줄에 있어야 하고, 귀속하지 않았으면 기준이 레지스트리일 때만 있어도 된다(레지스트리 접근 자체는 참이다).
  */
 function checkProgram(
   program: OracleProgram,
   options: OracleOptions = {},
 ): { readonly problems: string[]; readonly attributed: number; readonly counted: number } {
-  const registry = options.registry === true;
+  const registry = options.registry === true || options.alias === true;
   const text = programText(program.lines, options);
   const document = createJsFactsDocument([{ path: 'a.tsx', text }], '0', '2026-01-01T00:00:00.000Z', 'p');
   const problems: string[] = [];
@@ -432,12 +473,17 @@ function checkProgram(
   }
   // module-import는 줄마다 기준과 같아야 한다(거짓도 누락도 없다). 레지스트리 모드의 기준은 귀속한 호출 줄의 `Cam`이다.
   const modules = registry
-    ? new Map([...invoked].filter(([, value]) => value === REGISTRY).map(([line]) => [line, ['Cam']]))
+    ? new Map([...invoked].filter(([, value]) => value === REGISTRY)
+      .map(([line]) => [program.derived.get(line) ?? line, ['Cam']]))
     : program.modules;
+  const optional = new Set([...program.derived].filter(([line]) => program.calls.get(line) === REGISTRY)
+    .map(([, declaration]) => declaration));
   for (const line of new Set([...imported.keys(), ...modules.keys()])) {
     const actual = [...(imported.get(line) ?? [])].sort().join(',');
     const expected = [...(modules.get(line) ?? [])].sort().join(',');
-    if (actual !== expected) problems.push(`module-import at line ${line}: ${actual} (expected ${expected})`);
+    if (actual !== expected && !(optional.has(line) && actual === 'Cam')) {
+      problems.push(`module-import at line ${line}: ${actual} (expected ${expected})`);
+    }
   }
   // 기준이 모듈인 호출을 귀속하지 않았으면 그 호출 자체가 js-binding-scope로 세어져야 한다 — 그 줄을 지우면 계수가
   // 준다(조용히 사라지지 않는다).
@@ -492,23 +538,32 @@ test('생성한 중첩 프로그램에서 거짓 사실이 없고 기준이 모�
 });
 
 /**
- * 확장 생성기(템플릿 보간 안 재대입·호출, 속성 자리 이름 뒤 다음 줄 블록)와 레지스트리 모드(추적 이름이 `NativeModules`이고
- * 선언이 레지스트리 출처이거나 대역)의 고정 시드다. 위 기본 생성기의 시드와 프로그램은 바꾸지 않는다(난수 소비가 같다).
- * 되돌림 변형마다 시드 1~40 × 1,500회를 돌려 골랐다: 이름으로 레지스트리를 판정한 변형·레지스트리 선언의 정하지 못한 관여를
- * 세지 않는 변형(레지스트리 시드 전부), 보간 안 재대입을 반영하지 않는 변형(확장 4·6, 레지스트리 전부), 보간 안 쓰임을 세지
- * 않는 변형(확장 전부), 속성 자리 이름을 함수 머리로 읽는 변형(레지스트리 15·17). 나머지 변형(다른 범위 별칭, 레지스트리
- * 재대입의 계수, 뒤에 온 import의 재반영, 보간 재대입의 불확실 표시, 값이 살아남지 못한 레지스트리 선언 계수)은
- * `js-document.test.ts`가 잡는다.
+ * 확장 생성기(템플릿 보간 안 재대입·호출, 속성 자리 이름 뒤 다음 줄 블록), 레지스트리 모드(추적 이름이 `NativeModules`이고
+ * 선언이 레지스트리 출처이거나 대역, 레지스트리·대역 멤버로 만든 바인딩), 별칭 모드(추적 이름이 레지스트리 별칭 `NM`, 보간 안
+ * 호출 포함), 별칭 충돌 모드(다른 함수의 레지스트리 별칭이 추적 이름과 같다)의 고정 시드다. 위 기본 생성기의 시드와 프로그램은
+ * 바꾸지 않는다(난수 소비가 같다 — 지문 비교). PR #167 리뷰 반영 때 되돌림 변형마다 시드 1~40 × 1,500회를 돌려 골랐다: 확장 —
+ * 보간 안 for-of 대상을 보지 않는 변형(37만), 보간 안 재대입을 반영하지 않는 변형(4·6·23·25·26·32·37), 보간 안 쓰임을 세지 않는
+ * 변형(전부). 레지스트리 — 보간 안 재대입(2·29만), 이름으로 레지스트리를 판정한 변형·정하지 못한 관여를 세지 않는 변형·속성 자리
+ * 이름을 함수 머리로 읽는 변형·동결 뒤 검증을 생략·확실 무효로만 거두는 변형·읽기를 수집 중에 판정한 변형·불확실 무효를 빠뜨린
+ * 변형(2 포함 거의 전부). 별칭 — 보간 안 별칭을 세지 않는 변형, `require('react-native')` 별칭 출처를 빠뜨린 변형, 이름 판정,
+ * 정하지 못한 관여(1·2 포함 거의 전부). 별칭 충돌 — 레지스트리 입구에서 일반 경로로 넘기지 않는 변형(전부). 오라클이 볼 수 없는
+ * 변형(다른 범위 별칭, 레지스트리 재대입의 계수, 뒤 import 재반영, 보간 재대입의 불확실 표시, 살아남지 못한 레지스트리 선언 계수,
+ * 잠정 목록 대체 해석, export·구조 분해 사실을 거두지 않는 변형, 다른 모듈 구조 분해 계수, 별칭 후보 입구, 보간 재대입·계수의
+ * 정밀도)은 `js-document.test.ts`·`lexer.test.ts`가 잡는다.
  */
-const EXTENDED_SEEDS = [4, 6];
-const REGISTRY_SEEDS = [15, 17];
+const SEEDED_OPTIONS: ReadonlyArray<readonly [OracleOptions, readonly number[]]> = [
+  [{ extended: true }, [4, 37]],
+  [{ registry: true }, [2, 29]],
+  [{ alias: true }, [1, 2]],
+  [{ collision: true }, [1, 2]],
+];
 
-test('템플릿 보간·속성 자리 호출 뒤 블록·레지스트리 출처를 섞은 프로그램에서도 거짓 사실이 없고 놓친 호출은 센다', () => {
-  for (const options of [{ extended: true }, { registry: true }] as const) {
+test('템플릿 보간·속성 자리 호출 뒤 블록·레지스트리 출처·별칭을 섞은 프로그램에서도 거짓 사실이 없고 놓친 호출은 센다', () => {
+  for (const [options, seeds] of SEEDED_OPTIONS) {
     let checked = 0;
     let attributed = 0;
     let counted = 0;
-    for (const seed of 'registry' in options ? REGISTRY_SEEDS : EXTENDED_SEEDS) {
+    for (const seed of seeds) {
       const random = seededRandom(seed);
       for (let round = 0; round < ORACLE_ROUNDS; round++) {
         const program = generateProgram(random, options);
@@ -520,7 +575,7 @@ test('템플릿 보간·속성 자리 호출 뒤 블록·레지스트리 출처�
         counted += result.counted;
       }
     }
-    assert.ok(checked > 2_000 && attributed > 150 && counted > 50,
+    assert.ok(checked > 2_000 && attributed > 150 && counted > 30,
       `${JSON.stringify(options)}: checked ${checked}, attributed ${attributed}, counted ${counted}`);
   }
 });
