@@ -852,8 +852,7 @@ test('모듈 바인딩 이름의 값 사용 중 추적을 벗어난 것만 이�
     'const { take } = Local;',
     'function shadow(Cam) { return Cam; }',
     'const holder = { Cam: 1, other: Local };',
-    // `=` 재대입은 바인딩 자체를 지운다. 복합 대입의 대상과 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다.
-    'Cam ||= replacement;',
+    // 수집되지 않는 본문 안의 같은 이름 선언은 값 사용이 아니다(재대입·복합 대입은 바인딩 자체를 지운다 — 따로 본다).
     'const later = () => { const Cam = other; };',
     // 문장 단독으로 버려지는 값은 넘어가지 않지만, `=` 뒤 `{ Cam }`은 블록이 아니라 객체 리터럴이다.
     'Cam;',

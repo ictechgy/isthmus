@@ -240,6 +240,8 @@ interface ScanContext {
    * 더 안쪽 것을 고른다 — 이 구간 안의 더 안쪽 선언은 매개변수를 이기고, 매개변수는 바깥 선언을 가린다.
    */
   readonly paramShadows: ParamShadowIndex;
+  /** 매개변수 가림을 만든 괄호 목록의 여는 `(` 위치다(구조 분해 대입과 매개변수 패턴을 가른다). */
+  readonly parameterListOpens: ReadonlySet<number>;
   /**
    * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등). 위치별 판정은 declaredLocallyAt을 쓴다 —
    * `const`·`let`·`var` 선언은 블록 범위 표로, 함수·클래스 선언은 파일 전체로 본다.
@@ -279,6 +281,8 @@ export interface ParamShadow {
   readonly from: number;
   readonly to: number;
   readonly names: ReadonlySet<string>;
+  /** 함수 머리인지 정하지 못한 목록(호출 뒤 다음 줄 블록일 수도 있다)의 가림인지다. */
+  readonly uncertain?: true;
 }
 
 /**
@@ -289,9 +293,38 @@ export interface ParamShadow {
  * 저장해, "from ≤ index < to인 구간이 하나라도 있는가"를 이분 탐색 한 번으로
  * 답한다 — 구간 목록 전체를 훑는 판정과 결과가 같고 구간의 중첩 여부를 가정하지 않는다.
  * 가장 안쪽 구간의 시작(`innermostFrom`)은 구간이 중첩·분리일 때 감싼 구간을 건너뛰기 포인터로 따라 올라 찾고,
- * 그렇지 않은 이름은 구간을 훑는다.
+ * 그렇지 않은 이름은 구간을 훑는다. 정하지 못한 가림(`uncertain`)을 뺀 확실한 가림만의 색인도 둔다.
  */
 export class ParamShadowIndex {
+  readonly #all: ShadowRanges;
+  readonly #certain: ShadowRanges;
+
+  constructor(shadows: Iterable<ParamShadow>) {
+    const list = [...shadows];
+    this.#all = new ShadowRanges(list);
+    this.#certain = list.some((shadow) => shadow.uncertain === true)
+      ? new ShadowRanges(list.filter((shadow) => shadow.uncertain !== true))
+      : this.#all;
+  }
+
+  /** 위치 `index`의 `name`이 어떤 매개변수 구간(정하지 못한 가림 포함)에 가려졌는지 판정한다. */
+  has(name: string, index: number): boolean {
+    return this.#all.has(name, index);
+  }
+
+  /** 위치 `index`의 `name`을 가린 가장 안쪽 매개변수 구간(정하지 못한 가림 포함)의 시작이다. 가리지 않으면 undefined다. */
+  innermostFrom(name: string, index: number): number | undefined {
+    return this.#all.innermostFrom(name, index);
+  }
+
+  /** `innermostFrom`과 같되 정하지 못한 가림을 뺀다. */
+  innermostCertainFrom(name: string, index: number): number | undefined {
+    return this.#certain.innermostFrom(name, index);
+  }
+}
+
+/** 이름별 가림 구간 색인 하나다(ParamShadowIndex 참고). */
+class ShadowRanges {
   readonly #byName = new Map<string, {
     readonly froms: number[];
     readonly tos: number[];
@@ -327,7 +360,6 @@ export class ParamShadowIndex {
     }
   }
 
-  /** 위치 `index`의 `name`이 어떤 매개변수 구간에 가려졌는지 판정한다. */
   has(name: string, index: number): boolean {
     const ranges = this.#byName.get(name);
     if (ranges === undefined) return false;
@@ -335,7 +367,6 @@ export class ParamShadowIndex {
     return count > 0 && ranges.prefixMaxTo[count - 1]! > index;
   }
 
-  /** 위치 `index`의 `name`을 가린 가장 안쪽 매개변수 구간의 시작이다. 가리지 않으면 undefined다. */
   innermostFrom(name: string, index: number): number | undefined {
     const ranges = this.#byName.get(name);
     if (ranges === undefined) return undefined;
@@ -397,6 +428,7 @@ function rangeForest(froms: readonly number[], tos: readonly number[]):
 function createBoundContext(source: string): ScanContext {
   const tokens = tokenizeJsSource(source);
   const namespaceImports = namespaceImportSpecifiers(tokens);
+  const paramShadows = collectParamShadows(tokens);
   const context: ScanContext = {
     source,
     tokens,
@@ -423,7 +455,8 @@ function createBoundContext(source: string): ScanContext {
     consumedGroups: new Map(),
     divertingGroups: new Map(),
     identifierEscapes: new Map(),
-    paramShadows: new ParamShadowIndex(collectParamShadows(tokens)),
+    paramShadows: new ParamShadowIndex(paramShadows),
+    parameterListOpens: new Set(paramShadows.flatMap(({ from }) => (tokens[from]?.text === '(' ? [from] : []))),
     localNames: new Set(),
     functionOrClassNames: new Set(),
     requireSpecifiers: new Map(),
@@ -669,10 +702,21 @@ function collectBindings(context: ScanContext): void {
       continue;
     }
     // 모듈 객체의 재대입은 그 위치에서 이름을 차지한 선언의 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다.
-    // `obj.prop = v`의 prop은 로컬 바인딩이 아니라 속성명이므로 제외한다.
-    if (token.kind === 'identifier' && tokens[index + 1]?.text === '=' &&
-      tokens[index - 1]?.text !== '.' && tokens[index - 1]?.text !== '?.') {
-      context.scopes.invalidate(token.text, index);
+    // 대입·복합 대입(`&&=`·`+=` 등)·증감과 for-of/in의 선언 없는 대상이다. `obj.prop = v`의 prop은 로컬 바인딩이 아니라
+    // 속성명이므로 제외한다.
+    if (token.kind === 'identifier' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+      reassignsName(tokens, index)) {
+      invalidateBinding(context, token.text, index);
+    }
+    // 구조 분해 대입(`({ M } = mocks)`·`[a, M] = pair`·`for ([k, M] of pairs)`)의 대상 이름도 재대입이다.
+    if ((token.text === '=' || (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in'))) &&
+      (tokens[index - 1]?.text === '}' || tokens[index - 1]?.text === ']')) {
+      const open = openingOf(tokens, index - 1);
+      if (open !== undefined && isAssignmentPattern(context, open, token.text !== '=')) {
+        for (const { index: at } of patternBindingNames(tokens, open, index - 1)) {
+          invalidateBinding(context, tokens[at]!.text, at);
+        }
+      }
     }
     // CommonJS `module.exports = <expr>`는 default export와 같다.
     if (
@@ -704,6 +748,64 @@ function collectBindings(context: ScanContext): void {
       }
     }
   }
+}
+
+/**
+ * 위치 `index`의 이름이 재대입되는지 본다 — 대입 연산자(복합 대입 포함) 앞, 같은 줄의 후위·앞의 전위 증감,
+ * for-of/in 머리의 선언 없는 대상(`for (M of xs)`).
+ */
+function reassignsName(tokens: readonly JsToken[], index: number): boolean {
+  const after = tokens[index + 1];
+  if (after !== undefined && (assignmentOperators.has(after.text) ||
+    ((after.text === '++' || after.text === '--') && after.line === tokens[index]!.line))) {
+    return true;
+  }
+  const before = tokens[index - 1]?.text;
+  if (before === '++' || before === '--') return true;
+  return before === '(' && isForHeader(tokens, index - 1) && after?.kind === 'keyword' &&
+    (after.text === 'of' || after.text === 'in');
+}
+
+/**
+ * 위치의 재대입을 표에 반영한다. 그 위치를 확실히 가린 매개변수가 있으면 대입은 그 매개변수(나 그 함수 안 선언)의
+ * 것이라 바깥 바인딩에 닿지 않는다. 함수 머리인지 정하지 못한 목록의 매개변수 바깥 바인딩은 대상이 확실하지 않다.
+ */
+function invalidateBinding(context: ScanContext, name: string, index: number): void {
+  context.scopes.invalidate(name, index, context.paramShadows.innermostFrom(name, index) ?? -Infinity,
+    context.paramShadows.innermostCertainFrom(name, index) ?? -Infinity);
+}
+
+/**
+ * 여는 괄호 `open`의 `{…}`·`[…]`가 대입(또는 for-of/in, `forHead`)의 구조 분해 대상인지 본다. 선언 패턴은 선언 수집이
+ * 읽고, 매개변수 패턴(`function f({ M } = {})`)은 대입이 아니다. `x[i] = v`의 `[`(피연산자 뒤)는 멤버 접근이고, `:` 뒤의
+ * `{…}`는 타입 주석이나 중첩 패턴의 기본값이라 보지 않는다.
+ */
+function isAssignmentPattern(context: ScanContext, open: number, forHead: boolean): boolean {
+  const { tokens } = context;
+  const before = tokens[open - 1];
+  if (forHead) return before?.text === '(' && isForHeader(tokens, open - 1);
+  if (before !== undefined && (before.text === ':' || ['const', 'let', 'var'].includes(before.text) ||
+    (tokens[open]!.text === '[' ? isOperandEnd(before) : !['(', ',', '=', '[', ';', '{', '}'].includes(before.text)))) {
+    return false;
+  }
+  // 감싼 패턴(`[`, 패턴 자리의 `{`)을 따라 올라 바로 감싼 괄호가 매개변수 목록이면 매개변수 패턴이다. 함수 본문·블록의
+  // `{`에서 멈춘다 — 기본값 화살표 본문 안의 대입(`f(a = () => { [M] = x; })`)은 대입이다.
+  let cursor = enclosingOpen(tokens, open);
+  while (cursor !== undefined && (tokens[cursor]!.text === '[' ||
+    (tokens[cursor]!.text === '{' && ['(', ',', '[', ':'].includes(tokens[cursor - 1]?.text ?? '')))) {
+    cursor = enclosingOpen(tokens, cursor);
+  }
+  return cursor === undefined || tokens[cursor]!.text !== '(' || !isParameterList(context, cursor);
+}
+
+/** 여는 `(`가 함수·화살표의 매개변수 목록인지 본다(식 본문 화살표 `(…) => 식` 포함). */
+function isParameterList(context: ScanContext, open: number): boolean {
+  if (context.parameterListOpens.has(open)) return true;
+  const close = findMatching(context.tokens, open, '(', ')');
+  if (close === undefined) return false;
+  let after = close + 1;
+  if (context.tokens[after]?.text === ':') after = returnTypeEnd(context.tokens, after + 1) ?? after;
+  return context.tokens[after]?.text === '=>';
 }
 
 /**
@@ -1027,7 +1129,7 @@ function collectDeclaration(
         cursor = skipTypeAnnotation(tokens, cursor + 1);
         // 주석이 ASI 줄바꿈에서 끝났으면 선언문도 끝났다 — 다음 줄 선언의 `=`를 이 이름의 초기값으로 읽지 않는다.
         if (endsTypeByLineBreak(tokens, cursor)) {
-          context.scopes.declare({ name: token.text, ...scope });
+          declareName(context, token.text, scope);
           return cursor - 1;
         }
       }
@@ -1043,7 +1145,7 @@ function collectDeclaration(
         recordInteropRequire(context, token.text, cursor + 1);
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
-          context.scopes.declare({ name: token.text, ...scope, value: bound.value, initializerStart: cursor + 1 });
+          declareName(context, token.text, scope, { value: bound.value, initializerStart: cursor + 1 });
           if (exported) context.namedExports.set(token.text, bound.value);
           // 초기값 식 내부의 괄호는 depth에 반영되지 않았으니 마지막 토큰까지
           // 건너뛴다 — `)`를 다시 처리하면 depth가 음수로 내려간다.
@@ -1052,12 +1154,12 @@ function collectDeclaration(
         }
         const literal = readLiteralExpression(context, cursor + 1);
         if (literal !== undefined && endsExpression(tokens, literal.endIndex)) {
-          context.scopes.declare({ name: token.text, ...scope, literal: literal.value });
+          declareName(context, token.text, scope, { literal: literal.value });
           index = literal.endIndex + 1;
           continue;
         }
       }
-      if (declarator) context.scopes.declare({ name: token.text, ...scope });
+      if (declarator) declareName(context, token.text, scope);
       // 타입 주석은 이름 자리가 아니다 — 그 안의 `{`·`,`를 패턴·선언자로 읽지 않게 주석 뒤로 건너뛴다.
       index = declarator && cursor > index + 1 ? cursor : index + 1;
       continue;
@@ -1084,8 +1186,44 @@ function collectDeclaration(
 /** 선언 하나가 이름을 차지하는 구간과 값이 적용되는 구간이다(ScopedDeclarationInput의 범위 부분). */
 interface DeclarationScope {
   readonly shadow: TokenRange;
-  readonly bind: TokenRange;
+  readonly bind?: TokenRange;
   readonly uncertainExtent?: true;
+  readonly undecidedAt?: number;
+  /** 범위가 확실한 `var`의 키워드 위치다. 그 함수의 매개변수를 다시 선언하는지 볼 때 쓴다(declareName). */
+  readonly varAt?: number;
+}
+
+/**
+ * 선언자 이름 하나를 블록 범위 표에 넣는다. 범위가 확실한 `var`가 감싼 함수의 같은 이름 매개변수를 다시 선언하면
+ * (`function f(M) { M.go(); var M = …; }`) 선언 앞의 값은 인자다 — 값 적용 구간을 정할 수 없어 범위를 정하지 못한
+ * 선언으로 넣는다(그 쓰임은 모듈이면 센다).
+ */
+function declareName(
+  context: ScanContext,
+  name: string,
+  scope: DeclarationScope,
+  extra: { readonly value?: BoundName; readonly literal?: string; readonly initializerStart?: number } = {},
+): void {
+  const { shadow, bind, uncertainExtent, undecidedAt, varAt } = scope;
+  const redeclared = varAt !== undefined && redeclaresParameter(context, name, varAt, shadow);
+  context.scopes.declare({
+    name,
+    shadow,
+    ...(bind === undefined || redeclared ? {} : { bind }),
+    ...(uncertainExtent === true || redeclared ? { uncertainExtent: true as const } : {}),
+    ...(undecidedAt !== undefined ? { undecidedAt } : redeclared ? { undecidedAt: varAt } : {}),
+    ...extra,
+  });
+}
+
+/** 위치 `at`의 `var` 이름이 그 `var`가 끌어올려지는 함수 본문(`body`)의 매개변수인지 본다. */
+function redeclaresParameter(context: ScanContext, name: string, at: number, body: TokenRange): boolean {
+  const { tokens } = context;
+  const from = context.paramShadows.innermostFrom(name, at);
+  if (from === undefined || body.from < 0) return false;
+  if (tokens[from]!.text !== '(') return tokens[from + 1]?.text === '=>' && from + 2 === body.from;
+  const close = findMatching(tokens, from, '(', ')');
+  return close !== undefined && bodyAfterParameters(tokens, close)?.body === body.from;
 }
 
 /**
@@ -1094,15 +1232,15 @@ interface DeclarationScope {
  * `let`·`const`는 감싼 블록(`{…}`, 없으면 파일)이다. for 머리의 `let`·`const`는 그 for 문(머리의 `(`부터 본문
  * 블록 끝)이고, 본문이 블록이 아니면 값은 머리 안에만 적용하고 가림은 감싼 블록 끝까지 넓힌다(본문 문장의 끝을
  * 찾지 않는다 — 범위가 넓게 잡힌 선언). `var`는 같은 함수 안 어디서든 다른 `var`·대입으로 값이 바뀔 수 있어 값은
- * 선언한 블록에만 적용하고, 이름은 감싼 함수 본문 전체를 차지한다(varScope). 함수 본문인지 확실하지 않은 블록에서
- * 멈추면 그 블록까지를 넓게 잡힌 범위로 둔다.
+ * 선언한 블록에만 적용하고, 이름은 감싼 함수 본문 전체를 차지한다(varScope). 끌어올리는 길에 함수 본문인지 정하지
+ * 못한 블록을 지났으면 범위를 정하지 못한 선언이다 — 값을 어디에도 적용하지 않는다.
  */
 function declarationScope(tokens: readonly JsToken[], keyword: number): DeclarationScope {
   const isVar = tokens[keyword]!.text === 'var';
   const open = enclosingOpen(tokens, keyword);
   if (open !== undefined && tokens[open]!.text === '(' && isForHeader(tokens, open)) {
     const block = blockRange(tokens, enclosingBrace(tokens, open));
-    if (isVar) return { ...varScope(tokens, open), bind: block };
+    if (isVar) return varDeclarationScope(tokens, open, keyword, block);
     const close = findMatching(tokens, open, '(', ')')!;
     const bodyClose = tokens[close + 1]?.text === '{' ? findMatching(tokens, close + 1, '{', '}') : undefined;
     if (bodyClose !== undefined) {
@@ -1112,7 +1250,13 @@ function declarationScope(tokens: readonly JsToken[], keyword: number): Declarat
     return { shadow: { from: open, to: block.to }, bind: { from: open, to: close }, uncertainExtent: true };
   }
   const block = blockRange(tokens, enclosingBrace(tokens, keyword));
-  return isVar ? { ...varScope(tokens, keyword), bind: block } : { shadow: block, bind: block };
+  return isVar ? varDeclarationScope(tokens, keyword, keyword, block) : { shadow: block, bind: block };
+}
+
+/** 위치 `from`의 `var`(키워드 위치 `keyword`, 선언한 블록 `block`)의 범위다. */
+function varDeclarationScope(tokens: readonly JsToken[], from: number, keyword: number, block: TokenRange): DeclarationScope {
+  const { shadow, undecided } = varScope(tokens, from);
+  return undecided ? { shadow, uncertainExtent: true, undecidedAt: keyword } : { shadow, bind: block, varAt: keyword };
 }
 
 /** 여는 `(`가 `for (…)`·`for await (…)` 머리인지 본다. */
@@ -1127,49 +1271,54 @@ function blockRange(tokens: readonly JsToken[], open: number | undefined): Token
   return { from: open, to: findMatching(tokens, open, '{', '}')! };
 }
 
-/** 토큰 열마다 한 번 만든 `var` 범위 표다(여는 `{` → 그 블록의 `var`가 속한 범위의 여는 `{`, -1 파일, -2 미계산). */
-const varOwnerTables = new WeakMap<readonly JsToken[], { readonly owner: Int32Array; readonly uncertain: Uint8Array }>();
+/**
+ * 토큰 열마다 한 번 만든 `var` 범위 표다 — 여는 `{` → 그 블록의 `var`가 끌어올려지는 함수 본문의 여는 `{`(-1 파일,
+ * -2 미계산)와, 그 길에 함수 본문인지 정하지 못한 블록이 있었는지.
+ */
+const varOwnerTables = new WeakMap<readonly JsToken[], { readonly owner: Int32Array; readonly undecided: Uint8Array }>();
 
 /**
- * 위치의 `var`가 이름을 차지하는 범위다 — 감싼 블록을 따라 오르며 처음 만나는 함수 본문(없으면 파일)이다. 함수가
- * 아님이 확실한 블록(제어문·`try`·`else`·`do`·문장 사이의 블록)만 지나치고, 함수 본문인지 확실하지 않은 블록
- * (클래스 본문·객체 리터럴·알아보지 못한 앞 토큰)에서 멈춰 그 블록까지를 넓게 잡힌 범위로 둔다 — 알아보지 못한
- * 함수 본문을 지나쳐 바깥 블록의 같은 이름 선언과 섞이지 않게 한다. 블록마다 결과를 기억해 깊이에 비례해 다시
- * 오르지 않는다.
+ * 위치의 `var`가 이름을 차지하는 범위다 — 감싼 블록을 따라 오르며 처음 만나는 함수 본문(없으면 파일)이다. `var`는
+ * 함수 범위라 함수 본문이 아닌 블록은 모두 지나친다. 그 길에 함수 본문인지 정하지 못한 블록(classifyBrace의 'other' —
+ * 라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음 줄 블록, 알아보지 못한 함수 형태)을 지났으면 `undecided`다. 그 블록에서
+ * 멈추면 블록 뒤 같은 함수의 쓰임이 바깥 바인딩으로 귀속되고(블록이면 거짓), 지나치기만 하면 그 블록이 함수 본문일 때
+ * 안쪽 쓰임이 사이의 같은 이름 블록 선언으로 귀속된다 — 어느 쪽도 단정하지 않고 표가 그 쓰임을 센다. 블록마다 결과를
+ * 기억해 깊이에 비례해 다시 오르지 않는다.
  */
-function varScope(tokens: readonly JsToken[], index: number): { shadow: TokenRange; uncertainExtent?: true } {
+function varScope(tokens: readonly JsToken[], index: number): { shadow: TokenRange; undecided: boolean } {
   let table = varOwnerTables.get(tokens);
   if (table === undefined) {
-    table = { owner: new Int32Array(tokens.length).fill(-2), uncertain: new Uint8Array(tokens.length) };
+    table = { owner: new Int32Array(tokens.length).fill(-2), undecided: new Uint8Array(tokens.length) };
     varOwnerTables.set(tokens, table);
   }
-  const path: number[] = [];
+  const path: { readonly brace: number; readonly other: boolean }[] = [];
   let brace = enclosingBrace(tokens, index);
   let owner = -1;
-  let uncertain = 0;
+  let undecided = 0;
   while (brace !== undefined) {
     if (table.owner[brace]! !== -2) {
       owner = table.owner[brace]!;
-      uncertain = table.uncertain[brace]!;
+      undecided = table.undecided[brace]!;
       break;
     }
     const kind = classifyBrace(tokens, brace);
-    if (kind !== 'block') {
+    if (kind === 'function') {
       owner = brace;
-      uncertain = kind === 'other' ? 1 : 0;
       table.owner[brace] = owner;
-      table.uncertain[brace] = uncertain;
+      table.undecided[brace] = 0;
       break;
     }
-    path.push(brace);
+    path.push({ brace, other: kind === 'other' });
     brace = enclosingBrace(tokens, brace);
   }
-  for (const passed of path) {
-    table.owner[passed] = owner;
-    table.uncertain[passed] = uncertain;
+  // 바깥(함수 본문 쪽)부터 내려오며 지난 블록마다 그 위로 정하지 못한 블록이 있었는지 기억한다.
+  for (let at = path.length - 1; at >= 0; at--) {
+    const passed = path[at]!;
+    if (passed.other) undecided = 1;
+    table.owner[passed.brace] = owner;
+    table.undecided[passed.brace] = undecided;
   }
-  const shadow = blockRange(tokens, owner === -1 ? undefined : owner);
-  return uncertain === 1 ? { shadow, uncertainExtent: true } : { shadow };
+  return { shadow: blockRange(tokens, owner === -1 ? undefined : owner), undecided: undecided === 1 };
 }
 
 /** 함수 본문을 열지 않는 `(…) {` 앞 키워드다 — 제어문의 블록이다. */
@@ -1185,37 +1334,105 @@ const statementKeywords = new Set([
 ]);
 
 /**
- * 여는 `{`를 `var` 범위 판정용으로 나눈다. 'function'은 함수 본문(화살표, 매개변수 목록 뒤 — 제네릭·반환 타입 포함,
- * 클래스 정적 블록, TS namespace), 'block'은 함수가 아님이 확실한 문장 블록, 'other'는 그 밖(클래스 본문·객체 리터럴·
- * 알아보지 못한 형태)이다.
+ * 여는 `{`를 `var` 범위 판정용으로 나눈다. 'function'은 함수 본문임이 확실한 블록(화살표, 함수·메서드 매개변수 목록
+ * 뒤 — 제네릭·반환 타입 포함, 클래스 정적 블록, TS namespace), 'block'은 함수가 아님이 확실한 문장 블록(제어문·
+ * `try`·`else`·`do`·문장 사이·`case`/`default` 절의 블록), 'other'는 그 밖(라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음
+ * 줄 블록, 클래스 본문·객체 리터럴, 알아보지 못한 형태)이다. `case kind(): {`·삼항 갈래의 `f(x) : T {`처럼 `(…):` 뒤
+ * 블록이 절·삼항의 `:` 뒤이면 반환 타입 주석이 아니다.
  */
 function classifyBrace(tokens: readonly JsToken[], open: number): 'function' | 'block' | 'other' {
   const before = tokens[open - 1];
   if (before === undefined) return 'block';
   if (before.text === '=>' || before.text === 'static') return 'function';
-  if (blockOpeners.has(before.text) || (before.text === ':' && tokens[open - 2]?.text === 'default')) return 'block';
+  if (blockOpeners.has(before.text)) return 'block';
+  if (before.text === ':' && (tokens[open - 2]?.text === 'default' || clauseBefore(tokens, open - 2) === 'case')) {
+    return 'block';
+  }
   if (before.kind === 'identifier' && isNamespaceHead(tokens, open - 1)) return 'function';
-  const close = before.text === ')' ? open - 1 : returnTypeParamsClose(tokens, open);
-  return close === undefined ? 'other' : classifyParameterList(tokens, close);
+  if (before.text === ')') {
+    const paren = openingOf(tokens, open - 1);
+    const kind = paren === undefined ? 'none' : parameterListKind(tokens, paren, open - 1, open, false);
+    return kind === 'function' ? 'function' : kind === 'block' ? 'block' : 'other';
+  }
+  const close = returnTypeParamsClose(tokens, open);
+  const paren = close === undefined ? undefined : openingOf(tokens, close);
+  return paren !== undefined && parameterListKind(tokens, paren, close!, open, true) === 'function' ? 'function' : 'other';
 }
 
-/** `)` 위치의 괄호가 여는 블록의 종류다 — 제어문 머리면 'block', 함수·메서드 매개변수 목록이면 'function'이다. */
-function classifyParameterList(tokens: readonly JsToken[], close: number): 'function' | 'block' | 'other' {
-  const paren = openingOf(tokens, close);
-  const head = paren === undefined ? undefined : tokens[paren - 1];
-  if (head === undefined) return 'other';
-  if (controlHeadKeywords.has(head.text) || isForHeader(tokens, paren!)) return 'block';
-  if (head.kind === 'identifier' || head.kind === 'keyword' || head.kind === 'string' || head.kind === 'number' ||
-    head.text === ']' || head.text === '*' || head.text.startsWith('#')) {
-    return 'function';
-  }
-  // `name<T>(…) {` — 타입 매개변수 앞이 이름·`function`이면 함수다.
+/**
+ * 매개변수 목록처럼 보이는 괄호(`open`..`close`) 뒤 `body`의 `{`가 무엇의 본문인지다. 'function'은 함수 본문임이 확실한
+ * 경우(`function` 머리, 메서드 약칭 — 같은 줄의 `{`·반환 타입 주석·수식어 뒤), 'block'은 제어문 머리, 'ambiguous'는 함수
+ * 머리일 수도 호출 뒤 다음 줄 블록일 수도 있는 경우(`name(x)` 뒤 줄바꿈 `{`, 거슬러 볼 상한을 넘은 절), 'none'은 함수
+ * 머리가 아닌 경우(`case …(…):`·삼항 갈래의 `(…):`, 이름이 아닌 앞 토큰)다. `returnType`은 `)`와 본문 사이에 반환
+ * 타입 주석이 있는지다.
+ */
+function parameterListKind(
+  tokens: readonly JsToken[],
+  open: number,
+  close: number,
+  body: number,
+  returnType: boolean,
+): 'function' | 'block' | 'ambiguous' | 'none' {
+  const head = tokens[open - 1];
+  if (head === undefined) return 'none';
+  if (controlHeadKeywords.has(head.text) || isForHeader(tokens, open)) return returnType ? 'none' : 'block';
+  // `name<T>(…)` — 이름은 타입 매개변수 앞이다.
+  let name = open - 1;
   if (head.text === '>' || head.text === '>>') {
-    const typeOpen = typeParametersOpen(tokens, paren! - 1);
-    const name = typeOpen === undefined ? undefined : tokens[typeOpen - 1];
-    if (name !== undefined && (name.kind === 'identifier' || name.kind === 'keyword')) return 'function';
+    const typeOpen = typeParametersOpen(tokens, open - 1);
+    if (typeOpen === undefined) return 'none';
+    name = typeOpen - 1;
   }
-  return 'other';
+  const nameToken = tokens[name];
+  if (nameToken === undefined) return 'none';
+  const declared = nameToken.text === 'function' || tokens[name - 1]?.text === 'function' ||
+    (nameToken.text === '*' && tokens[name - 1]?.text === 'function') ||
+    (tokens[name - 1]?.text === '*' && tokens[name - 2]?.text === 'function');
+  if (declared) return 'function';
+  if (!isMethodHead(nameToken)) return 'none';
+  if (returnType) {
+    const clause = clauseBefore(tokens, name);
+    return clause === undefined ? 'function' : clause === 'unknown' ? 'ambiguous' : 'none';
+  }
+  // 같은 줄의 `name(x) {`는 메서드 약칭뿐이다. 줄이 바뀌면 호출 문장 뒤의 블록일 수 있다 — 수식어 뒤가 아니면 정하지 않는다.
+  if (tokens[close]!.line === tokens[body]!.line) return 'function';
+  const modifier = tokens[name - 1];
+  return modifier !== undefined && modifier.line === nameToken.line &&
+    (['get', 'set', 'static', 'async', '#'].includes(modifier.text) ||
+      (modifier.text === '*' && !isOperandEnd(tokens[name - 2])))
+    ? 'function'
+    : 'ambiguous';
+}
+
+/** 거슬러 볼 토큰 수 상한이다(`clauseBefore`). 넘으면 정하지 못한 것으로 본다. */
+const CLAUSE_LOOKBEHIND = 256;
+
+/**
+ * 위치 `from`부터 거슬러 같은 깊이의 식이 `case` 절이나 삼항의 `?` 갈래 안인지 본다. 괄호 그룹은 짝으로 건너뛰고,
+ * 식을 끝내는 토큰(`;`·`,`·`=`·`=>`·`:`·여는 괄호·`}`)이나 문장 키워드에서 멈춘다(undefined). 상한을 넘으면 'unknown'이다.
+ * `case kind(): {`·`busy ? wrap(x) : e => {…}`의 `(…):`는 반환 타입 주석이 아니라 절·삼항의 `:`다.
+ */
+function clauseBefore(tokens: readonly JsToken[], from: number): 'case' | 'ternary' | 'unknown' | undefined {
+  for (let cursor = from, steps = 0; cursor >= 0; cursor--, steps++) {
+    if (steps > CLAUSE_LOOKBEHIND) return 'unknown';
+    const token = tokens[cursor]!;
+    const text = token.text;
+    if (text === ')' || text === ']') {
+      const opening = openingOf(tokens, cursor);
+      if (opening === undefined) return undefined;
+      cursor = opening;
+      continue;
+    }
+    if (text === '?') return 'ternary';
+    if (token.kind === 'keyword' && text === 'case' && !['.', '?.'].includes(tokens[cursor - 1]?.text ?? '')) {
+      return 'case';
+    }
+    if (['(', '[', '{', '}', ';', ',', ':', '=>'].includes(text) || assignmentOperators.has(text) ||
+      (token.kind === 'keyword' && statementKeywords.has(text))) {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 /** `namespace A.B {`·`module A {`의 이름 끝(위치 `index`)인지 본다. */
@@ -1227,25 +1444,27 @@ function isNamespaceHead(tokens: readonly JsToken[], index: number): boolean {
     !['.', '?.'].includes(tokens[cursor - 2]?.text ?? '');
 }
 
+/** 토큰 열마다 한 번 만든 반환 타입 본문 표다(본문 `{` 위치 → 그 앞 매개변수 목록의 `)` 위치, 없으면 -1). */
+const returnTypeBodyTables = new WeakMap<readonly JsToken[], Int32Array>();
+
 /**
- * `{` 앞이 반환 타입 주석이면(`(…): T {`) 매개변수 목록의 `)` 위치를 돌려준다. `{`부터 거꾸로 타입을 건너 깊이 0의
- * `:`를 찾고 그 앞이 `)`인지 본다. 문장 경계(`;`·`=`·`,`·짝 없는 여는 괄호)나 상한에서 멈춘다.
+ * `{` 앞이 반환 타입 주석이면(`(…): T {`) 매개변수 목록의 `)` 위치를 돌려준다. `):`마다 앞으로 반환 타입을 건너
+ * (returnTypeEnd — 매개변수 가림과 같은 판정이다) 닿은 본문 `{`를 한 번에 표로 만든다. 거꾸로 건너면 조건 타입
+ * (`T extends U ? A : B`)의 `:`에서 멈춰 그 함수 본문을 알아보지 못했다.
  */
 function returnTypeParamsClose(tokens: readonly JsToken[], open: number): number | undefined {
-  let depth = 0;
-  const limit = Math.max(0, open - TYPE_ARGUMENTS_TOKEN_LIMIT);
-  for (let cursor = open - 1; cursor >= limit; cursor--) {
-    const text = tokens[cursor]!.text;
-    if (text === ')' || text === ']' || text === '}' || text === '>') depth++;
-    else if (text === '>>' || text === '>>>') depth += text.length;
-    else if (text === '(' || text === '[' || text === '{' || text === '<') {
-      if (--depth < 0) return undefined;
-    } else if (depth === 0) {
-      if (text === ':') return tokens[cursor - 1]?.text === ')' ? cursor - 1 : undefined;
-      if (text === ';' || text === '=' || text === ',' || statementKeywords.has(text)) return undefined;
+  let table = returnTypeBodyTables.get(tokens);
+  if (table === undefined) {
+    table = new Int32Array(tokens.length).fill(-1);
+    for (let close = 0; close < tokens.length; close++) {
+      if (tokens[close]!.text !== ')' || tokens[close + 1]?.text !== ':') continue;
+      const end = returnTypeEnd(tokens, close + 2);
+      if (end !== undefined && tokens[end]!.text === '{' && table[end] === -1) table[end] = close;
     }
+    returnTypeBodyTables.set(tokens, table);
   }
-  return undefined;
+  const close = table[open] ?? -1;
+  return close === -1 ? undefined : close;
 }
 
 /** 타입 매개변수 목록의 닫는 `>`(위치 `close`)에 짝인 `<` 위치다. */
@@ -1271,10 +1490,22 @@ function boundValueAt(context: ScanContext, name: string, index: number): BoundN
 /**
  * 위치의 이름을 매개변수 가림과 블록 범위 선언을 함께 보고 해석한다 — 더 안쪽에서 시작한 쪽이 이긴다. 매개변수를
  * 둔 함수 안쪽 본문의 같은 이름 선언(`function f(M) { const run = () => { const M = …; } }`)은 매개변수를 가리고,
- * 매개변수는 바깥 선언을 가린다(그때 해석은 `parameter`다).
+ * 매개변수는 바깥 선언을 가린다(그때 해석은 `parameter`다). 가장 안쪽 매개변수 목록이 함수 머리인지 정하지 못한
+ * 것이면(`wrap(M)` 뒤 다음 줄 블록) 그 목록이 없을 때의 해석도 본다 — 모듈 바인딩·import에 닿으면 귀속하지 않고 센다.
  */
 function resolveLocal(context: ScanContext, name: string, index: number): ScopedResolution {
-  return context.scopes.resolve(name, index, context.paramShadows.innermostFrom(name, index) ?? -Infinity);
+  const floor = context.paramShadows.innermostFrom(name, index);
+  const resolution = context.scopes.resolve(name, index, floor ?? -Infinity);
+  if (floor === undefined || !resolution.claimed || resolution.value !== undefined ||
+    resolution.hidesModule === true || resolution.hidesOuter === true) {
+    return resolution;
+  }
+  const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
+  if (certainFloor === floor) return resolution;
+  const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
+  if (!alternative.claimed) return context.importsByLocalName.has(name) ? { claimed: true, hidesOuter: true } : resolution;
+  if (alternative.value !== undefined || alternative.hidesModule === true) return { claimed: true, hidesModule: true };
+  return alternative.hidesOuter === true ? { claimed: true, hidesOuter: true } : resolution;
 }
 
 /**
@@ -1394,9 +1625,10 @@ function endsTypeByLineBreak(tokens: readonly JsToken[], index: number): boolean
 
 /**
  * 선언 대상 자리의 구조 분해 패턴(여는 `{`·`[` 위치 `open`)을 기록하고 패턴 뒤 위치를 돌려준다(짝이 없으면 undefined).
- * 패턴의 타입 주석(`const { a }: T = …`)은 패턴이 아니므로 건너뛴다. 원천이 그 위치의 react-native 레지스트리인
- * `const { A } = NativeModules`만 module-import 사실과 모듈 바인딩을 만든다 — 같은 이름의 매개변수·로컬 대역·다른
- * 모듈 import에서 꺼낸 이름은 모듈이 아니다(다른 모듈 import는 `unattributed-js-native-modules:`로 센다).
+ * 패턴의 타입 주석(`const { a }: T = …`)은 패턴이 아니므로 건너뛴다. 원천이 그 위치의 react-native 레지스트리이고 초기값의
+ * 값이 레지스트리 자체인 `const { A } = NativeModules`만 module-import 사실과 모듈 바인딩을 만든다 — 같은 이름의 매개변수·
+ * 로컬 대역·다른 모듈 import에서 꺼낸 이름은 모듈이 아니고(다른 모듈 import는 `unattributed-js-native-modules:`로 센다),
+ * `= NativeModules.Camera`에서 꺼낸 이름은 그 모듈의 속성이다.
  */
 function collectPattern(context: ScanContext, open: number, scope: DeclarationScope, exported: boolean): number | undefined {
   const { tokens } = context;
@@ -1406,7 +1638,10 @@ function collectPattern(context: ScanContext, open: number, scope: DeclarationSc
   const after = tokens[close + 1]?.text === ':' ? skipTypeAnnotation(tokens, close + 2) : close + 1;
   const sourceIndex = tokens[after]?.text === '=' ? after + 1 : undefined;
   const source = sourceIndex === undefined ? undefined : tokens[sourceIndex];
-  if (object && source?.kind === 'identifier' && source.text === 'NativeModules') {
+  // 원천 식의 값이 레지스트리 자체일 때만 레지스트리 구조 분해다(`= NativeModules`, `?? {}`·`|| {}` 대체값·`as` 단언).
+  // `= NativeModules.Camera`의 이름은 그 모듈의 속성이다 — 모듈 사실은 멤버 접근이 내고, 구조 분해한 값은 센다.
+  if (object && source?.kind === 'identifier' && source.text === 'NativeModules' &&
+    registryValueEnds(tokens, sourceIndex!)) {
     if (isNativeModulesRegistry(context, source.text, sourceIndex!)) {
       collectDestructuredBindings(context, open, close, scope, exported);
       context.destructuredRegistrySources.add(sourceIndex!);
@@ -1423,6 +1658,13 @@ function collectPattern(context: ScanContext, open: number, scope: DeclarationSc
   const traced = source?.kind === 'identifier' && endsExpression(tokens, sourceIndex!) ? sourceIndex : undefined;
   recordDestructuredLocals(context, open, close, scope, required, traced);
   return after;
+}
+
+/** 위치 `index`의 레지스트리 이름이 식의 값으로 끝나는지 본다 — 멤버 접근·호출·`&&`가 이어지면 값은 다른 것이다. */
+function registryValueEnds(tokens: readonly JsToken[], index: number): boolean {
+  const next = tokens[index + 1]?.text;
+  if (next === '||' || next === '??' || next === 'as') return true;
+  return next === '!' ? endsExpression(tokens, index + 1) : endsExpression(tokens, index);
 }
 
 /** 구조 분해 패턴의 최상위 항목 하나다. 위치는 모두 토큰 위치다. */
@@ -1611,7 +1853,7 @@ function bindPatternTarget(
 ): void {
   if (entry.target !== undefined) {
     const localName = context.tokens[entry.target]!.text;
-    context.scopes.declare({ name: localName, ...scope, value });
+    declareName(context, localName, scope, { value });
     if (exported) context.namedExports.set(localName, value);
     context.localNames.add(localName);
     return;
@@ -1628,7 +1870,7 @@ function declarePatternTargets(context: ScanContext, entry: PatternEntry, scope:
   for (const index of names) {
     const localName = context.tokens[index]!.text;
     context.localNames.add(localName);
-    context.scopes.declare({ name: localName, ...scope });
+    declareName(context, localName, scope);
   }
 }
 
@@ -1671,7 +1913,7 @@ function recordDestructuredLocals(
     const localName = tokens[index]!.text;
     context.localNames.add(localName);
     // 모듈 값이 아닌 이름도 그 범위에서 바깥의 같은 이름 바인딩을 가린다.
-    context.scopes.declare({ name: localName, ...scope });
+    declareName(context, localName, scope);
     // 원천의 속성 이름을 아는 최상위 항목만 이름별 specifier·원천을 남긴다(중첩 패턴의 이름은 원천의 속성이 아니다).
     if (property === undefined) continue;
     if (specifier !== undefined) context.requireSpecifiers.set(localName, specifier);
@@ -2653,26 +2895,29 @@ function boundChannel(bound: BoundName): string {
  * 매개변수가 파일 전역 바인딩을 가리는 본문 구간을 모은다.
  *
  * 인식하는 형태는 `function f(M) {…}`·`function f<T>(M: T): R {…}`·`f(M) {…}`(메서드 약칭, 반환 타입 주석
- * 포함)·`(M) => {…}`·`(M): R => {…}`·`M => {…}`다. `foo(x) {…}`처럼 호출 뒤 블록이 오는 문장도 매개변수 목록으로
- * 보이지만, 그 경우의 과도한 가림은 사실을 놓칠 뿐 거짓 사실을 만들지 않는다.
+ * 포함)·`(M) => {…}`·`(M): R => {…}`·`M => {…}`다. 함수 머리인지 정하지 못한 목록 — 호출 뒤 다음 줄 블록일 수 있는
+ * `name(M)` 줄바꿈 `{`, 삼항 `?` 바로 뒤의 `(M): T => {` — 은 정하지 못한 가림으로 표시한다(resolveLocal이 그 가림이
+ * 없을 때의 해석이 모듈에 닿으면 센다). `case …(…):`·삼항 갈래의 호출 `wrap(M) : e => {`는 매개변수 목록이 아니다.
  * 본문이 `{`로 시작하지 않는 화살표(`M => M.x()`)는 끝을 알 수 없어 건너뛴다.
  */
 function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
   const shadows: ParamShadow[] = [];
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
-    // `M => {…}` 단일 매개변수 화살표다.
+    // `M => {…}` 단일 매개변수 화살표다. 반환 타입 주석의 이름(`(x): T => {`의 T)은 매개변수가 아니다. 본문은 건너뛰지
+    // 않는다 — 본문 안 함수의 매개변수도 가린다.
     if ((token.kind === 'identifier' || token.kind === 'keyword') &&
       tokens[index + 1]?.text === '=>' && tokens[index + 2]?.text === '{') {
-      const close = findMatching(tokens, index + 2, '{', '}');
+      const role = arrowNameRole(tokens, index);
+      const close = role === 'type' ? undefined : findMatching(tokens, index + 2, '{', '}');
       if (close !== undefined) {
         // 매개변수 자신의 위치부터 가린다 — 그 이름 토큰은 바깥 바인딩의 값 사용이 아니다.
         shadows.push({
           from: index,
           to: close + 1,
           names: new Set([token.text]),
+          ...(role === 'ambiguous' ? { uncertain: true as const } : {}),
         });
-        index = close;
       }
       continue;
     }
@@ -2682,61 +2927,85 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
     // 본문은 `)` 바로 뒤, 화살표 뒤, 또는 반환 타입 주석(`): T {`·`): T => {`) 뒤의 `{`다.
     const after = bodyAfterParameters(tokens, close);
     if (after === undefined) continue;
-    const previous = tokens[index - 1];
-    // 화살표, `function f(…)`·`function (…)`·`function f<T>(…)`, 메서드 약칭 `f(M) {…}`(이름·문맥 키워드·계산 키·
-    // 문자열 키 뒤)의 매개변수 목록이다. `if (M) {…}` 같은 키워드 조건절은 매개변수가 아니다.
-    const isParams = after.arrow || previous?.text === 'function' ||
-      ((previous?.kind === 'identifier' || previous?.kind === 'keyword') && tokens[index - 2]?.text === 'function') ||
-      isGenericFunctionHead(tokens, index - 1) || isMethodHead(previous);
-    if (!isParams) continue;
-    const bodyIndex = after.body;
-    const bodyClose = findMatching(tokens, bodyIndex, '{', '}');
+    // 화살표, `function f(…)`·`function (…)`·`function f<T>(…)`, 메서드 약칭 `f(M) {…}`(이름·키워드·계산 키·
+    // 문자열 키 뒤)의 매개변수 목록이다. `if (M) {…}` 같은 제어문 조건절은 매개변수가 아니다.
+    const kind = after.arrow
+      ? arrowParameterKind(tokens, index, after.returnType)
+      : parameterListKind(tokens, index, close, after.body, after.returnType);
+    if (kind === 'none' || kind === 'block') continue;
+    const bodyClose = findMatching(tokens, after.body, '{', '}');
     if (bodyClose === undefined) continue;
     const names = parameterBindingNames(tokens, index, close);
     // 매개변수 목록부터 가린다 — 매개변수 이름 토큰과 뒤 매개변수의 기본값 식은 바깥 바인딩을 보지 않는다.
-    shadows.push({ from: index, to: bodyClose + 1, names });
+    shadows.push({ from: index, to: bodyClose + 1, names, ...(kind === 'ambiguous' ? { uncertain: true as const } : {}) });
     index = close;
   }
   return shadows;
 }
 
-/** 메서드 약칭 이름으로 쓰이는 문맥 키워드다. 제어문 키워드는 넣지 않는다. */
-const methodNameKeywords = new Set(['get', 'set', 'async', 'from', 'of', 'as', 'static']);
+/**
+ * 화살표 앞 괄호(`open`)가 매개변수 목록인지다. 반환 타입 주석이 없으면 확실하다. 있으면(`(x): T => {`) 괄호(제네릭
+ * 화살표는 `<`) 앞 토큰을 본다 — 피연산자 끝(`async` 제외)이면 호출·괄호식 뒤의 삼항 `:`이고(`busy ? wrap(x) : e =>
+ * {…}`의 `(x)`), `case`면 절의 `:`라 매개변수가 아니다. 삼항의 `?` 바로 뒤면(`c ? (x): T => {…} : d`와 `c ? (x) : e =>
+ * {…}`) 정하지 않는다.
+ */
+function arrowParameterKind(tokens: readonly JsToken[], open: number, returnType: boolean): 'function' | 'ambiguous' | 'none' {
+  if (!returnType) return 'function';
+  let start = open;
+  if (tokens[open - 1]?.text === '>' || tokens[open - 1]?.text === '>>') start = typeParametersOpen(tokens, open - 1) ?? open;
+  const before = tokens[start - 1];
+  if (before === undefined || before.text === 'async') return 'function';
+  if (isOperandEnd(before) || (before.kind === 'keyword' && before.text === 'case')) return 'none';
+  return before.text === '?' ? 'ambiguous' : 'function';
+}
 
-/** `(` 앞 토큰이 메서드 약칭의 이름(이름·문맥 키워드·계산 키 `]`·문자열·숫자 키)인지 본다. */
+/**
+ * `NAME => {`의 NAME(위치 `index`)이 단일 매개변수인지 반환 타입 주석의 이름인지다. 앞이 `(…):`이고 그 괄호가 화살표
+ * 매개변수 목록이면 반환 타입(`(x): T => {`), 호출·`case` 절이면 삼항·절 뒤의 매개변수(`wrap(x) : e => {`)다.
+ */
+function arrowNameRole(tokens: readonly JsToken[], index: number): 'parameter' | 'type' | 'ambiguous' {
+  if (tokens[index - 1]?.text !== ':' || tokens[index - 2]?.text !== ')') return 'parameter';
+  const open = openingOf(tokens, index - 2);
+  const kind = open === undefined ? 'none' : arrowParameterKind(tokens, open, true);
+  return kind === 'function' ? 'type' : kind === 'ambiguous' ? 'ambiguous' : 'parameter';
+}
+
+/**
+ * `(` 앞 토큰이 메서드 약칭의 이름(이름·키워드·계산 키 `]`·문자열·숫자 키)인지 본다. 키워드도 메서드 이름이다
+ * (`delete(key) {…}`). 제어문 머리 키워드와 `function`은 따로 판정한다.
+ */
 function isMethodHead(token: JsToken | undefined): boolean {
   if (token === undefined) return false;
   return token.kind === 'identifier' || token.kind === 'string' || token.kind === 'number' || token.text === ']' ||
-    (token.kind === 'keyword' && methodNameKeywords.has(token.text));
-}
-
-/** 위치 `index`의 `>`가 이름(또는 `function`) 뒤 타입 매개변수 목록을 닫는지 본다(`f<T>(…)`). */
-function isGenericFunctionHead(tokens: readonly JsToken[], index: number): boolean {
-  const text = tokens[index]?.text;
-  if (text !== '>' && text !== '>>') return false;
-  const open = typeParametersOpen(tokens, index);
-  const name = open === undefined ? undefined : tokens[open - 1];
-  return name !== undefined && (name.kind === 'identifier' || name.kind === 'keyword');
+    (token.kind === 'keyword' && !controlHeadKeywords.has(token.text) && token.text !== 'function');
 }
 
 /** 앞에 오면 그 `{`가 반환 타입 안의 객체 타입 리터럴인 토큰이다. */
 const typeLiteralOpeners = new Set([':', '|', '&', '<', ',', '(', '[', '=>', '?', 'extends', 'keyof', 'typeof']);
 
 /**
- * 매개변수 목록의 `)`(위치 `close`) 뒤 함수 본문 `{`의 위치와 화살표 여부다. 반환 타입 주석(`): T {`·`): T => {`)을
- * 건너뛴다 — 타입 안의 객체 타입·함수 타입(`(): () => void {`)은 본문이 아니다. 본문이 없으면 undefined다.
+ * 매개변수 목록의 `)`(위치 `close`) 뒤 함수 본문 `{`의 위치와 화살표·반환 타입 주석 여부다. 반환 타입 주석(`): T {`·
+ * `): T => {`)을 건너뛴다 — 타입 안의 객체 타입·함수 타입(`(): () => void {`)은 본문이 아니다. 본문이 없으면
+ * undefined다. `(…):`가 절·삼항의 `:`인지는 호출자가 머리로 판정한다.
  */
-function bodyAfterParameters(tokens: readonly JsToken[], close: number): { body: number; arrow: boolean } | undefined {
+function bodyAfterParameters(
+  tokens: readonly JsToken[],
+  close: number,
+): { body: number; arrow: boolean; returnType: boolean } | undefined {
   let index = close + 1;
-  if (tokens[index]?.text === ':') {
+  const returnType = tokens[index]?.text === ':';
+  if (returnType) {
     const end = returnTypeEnd(tokens, index + 1);
     if (end === undefined) return undefined;
     index = end;
   }
   const arrow = tokens[index]?.text === '=>';
   if (arrow) index++;
-  return tokens[index]?.text === '{' ? { body: index, arrow } : undefined;
+  return tokens[index]?.text === '{' ? { body: index, arrow, returnType } : undefined;
 }
+
+/** 타입에 올 수 없는 키워드다 — 반환 타입 주석으로 읽던 구간이 값 식(삼항 갈래의 함수식 등)이면 여기서 멈춘다. */
+const valueOnlyKeywords = new Set(['function', 'class', 'return', 'var', 'let', 'const']);
 
 /**
  * 반환 타입 주석(시작 위치 `start`) 다음 위치 — 본문 `{` 또는 화살표 `=>` — 다. 괄호·제네릭은 짝까지 건너뛰고, 타입
@@ -2756,6 +3025,7 @@ function returnTypeEnd(tokens: readonly JsToken[], start: number): number | unde
     if (text === '<') angles++;
     else if (text === '>' || text === '>>' || text === '>>>') angles -= text.length;
     else if (angles > 0) continue;
+    else if (tokens[index]!.kind === 'keyword' && valueOnlyKeywords.has(text)) return undefined;
     else if (text === '{') return index;
     else if (text === '=>') {
       // 타입 안에서 연 괄호 뒤의 `=>`는 함수 타입이다.
@@ -2771,37 +3041,74 @@ function returnTypeEnd(tokens: readonly JsToken[], start: number): number | unde
 /**
  * 매개변수 목록 `(`…`)`이 묶는 이름이다.
  *
- * 기본값 식(`=` 뒤부터 같은 괄호 깊이의 `,`나 그 깊이를 닫는 괄호까지)의 식별자는 매개변수 이름이 아니다 —
- * `(native = NativeModules.Camera)`의 `NativeModules`는 바깥 바인딩을 읽는다. 구조 분해 패턴의 속성 이름과 타입
- * 주석은 구분하지 않고 이름으로 센다(가림을 넓게 잡는 쪽).
+ * 매개변수마다 앞의 데코레이터(`@Dec()`)·접근 수식어(`public`·`readonly` 등)·`...`를 건너 첫 이름이나 구조 분해 패턴만
+ * 바인딩이다. 뒤의 `?`·타입 주석·기본값 식은 이름이 아니다 — `(config?: Animated.Options)`의 `Animated`,
+ * `(native = NativeModules.Camera)`의 `NativeModules`, `({ Camera: cam })`의 키 `Camera`는 바깥 바인딩을 읽는다(전에는
+ * 이름으로 세어 바깥 모듈·import를 조용히 가렸다). 패턴은 바인딩 이름만 모은다(patternBindingNames).
  */
 function parameterBindingNames(tokens: readonly JsToken[], open: number, close: number): Set<string> {
   const names = new Set<string>();
-  let depth = 0;
-  // 기본값 식을 연 깊이다. 그 깊이의 `,`나 그 깊이를 닫는 괄호에서 기본값이 끝난다.
-  let defaultDepth: number | undefined;
-  for (let cursor = open + 1; cursor < close; cursor++) {
-    const token = tokens[cursor]!;
-    if (token.text === '(' || token.text === '[' || token.text === '{') {
-      depth++;
-      continue;
+  let index = open + 1;
+  while (index < close) {
+    index = skipParameterPrefix(tokens, index, close);
+    const token = tokens[index];
+    if (token === undefined || index >= close) break;
+    if (token.text === '{' || token.text === '[') {
+      const end = findMatching(tokens, index, token.text, token.text === '{' ? '}' : ']');
+      if (end === undefined || end >= close) break;
+      for (const { index: at } of patternBindingNames(tokens, index, end)) names.add(tokens[at]!.text);
+      index = end + 1;
+    } else if (token.kind === 'identifier' || token.kind === 'keyword') {
+      names.add(token.text);
+      index++;
     }
-    if (token.text === ')' || token.text === ']' || token.text === '}') {
-      if (defaultDepth === depth) defaultDepth = undefined;
-      depth--;
-      continue;
-    }
-    if (defaultDepth !== undefined) {
-      if (token.text === ',' && depth === defaultDepth) defaultDepth = undefined;
-      continue;
-    }
-    if (token.text === '=') {
-      defaultDepth = depth;
-      continue;
-    }
-    if (token.kind === 'identifier' || token.kind === 'keyword') names.add(token.text);
+    index = parameterEnd(tokens, index, close);
   }
   return names;
+}
+
+/** 매개변수 이름 앞에 올 수 있는 TS 접근 수식어다(매개변수 속성). */
+const parameterModifiers = new Set(['public', 'private', 'protected', 'readonly', 'override']);
+
+/** 매개변수 하나의 이름 앞(데코레이터·수식어·`...`)을 건너 이름·패턴 위치를 돌려준다. */
+function skipParameterPrefix(tokens: readonly JsToken[], from: number, close: number): number {
+  let index = from;
+  for (;;) {
+    const text = tokens[index]?.text;
+    if (index >= close || text === undefined) return index;
+    if (text === '...') {
+      index++;
+    } else if (text === '@') {
+      // `@Dec`·`@ns.Dec(…)` 데코레이터다.
+      index++;
+      while (tokens[index]?.kind === 'identifier' && ['.', '?.'].includes(tokens[index + 1]?.text ?? '')) index += 2;
+      index++;
+      if (tokens[index]?.text === '(') index = (findMatching(tokens, index, '(', ')') ?? close) + 1;
+    } else if (parameterModifiers.has(text) && ['identifier', 'keyword'].includes(tokens[index + 1]?.kind ?? '') ||
+      (parameterModifiers.has(text) && ['{', '['].includes(tokens[index + 1]?.text ?? ''))) {
+      index++;
+    } else {
+      return index;
+    }
+  }
+}
+
+/**
+ * 매개변수 이름·패턴 뒤(`?`·타입 주석·기본값)를 건너 다음 매개변수 앞 `,` 다음 위치(없으면 목록 끝)를 돌려준다.
+ * 타입 주석은 제네릭의 `,`를 건너도록 skipTypeAnnotation으로, 기본값 식은 괄호 깊이로 건넌다.
+ */
+function parameterEnd(tokens: readonly JsToken[], from: number, close: number): number {
+  let index = from;
+  if (tokens[index]?.text === '?' || tokens[index]?.text === '!') index++;
+  if (tokens[index]?.text === ':') index = Math.min(skipTypeAnnotation(tokens, index + 1), close);
+  let depth = 0;
+  for (; index < close; index++) {
+    const text = tokens[index]!.text;
+    if (text === '(' || text === '[' || text === '{') depth++;
+    else if (text === ')' || text === ']' || text === '}') depth--;
+    else if (text === ',' && depth <= 0) return index + 1;
+  }
+  return close;
 }
 
 /** 위치 `index`의 `name`이 매개변수에 가려졌는지 판정한다. */
@@ -3069,7 +3376,7 @@ function chainStart(tokens: readonly JsToken[], index: number): number | undefin
 
 /**
  * 식별자가 값이 아니라 이름 자리에 있는지 본다 — import·재수출 절, 선언자·함수·클래스 이름, 구조 분해 선언
- * 패턴, 객체 키, 대입 대상, 식 본문 화살표의 매개변수. 속성 자리(`.` 뒤)는 호출자가 따로 판정한다.
+ * 패턴, 객체 키, 대입 대상, 식 본문 화살표의 매개변수, enum 멤버 이름. 속성 자리(`.` 뒤)는 호출자가 따로 판정한다.
  */
 function isNameOnlyPosition(
   context: ScanContext,
@@ -3087,7 +3394,15 @@ function isNameOnlyPosition(
   if (assignmentOperators.has(after) || ['++', '--'].includes(after) || ['++', '--'].includes(before)) return true;
   if (after === ':' && (before === '{' || before === ',')) return true;
   if (after === '=>' || isArrowParameter(tokens, index)) return true;
+  if ((before === '{' || before === ',') && ['=', ',', '}'].includes(after) && isEnumMemberName(tokens, index)) return true;
   return isPatternDeclarator(tokens, index);
+}
+
+/** `enum E { NAME }`·`const enum E { NAME = 1 }`의 멤버 이름 자리인지 본다. */
+function isEnumMemberName(tokens: readonly JsToken[], index: number): boolean {
+  const open = enclosingBrace(tokens, index);
+  return open !== undefined && tokens[open - 1]?.kind === 'identifier' && tokens[open - 2]?.text === 'enum' &&
+    enclosingOpen(tokens, index) === open;
 }
 
 /** `(a, M) => …`처럼 화살표 매개변수 목록의 이름 자리인지 본다. 기본값 식(`= …` 뒤)은 값이다. */
@@ -3115,11 +3430,12 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
   for (const entry of context.imports) {
     if (entry.specifier.startsWith('.')) relativeImports.add(entry.localName);
   }
-  if (context.moduleBindings.size === 0 && relativeImports.size === 0) return;
+  // 모듈 값 선언이 하나라도 있는 이름이 후보다 — 위치별 해석이 값을 주지 않아도 정하지 못한 모듈 바인딩으로 셀 수 있다.
+  const moduleNames = context.scopes.moduleDeclarationNames();
+  if (moduleNames.size === 0 && relativeImports.size === 0) return;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
-    if (token.kind !== 'identifier' ||
-      (!context.moduleBindings.has(token.text) && !relativeImports.has(token.text))) {
+    if (token.kind !== 'identifier' || (!moduleNames.has(token.text) && !relativeImports.has(token.text))) {
       continue;
     }
     if (['.', '?.'].includes(tokens[index - 1]?.text ?? '')) continue;
@@ -3127,10 +3443,14 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
     const resolution = resolveLocal(context, token.text, index);
     // 선언 범위가 정하지 못한 모듈 바인딩(블록 밖의 `var` 등)의 쓰임은 호출이어도 귀속되지 않으니 모두 센다. import일
     // 수도 있는 위치는 import 이름처럼 센다(호출은 불확실 멤버 호출로 문서 단계가 센다).
-    const hidden = resolution.claimed && resolution.hidesModule === true;
+    // 정하지 못한 모듈 바인딩의 쓰임은 이 파일의 선언이 모듈임을 이미 아는 참조라 이름 해석과 무관하게 바로 센다.
+    if (resolution.claimed && resolution.hidesModule === true) {
+      context.counts.escapedModuleReferences++;
+      continue;
+    }
     const outer = !resolution.claimed || resolution.hidesOuter === true;
     const moduleReference = outer ? relativeImports.has(token.text) : resolution.value !== undefined;
-    if (hidden || (moduleReference && classifyModuleValue(context, index, index, true) === 'escape')) {
+    if (moduleReference && classifyModuleValue(context, index, index, true) === 'escape') {
       context.identifierEscapes.set(token.text, (context.identifierEscapes.get(token.text) ?? 0) + 1);
     }
   }

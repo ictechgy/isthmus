@@ -29,29 +29,45 @@ interface OracleScope {
   varThrough: boolean;
 }
 
-/** 생성한 프로그램과 호출 줄마다 JS 정적 스코프로 정한 모듈(없으면 null)이다. */
+/** 생성한 프로그램과 줄마다의 기준 판정이다. 줄 번호는 import 줄을 포함한 문서 줄 번호다. */
 interface OracleProgram {
-  readonly text: string;
-  readonly expected: ReadonlyMap<number, string | null>;
+  /** import 줄 뒤의 본문 줄이다. */
+  readonly lines: readonly string[];
+  /** 호출 `M.go()` 줄마다 JS 정적 스코프로 정한 모듈(없으면 null)이다. */
+  readonly calls: ReadonlyMap<number, string | null>;
+  /** 줄마다 나와야 하는 module-import 이름이다. */
+  readonly modules: ReadonlyMap<number, readonly string[]>;
   /** 문법 오류(같은 범위 재선언 등)라 판정에서 뺄 프로그램인지다. */
   readonly invalid: boolean;
 }
 
+/** 본문 줄로 문서 원문을 만든다. */
+function programText(lines: readonly string[]): string {
+  return `import { NativeModules } from 'react-native';\n${lines.join('\n')}\n`;
+}
+
 /**
- * 무작위 중첩 프로그램을 만든다 — 블록·함수(제네릭·반환 타입·화살표·함수식·클래스 메서드)·for-of(블록 본문과 문장
- * 본문)·매개변수·구조 분해·재대입과 선언자가 아닌 `const`·`let` 낱말을 섞는다. 호출 `M.go()`마다 JS 규칙(블록 범위
- * let/const, 함수 범위 var, 매개변수, 재대입되면 값을 모름)으로 기준 모듈을 정한다.
+ * 무작위 중첩 프로그램을 만든다 — 블록(제어문·`case` 절·라벨·`}`와 ASI 줄 뒤의 맨 블록)·함수(제네릭·반환 타입·조건
+ * 반환 타입·화살표·단일 매개변수 화살표·함수식·삼항 갈래의 화살표·함수식·콜백·다음 줄 `{`)·클래스 메서드(다음 줄
+ * `{` 포함)·for-of(블록 본문과 문장 본문)·매개변수·구조 분해(레지스트리·모듈 멤버 원천 포함)·재대입(복합 대입·증감·
+ * 구조 분해 대입·for-of 대상)과 선언자가 아닌 `const`·`let` 낱말을 섞는다. 호출 `M.go()`마다 JS 규칙(블록 범위
+ * let/const, 함수 범위 var, 매개변수, 재대입되면 값을 모름, 매개변수를 다시 선언한 var는 인자일 수 있음)으로 기준
+ * 모듈을 정한다.
  */
 function generateProgram(random: () => number): OracleProgram {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!;
   const lines: string[] = [];
   const calls: { readonly line: number; readonly scope: OracleScope }[] = [];
+  const modules = new Map<number, string[]>();
   const assignments: OracleScope[] = [];
   let invalid = false;
   let functions = 0;
   const scope = (parent: OracleScope | undefined, isFunction: boolean, parameter = false): OracleScope =>
     ({ parent, isFunction, declarations: undefined, parameter, varThrough: false });
   const emit = (text: string, depth: number): number => lines.push(`${'  '.repeat(depth)}${text}`);
+  const imports = (line: number, name: string): void => {
+    modules.set(line + 1, [...(modules.get(line + 1) ?? []), name]);
+  };
   const functionOf = (inner: OracleScope): OracleScope => {
     let cursor = inner;
     while (!cursor.isFunction) cursor = cursor.parent!;
@@ -74,42 +90,108 @@ function generateProgram(random: () => number): OracleProgram {
     const count = 1 + Math.floor(random() * 3);
     for (let index = 0; index < count && budget > 0; index++) statement(current, depth, budget - 1);
   };
+  /**
+   * 블록 안 첫 문장으로 var를 낼지 정해 낸다. 종류를 정하기 어려운 블록(라벨·맨 블록·`case` 절)의 var가 블록 뒤
+   * 쓰임과 만나도록 자주 낸다.
+   */
+  const leadingVar = (inner: OracleScope, depth: number): void => {
+    if (random() >= 0.5) return;
+    const value = random() < 0.5 ? pick(['A', 'B', 'C']) : null;
+    const line = emit(`var M = ${value === null ? 'makeFake()' : `NativeModules.${value}`};`, depth);
+    if (value !== null) imports(line, value);
+    declare(inner, 'var', value);
+  };
+  /** 블록 스코프 하나를 여는 줄들을 내고 본문을 채운 뒤 닫는다. */
+  const blockStatement = (current: OracleScope, depth: number, budget: number): void => {
+    const form = random();
+    const inner = scope(current, false);
+    if (form < 0.3) {
+      emit(pick(['{', 'if (cond) {', 'try {', 'while (x) {']), depth);
+    } else if (form < 0.45) {
+      emit(`l${functions++}: {`, depth);
+      leadingVar(inner, depth + 1);
+    } else if (form < 0.6) {
+      // `}` 뒤·ASI로 끝난 줄 뒤의 맨 블록이다(호출 뒤 다음 줄 블록은 그 인자가 매개변수처럼 보인다).
+      emit(pick(['if (c) { noop(); }', 'x = 1', 'noop()', 'wrap(M)']), depth);
+      emit('{', depth);
+      leadingVar(inner, depth + 1);
+    } else if (form < 0.8) {
+      // `case` 절의 블록 — 괄호로 끝나는 절 식은 반환 타입 주석처럼 보인다.
+      const clause = scope(inner, false);
+      emit('switch (k) {', depth);
+      emit(`${pick(["case 'a'", 'case (1)', 'case kind()', 'default'])}: {`, depth + 1);
+      leadingVar(clause, depth + 2);
+      block(clause, depth + 2, budget);
+      emit('}', depth + 1);
+      emit('}', depth);
+      return;
+    } else {
+      emit('{', depth);
+    }
+    block(inner, depth + 1, budget);
+    emit('}', depth);
+  };
+  const functionStatement = (current: OracleScope, depth: number, budget: number): void => {
+    const parameter = random() < 0.3;
+    const name = parameter ? 'M' : 'x';
+    const id = functions++;
+    const [head, close] = pick<readonly [string, string]>([
+      [`function f${id}(${name}) {`, '}'],
+      [`function f${id}<T>(${name}: T): void {`, '}'],
+      [`function f${id}<T>(${name}: T): T extends string ? A : B {`, '}'],
+      [`const f${id} = (${name}) => {`, '};'],
+      [`const f${id} = (${name}): number => {`, '};'],
+      [`const f${id} = function (${name}) {`, '};'],
+      [`const f${id} = ${name} => {`, '};'],
+      [`items.forEach(${name} => {`, '});'],
+      [`const f${id} = busy ? wrap(${pick(['y', 'M'])}) : ${name} => {`, '};'],
+      [`const f${id} = busy ? wrap(${pick(['y', 'M'])}) : function (${name}) {`, '};'],
+      [`function f${id}(${name})\n${'  '.repeat(depth)}{`, '}'],
+    ]);
+    emit(head, depth);
+    block(scope(current, true, parameter), depth + 1, budget);
+    emit(close, depth);
+  };
   const statement = (current: OracleScope, depth: number, budget: number): void => {
     const choice = random();
-    if (choice < 0.22) {
+    if (choice < 0.2) {
       const kind = pick(['const', 'let', 'var'] as const);
       const form = random();
-      if (form < 0.15) {
+      const module = pick(['A', 'B', 'C']);
+      if (form < 0.12) {
         emit(pick([`${kind} { M } = props;`, `${kind} [M] = arr;`, `${kind} { x: { M } } = props;`,
           `${kind} { M = 1 }: { M?: number } = props;`]), depth);
         declare(current, kind, null);
-      } else if (form < 0.25) {
+      } else if (form < 0.2) {
+        // 모듈의 멤버를 꺼낸 이름은 모듈이 아니다(모듈 사실은 멤버 접근이 낸다).
+        imports(emit(pick([`${kind} { M } = NativeModules.${module};`, `${kind} { take: M } = NativeModules.${module};`]),
+          depth), module);
+        declare(current, kind, null);
+      } else if (form < 0.28) {
+        // 레지스트리 구조 분해는 키 이름이 모듈이다.
+        const key = pick(['M', module]);
+        imports(emit(`${kind} { ${key === 'M' ? 'M' : `${key}: M`} } = NativeModules;`, depth), key);
+        declare(current, kind, key);
+      } else if (form < 0.36) {
         emit(pick(["register('x' as const, M);", 'const enum E { M }', 'render(<Text>let M know {name}</Text>);',
           '({ var: 1, M });', 'const { M: alias } = props;']), depth);
       } else {
-        const value = random() < 0.75 ? pick(['A', 'B', 'C']) : null;
-        emit(`${kind} M = ${value === null ? 'makeFake()' : `NativeModules.${value}`};`, depth);
+        const value = random() < 0.75 ? module : null;
+        const line = emit(`${kind} M = ${value === null ? 'makeFake()' : `NativeModules.${value}`};`, depth);
+        if (value !== null) imports(line, value);
         declare(current, kind, value);
       }
-    } else if (choice < 0.42) {
+    } else if (choice < 0.38) {
       calls.push({ line: emit('M.go();', depth), scope: current });
-    } else if (choice < 0.47) {
-      emit('M = other();', depth);
+    } else if (choice < 0.44) {
+      emit(pick(['M = other();', 'M &&= other();', 'M += 1;', 'M++;', '({ M } = mocks);', '[M] = arr;',
+        'for (M of xs) noop();']), depth);
       assignments.push(current);
-    } else if (budget > 0 && choice < 0.57) {
-      emit(pick(['{', 'if (cond) {', 'try {', 'while (x) {']), depth);
-      block(scope(current, false), depth + 1, budget);
-      emit('}', depth);
-    } else if (budget > 0 && choice < 0.72) {
-      const parameter = random() < 0.3;
-      const name = parameter ? 'M' : 'x';
-      const head = pick([`function f${functions++}(${name})`, `function f${functions++}<T>(${name}: T): void`,
-        `const f${functions++} = (${name}) =>`, `const f${functions++} = (${name}): number =>`,
-        `const f${functions++} = function (${name})`]);
-      emit(`${head} {`, depth);
-      block(scope(current, true, parameter), depth + 1, budget);
-      emit(head.startsWith('const') ? '};' : '}', depth);
-    } else if (budget > 0 && choice < 0.8) {
+    } else if (budget > 0 && choice < 0.54) {
+      blockStatement(current, depth, budget);
+    } else if (budget > 0 && choice < 0.68) {
+      functionStatement(current, depth, budget);
+    } else if (budget > 0 && choice < 0.75) {
       // for-of의 루프 변수는 for 문 범위의 모듈 아닌 선언이다.
       const loop = scope(current, false);
       loop.declarations = [{ kind: 'let', value: null }];
@@ -121,10 +203,17 @@ function generateProgram(random: () => number): OracleProgram {
         emit('for (const M of xs)', depth);
         calls.push({ line: emit('M.go();', depth + 1), scope: loop });
       }
-    } else if (budget > 0 && choice < 0.86) {
+    } else if (budget > 0 && choice < 0.82) {
+      // 메서드 본문 — 다음 줄 `{`의 메서드는 호출 뒤 블록과 구분되지 않는다.
+      const parameter = random() < 0.3;
       emit('class K {', depth);
-      emit('run(): void {', depth + 1);
-      block(scope(current, true), depth + 2, budget);
+      if (random() < 0.5) {
+        emit(`run(${parameter ? 'M' : ''}): void {`, depth + 1);
+      } else {
+        emit(`run(${parameter ? 'M' : ''})`, depth + 1);
+        emit('{', depth + 1);
+      }
+      block(scope(current, true, parameter), depth + 2, budget);
       emit('}', depth + 1);
       emit('}', depth);
     } else {
@@ -133,53 +222,138 @@ function generateProgram(random: () => number): OracleProgram {
   };
   const program = scope(undefined, true);
   block(program, 0, 7);
-  /** 위치 스코프에서 `M`이 가리키는 선언 묶음이다(매개변수면 'parameter', 없으면 전역). */
-  const resolve = (from: OracleScope): OracleDeclaration[] | 'parameter' | undefined => {
+  /** 위치 스코프에서 `M`이 가리키는 선언 묶음과, 그 묶음이 매개변수와 같은 함수 스코프인지(var가 매개변수를 다시 선언)다. */
+  const resolve = (from: OracleScope): { readonly declarations?: OracleDeclaration[]; readonly parameter: boolean } => {
     for (let cursor: OracleScope | undefined = from; cursor !== undefined; cursor = cursor.parent) {
-      if (cursor.declarations !== undefined) return cursor.declarations;
-      if (cursor.parameter) return 'parameter';
+      if (cursor.declarations !== undefined) return { declarations: cursor.declarations, parameter: cursor.parameter };
+      if (cursor.parameter) return { parameter: true };
     }
-    return undefined;
+    return { parameter: false };
   };
   const reassigned = new Set<OracleDeclaration[]>();
   for (const assigned of assignments) {
-    const target = resolve(assigned);
-    if (Array.isArray(target)) reassigned.add(target);
+    const { declarations } = resolve(assigned);
+    if (declarations !== undefined) reassigned.add(declarations);
   }
   const expected = new Map<number, string | null>();
   for (const call of calls) {
-    const target = resolve(call.scope);
-    const values = Array.isArray(target) && !reassigned.has(target) ? new Set(target.map(({ value }) => value)) : undefined;
+    const { declarations, parameter } = resolve(call.scope);
+    const values = declarations !== undefined && !reassigned.has(declarations)
+      ? new Set([...declarations.map(({ value }) => value), ...(parameter ? [null] : [])])
+      : undefined;
     // 줄 번호는 앞의 import 줄 하나만큼 밀린다.
     expected.set(call.line + 1, values?.size === 1 ? [...values][0]! : null);
   }
-  return { text: `import { NativeModules } from 'react-native';\n${lines.join('\n')}\n`, expected, invalid };
+  // 한 줄로 낸 머리(`function f(x)\n{`)는 두 줄이다 — 줄 번호를 실제 줄로 다시 센다.
+  const text = lines.join('\n').split('\n');
+  return text.length === lines.length
+    ? { lines, calls: expected, modules, invalid }
+    : remapLines(lines, expected, modules, invalid);
 }
 
-test('생성한 중첩 프로그램에서 JS 정적 스코프 기준 판정과 다른 method-invoke를 내지 않는다', () => {
-  // 형제 범위의 같은 이름, 안쪽 대역·구조 분해·for-of 변수의 가림, 함수 범위 var, 매개변수, 재대입, 제네릭·반환 타입
-  // 함수, 선언자가 아닌 낱말을 섞는다. 귀속한 호출은 모두 기준 모듈과 같아야 한다(놓친 호출은 허용 — 한계로 센다).
-  // main은 같은 생성기에서 귀속한 호출의 절반 이상이 거짓이었다.
-  const random = seededRandom(20261122);
-  let checked = 0;
+/** 여러 줄을 한 항목으로 낸 프로그램의 줄 번호를 실제 줄 번호로 바꾼다. */
+function remapLines(
+  lines: readonly string[],
+  calls: ReadonlyMap<number, string | null>,
+  modules: ReadonlyMap<number, readonly string[]>,
+  invalid: boolean,
+): OracleProgram {
+  const actual: number[] = [];
+  let line = 2;
+  for (const entry of lines) {
+    actual.push(line);
+    line += entry.split('\n').length;
+  }
+  const remap = (at: number): number => actual[at - 2]!;
+  return {
+    lines: lines.join('\n').split('\n'),
+    calls: new Map([...calls].map(([at, value]) => [remap(at), value])),
+    modules: new Map([...modules].map(([at, value]) => [remap(at), value])),
+    invalid,
+  };
+}
+
+/** 문서의 js-binding-scope 계수다(없으면 0). */
+function bindingScopeCount(text: string): number {
+  const document = createJsFactsDocument([{ path: 'a.tsx', text }], '0', '2026-01-01T00:00:00.000Z', 'p');
+  const line = document.limitations.find((entry) => entry.startsWith('js-binding-scope: '));
+  return line === undefined ? 0 : Number(line.split(' ')[1]);
+}
+
+/** 한 프로그램을 판정한다 — 어긋남을 문장으로 돌려준다(없으면 빈 배열). */
+function checkProgram(program: OracleProgram): { readonly problems: string[]; readonly attributed: number; readonly counted: number } {
+  const text = programText(program.lines);
+  const document = createJsFactsDocument([{ path: 'a.tsx', text }], '0', '2026-01-01T00:00:00.000Z', 'p');
+  const problems: string[] = [];
   let attributed = 0;
-  for (let round = 0; round < 3_000; round++) {
-    const program = generateProgram(random);
-    if (program.invalid) continue;
-    checked++;
-    const document = createJsFactsDocument([{ path: 'a.tsx', text: program.text }], '0', '2026-01-01T00:00:00.000Z', 'p');
-    for (const fact of document.facts) {
-      if (fact.kind !== 'method-invoke') continue;
-      attributed++;
-      assert.equal(fact.channel, program.expected.get(fact.location!.line), `line ${fact.location!.line}\n${program.text}`);
-    }
-    // 기준 판정이 모듈인 호출을 놓치면 그 문서에는 범위 밖 참조 한계가 있어야 한다(조용히 사라지지 않는다).
-    const missed = [...program.expected].some(([line, module]) => module !== null &&
-      !document.facts.some((fact) => fact.kind === 'method-invoke' && fact.location!.line === line));
-    if (missed) {
-      assert.ok(document.limitations.some((line) => line.startsWith('js-binding-scope:')), program.text);
+  let counted = 0;
+  const invoked = new Map<number, string>();
+  const imported = new Map<number, string[]>();
+  for (const fact of document.facts) {
+    const line = fact.location!.line;
+    const channel = fact.channel ?? '';
+    if (fact.kind === 'method-invoke') {
+      invoked.set(line, channel);
+      if (!program.calls.has(line) || program.calls.get(line) !== fact.channel || fact.dynamic) {
+        problems.push(`false method-invoke ${fact.channel}.${fact.method} at line ${line} (expected ${program.calls.get(line)})`);
+      } else {
+        attributed++;
+      }
+    } else if (fact.kind === 'module-import') {
+      imported.set(line, [...(imported.get(line) ?? []), channel]);
     }
   }
-  // 생성기가 판정할 만한 프로그램과 귀속 호출을 충분히 만들었는지 확인한다.
-  assert.ok(checked > 2_000 && attributed > 350, `checked ${checked}, attributed ${attributed}`);
+  // module-import는 줄마다 기준과 같아야 한다(거짓도 누락도 없다).
+  for (const line of new Set([...imported.keys(), ...program.modules.keys()])) {
+    const actual = [...(imported.get(line) ?? [])].sort().join(',');
+    const expected = [...(program.modules.get(line) ?? [])].sort().join(',');
+    if (actual !== expected) problems.push(`module-import at line ${line}: ${actual} (expected ${expected})`);
+  }
+  // 기준이 모듈인 호출을 귀속하지 않았으면 그 호출 자체가 js-binding-scope로 세어져야 한다 — 그 줄을 지우면 계수가
+  // 준다(조용히 사라지지 않는다).
+  const total = bindingScopeCount(text);
+  for (const [line, module] of program.calls) {
+    if (module === null || invoked.get(line) === module) continue;
+    const without = program.lines.map((entry, index) => (index + 2 === line ? entry.replace('M.go();', 'noop();') : entry));
+    if (bindingScopeCount(programText(without)) >= total) {
+      problems.push(`call at line ${line} (expected ${module}) is neither attributed nor counted`);
+    } else {
+      counted++;
+    }
+  }
+  return { problems, attributed, counted };
+}
+
+/**
+ * 시드마다 `ORACLE_ROUNDS`개 프로그램을 판정한다. 고친 결함을 하나씩 되돌린 변형마다 시드 1~60 × 1,500회를 돌려,
+ * 각 변형이 실패하는 시드가 하나 이상 들도록 골랐다 — var를 종류를 정하지 못한 블록에 가둔 변형(2·6·13·24·60),
+ * `case (1): {`를 함수 본문으로 읽은 변형(2·6·24·60), 삼항 갈래(6), 동결 때 수집 중 무효를 지우지 않은 변형(13·60),
+ * 다음 줄 블록 인자 가림(2·38, 24·38), 사이 묶음 표시(2·6·13), 단일 매개변수 화살표(리뷰 시드 14 포함 전부), 구조
+ * 분해 원천·대입·복합 대입·매개변수 재선언·정하지 못한 묶음 계수(전부). 넓은 실행(시드 1~250 × 3,000회)은 이 테스트
+ * 밖에서 했다.
+ */
+const ORACLE_SEEDS = [2, 6, 13, 14, 24, 38, 60];
+const ORACLE_ROUNDS = 1_500;
+
+test('생성한 중첩 프로그램에서 거짓 사실이 없고 기준이 모듈인 호출은 귀속하거나 하나씩 센다', () => {
+  // 형제 범위의 같은 이름, 안쪽 대역·구조 분해·for-of 변수의 가림, 함수 범위 var(종류를 정하지 못한 블록 포함),
+  // 매개변수(삼항 갈래·단일 매개변수 화살표·다음 줄 `{` 포함), 재대입, 제네릭·반환 타입 함수, 선언자가 아닌 낱말을
+  // 섞는다. 귀속한 호출은 모두 기준 모듈과 같아야 하고, 놓친 호출은 그 호출이 계수에 들어가야 한다.
+  let checked = 0;
+  let attributed = 0;
+  let counted = 0;
+  for (const seed of ORACLE_SEEDS) {
+    const random = seededRandom(seed);
+    for (let round = 0; round < ORACLE_ROUNDS; round++) {
+      const program = generateProgram(random);
+      if (program.invalid) continue;
+      checked++;
+      const result = checkProgram(program);
+      assert.deepEqual(result.problems, [], `seed ${seed} round ${round}\n${programText(program.lines)}`);
+      attributed += result.attributed;
+      counted += result.counted;
+    }
+  }
+  // 생성기가 판정할 만한 프로그램과 귀속·계수 호출을 충분히 만들었는지 확인한다.
+  assert.ok(checked > 7_500 && attributed > 900 && counted > 200, `checked ${checked}, attributed ${attributed}, counted ${counted}`);
 });

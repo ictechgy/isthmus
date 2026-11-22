@@ -796,3 +796,236 @@ test('로컬 모듈 바인딩이 차지한 위치의 호출은 해석하지 못�
   assert.ok(document.limitations.includes('unattributed-js-relative-calls: 1 member calls on imports that did not '
     + 'resolve inside the scanned file set could not be attributed to a module name'), document.limitations.join('\n'));
 });
+
+test('종류를 정하지 못한 블록의 var는 함수 본문까지 끌어올리고 블록 밖 쓰임을 바깥 바인딩에 귀속하지 않고 센다', () => {
+  // 2차 리뷰 n14·n02·n15: `case` 절·라벨·`}`·ASI 줄 뒤 블록의 var가 그 블록에만 있다고 보아, 같은 함수의 블록 뒤
+  // 쓰임이 바깥 A로 거짓 귀속됐다. var는 함수 범위다 — `case` 절 블록은 블록이 확실해 var가 함수 전체를 가리고
+  // (사실도 계수도 없다), 라벨·`}`·ASI 줄·호출 줄 뒤 블록은 함수 본문일 수도 있어 바깥 A가 보일 수도 있는 쓰임을 센다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'function reducer(action) {',
+      '  switch (action.type) {',
+      "    case 'reset': { var M = makeFake(); break; }",
+      '  }',
+      '  return M.go();',
+      '}',
+      'function labeled() {',
+      '  outer: { var M = makeFake(); break outer; }',
+      '  M.go();',
+      '}',
+      'function afterBlock() {',
+      '  if (a) { x(); }',
+      '  { var M = makeFake(); }',
+      '  M.go();',
+      '}',
+      'function afterAsi() {',
+      '  x = 1',
+      '  { var M = makeFake(); }',
+      '  M.run();',
+      '}',
+      'function afterCall() {',
+      '  noop()',
+      '  { var M = makeFake(); }',
+      '  M.walk();',
+      '}',
+      'M.top();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2', 'method-invoke A.top@28']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 4 native module references '), bindingScope(document));
+  // 정하지 못한 var의 값은 어디에도 적용하지 않고, 그 var와 함수 본문 사이에서 그 var를 감싼 같은 이름 블록 선언의
+  // 쓰임도 센다 — 다음 줄 `{`의 메서드는 호출 뒤 블록과 구분되지 않는다. 조건 반환 타입 함수는 함수 본문으로 알아본다.
+  const between = assemble({
+    'src/b.ts': [
+      "import { NativeModules } from 'react-native';",
+      '{',
+      '  let M = NativeModules.A;',
+      '  class K { run()',
+      '  { var M = NativeModules.B; M.go(); } }',
+      '  M.run();',
+      '}',
+      'function cond<T>(x: T): T extends string ? A : B { var N = NativeModules.D; N.cond(); }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(between).filter((line) => line.startsWith('method-invoke')), ['method-invoke D.cond@8']);
+  assert.ok(bindingScope(between)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(between));
+});
+
+test('괄호로 끝나는 case 절 식 뒤 블록은 함수 본문이 아니다', () => {
+  // 2차 리뷰 n01: `case (1): {`·`case kind(): {`의 `(…):`를 반환 타입 주석으로 읽어 블록을 함수 본문으로 보았고, var가
+  // 그 블록에 갇혀 블록 뒤 M.go가 거짓 A.go가 됐다. 반환 타입이 있는 메서드 본문은 그대로 함수 본문이다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'function f(k) {',
+      '  switch (k) {',
+      '    case (1): { var M = makeFake(); break; }',
+      '    case kind(): { var M = makeFake2(); break; }',
+      '  }',
+      '  M.go();',
+      '}',
+      'class S { start(): void { var M = makeFake(); } stop() { M.ok(); } }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2', 'method-invoke A.ok@10']);
+  assert.equal(bindingScope(document), undefined);
+});
+
+test('삼항 갈래의 호출 뒤 화살표·함수식은 그 호출 인자를 매개변수로 읽지 않는다', () => {
+  // 2차 리뷰 n19·n28: `busy ? wrap(Haptics) : e => {…}`를 반환 타입 `e`가 붙은 매개변수 목록으로 읽어 Haptics가 가려졌고,
+  // 참 Haptics.trigger와 wrap 인자의 범위 밖 계수가 함께 사라졌다. 삼항 갈래의 화살표 자체 매개변수는 가린다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const { Haptics } = NativeModules;',
+      'export const cb = busy ? wrap(Haptics) : e => { Haptics.trigger(); };',
+      'export const cb2 = busy ? wrap(Haptics) : function () { Haptics.buzz(); };',
+      'export const cb3 = busy ? wrap(x) : Haptics => { Haptics.fake(); };',
+      'export const typed = (Haptics): void => { Haptics.fake2(); };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import Haptics@2', 'method-invoke Haptics.trigger@3', 'method-invoke Haptics.buzz@4',
+  ]);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(document));
+});
+
+test('단일 매개변수·반환 타입 화살표 본문 안 함수의 매개변수도 바깥 바인딩을 가린다', () => {
+  // 2차 리뷰 n27·fail0: `M => {` 분기가 본문 끝으로 건너뛰어 본문 안 함수의 매개변수를 모으지 않았고, `(x): T => {`의
+  // `T => {`도 같은 분기에 걸렸다. 오라클 고정 시드가 우연히 비껴갔다(시드 14 × 1만 회에서 거짓 2개).
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const { Camera } = NativeModules;',
+      'export const useIt = items => {',
+      '  items.forEach((Camera) => { Camera.release(); });',
+      '  function open(Camera) { Camera.open(); }',
+      '};',
+      'const typed = (x): number => { function g(Camera) { Camera.close(); } Camera.snap(); };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import Camera@2', 'method-invoke Camera.snap@7']);
+  assert.equal(bindingScope(document), undefined);
+});
+
+test('모듈 멤버 접근을 원천으로 한 구조 분해의 이름은 모듈이 아니다', () => {
+  // 2차 리뷰 n23: 원천의 첫 토큰이 NativeModules이기만 하면 레지스트리 구조 분해로 읽어 거짓 module-import take·
+  // getConstants와 거짓 take.x가 났다. 모듈 사실은 멤버 접근이 내고 구조 분해한 모듈 값은 센다. 대체값(`|| {}`)은
+  // 레지스트리 그대로다. `&&` 뒤 값은 레지스트리가 아니다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const { take: t2 } = NativeModules.Camera;',
+      't2.x();',
+      'const { getConstants } = NativeModules.PlatformConstants;',
+      'const { Torch } = NativeModules || {};',
+      'Torch.on();',
+      'const { Fake } = NativeModules && mocks;',
+      'Fake.go();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import Camera@2', 'module-import PlatformConstants@4', 'module-import Torch@5', 'method-invoke Torch.on@6',
+  ]);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(document));
+});
+
+test('구조 분해 대입·복합 대입·증감·for-of 대상도 재대입으로 바인딩을 지운다', () => {
+  // 2차 리뷰 n10과 같은 계열: `=` 앞 이름만 재대입으로 보아 거짓 A.go~E.go가 났다. 매개변수 패턴의 기본값(`{ S } = {}`)은
+  // 대입이 아니다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'let M = NativeModules.A, N = NativeModules.B, P = NativeModules.C, Q = NativeModules.D, R = NativeModules.E;',
+      'function swap() { ({ M } = mocks); [N] = arr; }',
+      'P &&= other(); Q++; for (R of xs) {}',
+      'M.go(); N.go(); P.go(); Q.go(); R.go();',
+      'function f({ S } = {}, [T] = []) { S.x(); }',
+      'let S = NativeModules.F, T = NativeModules.G; S.y(); T.z();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), ['method-invoke F.y@7', 'method-invoke G.z@7']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 5 native module references '), bindingScope(document));
+  // 멤버 접근 대입(`cache[K] = 1`)·클래스 필드 타입 주석의 `{…} =`·매개변수 안 중첩 패턴의 기본값은 대입 대상 이름이 아니다.
+  const notAssigned = assemble({
+    'src/b.ts': [
+      "import { NativeModules } from 'react-native';",
+      'let K = NativeModules.H, U = NativeModules.I, V = NativeModules.J;',
+      'cache[K] = 1;',
+      'function q([{ U } = {}]) { U.u(); }',
+      'class C { field: { V: number } = init; }',
+      'K.k(); U.i(); V.v();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(notAssigned).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke H.k@6', 'method-invoke I.i@6', 'method-invoke J.v@6',
+  ]);
+});
+
+test('끌어올린 var가 차지한 앞 대입은 바깥 바인딩을 지우지 않고 확실한 매개변수 대입도 그렇다', () => {
+  // 2차 리뷰 n17: 수집 중 반영한 무효(아직 보지 못한 var 대신 바깥 M을 지움)가 동결 뒤에도 남아 참 A.go를 셌다. 확실한
+  // 매개변수에 대한 대입도 바깥 M을 지웠다(리뷰 n18). 매개변수를 다시 선언한 var는 선언 앞이 인자라 귀속하지 않고 센다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'function f() { if (x) { M = other(); } var M = makeFake(); }',
+      'function g(M) { M = other(); }',
+      'function h(M) { M.go(); var M = NativeModules.B; }',
+      'M.top();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2', 'module-import B@5', 'method-invoke A.top@6']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 1 native module references '), bindingScope(document));
+});
+
+test('함수 머리인지 정하지 못한 다음 줄 블록의 인자 이름은 바깥 모듈 쓰임을 조용히 가리지 않는다', () => {
+  // `wrap(M)` 뒤 다음 줄 `{`는 호출 뒤 블록일 수도, 다음 줄 `{`의 메서드일 수도 있다. 전에는 매개변수로 단정해 바깥 A의
+  // 호출이 한계 없이 사라졌다. 같은 줄 `{`의 메서드는 매개변수가 확실하다. const enum 멤버 이름은 값 쓰임이 아니다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'function f() {',
+      '  wrap(M)',
+      '  { M.go(); }',
+      '}',
+      'class K {',
+      '  run(M)',
+      '  { M.fake(); }',
+      '  stop(M) { M.param(); }',
+      '}',
+      'const enum Feature { M, Camera = 2 }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2']);
+  // wrap 인자·M.go·run의 인자(호출이면 값 쓰임)·M.fake 넷이다.
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 4 native module references '), bindingScope(document));
+});
+
+test('매개변수의 타입 주석·기본값·패턴 키는 바깥 바인딩을 가리지 않는다', () => {
+  // 매개변수 목록의 이름을 모두 매개변수로 세어 `(options: Camera.Options)`의 Camera가 바깥 모듈을 가렸고 참 호출이
+  // 한계 없이 사라졌다(반환 타입 주석 함수 본문을 알아보면서 더 자주 닿았다 — react-native의 `config?:
+  // ?Animated.AnimatedConfig`가 Animated import 호출 계수 2개를 지웠다). 바인딩은 수식어·데코레이터·`...` 뒤의 이름과
+  // 패턴의 바인딩 이름뿐이다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const { Camera } = NativeModules;',
+      'function f(options: Camera.Options, next?: Map<string, Camera.Ref>): void { Camera.take(); }',
+      'const g = ({ Camera: cam }) => { Camera.open(); };',
+      'const h = (x = Camera.defaults) => { Camera.close(); };',
+      'const k = ({ ref }: { ref: Camera.Ref }) => { Camera.snap(); };',
+      'class S { constructor(private readonly Camera: X) { Camera.fake(); } }',
+      'function m(@Inject() Camera: X, ...rest) { Camera.fake2(); }',
+      'const n = (a, ...Camera) => { Camera.fake3(); };',
+      'const p = ([first, { Camera }]) => { Camera.fake4(); };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke Camera.take@3', 'method-invoke Camera.open@4', 'method-invoke Camera.close@5', 'method-invoke Camera.snap@6',
+  ]);
+});

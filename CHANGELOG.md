@@ -102,18 +102,37 @@
   declaration or parameter list that covers it: `const`/`let` apply in their block (a `for` header
   declaration in its loop), and `var` applies its value in the block that declares it while claiming the
   name in the whole enclosing function body. Function bodies are recognized after generic parameters,
-  return type annotations, keyword/string/computed method names, class static blocks and TS
-  namespaces; parameters of such functions now hide outer bindings too. Where the scan cannot tell
-  whether a block is a function body (a conditional return type, a class or object body) it stops the
-  `var` there instead of widening it past an inner `let`/`const` of the same name. A name redeclared in
-  the same scope with a different module, or reassigned, is not attributed (its initializers are counted
-  in `js-binding-scope:`, as before for reassignment); a reassignment in a function declared earlier in
-  the file now also clears a later declaration, and a reassignment after a `for` header declaration whose
-  body is not a block (the scan widens that declaration to the enclosing block instead of finding the end
-  of the body statement) clears the outer binding as well. Uses whose value the scope cannot decide — a
-  `var` read outside its declaring block, or a name after such a widened `for` declaration, including a
-  call that may go through an import — are not attributed and are counted in `js-binding-scope:`, whose
-  message now also names redeclared bindings and uses outside the block a declaration is scoped to.
+  return type annotations (conditional types included), keyword/string/computed method names, class
+  static blocks and TS namespaces; parameters of such functions now hide outer bindings too, including
+  parameters of functions nested in a single-parameter arrow body (`items => { function f(M) {…} }`).
+  `case`/`default` clause blocks are blocks even when the clause expression ends in `)` (`case kind(): {`
+  used to be read as a function body), and a call in a conditional branch (`busy ? wrap(x) : e => {…}`)
+  is not a parameter list with a return type. `var` hoists past every block that is not a function body.
+  When it passes a block whose kind the scan cannot decide — a labeled block, a block after `}` or after a
+  line without a semicolon (including a call line), a method whose `{` is on the next line, a class or
+  object body — its value is applied nowhere: its uses, and uses of a same-name block declaration between
+  it and the function body (which it would win over if that block were a function body), are counted in
+  `js-binding-scope:` instead of attributed to it or to an outer binding. A `var` that redeclares a
+  parameter of its function is treated the same way (before the declaration the value is the argument).
+  A parameter list whose head the scan cannot decide (`wrap(M)` followed by a `{` line, `c ? (x): T => {`)
+  hides outer bindings only tentatively: uses that would otherwise reach a module binding or an import
+  are counted. A name redeclared in the same scope with a different module, or reassigned, is not
+  attributed (its initializers are counted in `js-binding-scope:`, as before for reassignment).
+  Reassignment now also covers compound assignment (`&&=`, `||=`, `+=` and the rest), `++`/`--`,
+  destructuring assignment (`({ M } = mocks)`, `[a, M] = pair`, `for ([k, M] of pairs)`) and a bare `for
+  (M of xs)` target, which used to leave a false `A.go`; a parameter pattern's default (`function f({ M }
+  = {})`) is not an assignment. A reassignment in a function declared earlier in the file now also
+  clears a later declaration, and reassignments are resolved again once all declarations are known, so
+  an assignment taken by a `var` hoisted later in the same function no longer clears the outer binding.
+  An assignment to a parameter does not clear outer bindings. Where the target is not certain — after a
+  `for` header declaration whose body is not a block (the scan widens that declaration to the enclosing
+  block instead of finding the end of the body statement), inside an undecided block or beyond an
+  undecided parameter list — the outer binding is cleared and its uses are counted. Uses whose value the
+  scope cannot decide — a `var` read outside its declaring block, or a name after such a widened `for`
+  declaration, including a call that may go through an import — are not attributed and are counted in
+  `js-binding-scope:`, whose message now also names redeclared bindings and uses outside the block a
+  declaration is scoped to. A name whose scope ranges cannot be told apart (overlapping or too deeply
+  widened) has its module uses counted instead of dropped.
   Escape counting follows the same scopes, so a same-name use in another function is no longer counted
   as a module reference. A local `NativeModules`, Expo lookup API or `require` stand-in declared with
   `const`/`let`/`var` now changes the global reading only inside its scope (function and class
@@ -121,9 +140,14 @@
   `NativeModules` import: a test helper's `const NativeModules = mock` used to yield a bare registry fact
   for its own declarator and false facts for its accesses. `const { A } = NativeModules` now produces
   `module-import` facts and bindings only when `NativeModules` at that position is the react-native
-  registry: destructuring a same-name parameter or local stand-in yields nothing (it used to yield false
-  facts), and destructuring a `NativeModules` imported from another module counts each name in
-  `unattributed-js-native-modules:` like a member access. In a registry pattern, a nested target
+  registry and the initializer's value is the registry itself (`= NativeModules`, a `|| {}`/`?? {}`
+  fallback or an `as` assertion): destructuring a same-name parameter or local stand-in yields nothing
+  (it used to yield false facts), destructuring a `NativeModules` imported from another module counts
+  each name in `unattributed-js-native-modules:` like a member access, and `const { getConstants } =
+  NativeModules.PlatformConstants` destructures members of that module — the member access yields the
+  `PlatformConstants` fact and the destructured module value is counted (it used to yield a false
+  `module-import getConstants`, and `t2.x()` after `const { take: t2 } = NativeModules.Camera` a false
+  `take.x`). In a registry pattern, a nested target
   (`{ Camera: { take } }`) keeps the `Camera` fact and counts the destructured module in
   `js-binding-scope:`, and a computed key (`{ [name]: M }`) is a dynamic fact like `NativeModules[name]`.
   Lookups stay near-linear for many same-name declarations, blocks and nesting levels. Bridge facts and
@@ -142,7 +166,7 @@
   when a declarator follows (a name followed by `=`, `,`, `;`, `:`, `!`, `of`, `in`, a closing bracket or
   a line break, or a pattern followed by `=`, `:`, `of`, `in`), so an object key (`{ var: 1 }`),
   `as const`, `const enum` and JSX text (`We will let you know when {name} is ready`) no longer declare
-  names that hide an outer binding. Destructuring patterns declare only their binding names: property
+  names that hide an outer binding; `const enum` member names are not counted as module references. Destructuring patterns declare only their binding names: property
   keys of nested patterns (`{ Haptics: { enabled } }` declares `enabled`) and a pattern's type
   annotation (`const { a }: { Haptics?: boolean } = props`) are not declarations.
 
