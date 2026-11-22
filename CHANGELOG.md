@@ -25,9 +25,9 @@
   fixed text must match the `js-binding-scope:` prefix instead. Real app sources nearly always import
   packages and keep the line, now with counts. The count also surfaces gaps that were silent before:
   the `NativeModules.X ? NativeModules.X : fallback` library template,
-  `new NativeEventEmitter(NativeModules.X)`, `NativeModules.X!.m()` and `NativeModules.X?.m?.()` calls,
-  and declarations inside function bodies of `const`/`let`/`var` initializers, which the scan does not
-  collect.
+  `new NativeEventEmitter(NativeModules.X)`, `NativeModules.X!.m()` and `NativeModules.X?.m?.()` calls.
+  (Declarations inside function bodies of `const`/`let`/`var` initializers, which this count first
+  surfaced, are now collected; see Fixed.)
 
 - persistence joins report `case-folded-relations:` (consumer limitation) when relation-level
   declarations with different spellings fold into one join key, such as `public.Users` and
@@ -116,6 +116,16 @@
   limitation counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
   react-native-vision-camera 5.2.4, expo-haptics 14.1.4, expo-camera 58.0.14, react-native-svg 15.16.1
   and six others) are unchanged; they bind native modules at module scope.
+
+- `extract-js` collects declarations, reassignments and exports inside function bodies, object literals
+  and class bodies of `const`/`let`/`var` initializers. `const Screen = () => { const Camera =
+  NativeModules.Camera; Camera.take(); }` used to skip the body: the call was not attributed (it was
+  counted in `js-binding-scope:`), `const { Torch } = NativeModules` inside it produced no `module-import`
+  fact, and a reassignment inside it (`const reset = () => { M = other(); }`) did not invalidate the outer
+  binding. Function components and hooks now yield the same facts as `function` declarations. The scan
+  pauses the declaration at the body and resumes it after the closing brace without recursion, so deeply
+  nested bodies do not exhaust the call stack. A `const`/`let`/`var` keyword used as an object key is not
+  read as a declaration.
 
 - `extract-js` no longer records names inside a declaration's initializer as local declarations. An
   object literal or function body in an initializer (`const api = { cam: NativeModules.Camera }`,

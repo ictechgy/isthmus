@@ -538,6 +538,41 @@ test('같은 함수에서 다른 모듈로 다시 선언되거나 블록 밖에�
   }
 });
 
+test('선언 초기값의 함수 본문 안 선언을 수집해 함수형 컴포넌트·훅의 호출을 귀속한다', () => {
+  // 전에는 `const Screen = () => { … }`의 본문을 건너뛰어 그 안의 바인딩 호출이 귀속되지 않았고, 본문 안 구조 분해는
+  // module-import 사실도 내지 않았다.
+  const document = assemble({
+    'src/Screen.tsx': [
+      "import { NativeModules } from 'react-native';",
+      'const Screen = () => {',
+      '  const Camera = NativeModules.Camera;',
+      '  const { Torch } = NativeModules;',
+      '  const onPress = useCallback(() => { const Flash = NativeModules.Flash; Flash.fire(); Torch.on(); }, []);',
+      '  Camera.take();',
+      '  return null;',
+      '};',
+      'export const useVibrate = () => { const Haptics = NativeModules.Haptics; return () => Haptics.buzz(); };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import Camera@3',
+    'module-import Torch@4',
+    'module-import Flash@5',
+    'method-invoke Flash.fire@5',
+    'method-invoke Torch.on@5',
+    'method-invoke Camera.take@6',
+    'module-import Haptics@9',
+    'method-invoke Haptics.buzz@9',
+  ]);
+  assert.equal(bindingScope(document), undefined);
+  // 본문 안의 대역 선언도 그 본문에서만 전역 레지스트리를 가린다 — 전에는 본문을 읽지 않아 대역 접근이 거짓 Fake
+  // 사실이 됐다.
+  const shim = assemble({
+    'src/setup.js': 'const setup = () => { const NativeModules = mockModules(); NativeModules.Fake.x(); };\nNativeModules.Camera.take();',
+  });
+  assert.deepEqual(factLines(shim), ['module-import Camera@2', 'method-invoke Camera.take@2']);
+});
+
 test('범위 밖 참조는 그 위치의 이름이 모듈 바인딩일 때만 센다', () => {
   // 다른 함수의 같은 이름은 그 위치의 모듈 값이 아니다 — 전에는 파일 전역 이름으로 보고 b의 인자도 셌다.
   const document = assemble({

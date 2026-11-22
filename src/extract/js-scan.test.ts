@@ -792,6 +792,8 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     "const { requireNativeModule } = require('expo-modules-core');",
     'jest.mock(name, () => ({ requireNativeModule: mock }));',
     'export { requireNativeModule };',
+    // 선언 초기값의 함수 본문 안 선언도 수집하는 바인딩이다(전에는 본문을 건너뛰어 이탈로 셌다).
+    'const Screen = () => { const Cam = NativeModules.Cam; };',
   ]) {
     assert.equal(scanJsSource(source).counts.escapedModuleReferences, 0, source);
   }
@@ -819,7 +821,6 @@ test('모듈 값이 바인딩 추적을 벗어난 위치만 범위 밖 참조로
     'if ((cached = NativeModules.Cam)) {}',
     "const Cam = TurboModuleRegistry.get<Spec>('Cam') as Spec | null;",
     "const Cam = await requireNativeModule('Cam');",
-    'const Screen = () => { const Cam = NativeModules.Cam; };',
     "import { NativeModules as NM } from 'react-native';\nconst { Cam } = NM;",
     'const registry = TurboModuleRegistry;',
     'const load = requireNativeModule;',
@@ -1176,4 +1177,40 @@ test('멤버 호출 후보는 호출 위치에서 선언이 묶은 모듈 값을
     ['Shared', 's', null],
     ['M', 'y', { name: 'B' }],
   ]);
+});
+
+test('선언 초기값 본문을 읽은 뒤 같은 선언의 뒤 선언자와 export를 이어 수집한다', () => {
+  const scan = scanJsSource([
+    "export const run = () => { const Inner = requireNativeModule('Inner'); Inner.go(); }, Cam = requireNativeModule('Cam');",
+    'const wrapped = memo(function () { const Local = NativeModules.Local; Local.ping(); }), Late = NativeModules.Late;',
+    'Cam.take(); Late.tick();',
+  ].join('\n'));
+  assert.deepEqual(scan.exports.named.get('Cam'), { name: 'Cam' });
+  assert.equal(scan.exports.named.has('Inner'), false);
+  assert.deepEqual(scan.memberCalls.map((call) => `${call.binding && 'name' in call.binding ? call.binding.name : '?'}.${call.method}`),
+    ['Inner.go', 'Local.ping', 'Cam.take', 'Late.tick']);
+});
+
+test('초기값의 객체 리터럴 키로 쓴 선언 키워드는 선언이 아니다', () => {
+  // 순회가 초기값의 객체 리터럴도 읽으므로 `var:` 키를 선언으로 읽으면 뒤 속성·메서드 본문 이름이 선언이 된다.
+  const scan = scanJsSource("const M = NativeModules.A;\nconst config = { var: 1, M, run() { M.go(); }, const: 2 };");
+  assert.deepEqual(scan.memberCalls.map((call) => [call.method, call.binding ?? null]), [['go', { name: 'A' }]]);
+});
+
+test('초기값 본문 안의 재대입은 그 위치를 차지한 바인딩을 지운다', () => {
+  // 전에는 본문을 건너뛰어 재대입을 보지 못하고 바깥 호출을 First로 귀속했다.
+  const scan = scanJsSource("let M = requireNativeModule('First');\nconst reset = () => { M = other(); };\nM.call();");
+  assert.deepEqual(scan.memberCalls, []);
+  assert.equal(scan.counts.escapedModuleReferences, 1);
+});
+
+test('깊게 중첩된 선언 초기값 본문과 블록도 호출 스택을 넘기지 않고 안쪽 바인딩을 귀속한다', () => {
+  const depth = 10_000;
+  for (const source of [
+    `${'const a = () => {'.repeat(depth)}const M = NativeModules.X; M.go();${'};'.repeat(depth)}`,
+    `${'{ const M = NativeModules.X; '.repeat(depth)}M.go();${'}'.repeat(depth)}`,
+  ]) {
+    const scan = scanJsSource(source);
+    assert.deepEqual(scan.memberCalls.map((call) => [call.method, call.binding ?? null]), [['go', { name: 'X' }]]);
+  }
 });

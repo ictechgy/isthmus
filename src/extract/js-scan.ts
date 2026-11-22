@@ -167,6 +167,22 @@ interface DestructuredSource {
   readonly sourceIndex: number;
 }
 
+/**
+ * 초기값의 `{…}`(함수 본문·객체 리터럴·클래스 본문)를 바깥 순회가 읽는 동안 멈춰 둔 선언문이다. 바깥 순회가
+ * 닫는 `}`에 오면 선언을 그 뒤부터 이어 읽는다 — 본문 안의 선언·재대입·export를 최상위 코드와 같은 규칙으로
+ * 수집하면서 재귀 없이(깊게 중첩된 본문에서도 호출 스택을 쓰지 않고) 원문 순서를 지킨다.
+ */
+interface SuspendedDeclaration {
+  /** 선언 키워드 위치다. */
+  readonly start: number;
+  /** 멈춘 `{`의 짝 `}` 위치다. */
+  readonly close: number;
+  /** 멈춘 위치의 선언 안 괄호 깊이다. */
+  readonly depth: number;
+  /** `export const …`의 선언인지다. */
+  readonly exported: boolean;
+}
+
 interface ScanContext {
   readonly source: string;
   readonly tokens: readonly JsToken[];
@@ -176,6 +192,8 @@ interface ScanContext {
   readonly scopes: ScopedBindingTable;
   /** 동결한 표의 이름별 모듈 바인딩 요약이다(JsFileScan.bindings). 수집 중에는 비어 있다. */
   moduleBindings: ReadonlyMap<string, BoundName>;
+  /** 바깥 순회가 본문을 읽는 동안 멈춘 선언문 더미다(닫는 위치가 안쪽일수록 위). */
+  readonly suspendedDeclarations: SuspendedDeclaration[];
   readonly imports: ScannedImport[];
   /**
    * `imports`를 로컬 이름별로 나눈 색인이다(각 목록은 수집 순서). 식별자마다 import
@@ -321,6 +339,7 @@ function createBoundContext(source: string): ScanContext {
     memberCalls: [],
     scopes: new ScopedBindingTable(),
     moduleBindings: new Map(),
+    suspendedDeclarations: [],
     imports: [],
     importsByLocalName: new Map(),
     namedExports: new Map(),
@@ -548,10 +567,16 @@ function eventDeclarations(tokens: readonly JsToken[]) {
  *
  * 호출 해석보다 선언 수집을 먼저 끝내야 선언보다 앞선 호출 위치도 같은
  * 바인딩으로 해석된다(TDZ 오류 코드는 실행 시 죽으므로 정적 탐지엔 무해하다).
+ * 선언 초기값의 함수 본문도 이 순회가 읽는다(collectDeclaration이 멈춰 둔 선언을 본문 끝에서 이어 읽는다).
  */
 function collectBindings(context: ScanContext): void {
   const { tokens } = context;
   for (let index = 0; index < tokens.length; index++) {
+    const resumed = resumeDeclaration(context, index);
+    if (resumed !== undefined) {
+      index = resumed;
+      continue;
+    }
     const token = tokens[index]!;
     if (token.kind === 'keyword' && token.text === 'import') {
       index = collectImport(context, index);
@@ -561,10 +586,7 @@ function collectBindings(context: ScanContext): void {
       index = collectExport(context, index);
       continue;
     }
-    if (
-      token.kind === 'keyword' &&
-      (token.text === 'const' || token.text === 'let' || token.text === 'var')
-    ) {
+    if (isDeclarationKeyword(tokens, index)) {
       index = collectDeclaration(context, index);
       continue;
     }
@@ -617,6 +639,29 @@ function collectBindings(context: ScanContext): void {
       }
     }
   }
+}
+
+/**
+ * 위치 `index`가 바깥 순회가 멈춰 둔 선언문의 본문 끝이면 그 선언을 이어 읽고 끝 위치를 돌려준다. 순회가 본문
+ * 끝을 건너뛰었으면(끝나지 않은 타입 주석이 파일 끝까지 간 경우 등) 그 선언은 이어 읽지 않는다.
+ */
+function resumeDeclaration(context: ScanContext, index: number): number | undefined {
+  const pending = context.suspendedDeclarations;
+  while (pending.length > 0 && pending.at(-1)!.close < index) pending.pop();
+  const top = pending.at(-1);
+  if (top === undefined || top.close !== index) return undefined;
+  pending.pop();
+  return collectDeclaration(context, top.start, top.exported, top);
+}
+
+/**
+ * `const`·`let`·`var` 키워드가 선언문을 시작하는지 본다. 속성 이름(`obj.var`)과 객체 리터럴 키(`{ const: 1 }`) —
+ * 순회가 초기값의 객체 리터럴도 읽으므로 — 는 선언이 아니다.
+ */
+function isDeclarationKeyword(tokens: readonly JsToken[], index: number): boolean {
+  const token = tokens[index]!;
+  return token.kind === 'keyword' && (token.text === 'const' || token.text === 'let' || token.text === 'var') &&
+    tokens[index + 1]?.text !== ':' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '');
 }
 
 /** `import ... from 'spec'` 절의 로컬 바인딩을 기록한다. */
@@ -817,16 +862,23 @@ function collectExport(context: ScanContext, start: number): number {
  * 본문 이름을 로컬 선언으로 기록하면 그 이름(`NativeModules` 등)의 해석이 파일 전체에서 바뀐다.
  *
  * 선언자마다 블록 범위 표에 선언을 넣는다 — 모듈 값·문자열 상수가 아니어도 이름을 차지해 바깥 바인딩을 가린다.
- * `exported`면 모듈 값에 묶은 이름을 named export로 남긴다.
+ * 초기값의 `{…}`(함수 본문·객체 리터럴)를 만나면 선언을 멈추고 `{` 위치를 돌려준다. 바깥 순회가 본문을 최상위
+ * 코드처럼 읽고 짝 `}`에서 `resume` 상태로 다시 부른다. `exported`면 모듈 값에 묶은 이름을 named export로 남긴다.
  */
-function collectDeclaration(context: ScanContext, start: number, exported = false): number {
+function collectDeclaration(
+  context: ScanContext,
+  start: number,
+  exported = false,
+  resume?: SuspendedDeclaration,
+): number {
   const { tokens } = context;
   const scope = declarationScope(tokens, start);
-  let index = start + 1;
+  let index = resume === undefined ? start + 1 : resume.close + 1;
   // 선언자의 `,`는 깊이 0에만 온다 — `f(x, y = z)` 인자 안의 `,`는 무관하다.
-  let depth = 0;
+  let depth = resume?.depth ?? 0;
   // 지금 위치가 선언자의 대상(이름·패턴) 구간인지다. 깊이 0의 `=`·`of`·`in`에서 끝나고 `,`에서 다시 시작한다.
-  let target = true;
+  // 멈춘 곳은 항상 초기값 안이다.
+  let target = resume === undefined;
   while (index < tokens.length) {
     const token = tokens[index]!;
     if (token.text === ';' && depth === 0) return index;
@@ -921,9 +973,10 @@ function collectDeclaration(context: ScanContext, start: number, exported = fals
       const close = findMatching(tokens, index, '{', '}');
       if (close === undefined) return index;
       if (!target) {
-        // 초기값 안의 객체 리터럴·함수 본문이다. 구조 분해 패턴이 아니므로 이름을 기록하지 않는다.
-        index = close + 1;
-        continue;
+        // 초기값 안의 객체 리터럴·함수 본문이다. 구조 분해 패턴이 아니므로 이 선언의 이름으로 기록하지 않고, 바깥
+        // 순회가 본문의 선언·재대입을 최상위 코드처럼 읽도록 선언을 멈춘다.
+        context.suspendedDeclarations.push({ start, close, depth, exported });
+        return index;
       }
       // `const { A, ... } = NativeModules`인지 확인한다.
       const source = tokens[close + 2];
