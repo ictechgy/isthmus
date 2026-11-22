@@ -317,6 +317,87 @@ function skipInterpolation(source: string, start: number): number {
   return cursor;
 }
 
+/**
+ * 보간 코드 추출이 지금 읽는 문맥이다. 템플릿 글자 부분, 보간 본문(중괄호 깊이와 그 보간의 코드 조각 번호), 보간 안의
+ * 따옴표 문자열을 구분한다.
+ */
+type CodeFrame =
+  | { readonly kind: 'template' }
+  | { readonly kind: 'interpolation'; depth: number; readonly segment: number }
+  | { readonly kind: 'quoted'; readonly quote: string; readonly segment: number };
+
+/**
+ * 보간이 있는 템플릿 토큰 원문(여는 백틱부터)에서 보간 본문의 코드를 조각마다 돌려준다 — 중첩 템플릿 안의 보간도 따로
+ * 한 조각이다. 템플릿 글자 부분은 어느 조각에도 넣지 않고, 보간 안의 중첩 템플릿 자리는 공백 하나로 둔다. 그래서 원문의
+ * 글자는 많아야 한 조각에 들어가 깊게 중첩된 템플릿도 길이에 선형이다.
+ *
+ * 경계는 토크나이저(readTemplate·skipInterpolation)와 같은 규칙으로 찾는다 — 보간 안의 따옴표 문자열과 주석은 중괄호
+ * 깊이에 섞지 않고 조각에 그대로 둔다(조각을 다시 토큰화하면 문자열·주석으로 읽힌다). 닫히지 않은 보간은 원문 끝까지다.
+ */
+export function templateInterpolationCode(text: string): string[] {
+  const segments: string[][] = [];
+  const frames: CodeFrame[] = [{ kind: 'template' }];
+  let cursor = text.startsWith('`') ? 1 : 0;
+  while (cursor < text.length && frames.length > 0) {
+    const frame = frames[frames.length - 1]!;
+    const char = text[cursor]!;
+    if (frame.kind === 'template') {
+      if (char === '\\') {
+        cursor += 2;
+      } else if (char === '`') {
+        frames.pop();
+        cursor++;
+      } else if (char === '$' && text[cursor + 1] === '{') {
+        frames.push({ kind: 'interpolation', depth: 1, segment: segments.push([]) - 1 });
+        cursor += 2;
+      } else {
+        cursor++;
+      }
+      continue;
+    }
+    const segment = segments[frame.segment]!;
+    if (frame.kind === 'quoted') {
+      // 따옴표 문자열은 줄바꿈에서도 닫지 않는다(skipInterpolation과 같다).
+      if (char === '\\') {
+        segment.push(text.slice(cursor, cursor + 2));
+        cursor += 2;
+        continue;
+      }
+      if (char === frame.quote) frames.pop();
+      segment.push(char);
+      cursor++;
+      continue;
+    }
+    if (char === '{') {
+      frame.depth++;
+    } else if (char === '}') {
+      frame.depth--;
+      if (frame.depth === 0) {
+        frames.pop();
+        cursor++;
+        continue;
+      }
+    } else if (char === '\'' || char === '"') {
+      frames.push({ kind: 'quoted', quote: char, segment: frame.segment });
+    } else if (char === '`') {
+      // 중첩 템플릿은 글자 부분을 버리고 자리만 남긴다 — 그 안의 보간은 새 조각이 된다.
+      segment.push(' ');
+      frames.push({ kind: 'template' });
+      cursor++;
+      continue;
+    } else if (char === '/' && (text[cursor + 1] === '/' || text[cursor + 1] === '*')) {
+      const close = text[cursor + 1] === '/' ? text.indexOf('\n', cursor) : text.indexOf('*/', cursor + 2);
+      const end = close === -1 ? text.length : text[cursor + 1] === '/' ? close : close + 2;
+      segment.push(text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+    segment.push(char);
+    cursor++;
+  }
+  return segments.map((parts) => parts.join(''));
+}
+
 /** 이스케이프 시퀀스 하나를 해석한다. 알 수 없는 형태는 원문 그대로 둔다. */
 function cookEscape(
   source: string,

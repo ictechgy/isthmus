@@ -1295,3 +1295,148 @@ test('이름 있는 함수식·클래스식의 이름은 그 본문 안에서 �
   assert.deepEqual(factLines(crossed), ['module-import C@2']);
   assert.ok(bindingScope(crossed)?.startsWith('js-binding-scope: '), crossed.limitations.join('\n'));
 });
+
+test('레지스트리 출처는 이름이 아니라 그 위치를 차지한 선언의 것이다', () => {
+  // 기록된 결함 B2: 레지스트리 판정이 `require('react-native')` 구조 분해·모듈 객체 구조 분해를 이름으로 찾아, 파일의 한
+  // 범위에 레지스트리 선언이 있으면 다른 범위의 같은 이름 선언(jest 대역 `const NativeModules = { Camera: … }`, 블록 안
+  // `var NativeModules = mock`, 로컬 별칭)의 접근도 레지스트리로 읽어 거짓 Camera.take를 냈다. 선언 범위 밖의 별칭(다른 함수의
+  // `NM`)도 레지스트리로 읽었다.
+  const document = assemble({
+    'src/a.js': [
+      "const { NativeModules } = require('react-native');",
+      'function testHelper() {',
+      '  const NativeModules = { Camera: { take() {} } };',
+      '  NativeModules.Camera.take();',
+      '  const { Torch } = NativeModules;',
+      '  Torch.on();',
+      '}',
+      'function hoisted() {',
+      '  if (ready) { var NativeModules = makeMock(); }',
+      '  NativeModules.Haptics.go();',
+      '}',
+      'NativeModules.Real.call();',
+    ].join('\n'),
+    'src/b.js': [
+      "import * as RN from 'react-native';",
+      'function a() { const { NativeModules: NM } = RN; NM.A.a(); }',
+      'function b() { const NM = mock; NM.B.b(); }',
+      'function c() { NM.C.c(); }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import Real@12', 'method-invoke Real.call@12', 'module-import A@2', 'method-invoke A.a@2',
+  ]);
+  // 확실히 레지스트리가 아닌 위치라 세지 않는다(b.js의 RN 네임스페이스 import만 출처를 모르는 입구로 센다).
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 0 native module references '), bindingScope(document));
+  // 레지스트리 선언이 정하지 못하게 관여하는 위치(블록 밖의 `var`, 라벨 블록 안 대역 `var`, 재대입한 바인딩, 같은 범위의 다른
+  // 값 재선언)의 접근은 사실로도 조용한 누락으로도 두지 않고 센다(전에는 모두 이름으로 레지스트리라 사실을 냈다).
+  for (const [text, count] of [
+    ["function f() {\n  if (x) { var { NativeModules } = require('react-native'); }\n  NativeModules.H.h();\n}", 1],
+    ["const { NativeModules } = require('react-native');\nfunction f() {\n  lbl: { var NativeModules = mock; }\n  NativeModules.G.g();\n}", 1],
+    // 값이 살아남지 못한 레지스트리 선언, 대입 대상, 뒤 접근 셋이다(대입한 값이 레지스트리인지 스캔은 모른다).
+    ["let { NativeModules } = require('react-native');\nNativeModules = mock;\nNativeModules.F.f();", 3],
+    // 같은 함수의 레지스트리가 아닌 `var` 재선언 앞 접근은 실제로 레지스트리일 수 있다 — 그 선언을 센다.
+    ["function f() {\n  var { NativeModules } = require('react-native');\n  NativeModules.C.c();\n  var NativeModules = mock;\n}", 1],
+    // 잠정 매개변수 목록(`wrap(NativeModules)` 뒤 다음 줄 블록) 안, 본문이 블록이 아닌 for 머리 선언 뒤의 접근은 그 목록이 없으면
+    // 레지스트리 선언에 닿는다 — 인자와 그 접근 둘이다(오라클 레지스트리 모드가 찾은 경우).
+    ["function f() {\n  let { NativeModules } = require('react-native');\n  wrap(NativeModules)\n  {\n    for (const NativeModules of xs)\n      noop();\n    NativeModules.Cam.go();\n  }\n}", 2],
+  ] as const) {
+    const undecided = assemble({ 'src/c.js': text });
+    assert.deepEqual(undecided.facts, [], text);
+    assert.ok(bindingScope(undecided)?.startsWith(`js-binding-scope: ${count} native module references `), text);
+  }
+  // 각 선언은 자기 출처로 판정한다 — 레지스트리 선언의 범위 안 접근, `require('react-native').NativeModules` 초기값, 뒤에
+  // 온 react-native 기본 import의 모듈 객체에서 꺼낸 레지스트리는 그대로 사실이다.
+  const kept = assemble({
+    'src/d.js': [
+      'function real() { const { NativeModules } = require(\'react-native\'); NativeModules.Torch.on(); }',
+      'function fake() { const NativeModules = require(\'./mocks\'); NativeModules.Fake.x(); }',
+      'const N = () => { const NativeModules = require(\'react-native\').NativeModules; NativeModules.L.l(); };',
+      'const { NativeModules: Late } = RN;',
+      'Late.K.k();',
+      "import RN from 'react-native';",
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(kept), [
+    'module-import Torch@1', 'method-invoke Torch.on@1', 'module-import L@3', 'method-invoke L.l@3',
+    'module-import K@5', 'method-invoke K.k@5',
+  ]);
+});
+
+test('템플릿 보간 안의 재대입은 바인딩을 지우고 보간 안의 모듈 쓰임은 센다', () => {
+  // 기록된 결함 S2: 보간은 토큰 하나라 `` `${M = other}` `` 뒤의 `M.take()`가 거짓 Camera.take였고, `` `${M.take()}` ``의 호출은
+  // 귀속도 계수도 없이 사라졌다(보간이 브리지 API 이름을 언급할 때만 하한으로 셌다).
+  for (const [line, count] of [
+    ['const s = `${M = other}`;', 3],
+    ['log(`a${b}c${`${M += 1}`}`);', 3],
+    ['const t = `${(() => { M = other; })()}`;', 3],
+    ['const u = `${M++}`;', 3],
+  ] as const) {
+    const document = assemble({
+      'src/a.js': `import { NativeModules } from 'react-native';\nlet M = NativeModules.Camera;\n${line}\nM.take();`,
+    });
+    assert.deepEqual(factLines(document), ['module-import Camera@2'], line);
+    // 초기값·보간 안 M·뒤 호출이다.
+    assert.ok(bindingScope(document)?.startsWith(`js-binding-scope: ${count} native module references `), line);
+  }
+  const used = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      "import Shared from './shared';",
+      'const M = NativeModules.Camera;',
+      'log(`photo ${M.take()} ${Shared.go()}`);',
+      // 멤버 증감·호출의 대상은 바인딩 자체를 바꾸지 않는다.
+      'log(`n=${M.count++} ${M.reset()}`);',
+      'M.close();',
+    ].join('\n'),
+    'src/shared.js': "export default requireNativeModule('Shared');",
+  });
+  assert.deepEqual(factLines(used), [
+    'module-import Camera@3', 'method-invoke Camera.close@6', 'module-import Shared@1',
+  ]);
+  // 보간 안 M 쓰임 셋과 상대 import Shared 하나다.
+  assert.ok(bindingScope(used)?.startsWith('js-binding-scope: 4 native module references '), bindingScope(used));
+  // 보간 안 대입이 확실한 매개변수의 것이면 바깥 바인딩은 그대로다. 대입 연산자가 없으면 지우지 않는다.
+  const kept = assemble({
+    'src/c.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.Camera;',
+      'function f(M) { return `${M = 1}`; }',
+      'const label = `${M === other ? "a" : "b"}`;',
+      'M.take();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(kept), ['module-import Camera@2', 'method-invoke Camera.take@5']);
+});
+
+test('속성 자리의 function·이름 뒤 다음 줄 블록은 함수 본문이 아니다', () => {
+  // 기록된 결함 b07: `foo.function(M)` 뒤 다음 줄 `{`의 속성 이름 `function`을 함수 키워드로 읽어 블록 안 M을 확실히 가렸다
+  // (참 Camera.take가 조용히 사라졌다). 같은 오인으로 그 블록의 `var`를 함수 본문에 가둬 블록 뒤 쓰임을 바깥 Camera로
+  // 귀속했다(거짓 사실). 함수·메서드 이름은 `.` 뒤에 오지 않으므로 속성 자리 이름 뒤 괄호는 멤버 호출이다.
+  for (const head of ['foo.function(M)', 'foo?.function(M)', 'foo.bar(M)', 'this.get(M)']) {
+    const document = assemble({
+      'src/a.js': `import { NativeModules } from 'react-native';\nconst M = NativeModules.Camera;\n${head}\n{\n  M.take();\n}`,
+    });
+    assert.deepEqual(factLines(document), ['module-import Camera@2', 'method-invoke Camera.take@5'], head);
+  }
+  const hoisted = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.Camera;',
+      'function g() {',
+      '  foo.function(x)',
+      '  {',
+      '    var M = makeFake();',
+      '  }',
+      '  M.take();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(hoisted), ['module-import Camera@2']);
+  assert.ok(bindingScope(hoisted)?.startsWith('js-binding-scope: '), hoisted.limitations.join('\n'));
+  // 클래스·객체의 `function` 이름 메서드는 그대로 매개변수가 가린다.
+  const method = assemble({
+    'src/c.js': "import { NativeModules } from 'react-native';\nconst M = NativeModules.Camera;\nclass K {\n  function(M) {\n    M.take();\n  }\n}",
+  });
+  assert.deepEqual(factLines(method), ['module-import Camera@2']);
+});

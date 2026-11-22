@@ -90,6 +90,47 @@
 
 ### Fixed
 
+- `extract-js` decides whether `NativeModules` (or an alias destructured as `{ NativeModules: NM }`) is the
+  react-native registry from the declaration that covers each position instead of by name. One
+  `const { NativeModules } = require('react-native')` (or `const { NativeModules } = RN` from the react-native
+  module object) anywhere in a file used to make every same-name declaration the registry: a jest-style stand-in
+  `const NativeModules = { Camera: { take() {} } }` in a test helper, a `var NativeModules = mock` in a block,
+  a local `const NM = mock`, and `const { Torch } = NativeModules` destructured from such a stand-in produced
+  false `module-import`/`method-invoke` facts (which surface as false `module-import-without-export` and
+  `unhandled-invocation` errors), and an alias read in another function where it is not declared was read as
+  the registry too. A declaration is now the registry only when its own initializer or destructuring source is
+  `require('react-native')` (for the name `NativeModules`) or the react-native module object (for the property
+  `NativeModules`), and a position reads the registry only when the declaration that covers it is one. The
+  same block scope, `var` hoisting, parameter and reassignment rules as module bindings apply. Where a registry
+  declaration applies undecidedly, the access is counted in `js-binding-scope:` instead of attributed (each used
+  to yield facts): a `var` read outside its declaring block, a name after a `for` header declaration whose body
+  is not a block, and a reassigned registry binding (`NativeModules = mock` — the scan does not know what was
+  assigned; this case also used to yield a dynamic `NativeModules` fact for the assignment target), and a
+  registry declaration whose value does not survive (a same-scope `var` redeclaration with another value) is
+  counted once. A registry destructuring (`const { A } = NativeModules`) is decided while declarations are
+  collected, as other bindings are: after a same-name `var` whose scope is undecided, or outside the declaring
+  block of a registry `var`, it yields no facts and the registry value is counted. A function or class named
+  `NativeModules` hides the global registry reading in the whole file. Output for the 12 published packages
+  listed below is unchanged apart from the `js-binding-scope:` wording.
+
+- `extract-js` reads names inside template interpolations. The lexer keeps a template as one token, so
+  `` `${M = other}` `` followed by `M.take()` yielded a false `method-invoke`, and `` `${M.take()}` `` disappeared
+  without a count (only an interpolation that mentions a bridge API name was counted, as a lower-bound entry).
+  Each interpolation body is now tokenized again. When it contains an assignment or increment operator, every
+  name in it that could be the target (not a member or call base such as the `M` of `M.count++`) is treated as a
+  reassignment whose target is uncertain, so that binding is not attributed and its module uses are counted.
+  Uses of module bindings and relative imports inside an interpolation are counted in `js-binding-scope:`; calls
+  there are not attributed. Registry and lookup API names inside an interpolation stay lower-bound entries. The
+  message now also names uses inside a template interpolation (the prefix is unchanged). Deeply nested templates
+  stay linear.
+
+- `extract-js` no longer reads a property name as a function head. `foo.function(M)` followed by a `{` on the
+  next line was read as a certain `function` head: the block's `M` was hidden as a parameter (a true call there
+  disappeared without a count) and a `var` in that block was confined to it (a false fact after the block). A
+  name after `.` or `?.` followed by `(…)` is a member call — function and method names never follow a `.` — so
+  `foo.bar(M)` followed by a `{` line is no longer a tentative parameter list either, and the call inside that
+  block is attributed instead of counted.
+
 - `extract-js` resolves declaration bindings and one-level string constants by block scope instead of
   one file-wide map. When two function bodies, blocks or methods bound the same name to different
   native modules (`function A() { const M = NativeModules.A; M.x(); }` and

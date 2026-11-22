@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tokenizeJsSource } from './lexer.ts';
+import { templateInterpolationCode, tokenizeJsSource } from './lexer.ts';
 
 /**
  * 렉서가 쓰는 문자열 연산(첨자·length·slice·codePointAt·startsWith·indexOf)만 흉내 내는 대역이다 — 토큰화 작업량을
@@ -266,4 +266,38 @@ test('증감 연산 뒤의 /는 정규식이 아니라 나눗셈이다', () => {
       ['identifier', 'total'],
     ],
   );
+});
+
+test('보간 본문 코드를 조각마다 꺼내고 중첩 템플릿의 글자 부분은 빼며 경계는 토크나이저와 같다', () => {
+  const cases: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['`a${M = other}b${ N.take() }c`', ['M = other', ' N.take() ']],
+    // 보간 안 문자열·주석 속 중괄호·백틱은 경계가 아니고 조각에 그대로 남는다(다시 토큰화하면 문자열·주석이다).
+    ['`${ f("}") /* } ` */ + g(\'{\') }`', [' f("}") /* } ` */ + g(\'{\') ']],
+    ['`${ a // } `\n }`', [' a // } `\n ']],
+    // 중첩 템플릿의 글자 부분은 어느 조각에도 없고 자리는 공백 하나다. 그 안의 보간은 따로 한 조각이다.
+    ['`${ wrap(`x${M}y`) }`', [' wrap( ) ', 'M']],
+    ['`${ { a: 1 }.a }`', [' { a: 1 }.a ']],
+    // 이스케이프한 `${`는 보간이 아니고, 이스케이프한 백슬래시 뒤의 `${`는 보간이다.
+    ['`\\${x}`', []],
+    ['`\\\\${x}`', ['x']],
+    // 닫히지 않은 보간은 원문 끝까지다.
+    ['`${ M = other', [' M = other']],
+  ];
+  for (const [text, expected] of cases) {
+    assert.deepEqual(templateInterpolationCode(text), expected, text);
+    // 토크나이저가 같은 원문을 템플릿 토큰 하나로 읽는다(경계가 같다).
+    assert.equal(tokenizeJsSource(text)[0]?.text, text, text);
+  }
+});
+
+test('깊게 중첩된 템플릿의 보간 코드도 원문 길이에 선형으로 꺼낸다', () => {
+  // 조각마다 중첩 템플릿을 다시 꺼내면 중첩 깊이마다 안쪽 원문을 다시 읽어 이차다 — 원문 글자는 많아야 한 조각에 든다.
+  const depth = 20_000;
+  const text = `\`${'${ f(`'.repeat(depth)}\${M = x}${'`) }'.repeat(depth)}\``;
+  const { source, reads } = countingSource(text);
+  const segments = templateInterpolationCode(source);
+  assert.equal(segments.length, depth + 1);
+  assert.equal(segments[0], ' f( ) ');
+  assert.equal(segments.at(-1), 'M = x');
+  assert.ok(reads() <= 4 * text.length, `character reads ${reads()} for ${text.length} characters`);
 });

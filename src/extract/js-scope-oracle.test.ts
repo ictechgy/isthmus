@@ -41,10 +41,28 @@ interface OracleProgram {
   readonly invalid: boolean;
 }
 
-/** 본문 줄로 문서 원문을 만든다. */
-function programText(lines: readonly string[]): string {
-  return `import { NativeModules } from 'react-native';\n${lines.join('\n')}\n`;
+/**
+ * 생성기 선택이다. 둘 다 끄면 기존 고정 시드의 프로그램이 그대로다(난수 소비가 같다).
+ * - `extended`: 템플릿 보간 안 재대입·호출과 속성 자리 이름 뒤 다음 줄 블록(`foo.function(M)`)을 섞는다.
+ * - `registry`: 추적 이름이 레지스트리 `NativeModules`다 — 모듈 선언 자리에 react-native 레지스트리를 담은 선언
+ *   (`require('react-native')` 구조 분해·`.NativeModules` 초기값, react-native 모듈 객체 구조 분해)을, 호출 자리에
+ *   `NativeModules.Cam.go()`를 낸다. 어떤 선언도 차지하지 않은 위치는 import한 레지스트리다.
+ */
+interface OracleOptions {
+  readonly extended?: boolean;
+  readonly registry?: boolean;
 }
+
+/** 본문 줄로 문서 원문을 만든다. 레지스트리 모드는 같은 줄에 react-native 모듈 객체 import를 더한다(줄 번호 그대로). */
+function programText(lines: readonly string[], options: OracleOptions = {}): string {
+  const header = options.registry === true
+    ? "import { NativeModules } from 'react-native'; import * as RN from 'react-native';"
+    : "import { NativeModules } from 'react-native';";
+  return `${header}\n${lines.join('\n')}\n`;
+}
+
+/** 레지스트리 모드에서 선언·호출 값으로 쓰는 표지다(레지스트리를 담은 선언). */
+const REGISTRY = 'R';
 
 /**
  * 무작위 중첩 프로그램을 만든다 — 블록(제어문·`case` 절·라벨·`}`와 ASI 줄 뒤의 맨 블록)·함수(제네릭·기본값 있는
@@ -57,8 +75,17 @@ function programText(lines: readonly string[]): string {
  * let/const, 함수 범위 var, 매개변수, 재대입되면 값을 모름, 매개변수를 다시 선언한 var는 인자일 수 있음)으로 기준
  * 모듈을 정한다.
  */
-function generateProgram(random: () => number): OracleProgram {
+function generateProgram(random: () => number, options: OracleOptions = {}): OracleProgram {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!;
+  const registry = options.registry === true;
+  const extended = options.extended === true || registry;
+  /** 모듈 값 선언 한 줄이다 — 레지스트리 모드는 레지스트리를 담은 선언 꼴 중 하나다(값은 REGISTRY). */
+  const moduleDeclaration = (kind: string, module: string): string => (registry
+    ? pick([`${kind} M = require('react-native').NativeModules;`, `${kind} { M } = require('react-native');`,
+      `${kind} { M } = RN;`, `${kind} { NativeModules: M } = RN;`])
+    : `${kind} M = NativeModules.${module};`);
+  /** 선언한 값이다 — 레지스트리 모드의 모듈 값은 모두 레지스트리다. */
+  const declaredValue = (module: string): string => (registry ? REGISTRY : module);
   const lines: string[] = [];
   const calls: { readonly line: number; readonly scope: OracleScope }[] = [];
   const modules = new Map<number, string[]>();
@@ -100,9 +127,9 @@ function generateProgram(random: () => number): OracleProgram {
   const leadingVar = (inner: OracleScope, depth: number): void => {
     if (random() >= 0.5) return;
     const value = random() < 0.5 ? pick(['A', 'B', 'C']) : null;
-    const line = emit(`var M = ${value === null ? 'makeFake()' : `NativeModules.${value}`};`, depth);
-    if (value !== null) imports(line, value);
-    declare(inner, 'var', value);
+    const line = emit(value === null ? 'var M = makeFake();' : moduleDeclaration('var', value), depth);
+    if (value !== null && !registry) imports(line, value);
+    declare(inner, 'var', value === null ? null : declaredValue(value));
   };
   /** 블록 스코프 하나를 여는 줄들을 내고 본문을 채운 뒤 닫는다. */
   const blockStatement = (current: OracleScope, depth: number, budget: number): void => {
@@ -115,7 +142,9 @@ function generateProgram(random: () => number): OracleProgram {
       leadingVar(inner, depth + 1);
     } else if (form < 0.6) {
       // `}` 뒤·ASI로 끝난 줄 뒤의 맨 블록이다(호출 뒤 다음 줄 블록은 그 인자가 매개변수처럼 보인다).
-      emit(pick(['if (c) { noop(); }', 'x = 1', 'noop()', 'wrap(M)']), depth);
+      emit(pick(extended
+        ? ['if (c) { noop(); }', 'x = 1', 'noop()', 'wrap(M)', 'foo.function(M)', 'foo?.wrap(M)']
+        : ['if (c) { noop(); }', 'x = 1', 'noop()', 'wrap(M)']), depth);
       emit('{', depth);
       leadingVar(inner, depth + 1);
     } else if (form < 0.8) {
@@ -138,8 +167,9 @@ function generateProgram(random: () => number): OracleProgram {
   const outerModule = (current: OracleScope, depth: number): void => {
     if (random() >= 0.3) return;
     const value = pick(['A', 'B', 'C']);
-    imports(emit(`let M = NativeModules.${value};`, depth), value);
-    declare(current, 'let', value);
+    const line = emit(moduleDeclaration('let', value), depth);
+    if (!registry) imports(line, value);
+    declare(current, 'let', declaredValue(value));
   };
   const functionStatement = (current: OracleScope, depth: number, budget: number): void => {
     outerModule(current, depth);
@@ -207,25 +237,33 @@ function generateProgram(random: () => number): OracleProgram {
         declare(current, kind, null);
       } else if (form < 0.2) {
         // 모듈의 멤버를 꺼낸 이름은 모듈이 아니다(모듈 사실은 멤버 접근이 낸다).
-        imports(emit(pick([`${kind} { M } = NativeModules.${module};`, `${kind} { take: M } = NativeModules.${module};`]),
-          depth), module);
+        const source = registry ? 'other' : 'NativeModules';
+        const line = emit(pick([`${kind} { M } = ${source}.${module};`, `${kind} { take: M } = ${source}.${module};`]), depth);
+        if (!registry) imports(line, module);
         declare(current, kind, null);
       } else if (form < 0.28) {
         // 레지스트리 구조 분해는 키 이름이 모듈이다.
         const key = pick(['M', module]);
-        imports(emit(`${kind} { ${key === 'M' ? 'M' : `${key}: M`} } = NativeModules;`, depth), key);
-        declare(current, kind, key);
+        if (registry) {
+          emit(moduleDeclaration(kind, module), depth);
+          declare(current, kind, REGISTRY);
+        } else {
+          imports(emit(`${kind} { ${key === 'M' ? 'M' : `${key}: M`} } = NativeModules;`, depth), key);
+          declare(current, kind, key);
+        }
       } else if (form < 0.36) {
         emit(pick(["register('x' as const, M);", 'const enum E { M }', 'enum F { M = 1 }',
           'render(<Text>let M know {name}</Text>);', '({ var: 1, M });', 'const { M: alias } = props;']), depth);
       } else {
         const value = random() < 0.75 ? module : null;
-        const line = emit(`${kind} M = ${value === null ? 'makeFake()' : `NativeModules.${value}`};`, depth);
-        if (value !== null) imports(line, value);
-        declare(current, kind, value);
+        const line = emit(value === null ? `${kind} M = makeFake();` : moduleDeclaration(kind, value), depth);
+        if (value !== null && !registry) imports(line, value);
+        declare(current, kind, value === null ? null : declaredValue(value));
       }
     } else if (choice < 0.38) {
-      calls.push({ line: emit('M.go();', depth), scope: current });
+      // 확장 모드는 템플릿 보간 안 호출도 낸다 — 귀속하지 않고 세어야 한다(레지스트리 이름은 하한으로 세므로 뺀다).
+      const call = registry ? 'M.Cam.go();' : extended && random() < 0.3 ? 'log(`${M.go()}`);' : 'M.go();';
+      calls.push({ line: emit(call, depth), scope: current });
     } else if (choice < 0.44) {
       // 재대입 형태 — 중첩 구조 분해 대입, 제어문 머리·`case` 절 뒤의 배열 대입, 괄호 대상, 선언 초기값 안의 대입 포함.
       const form = random();
@@ -234,7 +272,9 @@ function generateProgram(random: () => number): OracleProgram {
         emit("case 'm': [M] = arr; break;", depth + 1);
         emit('}', depth);
       } else {
-        emit(pick(['M = other();', 'M &&= other();', 'M += 1;', 'M++;', '({ M } = mocks);', '[M] = arr;',
+        emit(pick([...(extended
+          ? [`const v${functions++} = \`\${M = other()}\`;`, 'log(`a${b}c${`${M++}`}`);', 'log(`${(() => { M = other(); })()}`);']
+          : []), 'M = other();', 'M &&= other();', 'M += 1;', 'M++;', '({ M } = mocks);', '[M] = arr;',
           'for (M of xs) noop();', '[[M] = x] = y;', '({ a: [M] = x } = y);', 'if (c) [M] = arr;', '(M) = other();',
           `const r${functions++} = (M = other());`, `const s${functions++} = [M] = arr;`,
           `const t${functions++} = c ? fn({ M } = d) : other => { other.x(); };`,
@@ -257,7 +297,7 @@ function generateProgram(random: () => number): OracleProgram {
         emit('}', depth);
       } else {
         emit('for (const M of xs)', depth);
-        calls.push({ line: emit('M.go();', depth + 1), scope: loop });
+        calls.push({ line: emit(registry ? 'M.Cam.go();' : 'M.go();', depth + 1), scope: loop });
       }
     } else if (budget > 0 && choice < 0.82) {
       // 메서드 본문 — 다음 줄 `{`의 메서드는 호출 뒤 블록과 구분되지 않는다. 상속절 호출(`extends mixin(M)`)·세미콜론
@@ -315,14 +355,18 @@ function generateProgram(random: () => number): OracleProgram {
     const values = declarations !== undefined && !reassigned.has(declarations)
       ? new Set([...declarations.map(({ value }) => value), ...(parameter ? [null] : [])])
       : undefined;
+    // 레지스트리 모드에서 어떤 선언·매개변수도 차지하지 않은 위치는 import한 레지스트리다.
+    const outer = registry && declarations === undefined && !parameter ? REGISTRY : null;
     // 줄 번호는 앞의 import 줄 하나만큼 밀린다.
-    expected.set(call.line + 1, values?.size === 1 ? [...values][0]! : null);
+    expected.set(call.line + 1, values?.size === 1 ? [...values][0]! : outer);
   }
+  // 레지스트리 모드는 추적 이름 `M`을 `NativeModules`로 바꾼다(낱말 경계만 — 다른 이름·문자열 안은 그대로다).
+  const emitted = registry ? lines.map((line) => line.replace(/\bM\b/gu, 'NativeModules')) : lines;
   // 한 줄로 낸 머리(`function f(x)\n{`)는 두 줄이다 — 줄 번호를 실제 줄로 다시 센다.
-  const text = lines.join('\n').split('\n');
-  return text.length === lines.length
-    ? { lines, calls: expected, modules, invalid }
-    : remapLines(lines, expected, modules, invalid);
+  const text = emitted.join('\n').split('\n');
+  return text.length === emitted.length
+    ? { lines: emitted, calls: expected, modules, invalid }
+    : remapLines(emitted, expected, modules, invalid);
 }
 
 /** 여러 줄을 한 항목으로 낸 프로그램의 줄 번호를 실제 줄 번호로 바꾼다. */
@@ -354,9 +398,17 @@ function bindingScopeCount(text: string): number {
   return line === undefined ? 0 : Number(line.split(' ')[1]);
 }
 
-/** 한 프로그램을 판정한다 — 어긋남을 문장으로 돌려준다(없으면 빈 배열). */
-function checkProgram(program: OracleProgram): { readonly problems: string[]; readonly attributed: number; readonly counted: number } {
-  const text = programText(program.lines);
+/**
+ * 한 프로그램을 판정한다 — 어긋남을 문장으로 돌려준다(없으면 빈 배열). 레지스트리 모드에서 호출 사실은 `Cam.go`이고 기준
+ * 값은 REGISTRY다. 그 모드의 module-import는 귀속한 호출 줄의 `Cam`만 허용한다(레지스트리 값을 통째로 넘긴 쓰임의 동적
+ * `NativeModules` 사실은 판정하지 않는다).
+ */
+function checkProgram(
+  program: OracleProgram,
+  options: OracleOptions = {},
+): { readonly problems: string[]; readonly attributed: number; readonly counted: number } {
+  const registry = options.registry === true;
+  const text = programText(program.lines, options);
   const document = createJsFactsDocument([{ path: 'a.tsx', text }], '0', '2026-01-01T00:00:00.000Z', 'p');
   const problems: string[] = [];
   let attributed = 0;
@@ -367,20 +419,24 @@ function checkProgram(program: OracleProgram): { readonly problems: string[]; re
     const line = fact.location!.line;
     const channel = fact.channel ?? '';
     if (fact.kind === 'method-invoke') {
-      invoked.set(line, channel);
-      if (!program.calls.has(line) || program.calls.get(line) !== fact.channel || fact.dynamic) {
+      const value = registry && channel === 'Cam' && fact.method === 'go' ? REGISTRY : channel;
+      invoked.set(line, value);
+      if (!program.calls.has(line) || program.calls.get(line) !== value || fact.dynamic) {
         problems.push(`false method-invoke ${fact.channel}.${fact.method} at line ${line} (expected ${program.calls.get(line)})`);
       } else {
         attributed++;
       }
-    } else if (fact.kind === 'module-import') {
+    } else if (fact.kind === 'module-import' && !(registry && fact.dynamic)) {
       imported.set(line, [...(imported.get(line) ?? []), channel]);
     }
   }
-  // module-import는 줄마다 기준과 같아야 한다(거짓도 누락도 없다).
-  for (const line of new Set([...imported.keys(), ...program.modules.keys()])) {
+  // module-import는 줄마다 기준과 같아야 한다(거짓도 누락도 없다). 레지스트리 모드의 기준은 귀속한 호출 줄의 `Cam`이다.
+  const modules = registry
+    ? new Map([...invoked].filter(([, value]) => value === REGISTRY).map(([line]) => [line, ['Cam']]))
+    : program.modules;
+  for (const line of new Set([...imported.keys(), ...modules.keys()])) {
     const actual = [...(imported.get(line) ?? [])].sort().join(',');
-    const expected = [...(program.modules.get(line) ?? [])].sort().join(',');
+    const expected = [...(modules.get(line) ?? [])].sort().join(',');
     if (actual !== expected) problems.push(`module-import at line ${line}: ${actual} (expected ${expected})`);
   }
   // 기준이 모듈인 호출을 귀속하지 않았으면 그 호출 자체가 js-binding-scope로 세어져야 한다 — 그 줄을 지우면 계수가
@@ -388,8 +444,8 @@ function checkProgram(program: OracleProgram): { readonly problems: string[]; re
   const total = bindingScopeCount(text);
   for (const [line, module] of program.calls) {
     if (module === null || invoked.get(line) === module) continue;
-    const without = program.lines.map((entry, index) => (index + 2 === line ? entry.replace('M.go();', 'noop();') : entry));
-    if (bindingScopeCount(programText(without)) >= total) {
+    const without = program.lines.map((entry, index) => (index + 2 === line ? entry.replace(/\S.*$/u, 'noop();') : entry));
+    if (bindingScopeCount(programText(without, options)) >= total) {
       problems.push(`call at line ${line} (expected ${module}) is neither attributed nor counted`);
     } else {
       counted++;
@@ -433,4 +489,38 @@ test('생성한 중첩 프로그램에서 거짓 사실이 없고 기준이 모�
   }
   // 생성기가 판정할 만한 프로그램과 귀속·계수 호출을 충분히 만들었는지 확인한다.
   assert.ok(checked > 10_500 && attributed > 1_500 && counted > 150, `checked ${checked}, attributed ${attributed}, counted ${counted}`);
+});
+
+/**
+ * 확장 생성기(템플릿 보간 안 재대입·호출, 속성 자리 이름 뒤 다음 줄 블록)와 레지스트리 모드(추적 이름이 `NativeModules`이고
+ * 선언이 레지스트리 출처이거나 대역)의 고정 시드다. 위 기본 생성기의 시드와 프로그램은 바꾸지 않는다(난수 소비가 같다).
+ * 되돌림 변형마다 시드 1~40 × 1,500회를 돌려 골랐다: 이름으로 레지스트리를 판정한 변형·레지스트리 선언의 정하지 못한 관여를
+ * 세지 않는 변형(레지스트리 시드 전부), 보간 안 재대입을 반영하지 않는 변형(확장 4·6, 레지스트리 전부), 보간 안 쓰임을 세지
+ * 않는 변형(확장 전부), 속성 자리 이름을 함수 머리로 읽는 변형(레지스트리 15·17). 나머지 변형(다른 범위 별칭, 레지스트리
+ * 재대입의 계수, 뒤에 온 import의 재반영, 보간 재대입의 불확실 표시, 값이 살아남지 못한 레지스트리 선언 계수)은
+ * `js-document.test.ts`가 잡는다.
+ */
+const EXTENDED_SEEDS = [4, 6];
+const REGISTRY_SEEDS = [15, 17];
+
+test('템플릿 보간·속성 자리 호출 뒤 블록·레지스트리 출처를 섞은 프로그램에서도 거짓 사실이 없고 놓친 호출은 센다', () => {
+  for (const options of [{ extended: true }, { registry: true }] as const) {
+    let checked = 0;
+    let attributed = 0;
+    let counted = 0;
+    for (const seed of 'registry' in options ? REGISTRY_SEEDS : EXTENDED_SEEDS) {
+      const random = seededRandom(seed);
+      for (let round = 0; round < ORACLE_ROUNDS; round++) {
+        const program = generateProgram(random, options);
+        if (program.invalid) continue;
+        checked++;
+        const result = checkProgram(program, options);
+        assert.deepEqual(result.problems, [], `${JSON.stringify(options)} seed ${seed} round ${round}\n${programText(program.lines, options)}`);
+        attributed += result.attributed;
+        counted += result.counted;
+      }
+    }
+    assert.ok(checked > 2_000 && attributed > 150 && counted > 50,
+      `${JSON.stringify(options)}: checked ${checked}, attributed ${attributed}, counted ${counted}`);
+  }
 });

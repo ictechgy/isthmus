@@ -12,8 +12,8 @@
 import type { BridgeFact, BridgeMechanism } from '../exchange/parse.ts';
 import { isSafeNonEmptyString } from '../exchange/parse.ts';
 import type { JsToken } from './lexer.ts';
-import { tokenizeJsSource } from './lexer.ts';
-import type { ScopedResolution, TokenRange } from './js-scopes.ts';
+import { templateInterpolationCode, tokenizeJsSource } from './lexer.ts';
+import type { ScopedDeclarationInput, ScopedResolution, TokenRange } from './js-scopes.ts';
 import { sameBoundName, ScopedBindingTable } from './js-scopes.ts';
 
 /** `requireNativeModule` 계열 — 모듈을 부르는 호출 측 API 이름이다. */
@@ -188,6 +188,36 @@ interface SuspendedDeclaration {
   readonly exported: boolean;
 }
 
+/**
+ * 선언 하나가 react-native 레지스트리를 담았는지 판정할 출처다. 이름별 지도와 달리 선언마다 들고 있어, 한 범위의
+ * `const { NativeModules } = require('react-native')`가 다른 범위의 같은 이름 선언(테스트 대역)을 레지스트리로 만들지
+ * 않는다.
+ */
+interface RegistryOrigin {
+  /** 구조 분해한 최상위 속성 이름이다(`{ NativeModules: NM }`의 NativeModules). */
+  readonly property?: string;
+  /** 초기값이나 구조 분해 원천이 `require('spec')`이면 그 specifier다. */
+  readonly specifier?: string;
+  /** 구조 분해 원천이 식별자 하나면 그 이름과 토큰 위치다(`= RN`). */
+  readonly source?: { readonly name: string; readonly index: number };
+}
+
+/**
+ * 레지스트리 출처 표에 다시 넣을 수집 기록 하나다 — 후보 이름의 선언(출처 포함)이나 재대입이다. 수집 순서대로 남긴다.
+ */
+type RegistryEvent =
+  | { readonly kind: 'declare'; readonly input: ScopedDeclarationInput; readonly origin?: RegistryOrigin }
+  | {
+    readonly kind: 'invalidate';
+    readonly name: string;
+    readonly index: number;
+    readonly floor: number;
+    readonly certainFloor: number;
+  };
+
+/** 레지스트리 출처 표에서 react-native 레지스트리를 담은 선언의 값이다. 이 표 밖으로 나가지 않는다. */
+const REGISTRY_VALUE: BoundName = { name: 'NativeModules' };
+
 interface ScanContext {
   readonly source: string;
   readonly tokens: readonly JsToken[];
@@ -195,6 +225,22 @@ interface ScanContext {
   readonly memberCalls: ScannedMemberCall[];
   /** 선언의 블록 범위 바인딩·문자열 상수 표다. 수집이 끝나면 동결한다. */
   readonly scopes: ScopedBindingTable;
+  /**
+   * 레지스트리 출처 표다 — `scopes`와 같은 범위로 후보 이름(`registryCandidates`)의 선언만 넣고, react-native 레지스트리를
+   * 담은 선언에만 값을 준다. 그래서 위치의 이름이 레지스트리 선언을 가리키는지(값), 그런 선언이 정하지 못하게 관여하는지
+   * (`hidesModule`)를 `scopes`와 같은 규칙(블록 범위·`var` 끌어올림·재대입·매개변수)으로 답한다. 수집 중에는 그때까지 본
+   * import로 출처를 정해 바로 넣고, 수집이 끝나면 모든 import를 본 출처로 `registryEvents`를 다시 넣어 동결한 표로 바꾼다.
+   */
+  registryScopes: ScopedBindingTable;
+  /** 레지스트리 출처 표에 넣는 이름이다 — `NativeModules`와 구조 분해 별칭(`{ NativeModules: NM }`의 NM)이다. */
+  readonly registryCandidates: ReadonlySet<string>;
+  /** 후보 이름의 선언·재대입 기록이다(수집 순서). 수집이 끝나면 레지스트리 출처 표를 다시 만든다. */
+  readonly registryEvents: RegistryEvent[];
+  /**
+   * 보간이 있는 템플릿 토큰 위치 → 보간 본문 조각마다 다시 토큰화한 토큰 열이다. 토크나이저는 템플릿을 토큰 하나로 두므로
+   * 그 안의 이름은 이 열로만 본다(재대입 반영·범위 밖 참조 계수).
+   */
+  readonly interpolations: ReadonlyMap<number, readonly (readonly JsToken[])[]>;
   /** 동결한 표의 이름별 모듈 바인딩 요약이다(JsFileScan.bindings). 수집 중에는 비어 있다. */
   moduleBindings: ReadonlyMap<string, BoundName>;
   /** 바깥 순회가 본문을 읽는 동안 멈춘 선언문 더미다(닫는 위치가 안쪽일수록 위). */
@@ -442,6 +488,10 @@ function createBoundContext(source: string): ScanContext {
     facts: [],
     memberCalls: [],
     scopes: new ScopedBindingTable(),
+    registryScopes: new ScopedBindingTable(),
+    registryCandidates: registryCandidateNames(tokens),
+    registryEvents: [],
+    interpolations: interpolationTokens(tokens),
     moduleBindings: new Map(),
     suspendedDeclarations: [],
     imports: [],
@@ -484,9 +534,87 @@ function createBoundContext(source: string): ScanContext {
   };
   collectBindings(context);
   context.scopes.freeze();
+  context.registryScopes = replayRegistryEvents(context);
   context.moduleBindings = context.scopes.moduleBindings();
   for (const start of context.scopes.trackedInitializerStarts()) context.trackedValueStarts.add(start);
   return context;
+}
+
+/** 보간이 있는 템플릿 토큰마다 보간 본문 조각을 다시 토큰화한다(조각은 원문 글자를 겹치지 않아 길이에 선형이다). */
+function interpolationTokens(tokens: readonly JsToken[]): Map<number, JsToken[][]> {
+  const result = new Map<number, JsToken[][]>();
+  tokens.forEach((token, index) => {
+    if (token.kind !== 'template' || token.value !== undefined) return;
+    const segments = templateInterpolationCode(token.text).map(tokenizeJsSource).filter((segment) => segment.length > 0);
+    if (segments.length > 0) result.set(index, segments);
+  });
+  return result;
+}
+
+/**
+ * 레지스트리 출처 표의 후보 이름이다 — `NativeModules`와, 구조 분해 별칭 꼴(`NativeModules: NM`·`'NativeModules': NM`)
+ * 뒤의 이름이다. 별칭이 아닌 자리의 같은 꼴(객체 리터럴 키)도 넣는다 — 넣어도 그 이름의 선언이 표에 더 들 뿐 값은
+ * 레지스트리 출처가 있는 선언에만 붙는다.
+ */
+function registryCandidateNames(tokens: readonly JsToken[]): Set<string> {
+  const names = new Set(['NativeModules']);
+  for (let index = 0; index + 2 < tokens.length; index++) {
+    const token = tokens[index]!;
+    const key = token.kind === 'string' ? token.value : token.kind === 'identifier' ? token.text : undefined;
+    const alias = tokens[index + 2]!;
+    if (key === 'NativeModules' && tokens[index + 1]!.text === ':' && alias.kind === 'identifier') names.add(alias.text);
+  }
+  return names;
+}
+
+/**
+ * 선언 하나가 react-native 레지스트리를 담았는지 출처로 판정한다 — react-native 모듈 객체에서 구조 분해한
+ * `NativeModules`(`const { NativeModules: NM } = RN`), 또는 이름이 `NativeModules`이고 초기값·구조 분해 원천이
+ * `require('react-native')`인 선언이다(`const NativeModules = require('react-native').NativeModules`,
+ * `const { NativeModules } = require('react-native')`). 원천 식별자는 구조 분해 위치에서 판정한다.
+ */
+function isRegistryOrigin(context: ScanContext, name: string, origin: RegistryOrigin | undefined): boolean {
+  if (origin === undefined) return false;
+  if (origin.property === 'NativeModules' && origin.source !== undefined &&
+    isReactNativeNamespace(context, context.reactNativeNamespaces, origin.source.name, origin.source.index)) {
+    return true;
+  }
+  return name === 'NativeModules' && origin.specifier === 'react-native';
+}
+
+/**
+ * 수집 기록을 모든 import를 본 출처로 새 레지스트리 출처 표에 다시 넣고 동결한다. 수집 중 표는 그때까지 본 import로
+ * 출처를 정했다 — 구조 분해 뒤에 온 `import RN from 'react-native'`도 여기서 반영한다. 기록은 후보 이름의 선언·재대입뿐이다.
+ *
+ * 레지스트리 선언 중 값이 살아남지 못한 것(같은 범위에 레지스트리가 아닌 같은 이름 선언이 있거나, 재대입됐거나, 범위를
+ * 가를 수 없는 이름)은 하나씩 범위 밖 참조로 센다 — 모듈 바인딩의 초기값을 세는 것과 같다. 그 바인딩의 접근은 레지스트리로
+ * 읽지 않으므로(`var` 재선언 앞의 접근은 실제로 레지스트리일 수 있다) 조용히 사라지지 않게 한다.
+ */
+function replayRegistryEvents(context: ScanContext): ScopedBindingTable {
+  const table = new ScopedBindingTable();
+  let registryDeclarations = 0;
+  context.registryEvents.forEach((event) => {
+    if (event.kind === 'invalidate') {
+      table.invalidate(event.name, event.index, event.floor, event.certainFloor);
+      return;
+    }
+    // 표의 추적 초기값 위치를 선언 번호로 써서 동결 뒤 값이 살아남은 레지스트리 선언을 가린다.
+    table.declare(isRegistryOrigin(context, event.input.name, event.origin)
+      ? { ...event.input, value: REGISTRY_VALUE, initializerStart: registryDeclarations++ }
+      : event.input);
+  });
+  table.freeze();
+  context.counts.escapedModuleReferences += registryDeclarations - table.trackedInitializerStarts().length;
+  return table;
+}
+
+/**
+ * 위치의 레지스트리 이름을 레지스트리 출처 표로 해석한다 — `resolveLocal`과 같은 매개변수 규칙(정하지 못한 목록이면 그
+ * 목록이 없을 때의 해석도 본다)이다. 값이 있으면 그 위치를 차지한 선언이 레지스트리를 담았고, `hidesModule`이면 레지스트리
+ * 선언이 정하지 못하게 관여한다.
+ */
+function resolveRegistry(context: ScanContext, name: string, index: number): ScopedResolution {
+  return resolveIn(context, context.registryScopes, name, index);
 }
 
 /** 한 소스 텍스트를 스캔해 사실 후보·바인딩·계수를 모은다. */
@@ -757,6 +885,10 @@ function collectBindings(context: ScanContext): void {
 function noteReassignment(context: ScanContext, index: number): void {
   const { tokens } = context;
   const token = tokens[index]!;
+  if (token.kind === 'template') {
+    noteInterpolationReassignments(context, index);
+    return;
+  }
   if (token.kind === 'identifier' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
     reassignsName(tokens, index)) {
     invalidateBinding(context, token.text, index);
@@ -770,6 +902,30 @@ function noteReassignment(context: ScanContext, index: number): void {
         invalidateBinding(context, tokens[at]!.text, at);
       }
     }
+  }
+}
+
+/** 보간 본문 조각이 재대입할 수 있는 토큰(대입·복합 대입 연산자, 증감)이다. */
+const interpolationAssigningTokens = new Set([...assignmentOperatorTexts(), '++', '--']);
+
+/**
+ * 템플릿 보간 안의 재대입을 반영한다(`` `${M = other}` `` 뒤의 `M.take()`). 보간은 토큰 하나라 그 안의 대입 대상을 정확히
+ * 가르지 않는다 — 대입·증감 토큰이 있는 조각에서 대입 대상이 될 수 있는 이름을 모두 대상이 확실하지 않은 재대입으로
+ * 템플릿 위치에 넣는다. 그래서 그 바인딩의 쓰임은 귀속하지 않고 센다. 속성 자리 이름과 멤버 접근·호출의 대상(`M.n++`의
+ * M — 뒤에 `.`·`?.`·`[`·`(`·템플릿)은 그 이름 자체를 바꾸지 않아 뺀다. 보간 안 함수의 매개변수·선언은 구분하지 않는다(세는 쪽).
+ */
+function noteInterpolationReassignments(context: ScanContext, index: number): void {
+  for (const segment of context.interpolations.get(index) ?? []) {
+    if (!segment.some((token) => token.kind === 'punct' && interpolationAssigningTokens.has(token.text))) continue;
+    const names = new Set<string>();
+    segment.forEach((token, at) => {
+      const after = segment[at + 1];
+      if (token.kind === 'identifier' && !['.', '?.'].includes(segment[at - 1]?.text ?? '') &&
+        !(after !== undefined && (['.', '?.', '[', '('].includes(after.text) || after.kind === 'template'))) {
+        names.add(token.text);
+      }
+    });
+    for (const name of names) invalidateBinding(context, name, index, true);
   }
 }
 
@@ -808,9 +964,17 @@ function closesControlHead(tokens: readonly JsToken[], close: number): boolean {
  * 위치의 재대입을 표에 반영한다. 그 위치를 확실히 가린 매개변수가 있으면 대입은 그 매개변수(나 그 함수 안 선언)의
  * 것이라 바깥 바인딩에 닿지 않는다. 함수 머리인지 정하지 못한 목록의 매개변수 바깥 바인딩은 대상이 확실하지 않다.
  */
-function invalidateBinding(context: ScanContext, name: string, index: number): void {
-  context.scopes.invalidate(name, index, context.paramShadows.innermostFrom(name, index) ?? -Infinity,
-    context.paramShadows.innermostCertainFrom(name, index) ?? -Infinity);
+function invalidateBinding(context: ScanContext, name: string, index: number, uncertain = false): void {
+  // 대상이 확실하지 않은 대입(템플릿 보간 안)은 모든 바깥 묶음까지 불확실로 둔다 — 그 바인딩의 모듈 쓰임을 센다.
+  const floor = uncertain ? Infinity : context.paramShadows.innermostFrom(name, index) ?? -Infinity;
+  const certainFloor = context.paramShadows.innermostCertainFrom(name, index) ?? -Infinity;
+  context.scopes.invalidate(name, index, floor, certainFloor);
+  if (context.registryCandidates.has(name)) {
+    // 레지스트리 바인딩에 무엇을 대입했는지(레지스트리를 다시 넣었을 수도 있다) 스캔은 모른다 — 대상이 확실하지 않은
+    // 재대입으로 넣어, 그 바인딩의 접근을 사실로도 조용한 누락으로도 두지 않고 센다.
+    context.registryEvents.push({ kind: 'invalidate', name, index, floor: Infinity, certainFloor });
+    context.registryScopes.invalidate(name, index, Infinity, certainFloor);
+  }
 }
 
 /**
@@ -1229,10 +1393,12 @@ function collectDeclaration(
           return cursor - 1;
         }
       }
+      // `const X = require('spec')…`의 specifier다 — 이 선언의 레지스트리 출처로도 싣는다.
+      let origin: RegistryOrigin | undefined;
       if (declarator && tokens[cursor]?.text === '=') {
-        // `const X = require('spec')…`의 specifier를 기록한다.
         const required = readRequireSpecifier(tokens, cursor + 1);
         if (required !== undefined) {
+          origin = { specifier: required };
           context.requireSpecifiers.set(token.text, required);
           if (endsExpression(tokens, cursor + 4) && !isShadowed(context, 'require', cursor + 1)) {
             context.requireModules.set(token.text, required);
@@ -1241,7 +1407,7 @@ function collectDeclaration(
         recordInteropRequire(context, token.text, cursor + 1);
         const bound = readModuleExpression(context, cursor + 1);
         if (bound !== undefined && endsExpression(tokens, bound.endIndex)) {
-          declareName(context, token.text, scope, { value: bound.value, initializerStart: cursor + 1 });
+          declareName(context, token.text, scope, { value: bound.value, initializerStart: cursor + 1 }, origin);
           if (exported) context.namedExports.set(token.text, bound.value);
           // 초기값 식 내부의 괄호는 depth에 반영되지 않았으니 마지막 토큰까지
           // 건너뛴다 — `)`를 다시 처리하면 depth가 음수로 내려간다.
@@ -1250,12 +1416,12 @@ function collectDeclaration(
         }
         const literal = readLiteralExpression(context, cursor + 1);
         if (literal !== undefined && endsExpression(tokens, literal.endIndex)) {
-          declareName(context, token.text, scope, { literal: literal.value });
+          declareName(context, token.text, scope, { literal: literal.value }, origin);
           index = literal.endIndex + 1;
           continue;
         }
       }
-      if (declarator) declareName(context, token.text, scope);
+      if (declarator) declareName(context, token.text, scope, {}, origin);
       // 타입 주석은 이름 자리가 아니다 — 그 안의 `{`·`,`를 패턴·선언자로 읽지 않게 주석 뒤로 건너뛴다.
       index = declarator && cursor > index + 1 ? cursor : index + 1;
       continue;
@@ -1299,17 +1465,23 @@ function declareName(
   name: string,
   scope: DeclarationScope,
   extra: { readonly value?: BoundName; readonly literal?: string; readonly initializerStart?: number } = {},
+  origin?: RegistryOrigin,
 ): void {
   const { shadow, bind, uncertainExtent, undecidedAt, varAt } = scope;
   const redeclared = varAt !== undefined && redeclaresParameter(context, name, varAt, shadow);
-  context.scopes.declare({
+  const input: ScopedDeclarationInput = {
     name,
     shadow,
     ...(bind === undefined || redeclared ? {} : { bind }),
     ...(uncertainExtent === true || redeclared ? { uncertainExtent: true as const } : {}),
     ...(undecidedAt !== undefined ? { undecidedAt } : redeclared ? { undecidedAt: varAt } : {}),
-    ...extra,
-  });
+  };
+  context.scopes.declare({ ...input, ...extra });
+  // 레지스트리 출처 표에는 범위와 출처만 넣는다 — 수집 중에는 그때까지 본 import로 출처를 정한다(replayRegistryEvents).
+  if (context.registryCandidates.has(name)) {
+    context.registryEvents.push({ kind: 'declare', input, ...(origin === undefined ? {} : { origin }) });
+    context.registryScopes.declare(isRegistryOrigin(context, name, origin) ? { ...input, value: REGISTRY_VALUE } : input);
+  }
 }
 
 /** 위치 `at`의 `var` 이름이 그 `var`가 끌어올려지는 함수 본문(`body`)의 매개변수인지 본다. */
@@ -1484,6 +1656,9 @@ function parameterListKind(
   if (tokens[name]?.text === '?') name--;
   const nameToken = tokens[name];
   if (nameToken === undefined) return 'none';
+  // 속성 자리의 이름(`foo.function(M)`·`foo.bar(M)` 뒤 다음 줄 `{`)은 멤버 호출이다 — 함수·메서드 이름은 `.` 뒤에 오지
+  // 않는다. `function` 낱말도 여기서는 키워드가 아니라 속성 이름이다.
+  if (['.', '?.'].includes(tokens[name - 1]?.text ?? '')) return 'none';
   const declared = nameToken.text === 'function' || tokens[name - 1]?.text === 'function' ||
     (nameToken.text === '*' && tokens[name - 1]?.text === 'function') ||
     (tokens[name - 1]?.text === '*' && tokens[name - 2]?.text === 'function');
@@ -1612,15 +1787,20 @@ function boundValueAt(context: ScanContext, name: string, index: number): BoundN
  * 것이면(`wrap(M)` 뒤 다음 줄 블록) 그 목록이 없을 때의 해석도 본다 — 모듈 바인딩·import에 닿으면 귀속하지 않고 센다.
  */
 function resolveLocal(context: ScanContext, name: string, index: number): ScopedResolution {
+  return resolveIn(context, context.scopes, name, index);
+}
+
+/** `resolveLocal`의 규칙으로 표 하나(블록 범위 표나 레지스트리 출처 표)에서 위치의 이름을 해석한다. */
+function resolveIn(context: ScanContext, table: ScopedBindingTable, name: string, index: number): ScopedResolution {
   const floor = context.paramShadows.innermostFrom(name, index);
-  const resolution = context.scopes.resolve(name, index, floor ?? -Infinity);
+  const resolution = table.resolve(name, index, floor ?? -Infinity);
   if (floor === undefined || !resolution.claimed || resolution.value !== undefined ||
     resolution.hidesModule === true || resolution.hidesOuter === true) {
     return resolution;
   }
   const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
   if (certainFloor === floor) return resolution;
-  const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
+  const alternative = table.resolve(name, index, certainFloor ?? -Infinity);
   // 그 목록이 없으면 import·전역(레지스트리 `NativeModules` 포함)일 수 있다.
   if (!alternative.claimed) return { claimed: true, hidesOuter: true };
   if (alternative.value !== undefined || alternative.hidesModule === true) return { claimed: true, hidesModule: true };
@@ -2050,9 +2230,13 @@ function recordDestructuredLocals(
   for (const { index, property } of patternBindingNames(tokens, open, close)) {
     const localName = tokens[index]!.text;
     context.localNames.add(localName);
-    // 모듈 값이 아닌 이름도 그 범위에서 바깥의 같은 이름 바인딩을 가린다.
-    declareName(context, localName, scope);
-    // 원천의 속성 이름을 아는 최상위 항목만 이름별 specifier·원천을 남긴다(중첩 패턴의 이름은 원천의 속성이 아니다).
+    // 모듈 값이 아닌 이름도 그 범위에서 바깥의 같은 이름 바인딩을 가린다. 원천의 속성 이름을 아는 최상위 항목만 출처를
+    // 싣는다(중첩 패턴의 이름은 원천의 속성이 아니다).
+    declareName(context, localName, scope, {}, property === undefined ? undefined : {
+      property,
+      ...(specifier === undefined ? {} : { specifier }),
+      ...(sourceIndex === undefined ? {} : { source: { name: tokens[sourceIndex]!.text, index: sourceIndex } }),
+    });
     if (property === undefined) continue;
     if (specifier !== undefined) context.requireSpecifiers.set(localName, specifier);
     if (sourceIndex !== undefined) {
@@ -2398,27 +2582,28 @@ function nativeModulesAlias(context: ScanContext, name: string): boolean {
  */
 function isNativeModulesRegistry(context: ScanContext, name: string, index: number): boolean {
   // 그 위치를 차지한 매개변수는 레지스트리가 아니다. 그 위치를 차지한 `const`·`let`·`var` 선언은 import보다 안쪽이다
-  // — 그 선언이 react-native에서 꺼낸 값일 때만 레지스트리다(테스트 함수 안의 `const NativeModules = mock`는 import가
-  // 있어도 레지스트리가 아니다).
+  // — 그 선언이 react-native에서 꺼낸 값일 때만 레지스트리다. 출처는 이름이 아니라 그 위치를 차지한 선언의 것이다:
+  // 파일 위쪽 `const { NativeModules } = require('react-native')`가 있어도 테스트 함수 안의 `const NativeModules = mock`는
+  // 레지스트리가 아니다. 그런 선언이 정하지 못하게 관여하면(블록 밖의 `var` 등) 여기서는 아니고 registryUndecided가 센다.
   const local = resolveLocal(context, name, index);
   if (local.claimed) {
     if (local.parameter === true) return false;
-    return destructuredFromReactNative(context, name) ||
-      (name === 'NativeModules' && context.requireSpecifiers.get(name) === 'react-native');
+    const registry = resolveRegistry(context, name, index);
+    return registry.claimed && registry.value !== undefined;
   }
   const imports = context.importsByLocalName.get(name) ?? [];
   if (imports.length > 0) return nativeModulesAlias(context, name);
-  if (destructuredFromReactNative(context, name)) return true;
-  if (name !== 'NativeModules') return false;
-  if (context.functionOrClassNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
-  return true;
+  // 이 위치를 차지한 선언이 없으면 다른 범위의 레지스트리 선언은 이 위치의 값이 아니다. 이름이 `NativeModules`이면 전역
+  // 레지스트리로 읽는다(그 이름의 함수·클래스 선언이 있으면 아니다).
+  return name === 'NativeModules' && !context.functionOrClassNames.has(name);
 }
 
 /**
  * 위치의 레지스트리 이름(`NativeModules` 또는 react-native에서 가져온 별칭)을 잠정적인 선언·매개변수만 가리는지 본다 —
  * 범위를 정하지 못한 `var NativeModules`(라벨 블록 안 등)나 `wrap(NativeModules)` 뒤 다음 줄 블록의 인자는 그 위치를 가릴
  * 수도 아닐 수도 있다. 가려진 쪽이 전역·import 레지스트리이거나 이 파일의 레지스트리 선언(`require('react-native')`에서
- * 꺼낸 `NativeModules`)이면 센다. 전역 레지스트리를 이 파일의 함수·클래스 선언이 가리면 아니다.
+ * 꺼낸 `NativeModules`)이면 센다. 레지스트리 선언이 그 위치에 정하지 못하게 관여해도(그 `var`의 블록 밖, 넓게 잡힌 선언
+ * 너머, 대상이 확실하지 않은 재대입) 센다. 전역 레지스트리를 이 파일의 함수·클래스 선언이 가리면 아니다.
  */
 function registryUndecided(context: ScanContext, name: string, index: number): boolean {
   const local = resolveLocal(context, name, index);
@@ -2427,9 +2612,13 @@ function registryUndecided(context: ScanContext, name: string, index: number): b
     // require('react-native')`)일 수도 있다.
     const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
     if (certainFloor === context.paramShadows.innermostFrom(name, index)) return false;
-    const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
-    return alternative.claimed && alternative.parameter !== true && (destructuredFromReactNative(context, name) ||
-      (name === 'NativeModules' && context.requireSpecifiers.get(name) === 'react-native'));
+    const alternative = context.registryScopes.resolve(name, index, certainFloor ?? -Infinity);
+    return alternative.claimed && alternative.parameter !== true &&
+      (alternative.value !== undefined || alternative.hidesModule === true);
+  }
+  if (local.claimed) {
+    const registry = resolveRegistry(context, name, index);
+    if (registry.claimed && registry.hidesModule === true) return true;
   }
   if (!local.claimed || (local.hidesOuter !== true && local.hidesModule !== true)) return false;
   const imports = context.importsByLocalName.get(name) ?? [];
@@ -2455,16 +2644,6 @@ function importedFromOtherModule(context: ScanContext, name: string, index: numb
   if (local.claimed && local.hidesOuter !== true) return false;
   const imports = context.importsByLocalName.get(name) ?? [];
   return imports.length > 0 && imports.every(({ specifier }) => specifier !== 'react-native');
-}
-
-/**
- * 로컬 이름이 react-native 모듈 객체에서 구조 분해한 `NativeModules`(`const { NativeModules: NM } = RN`)인지 본다.
- * 원천 식별자는 구조 분해 위치에서 판정한다.
- */
-function destructuredFromReactNative(context: ScanContext, name: string): boolean {
-  const origin = context.destructuredSources.get(name);
-  return origin !== undefined && origin.property === 'NativeModules' &&
-    isReactNativeNamespace(context, context.reactNativeNamespaces, origin.source, origin.sourceIndex);
 }
 
 /**
@@ -3714,6 +3893,10 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
   if (moduleNames.size === 0 && relativeImports.size === 0) return;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!;
+    if (token.kind === 'template') {
+      countInterpolationReferences(context, index, moduleNames, relativeImports);
+      continue;
+    }
     if (token.kind !== 'identifier' || (!moduleNames.has(token.text) && !relativeImports.has(token.text))) {
       continue;
     }
@@ -3732,6 +3915,34 @@ function collectIdentifierEscapes(context: ScanContext, importPositions: Readonl
     if (moduleReference && classifyModuleValue(context, index, index, true) === 'escape') {
       context.identifierEscapes.set(token.text, (context.identifierEscapes.get(token.text) ?? 0) + 1);
     }
+  }
+}
+
+/**
+ * 템플릿 보간 안의 모듈 바인딩·상대 import 이름 쓰임을 센다. 보간은 토큰 하나라 그 안의 호출(`` `${M.take()}` ``)을
+ * 귀속하지 않는다 — 조용히 버리지 않고 쓰임 하나를 범위 밖 참조 하나로 센다(값을 소비할 뿐인 쓰임도 가르지 않고 센다).
+ * 이름은 템플릿 위치에서 해석한다(보간 안 함수의 매개변수·선언은 구분하지 않는다 — 세는 쪽). 레지스트리 이름은
+ * countUntracedEntries가 브리지 API 언급으로 하한에 센다.
+ */
+function countInterpolationReferences(
+  context: ScanContext,
+  index: number,
+  moduleNames: ReadonlySet<string>,
+  relativeImports: ReadonlySet<string>,
+): void {
+  for (const segment of context.interpolations.get(index) ?? []) {
+    segment.forEach((token, at) => {
+      if (token.kind !== 'identifier' || ['.', '?.'].includes(segment[at - 1]?.text ?? '') ||
+        (!moduleNames.has(token.text) && !relativeImports.has(token.text))) {
+        return;
+      }
+      const resolution = resolveLocal(context, token.text, index);
+      if (resolution.claimed && (resolution.value !== undefined || resolution.hidesModule === true)) {
+        context.counts.escapedModuleReferences++;
+      } else if ((!resolution.claimed || resolution.hidesOuter === true) && relativeImports.has(token.text)) {
+        context.identifierEscapes.set(token.text, (context.identifierEscapes.get(token.text) ?? 0) + 1);
+      }
+    });
   }
 }
 
