@@ -77,6 +77,11 @@ export function createJsFactsDocument(
       facts.push(toFact(file.path, fact));
     }
     for (const call of scan.memberCalls) {
+      // 베이스가 import인지 정하지 못한 호출은 import가 모듈로 해석되면 귀속하지 않고 범위 밖 참조로 센다.
+      if (call.uncertain === true) {
+        if (importBindings.has(call.ident)) escapedModuleReferences++;
+        continue;
+      }
       const bound = call.binding ?? importBindings.get(call.ident);
       if (bound === undefined) continue;
       const name = 'name' in bound ? bound.name : bound.dynamicExpression;

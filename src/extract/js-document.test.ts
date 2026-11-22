@@ -614,3 +614,185 @@ test('한 함수의 NativeModules·조회 API 대역 선언은 다른 위치의 
   });
   assert.deepEqual(factLines(imported), ['module-import Camera@3', 'method-invoke Camera.take@3']);
 });
+
+test('매개변수·로컬 대역·다른 모듈의 NativeModules에서 구조 분해한 이름은 모듈이 아니다', () => {
+  // 리뷰 재현 k01·k02: 구조 분해가 원천 이름만 보고 그 위치의 레지스트리인지 묻지 않아, 초기값 본문을 읽게 되면서
+  // 대역의 Fake1·Fake3가 거짓 사실이 됐다(함수 선언 매개변수 Fake2는 main부터 거짓 사실이었다).
+  const standIns = assemble({
+    'src/a.js': [
+      'const setup = (NativeModules) => { const { Fake1 } = NativeModules; Fake1.x(); };',
+      'const setup3 = () => { const NativeModules = mockModules(); const { Fake3 } = NativeModules; Fake3.x(); };',
+      'function setup2(NativeModules) { const { Fake2 } = NativeModules; Fake2.x(); }',
+    ].join('\n'),
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      "jest.mock('react-native', () => { const NativeModules = { Fake: {} }; const { Fake } = NativeModules; Fake.x(); });",
+      'const { Camera } = NativeModules;',
+      'Camera.take();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(standIns), ['module-import Camera@3', 'method-invoke Camera.take@4']);
+  // 다른 모듈(배럴·대역)에서 가져온 NativeModules의 구조 분해는 멤버 접근처럼 꺼낸 이름마다 센다.
+  const barrel = assemble({ 'src/a.js': "import { NativeModules } from './shim';\nconst { Cam, Torch } = NativeModules;\nCam.take();" });
+  assert.deepEqual(barrel.facts, []);
+  assert.ok(barrel.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 2 ')), barrel.limitations.join('\n'));
+  // 레지스트리의 중첩 구조 분해는 바깥 키만 모듈이다 — 안쪽 이름은 모듈 값을 다시 꺼낸 것이라 센다. 계산 키는 동적 사실이다.
+  const nested = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const { Camera: { take }, [name]: Dyn } = NativeModules;',
+      'take(); Dyn.go(); Camera.open();',
+    ].join('\n'),
+  });
+  assert.deepEqual(nested.facts.map((fact) => `${fact.kind} ${fact.channel}${fact.method === undefined ? '' : `.${fact.method}`} ${fact.dynamic}`), [
+    'module-import Camera false',
+    'module-import name true',
+    'method-invoke name.go true',
+  ]);
+  assert.ok(bindingScope(nested)?.startsWith('js-binding-scope: 1 native module references '), bindingScope(nested));
+});
+
+test('선언자 모양이 아닌 const·let 낱말과 패턴 안 키·타입은 바깥 바인딩을 가리지 않는다', () => {
+  // 리뷰 재현 l03·h01·l02·c01c: `as const,`·`const enum`·JSX 글자 `let you know … {…}`·중첩 패턴의 키·패턴의 타입 주석을
+  // 선언으로 읽어 같은 이름의 바깥 Haptics를 가렸고, 참 호출이 한계 없이 사라졌다.
+  const document = assemble({
+    'src/a.tsx': [
+      "import { NativeModules } from 'react-native';",
+      'const { Haptics } = NativeModules;',
+      "export const useFeedback = () => { register('native' as const, Haptics); Haptics.trigger(); };",
+      'export function useSettingsFeedback() { const { Haptics: { enabled } } = useSettings(); if (enabled) Haptics.buzz(); }',
+      'const enum Feature { Haptics, Camera }',
+      'export const Other = () => { Haptics.tick(); return <Text>We will let you know when {Haptics.label} is ready</Text>; };',
+      'function annotated() { const { a }: { Haptics?: boolean } = props; Haptics.tap(); }',
+      // 줄 끝 `as const`·속성 `obj.var` 뒤 줄의 낱말 문장도 선언자가 아니다(ASI로 선언자처럼 보인다).
+      'export function asserted() { register(Haptics)',
+      '  options as const',
+      '  Haptics',
+      '  Haptics.ping()',
+      '  config.var',
+      '  Haptics',
+      '  Haptics.pong() }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke Haptics.trigger@3',
+    'method-invoke Haptics.buzz@4',
+    'method-invoke Haptics.tick@6',
+    'method-invoke Haptics.tap@7',
+    'method-invoke Haptics.ping@11',
+    'method-invoke Haptics.pong@14',
+  ]);
+  // 배열 구조 분해·중첩 패턴 안 이름은 선언이라 바깥 바인딩을 가린다(전에는 거짓 Foo.go가 났다).
+  const patterns = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.Foo;',
+      'function a() { const [M] = useState(); M.go(); }',
+      'function c() { const { x: { M } } = props; M.go(); }',
+      'M.go();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(patterns).filter((line) => line.startsWith('method-invoke')), ['method-invoke Foo.go@5']);
+});
+
+test('본문이 블록이 아닌 for 머리 선언 뒤의 재대입은 바깥 바인딩도 지운다', () => {
+  // 리뷰 재현 g01: 넓게 잡힌 루프 변수가 마지막 대입을 가로채 바깥 M이 살아 남아 거짓 A.go가 났다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'let M = NativeModules.A;',
+      'function useIt() { M.go(); }',
+      'for (const M of xs) foo(M);',
+      'M = NativeModules.B;',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), []);
+  // 앞에 선언된 함수 본문의 대입도 뒤 선언의 바인딩을 지운다.
+  const earlier = assemble({
+    'src/b.js': "import { NativeModules } from 'react-native';\nfunction reset() { M = other(); }\nlet M = NativeModules.A;\nM.go();",
+  });
+  assert.deepEqual(factLines(earlier).filter((line) => line.startsWith('method-invoke')), []);
+  assert.ok(bindingScope(earlier)?.startsWith('js-binding-scope: 1 native module references '), bindingScope(earlier));
+});
+
+test('제네릭·반환 타입·메서드 함수 본문의 var는 그 함수 안에만 있고 바깥 블록 선언과 섞이지 않는다', () => {
+  // 리뷰 재현 g02·g04·g03·b01: 함수 본문을 알아보지 못해 var가 안쪽 let/const 블록 너머로 넓어졌고, 진실이 B.go인 호출이
+  // 거짓 A.go가 됐다. 매개변수도 같은 형태에서 알아보지 못해 바깥 바인딩을 가리지 못했다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      '{',
+      '  const M = NativeModules.A;',
+      '  function pick<T>(x: T) { var M = NativeModules.B; M.go(); }',
+      '  function g(): void { var M = NativeModules.C; M.ok(); }',
+      '  class Svc { start(): void { var M = makeFake(); M.fake(); } }',
+      '  const cb = function (): void { var M = makeFake(); M.fake2(); };',
+      '  function shadow<T>(M: T): Promise<{ a: 1 }> { M.param(); }',
+      '  const arrow = (M): number => { M.param2(); };',
+      // 알아보지 못하는 반환 타입(조건 타입)의 본문에서도 var는 그 본문 너머로 넓어지지 않는다.
+      '  function cond<T>(x: T): T extends string ? A : B { var M = NativeModules.D; M.cond(); }',
+      '  M.run();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke B.go@4',
+    'method-invoke C.ok@5',
+    'method-invoke D.cond@10',
+    'method-invoke A.run@11',
+  ]);
+  // 알아본 함수 본문의 블록 안 var는 그 함수 전체를 확실히 가린다 — 바깥 A를 정하지 못한 쓰임으로 세지 않는다.
+  const exact = assemble({
+    'src/b.ts': [
+      "import { NativeModules } from 'react-native';",
+      '{',
+      '  const M = NativeModules.A;',
+      '  function pick<T>(x: T) { if (c) { var M = makeFake(); } M.fake(); }',
+      '  function g(): void { if (c) { var M = makeFake(); } M.fake2(); }',
+      '  M.run();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(exact).filter((line) => line.startsWith('method-invoke')), ['method-invoke A.run@6']);
+  assert.equal(bindingScope(exact), undefined);
+});
+
+test('본문이 블록이 아닌 for 머리 선언이 import를 가리면 귀속하지 않고 센다', () => {
+  // 리뷰 지적 e01: 넓게 잡힌 가림 너머의 import 호출이 한계 없이 사라졌다.
+  const document = assemble({
+    'src/cam.js': "import { NativeModules } from 'react-native';\nexport default NativeModules.Camera;",
+    'src/app.js': "import Cam from './cam';\nfor (const Cam of fakes) Cam.fake();\nCam.open();\nregister(Cam);",
+  });
+  assert.deepEqual(factLines(document), ['module-import Camera@2']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 3 native module references '), bindingScope(document));
+});
+
+test('매개변수 함수 안쪽 본문의 같은 이름 선언은 매개변수를 가린다', () => {
+  // 리뷰 지적 j01·j02: 매개변수 가림이 안쪽 선언보다 먼저 판정돼 참 A.go가 한계 없이 사라졌다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'function Screen(M) {',
+      '  const run = () => { const M = NativeModules.A; M.go(); };',
+      '  function later() { const M = NativeModules.B; M.go(); }',
+      '  M.param();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), ['method-invoke A.go@3', 'method-invoke B.go@4']);
+});
+
+test('로컬 모듈 바인딩이 차지한 위치의 호출은 해석하지 못한 import 호출로 세지 않는다', () => {
+  // 리뷰 지적 i01: 이 계수 변경(2 → 1)을 고정하는 테스트가 없었다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      "import Cam from './missing';",
+      'function f() { const Cam = NativeModules.Camera; Cam.take(); }',
+      'Cam.open();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import Camera@3', 'method-invoke Camera.take@3']);
+  assert.ok(document.limitations.includes('unattributed-js-relative-calls: 1 member calls on imports that did not '
+    + 'resolve inside the scanned file set could not be attributed to a module name'), document.limitations.join('\n'));
+});

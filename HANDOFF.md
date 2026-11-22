@@ -29,7 +29,7 @@ _Last updated: 2026-11-22_
 - 2026-11-15~16 js-binding-scope 측정과 그 후속 extract-js 수정·리뷰 반영은 PR #164로 main에 squash 머지됐다
   (`c9549e6`, 2026-11-16, 미발행, CHANGELOG `[Unreleased]`). 커밋별 내용·실제 패키지 비교·적대 입력 시간은
   [HANDOFF-HISTORY](HANDOFF-HISTORY.md)의 "완료 — js-binding-scope 측정과 extract-js 후속 (PR #164)" 절에 옮겼다.
-- 2026-11-22 브랜치 `ccr-37904670-hxdjsx`(main `c9549e6`에서 다시 시작, 미푸시·미머지 — 푸시·PR은 조정자가 한다):
+- 2026-11-22 브랜치 `ccr-37904670-hxdjsx`(main `c9549e6`에서 다시 시작, 조정자가 PR #165로 열었다 — 미머지·미발행):
   "저장소마다 더 개선할 것을 찾아 개선하라"는 사용자 요청(계열 3차 배치)으로 후속 후보의 extract-js 거짓 사실·수집 공백
   두 항목을 고쳤다(CHANGELOG `[Unreleased]` `### Fixed` 앞 두 항목). 후보가 사용자 결정을 요구한 이유(참 사실도 줄어드는
   최소 수정)는 블록 범위 해석으로 피했다.
@@ -57,6 +57,26 @@ _Last updated: 2026-11-22_
     훑던 중간 구현은 약 7초(이차)여서 수집 중 활성 사슬·동결 색인으로 바꿨다. 1만 단계로 중첩된 초기값 본문·블록은 0.1초대에
     호출 스택을 넘기지 않는다.
   - `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
+- 2026-11-22 PR #165 독립 리뷰 반영(같은 브랜치, 미푸시 — 푸시는 조정자가 한다). 리뷰 재현을 먼저 확인하고(이전 헤드
+  `3d4925f`의 출력), 지적마다 이전 헤드에서 실패하는 회귀 테스트를 두었다:
+  - 거짓 사실: 매개변수·로컬 대역 `NativeModules`의 구조 분해가 사실을 냈다 → 구조 분해도 그 위치의 레지스트리인지 묻는다
+    (다른 모듈 import는 이름마다 `unattributed-js-native-modules:`). 본문이 블록이 아닌 for 머리 선언이 뒤 재대입을 가로챘다
+    → 그런 선언의 값 적용 구간 밖 재대입은 바깥 묶음도 지운다(파일 앞쪽 함수 본문의 대입도 동결 때 다시 반영). 반환 타입·
+    제네릭 함수 본문을 알아보지 못해 var가 안쪽 let/const 너머로 넓어졌다 → 본문 인식(제네릭·반환 타입·키워드/문자열/계산 키
+    메서드·정적 블록·namespace)과, 정하지 못한 블록에서 var를 멈추고 불확실로 두는 안전장치. 같은 형태의 매개변수도 가린다.
+  - 조용한 손실: `as const,`·`const enum`·JSX 글자 `let you …`·중첩 패턴 키·패턴 타입 주석을 선언으로 읽었다 → 선언자 모양
+    검사, 패턴 이름만 선언(배열 패턴 포함). 넓게 잡힌 for 선언 너머의 import 호출 → 불확실 호출로 표시해 import가 모듈이면 셈.
+    매개변수 가림이 안쪽 선언보다 먼저 판정됐다 → 더 안쪽 것이 이긴다.
+  - 시간: 같은 범위 같은 이름 선언 k개가 O(k²)였다(3만 2천 개 38초) → 묶음 요약·값 적용 구간 색인·감싼 묶음 건너뛰기 포인터·
+    var 범위 기억. 리뷰 하네스 `perf.mjs` 3만 2천: redecl 0.56초(main 0.46초), 1만 6천 deepvar 0.19초(main 0.13초, 이전 2.5초).
+  - 근거: 스코프 오라클 퍼저(무작위 중첩 프로그램을 JS 정적 스코프 규칙으로 판정) 9,763개 유효 프로그램에서 거짓
+    method-invoke 0(main 1,106개 귀속 중 636개 거짓, 이전 헤드 610개 중 67개 거짓), 놓친 참 호출은 모두 js-binding-scope 줄이
+    있는 문서였다. 같은 생성기를 `src/extract/js-scope-oracle.test.ts`(고정 시드 3,000회)로 넣었다. 변이 22종 중 의미가 같은
+    1종을 빼고 모두 테스트에 잡혔다. 공개 패키지 12개 사실·한계 수·`--events` 출력은 main과 같다. 리뷰 퍼저(잘린 입력·토큰
+    수프 3만 4천 회) 예외 0.
+  - `npm run verify` 통과(제품 테스트 1,400개·커버리지 라인 99.17/분기 95.30/함수 98.37, 스크립트 225, CLI·패키지 계약).
+    부하가 큰 기계(load 17)에서도 `scripts/stop-detached-process.test.mjs` 실패는 보지 못했다. GLM 리뷰는 `packet-ask`가 없어
+    실행하지 못했다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -71,9 +91,8 @@ _Last updated: 2026-11-22_
 - extract-js 남은 파일 전역 지도(2026-11-22 확인, 기존 동작): 모듈 객체 판정용 `requireSpecifiers`·`requireModules`·
   `interopDefaultModules`·`destructuredSources`는 아직 파일 전역이다. 한 함수의 `const { NativeModules } = require('react-native')`가
   다른 함수의 `const NativeModules = mock`을 레지스트리로 읽게 만든다(거짓 사실). 블록 범위 표의 선언에 출처를 실으면 고칠 수 있다.
-- extract-js 가림 공백(기존 동작): 블록 범위 표에 넣지 않는 이름 — `catch (M)` 매개변수, 배열 구조 분해 `const [M]`,
-  함수·클래스 선언 이름, 식 본문 화살표 매개변수(`M => M.x()`) — 은 같은 이름의 바깥 모듈 바인딩을 가리지 않아 그 안의
-  호출이 바깥 모듈로 귀속될 수 있다. JSX 속성 `name={…}`은 재대입으로 읽혀 같은 이름 바인딩을 지운다(사실이 줄 뿐이다).
+- extract-js 가림 공백(기존 동작): 블록 범위 표에 넣지 않는 이름 — `catch (M)` 매개변수, 함수·클래스 선언 이름, 식 본문
+  화살표 매개변수(`M => M.x()`) — 은 같은 이름의 바깥 모듈 바인딩을 가리지 않아 그 안의 호출이 바깥 모듈로 귀속될 수 있다. JSX 속성 `name={…}`은 재대입으로 읽혀 같은 이름 바인딩을 지운다(사실이 줄 뿐이다).
   속성 자리 API로 만든 초기값(`var M = _reactNative.NativeModules.A`)은 바인딩이 아니어서 Babel 출력의 `M.x()`는 귀속되지
   않는다(초기값을 js-binding-scope로 센다).
 - extract-js 남은 관찰 공백(리뷰 반영 중 확인, 모두 js-binding-scope로 셈): 중첩 제네릭 인수를 둔 API 호출
@@ -104,5 +123,5 @@ _Last updated: 2026-11-22_
 
 HANDOFF.md와 적용 AGENTS.md를 읽고 branch/status를 확인해줘. isthmus-cli 0.14.0은 발행됐고, 2026-11-03 계열
 검토 후속(#162)과 js-binding-scope 측정·extract-js 후속(#164)은 main에 머지됐으나 미발행(`[Unreleased]`)이다.
-2026-11-22 extract-js 블록 범위 바인딩·초기값 본문 수집은 브랜치 `ccr-37904670-hxdjsx`에 있다 — 푸시·PR 여부는
-`git status`와 GitHub로 확인한다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.
+2026-11-22 extract-js 블록 범위 바인딩·초기값 본문 수집과 그 리뷰 반영은 브랜치 `ccr-37904670-hxdjsx`(PR #165)에 있다 —
+마지막 로컬 커밋의 푸시 여부는 `git status`와 GitHub로 확인한다. 발행 여부는 npm registry로 확인하고, 위 후속 후보와 릴리스는 내가 고르기 전에 착수하지 마.

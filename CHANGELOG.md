@@ -96,23 +96,37 @@
   `function B() { const M = NativeModules.B; M.y(); }`), the last declaration won and A's call became a
   false `B.x` `method-invoke`; the same happened to `const name = 'Alpha'` /
   `requireNativeModule(name)` in sibling functions (a false `module-import Beta`). A non-module
-  declaration of the same name in an inner scope (a local fake, a destructured name, a `for…of`
-  variable) was ignored, so its calls were attributed to the outer binding or to an import (a false
-  `Outer.fake` or `Camera.take`). Each use now resolves to the innermost declaration that covers it:
-  `const`/`let` apply in their block (a `for` header declaration in its loop), and `var` applies its
-  value in the block that declares it while claiming the name in the whole enclosing function body. A
-  name redeclared in the same scope with a different module, or reassigned, is not attributed (its
-  initializers are counted in `js-binding-scope:`, as before for reassignment). Uses whose value the
-  scope cannot decide — a `var` read outside its declaring block, or a name after a `for` header
-  declaration whose body is not a block (the scan widens that declaration to the enclosing block instead
-  of finding the end of the body statement) — that hide a module binding are not attributed and are
-  counted in `js-binding-scope:`, whose message now also names redeclared bindings and uses outside the
-  block a declaration is scoped to. Escape counting follows the same scopes, so a same-name use in another
-  function is no longer counted as a module reference. A local `NativeModules`, Expo lookup API or
-  `require` stand-in declared with `const`/`let`/`var` now changes the global reading only inside its
-  scope (function and class declaration names still apply to the whole file), and inside that scope it
-  wins over a react-native `NativeModules` import: a test helper's `const NativeModules = mock` used to
-  yield a bare registry fact for its own declarator and false facts for its accesses. Bridge facts and
+  declaration of the same name in an inner scope (a local fake, a destructured or array-destructured
+  name, a `for…of` variable, a parameter) was ignored, so its calls were attributed to the outer binding
+  or to an import (a false `Outer.fake` or `Camera.take`). Each use now resolves to the innermost
+  declaration or parameter list that covers it: `const`/`let` apply in their block (a `for` header
+  declaration in its loop), and `var` applies its value in the block that declares it while claiming the
+  name in the whole enclosing function body. Function bodies are recognized after generic parameters,
+  return type annotations, keyword/string/computed method names, class static blocks and TS
+  namespaces; parameters of such functions now hide outer bindings too. Where the scan cannot tell
+  whether a block is a function body (a conditional return type, a class or object body) it stops the
+  `var` there instead of widening it past an inner `let`/`const` of the same name. A name redeclared in
+  the same scope with a different module, or reassigned, is not attributed (its initializers are counted
+  in `js-binding-scope:`, as before for reassignment); a reassignment in a function declared earlier in
+  the file now also clears a later declaration, and a reassignment after a `for` header declaration whose
+  body is not a block (the scan widens that declaration to the enclosing block instead of finding the end
+  of the body statement) clears the outer binding as well. Uses whose value the scope cannot decide — a
+  `var` read outside its declaring block, or a name after such a widened `for` declaration, including a
+  call that may go through an import — are not attributed and are counted in `js-binding-scope:`, whose
+  message now also names redeclared bindings and uses outside the block a declaration is scoped to.
+  Escape counting follows the same scopes, so a same-name use in another function is no longer counted
+  as a module reference. A local `NativeModules`, Expo lookup API or `require` stand-in declared with
+  `const`/`let`/`var` now changes the global reading only inside its scope (function and class
+  declaration names still apply to the whole file), and inside that scope it wins over a react-native
+  `NativeModules` import: a test helper's `const NativeModules = mock` used to yield a bare registry fact
+  for its own declarator and false facts for its accesses. `const { A } = NativeModules` now produces
+  `module-import` facts and bindings only when `NativeModules` at that position is the react-native
+  registry: destructuring a same-name parameter or local stand-in yields nothing (it used to yield false
+  facts), and destructuring a `NativeModules` imported from another module counts each name in
+  `unattributed-js-native-modules:` like a member access. In a registry pattern, a nested target
+  (`{ Camera: { take } }`) keeps the `Camera` fact and counts the destructured module in
+  `js-binding-scope:`, and a computed key (`{ [name]: M }`) is a dynamic fact like `NativeModules[name]`.
+  Lookups stay near-linear for many same-name declarations, blocks and nesting levels. Bridge facts and
   limitation counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
   react-native-vision-camera 5.2.4, expo-haptics 14.1.4, expo-camera 58.0.14, react-native-svg 15.16.1
   and six others) are unchanged; they bind native modules at module scope.
@@ -124,8 +138,13 @@
   fact, and a reassignment inside it (`const reset = () => { M = other(); }`) did not invalidate the outer
   binding. Function components and hooks now yield the same facts as `function` declarations. The scan
   pauses the declaration at the body and resumes it after the closing brace without recursion, so deeply
-  nested bodies do not exhaust the call stack. A `const`/`let`/`var` keyword used as an object key is not
-  read as a declaration.
+  nested bodies do not exhaust the call stack. A `const`/`let`/`var` keyword starts a declaration only
+  when a declarator follows (a name followed by `=`, `,`, `;`, `:`, `!`, `of`, `in`, a closing bracket or
+  a line break, or a pattern followed by `=`, `:`, `of`, `in`), so an object key (`{ var: 1 }`),
+  `as const`, `const enum` and JSX text (`We will let you know when {name} is ready`) no longer declare
+  names that hide an outer binding. Destructuring patterns declare only their binding names: property
+  keys of nested patterns (`{ Haptics: { enabled } }` declares `enabled`) and a pattern's type
+  annotation (`const { a }: { Haptics?: boolean } = props`) are not declarations.
 
 - `extract-js` no longer records names inside a declaration's initializer as local declarations. An
   object literal or function body in an initializer (`const api = { cam: NativeModules.Camera }`,
@@ -135,8 +154,8 @@
   `{ requireNativeModule: mock }` hide the `expo` mechanism of real calls, and treated names after a
   comma in a type annotation (`Map<string, T>`) as declarators. A `{` is now a pattern only before the
   declarator's `=` (or `of`/`in`), and the type annotation of a name declarator (`const x: T = …`) is
-  skipped; an annotation on a destructuring pattern (`const { a }: { … } = x`) is still read with the
-  pattern. Destructuring patterns, including
+  skipped; an annotation on a destructuring pattern (`const { a }: { … } = x`) is skipped too (see the
+  initializer-body entry above). Destructuring patterns, including
   object patterns inside array patterns, and local shim declarations are still local.
 
 - `extract-js` ends a `const`/`let`/`var` declaration at the end of its statement. It used to end only

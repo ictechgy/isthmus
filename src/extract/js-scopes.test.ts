@@ -65,8 +65,11 @@ test('값 적용 구간 밖이 모듈 바인딩을 가리면 동결한 뒤 그 �
   // 바깥의 L = Outer를 본문이 블록이 아닌 for 머리 선언(60..65 머리, 가림은 60..90)이 가린다.
   table.declare({ name: 'L', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'Outer' } });
   table.declare({ name: 'L', shadow: range(60, 90), bind: range(60, 65), uncertainExtent: true });
-  // 모듈이 아닌 바깥 이름을 가린 위치는 표시하지 않는다.
+  // 넓게 잡힌 가림 너머에 이 파일의 선언이 없으면 import·전역일 수 있다고 표시한다.
   table.declare({ name: 'P', shadow: range(60, 90), bind: range(60, 65), uncertainExtent: true });
+  // 넓게 잡힌 가림 너머의 바깥 이름이 모듈이 아니면 표시하지 않는다.
+  table.declare({ name: 'R', shadow: range(-1, 100), bind: range(-1, 100) });
+  table.declare({ name: 'R', shadow: range(60, 90), bind: range(60, 65), uncertainExtent: true });
   // 범위가 확실한 선언(함수 본문의 모듈 아닌 var)은 바깥 모듈 바인딩을 확실히 가린다.
   table.declare({ name: 'Q', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'Outer' } });
   table.declare({ name: 'Q', shadow: range(0, 50), bind: range(10, 20) });
@@ -78,7 +81,8 @@ test('값 적용 구간 밖이 모듈 바인딩을 가리면 동결한 뒤 그 �
   assert.deepEqual(table.resolve('L', 80), { claimed: true, hidesModule: true });
   assert.deepEqual(table.resolve('L', 62), { claimed: true });
   assert.deepEqual(table.resolve('L', 95), { claimed: true, value: { name: 'Outer' } });
-  assert.deepEqual(table.resolve('P', 80), { claimed: true });
+  assert.deepEqual(table.resolve('P', 80), { claimed: true, hidesOuter: true });
+  assert.deepEqual(table.resolve('R', 80), { claimed: true });
   assert.deepEqual(table.resolve('Q', 30), { claimed: true });
   assert.deepEqual(table.resolve('Q', 60), { claimed: true, value: { name: 'Outer' } });
 });
@@ -170,7 +174,7 @@ function referenceResolve(
       if (moduleOf(entries) !== undefined) return { claimed: true, hidesModule: true };
       if (!entries.every(({ uncertainExtent }) => uncertainExtent === true)) return { claimed: true };
     }
-    return { claimed: true };
+    return { claimed: true, hidesOuter: true };
   }
   const value = moduleOf(group);
   const literal = referenceValue(group, (entry: ScopedDeclarationInput) => entry.literal) as string | undefined;
@@ -179,6 +183,31 @@ function referenceResolve(
     ...(value === undefined ? {} : { value }),
     ...(literal === undefined ? {} : { literal }),
   };
+}
+
+/**
+ * 기준 재대입 — 위치를 덮는 묶음을 안쪽부터 무효로 하고, 값이 위치를 덮거나 범위가 확실한 묶음에서 멈춘다(넓게 잡힌
+ * 묶음의 값 적용 구간 밖 대입은 바깥 선언의 것일 수 있다).
+ */
+function referenceInvalidate(
+  declarations: readonly (ScopedDeclarationInput & { invalidated: boolean })[],
+  name: string,
+  index: number,
+): void {
+  const shadows = [...new Set(declarations
+    .filter(({ name: other, shadow }) => other === name && shadow.from <= index && index <= shadow.to)
+    .map(({ shadow }) => `${shadow.from}:${shadow.to}`))]
+    .map((key) => key.split(':').map(Number) as [number, number])
+    .sort((left, right) => right[0] - left[0] || left[1] - right[1]);
+  for (const [from, to] of shadows) {
+    const entries = declarations.filter(({ name: other, shadow }) =>
+      other === name && shadow.from === from && shadow.to === to);
+    for (const entry of entries) entry.invalidated = true;
+    if (entries.some(({ bind }) => bind.from <= index && index <= bind.to) ||
+      !entries.every(({ uncertainExtent }) => uncertainExtent === true)) {
+      return;
+    }
+  }
 }
 
 test('수집 중의 사슬 조회와 동결한 뒤의 정렬 조회는 선언 전체를 훑는 기준 판정과 같다', () => {
@@ -222,10 +251,12 @@ test('수집 중의 사슬 조회와 동결한 뒤의 정렬 조회는 선언 �
       for (const { name, position: at } of invalidations) {
         if (at !== position) continue;
         table.invalidate(name, position);
-        for (const entry of referenceGroup(recorded, name, position) ?? []) entry.invalidated = true;
+        referenceInvalidate(recorded, name, position);
       }
     }
     table.freeze();
+    // 동결은 모든 선언을 본 해석으로 재대입을 다시 반영한다(앞에 선언된 함수 본문의 대입이 뒤 선언을 지운다).
+    for (const { name, position } of invalidations) referenceInvalidate(recorded, name, position);
     // 동결한 뒤에는 위치 순서와 무관하게 같은 답이다.
     for (let position = size; position >= -1; position--) {
       for (const name of names) {
@@ -246,6 +277,127 @@ test('수집 중 앞 위치를 다시 묻는 조회도 같은 답을 낸다', ()
   assert.deepEqual(table.resolve('M', 15), { claimed: true, value: { name: 'A' } });
   assert.deepEqual(table.resolve('M', 25), { claimed: true, value: { name: 'Outer' } });
   assert.deepEqual(table.resolve('M', 38), { claimed: true, value: { name: 'B' } });
+  // 값 적용 구간이 둘인 묶음(같은 함수의 두 블록 var)과 앞 위치 재대입도 묶음 전체를 훑어 같은 답을 낸다.
+  table.declare({ name: 'V', shadow: range(50, 90), bind: range(55, 60), value: { name: 'C' } });
+  table.declare({ name: 'V', shadow: range(50, 90), bind: range(70, 80), value: { name: 'C' } });
+  assert.deepEqual(table.resolve('V', 85), { claimed: true });
+  assert.deepEqual(table.resolve('V', 57), { claimed: true, value: { name: 'C' } });
+  assert.deepEqual(table.resolve('V', 65), { claimed: true });
+  table.invalidate('V', 58);
+  assert.deepEqual(table.resolve('V', 75), { claimed: true });
+  // 사슬이 지나간 묶음과 뒤에 넣은 묶음이 겹치기만 하면 동결할 때 알아채 그 이름을 쓰지 않는다.
+  table.declare({ name: 'Late', shadow: range(40, 50), bind: range(40, 50), value: { name: 'X' } });
+  assert.deepEqual(table.resolve('Late', 95), { claimed: false });
+  table.declare({ name: 'Late', shadow: range(45, 100), bind: range(96, 100), value: { name: 'X' } });
+  table.freeze();
+  assert.deepEqual(table.resolve('Late', 97), { claimed: true });
+});
+
+test('넓게 잡힌 선언의 값 적용 구간 밖 재대입은 바깥 선언도 무효로 한다', () => {
+  // `let M = A; function f() { M.go(); } for (const M of xs) foo(M); M = B;` — for 머리 선언이 블록 끝까지 넓게
+  // 잡혀 마지막 대입을 가렸다. 대입이 바깥 M의 것일 수 있으므로 바깥 선언도 무효다(전에는 거짓 A.go가 남았다).
+  const table = new ScopedBindingTable();
+  table.declare({ name: 'M', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'A' } });
+  table.declare({ name: 'M', shadow: range(40, 100), bind: range(40, 45), uncertainExtent: true });
+  table.invalidate('M', 60);
+  // 값 적용 구간 안의 대입(루프 머리)이나 범위가 확실한 묶음의 대입은 바깥으로 번지지 않는다.
+  table.declare({ name: 'N', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'A' } });
+  table.declare({ name: 'N', shadow: range(40, 100), bind: range(40, 45), uncertainExtent: true });
+  table.invalidate('N', 42);
+  table.declare({ name: 'V', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'A' } });
+  table.declare({ name: 'V', shadow: range(40, 60), bind: range(45, 50) });
+  table.invalidate('V', 55);
+  table.freeze();
+  assert.deepEqual(table.resolve('M', 20), { claimed: true });
+  assert.deepEqual(table.resolve('N', 20), { claimed: true, value: { name: 'A' } });
+  assert.deepEqual(table.resolve('V', 20), { claimed: true, value: { name: 'A' } });
+});
+
+test('매개변수 목록이 더 안쪽이면 이름을 차지하고 그보다 안쪽 범위의 선언은 매개변수를 이긴다', () => {
+  const table = new ScopedBindingTable();
+  table.declare({ name: 'M', shadow: range(-1, 100), bind: range(-1, 100), value: { name: 'Outer' } });
+  table.declare({ name: 'M', shadow: range(30, 40), bind: range(30, 40), value: { name: 'Inner' } });
+  table.declare({ name: 'L', shadow: range(-1, 100), bind: range(-1, 100) });
+  table.declare({ name: 'L', shadow: range(30, 60), bind: range(30, 35), uncertainExtent: true });
+  table.freeze();
+  // 매개변수 목록(20부터)이 파일 범위 선언보다 안쪽이다.
+  assert.deepEqual(table.resolve('M', 25, 20), { claimed: true, parameter: true });
+  assert.deepEqual(table.resolve('Unknown', 25, 20), { claimed: true, parameter: true });
+  // 매개변수 함수 안쪽 블록(30부터)의 선언이 이긴다.
+  assert.deepEqual(table.resolve('M', 35, 20), { claimed: true, value: { name: 'Inner' } });
+  // 넓게 잡힌 선언 너머가 매개변수면 매개변수가 확실히 가린다(import·전역 표시 없음).
+  assert.deepEqual(table.resolve('L', 50, 20), { claimed: true });
+});
+
+test('넓게 잡힌 묶음이 상한보다 깊게 겹치면 정하지 못한 것으로 보고 귀속하지 않는다', () => {
+  const table = new ScopedBindingTable();
+  table.declare({ name: 'M', shadow: range(-1, 1000), bind: range(-1, 1000), value: { name: 'A' } });
+  for (let level = 0; level < 70; level++) {
+    table.declare({ name: 'M', shadow: range(level * 2, 1000 - level), bind: range(level * 2, level * 2), uncertainExtent: true });
+  }
+  table.declare({ name: 'N', shadow: range(-1, 1000), bind: range(-1, 1000), value: { name: 'A' } });
+  for (let level = 0; level < 70; level++) {
+    table.declare({ name: 'N', shadow: range(level * 2, 1000 - level), bind: range(level * 2, level * 2), uncertainExtent: true });
+  }
+  table.invalidate('N', 500);
+  table.freeze();
+  // 상한을 넘게 오르면 모듈을 가렸다고 본다(세는 쪽). 재대입의 대상을 정하지 못한 이름은 쓰지 않는다.
+  assert.deepEqual(table.resolve('M', 500), { claimed: true, hidesModule: true });
+  assert.deepEqual(table.resolve('N', 2000), { claimed: true });
+  assert.deepEqual([...table.moduleBindings().keys()], ['M']);
+});
+
+test('같은 범위의 같은 이름 선언·값 적용 구간이 많아도 조회가 선언을 훑지 않는다', () => {
+  // 한 함수 안 `var M = NativeModules.A;` k번 뒤 `M.go();` k번(리뷰 재현: 3만 2천 개에 38초), 같은 함수의 형제 블록마다
+  // `var M`(값 적용 구간 k개), 동결 전후 조회. 묶음 요약·구간 색인은 k에 선형이다. 시간 상한은 이차 구현(수십 초)과
+  // 넉넉히 가르는 값이다.
+  const count = 100_000;
+  const started = performance.now();
+  const same = new ScopedBindingTable();
+  for (let index = 0; index < count; index++) {
+    same.declare({ name: 'M', shadow: range(0, 10 * count), bind: range(0, 10 * count), value: { name: 'A' }, initializerStart: index });
+  }
+  for (let index = 0; index < count; index++) same.resolve('M', index);
+  same.freeze();
+  for (let index = 0; index < count; index++) same.resolve('M', count + index);
+  assert.equal(same.trackedInitializerStarts().length, count);
+  assert.deepEqual([...same.moduleBindings()], [['M', { name: 'A' }]]);
+  const blocks = new ScopedBindingTable();
+  for (let index = 0; index < count; index++) {
+    blocks.declare({ name: 'V', shadow: range(0, 10 * count), bind: range(10 * index + 1, 10 * index + 5), value: { name: 'A' } });
+    blocks.resolve('V', 10 * index + 2);
+  }
+  blocks.freeze();
+  for (let index = 0; index < count; index++) {
+    const expected = { claimed: true, value: { name: 'A' } };
+    if (index % 997 === 0) {
+      assert.deepEqual(blocks.resolve('V', 10 * index + 3), expected);
+      assert.deepEqual(blocks.resolve('V', 10 * index + 8), { claimed: true, hidesModule: true });
+    } else {
+      blocks.resolve('V', 10 * index + 3);
+    }
+  }
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 8_000, `elapsed ${elapsed.toFixed(0)} ms`);
+});
+
+test('끝난 같은 이름 중첩 범위가 깊어도 뒤 위치 조회가 깊이에 비례해 오르지 않는다', () => {
+  // 같은 이름의 블록 6만 단계가 닫힌 뒤 위치 6만 곳을 묻는다. 감싼 묶음을 하나씩 오르면 위치마다 6만 단계(모두 36억
+  // 단계)라 수 초 넘게 걸리고, 건너뛰기 포인터는 로그 단계라 0.1초 안팎이다.
+  const depth = 60_000;
+  const table = new ScopedBindingTable();
+  table.declare({ name: 'M', shadow: range(-1, 10 * depth), bind: range(-1, 10 * depth), value: { name: 'Outer' } });
+  for (let level = 0; level < depth; level++) {
+    table.declare({ name: 'M', shadow: range(level, 2 * depth - level), bind: range(level, 2 * depth - level) });
+  }
+  table.freeze();
+  const started = performance.now();
+  for (let position = 2 * depth + 1; position < 3 * depth; position++) {
+    assert.deepEqual(table.resolve('M', position), { claimed: true, value: { name: 'Outer' } });
+  }
+  assert.deepEqual(table.resolve('M', 2 * depth - 5), { claimed: true });
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 2_500, `elapsed ${elapsed.toFixed(0)} ms`);
 });
 
 test('같은 이름의 형제 범위가 많아도 수집 중·동결 뒤 조회가 범위 수에 비례해 훑지 않는다', () => {

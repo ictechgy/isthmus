@@ -1214,3 +1214,21 @@ test('깊게 중첩된 선언 초기값 본문과 블록도 호출 스택을 넘
     assert.deepEqual(scan.memberCalls.map((call) => [call.method, call.binding ?? null]), [['go', { name: 'X' }]]);
   }
 });
+
+test('같은 범위의 var 재선언·깊은 블록의 var가 많아도 스캔이 선형에 가깝다', () => {
+  // 리뷰 재현: `var M = NativeModules.A;` 3만 2천 번 뒤 `M.go();` 3만 2천 번(한 함수)이 38초, 1만 6천 단계 블록마다 var가
+  // 2.5초였다(main 0.5초·0.1초). 묶음 요약·var 범위 기억으로 선형이다. 시간 상한은 이차 구현과 넉넉히 가르는 값이다.
+  const count = 32_000;
+  let started = performance.now();
+  const redeclared = scanJsSource(`function f() {\n${'var M = NativeModules.A;\n'.repeat(count)}${'M.go();\n'.repeat(count)}}`);
+  assert.equal(redeclared.memberCalls.length, count);
+  assert.deepEqual(redeclared.memberCalls[0]?.binding, { name: 'A' });
+  let elapsed = performance.now() - started;
+  assert.ok(elapsed < 6_000, `redeclared: elapsed ${elapsed.toFixed(0)} ms`);
+  started = performance.now();
+  const depth = 24_000;
+  const deep = scanJsSource(`${'{ var a = 1;\n'.repeat(depth)}${'}\n'.repeat(depth)}`);
+  assert.equal(deep.memberCalls.length, 0);
+  elapsed = performance.now() - started;
+  assert.ok(elapsed < 3_000, `deep: elapsed ${elapsed.toFixed(0)} ms`);
+});
