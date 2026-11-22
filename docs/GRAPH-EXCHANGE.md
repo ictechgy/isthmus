@@ -430,9 +430,33 @@ Swift/Kotlin 수신 측의 같은 이름을 (target, `channel`=모듈·컴포넌
 react-native 모듈 객체(`import * as RN`·`import RN`·`const RN = require('react-native')`)를 거친
 `RN.NativeModules.X`와 그 객체에서 구조 분해한 `const { NativeModules } = RN`(별칭 포함)도 같은 사실로 읽고,
 import 절·재수출 절(`export { … } from`·`export * from`)·선언 구조 분해의 이름 자체는 값 사용으로 세지 않는다.
+레지스트리 출처는 이름이 아니라 위치를 덮는 선언의 것이다 — 선언은 자기 초기값·구조 분해 원천이
+`require('react-native')`(이름 `NativeModules`, 또는 다른 이름으로 구조 분해한 속성 `NativeModules`)이거나 react-native 모듈
+객체(속성 `NativeModules`)일 때만 레지스트리이고,
+위치는 그 위치를 덮는 선언이 그런 선언일 때만 레지스트리를 읽는다(모듈 바인딩과 같은 블록 범위·`var` 끌어올림·매개변수·
+재대입 규칙). 한 범위의 레지스트리 선언은 다른 범위의 같은 이름 선언(테스트 대역)을 레지스트리로 만들지 않고, 선언이 덮지
+않는 위치의 별칭은 레지스트리가 아니다. 레지스트리 선언이 정하지 못하게 관여하는 위치(블록 밖의 `var`, 본문이 블록이 아닌
+for 머리 선언 뒤, 무엇을 대입했는지 모르는 재대입 뒤, 잠정적인 매개변수 목록이 없으면 레지스트리 선언에 닿는 위치)의 접근은
+사실 대신 아래 `js-binding-scope:` 첫 수로 센다. 값이 살아남지 못한 레지스트리 선언(같은 범위의 다른 값 재선언, 재대입)도
+하나씩 센다.
+`NativeModules`라는 이름의 함수·클래스 선언은 파일 전체에서 전역 레지스트리 해석을 가린다. 레지스트리 이름(`NativeModules`,
+파일 어딘가의 `{ NativeModules: X }` 별칭, react-native import 별칭)이라도 그 위치가 레지스트리가 아니면 다른 이름처럼 읽는다
+— 같은 이름의 로컬 모듈 바인딩(`const Cam = requireNativeModule('Cam')`)의 호출은 그대로 사실이다.
+레지스트리 멤버로 만든 바인딩(`const C = NativeModules.Camera`·`NativeModules['Camera']`)과 레지스트리 구조 분해(`const { A } =
+NativeModules`)는 모든 선언·재대입·import를 본 뒤 그 자리를 판정한다 — 레지스트리가 아니면 그 바인딩·별칭·export·구조 분해
+사실을 거두고(같은 범위에 두 번 선언한 `var`는 처음 본 값을 별칭·export에 넘기므로 그 값도 함께 거둔다), 레지스트리일 수도
+있으면(정하지 못한 레지스트리 선언, 다른 모듈에서 가져온 `NativeModules`) 그 바인딩의 쓰임마다 첫 수로 센다.
+`const { NativeModules: NM } = require('react-native')` 출처는 그 이름이 표가 가리지 않는 자리(식 본문 화살표 매개변수 — 반환 타입이
+붙은 `(NM): T => …` 포함 —, `catch` 매개변수, 함수·생성기(`function* NM`)·클래스 선언 이름 — 아래의 가림 공백)에도 쓰이면 사실을
+내지 않고 그 위치의 쓰임을 첫 수로 센다. 넓게 본다 — TS 함수 타입 `(NM: string) => void`나 기본값 `(x = NM) => x`도 그 자리로 본다.
+레지스트리 별칭의 객체·타입 리터럴 키(`{ NM: 1 }`)와 같은 줄에 본문이 붙은 객체·클래스 메서드 이름(`NM() {`·`*NM() {`·
+`get NM() {`)은 이름 자리라 레지스트리 값으로 읽지 않는다(이름 그대로인 `NativeModules`의 키·메서드 이름은 아직 동적 사실을 낸다).
 매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
-다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
-`unattributed-js-native-modules:` 한계로 센다.
+다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수(구조 분해면 꺼낸 이름 수)를
+`unattributed-js-native-modules:` 한계로 센다 — ES import와 react-native가 아닌 모듈의 `require`(`const NativeModules =
+require('…').default`, `const { NativeModules } = require('other-lib')`)가 같다. 그 원천에서 꺼낸 바인딩(`const v =
+NativeModules.Camera`)은 사실을 내지 않고 그 쓰임마다 `js-binding-scope:` 첫 수로 센다 — 한 위치를 두 번 세지는 않지만, 이런
+원천에서는 두 줄이 겹치므로(읽기는 앞 줄, 그 값의 쓰임은 뒤 줄) 미귀속 호출 수를 구하려고 두 줄을 더하지 않는다.
 속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
 `TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
 인라인 `require('react-native')`, Babel·TS 변환의 `_interopRequireWildcard`·`__importStar` 결과와
@@ -475,8 +499,11 @@ module-import 사실은 내지만 바인딩으로 추적하지 않으므로, 그
 해석되지 않은 import 이름(스캔이 이름으로 읽는 `NativeModules`·`TurboModuleRegistry`·
 조회·컴포넌트 API는 제외), 네임스페이스 import, 값을 쓰는 `require()` 호출, 동적
 `import()` 호출, specifier에 닿지 못한 `import` 낱말(JSX 글자, 깨진 문), 보간이 브리지
-API 이름을 언급하는 템플릿 리터럴. 템플릿 보간(`${…}`) 안은 토큰으로 읽지 않으므로 그
-안의 사실은 나오지 않고 이 수로만 드러난다. 이 입구가 모듈을 담는지는 알 수 없으므로 이
+API 이름을 언급하는 템플릿 리터럴. 템플릿 보간(`${…}`) 안은 이름을 찾는 데만 다시 토큰화한다 — 그
+안의 사실은 나오지 않고, 브리지 API 이름은 이 수로, 모듈 바인딩·상대 import 이름의 쓰임은 첫 수로
+드러난다(레지스트리 별칭 `import { NativeModules as NM }`의 쓰임도 첫 수다 — 브리지 API 낱말이 아니다). 대입·증감 연산자나
+반복문 머리의 `for`(for-of/in 대상 — 속성 이름 `x.for`·객체 키 `{ for: … }`는 아니다)가 있는 보간은 그 안에서 대입 대상이 될 수 있는 이름(속성 이름 `o.M = 1`의 M, 멤버 접근·호출·태그 호출의
+대상 `M.n++`·`` M`t` ``의 M은 아니다)을 대상이 확실하지 않은 재대입으로 본다. 이 입구가 모듈을 담는지는 알 수 없으므로 이
 수가 0이 아니면 첫 수가 0이어도 줄을 싣고 첫 수가 하한임을 밝힌다. 인식하지 않는
 API(전역 객체 등)와 스캔하지 않은 파일의 사용은 이 계수 밖이다.
 선언 바인딩과 한 단계 문자열 상수는 블록 범위다 — `const`·`let`은 감싼 블록(for 머리
@@ -488,7 +515,8 @@ API(전역 객체 등)와 스캔하지 않은 파일의 사용은 이 계수 밖
 `case 1, (x): M => {…}`) 잠정이다), 클래스 정적 블록, TS namespace. 메서드 약칭(`run(M) {…}`·
 `catch(M) {…}`·`run?(M): void {…}`)은 뒤 `{`로만 추론한 잠정적인 본문·매개변수 목록이다.
 `case`·`default` 절의 블록은 절 식이 `)`로 끝나도(`case kind(): {`) 블록이고, 삼항 갈래의
-호출(`busy ? wrap(x) : e => {…}`의 `wrap(x)`)과 클래스 상속절 호출(`extends withEvents(M) {`)은
+호출(`busy ? wrap(x) : e => {…}`의 `wrap(x)`)과 클래스 상속절 호출(`extends withEvents(M) {`), 속성 자리
+이름 뒤 괄호(`foo.function(M)`·`foo.bar(M)` 뒤 다음 줄 `{` — 함수·메서드 이름은 `.` 뒤에 오지 않는다)는
 매개변수 목록이 아니다. 반환 타입 주석은 완결된 타입 뒤 줄바꿈에서 끝난다 — 세미콜론 없는
 오버로드·추상 시그니처 다음 메서드의 `{`를 그 목록의 본문으로 읽지 않는다. `var`는 확실한
 함수 본문이 아닌 블록을 모두 지나 끌어올린다. 그 길에 종류를 정하지 못한 블록 — 메서드 약칭

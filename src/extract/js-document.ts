@@ -288,7 +288,8 @@ function buildLimitations(
       `js-binding-scope: ${extra.escapedModuleReferences} native module references leave the bindings `
       + 'the scan follows (passed to a function, returned, stored in instance state or another value, '
       + 'reassigned, redeclared or destructured, used outside the block a declaration is scoped to or where the scan '
-      + 'cannot tell which declaration or parameter applies, or a member read without a call), so member calls through '
+      + 'cannot tell which declaration or parameter applies, a member read without a call, or used inside a template '
+      + 'interpolation), so member calls through '
       + 'them are not attributed to a module name'
       + (extra.untracedBindings === 0 ? '' : `; this is a lower bound because ${extra.untracedBindings} `
         + 'entries the scan does not trace may also hold native modules (imports that do not resolve to a '

@@ -90,6 +90,111 @@
 
 ### Fixed
 
+- `extract-js` decides whether `NativeModules` (or an alias destructured as `{ NativeModules: NM }`) is the
+  react-native registry from the declaration that covers each position instead of by name. One
+  `const { NativeModules } = require('react-native')` (or `const { NativeModules } = RN` from the react-native
+  module object) anywhere in a file used to make every same-name declaration the registry: a jest-style stand-in
+  `const NativeModules = { Camera: { take() {} } }` in a test helper, a `var NativeModules = mock` in a block,
+  a local `const NM = mock`, and `const { Torch } = NativeModules` destructured from such a stand-in produced
+  false `module-import`/`method-invoke` facts (which surface as false `module-import-without-export` and
+  `unhandled-invocation` errors), and an alias read in another function where it is not declared was read as
+  the registry too. A declaration is now the registry only when its own initializer or destructuring source is
+  `require('react-native')` (for the name `NativeModules`, or the property `NativeModules` destructured under
+  another name — `const { NativeModules: NM } = require('react-native')` yielded no facts before) or the
+  react-native module object (for the property `NativeModules`), and a position reads the registry only when
+  the declaration that covers it is one. The same block scope, `var` hoisting, parameter and reassignment rules
+  as module bindings apply. Where a registry declaration applies undecidedly, the access is counted in
+  `js-binding-scope:` instead of attributed (each used to yield facts): a `var` read outside its declaring block,
+  a name after a `for` header declaration whose body is not a block, and a reassigned registry binding
+  (`NativeModules = mock` — the scan does not know what was assigned; this case also used to yield a dynamic
+  `NativeModules` fact for the assignment target), and a registry declaration whose value does not survive (a
+  same-scope `var` redeclaration with another value) is counted once. A function or class named `NativeModules`
+  hides the global registry reading in the whole file.
+
+  Bindings made from a registry member follow the same decision. `const Camera = NativeModules['Camera']` (or
+  `.Camera`) was bound without checking where `NativeModules` came from, so the jest stand-in above still gave
+  an orphaned false `method-invoke Camera.take`. Such bindings and registry destructurings
+  (`const { Camera } = NativeModules`) are now checked once all declarations, reassignments and imports are
+  known — while collecting, a later hoisted `var NativeModules = mock`, a reassignment in another function, a
+  later `import RN`, `import { NativeModules } from 'other-lib'` or `function NativeModules` is not yet seen.
+  When the position is not the registry, the binding, its aliases (`const D = Camera`), its exports and the
+  destructuring facts are withdrawn. A same-scope `var` declared twice keeps the first value it saw, and aliases
+  and exports receive that value, so withdrawing one declaration's value also withdraws the group's value (a
+  stand-in `var C = NativeModules.Camera` inside a block used to leave `const D = C; D.take()` and an exported
+  `C` as false facts, in another file too). This also withdraws a true call made before the stand-in
+  redeclaration (`var C = NativeModules.Camera; const D = C; D.take(); { const NativeModules = mock; var C =
+  NativeModules.Camera; }` — at runtime `D.take()` reaches the native module): the `var` holds two values, and,
+  as for any redeclared value, the first initializer is counted instead. When the position may be the registry — an undecided registry
+  declaration, or a `NativeModules` taken from another module by an ES import or by a `require` of a module
+  other than react-native (inside react-native, `require('../BatchedBridge/NativeModules').default` is the
+  registry) — each use of the binding is counted in `js-binding-scope:`. A registry destructuring after a late
+  `import RN from 'react-native'` or after an undecided same-name `var` in another function now keeps its true
+  facts.
+
+  A `NativeModules` taken by a `require` of a module other than react-native (`const NativeModules =
+  require('…').default`, `const { NativeModules } = require('other-lib')`) is now counted like the ES-import form:
+  each member access and each destructured name in `unattributed-js-native-modules:`. It was read as a local
+  stand-in and its accesses were not counted at all. For a `NativeModules` from another module, a read counts
+  once in `unattributed-js-native-modules:` and each later use of a binding made from it counts once in
+  `js-binding-scope:` — no position is counted twice, but the two lines overlap for such sources and should not
+  be added together to count unattributed calls. Compared with main, the ES-import form changes too:
+  `import { NativeModules } from 'other-lib'; const v = NativeModules.Camera; v.take();` gave a `method-invoke
+  Camera.take` without any `module-import`, and `const { Camera, Torch } = NativeModules` gave nothing for its
+  uses. Both are now counted: the scan cannot tell whether another module's `NativeModules` is the registry
+  re-exported (as inside react-native) or a stand-in, so a fact would claim a native module the document cannot
+  back.
+
+  The new `const { NativeModules: NM } = require('react-native')` origin is not trusted when the same name is
+  also used where the scan does not shadow (an expression-bodied arrow parameter, including one with a
+  TypeScript return type such as `(NM): Promise<void> => …`; a `catch` parameter; a function, generator
+  (`function* NM`, `async function* NM`) or class declaration name — a known gap for every registry name): its
+  positions are counted in `js-binding-scope:` instead of yielding facts, so `items.forEach(NM =>
+  NM.Camera.take())` does not yield a false `Camera.take`. The check is broad on purpose: a TypeScript function
+  type `type F = (NM: string) => void` or a default `(x = NM) => x` also turns true `NM` calls elsewhere in the
+  file into counts.
+
+  For registry alias names, object and type literal keys (`{ NM: 1 }`) and object or class method names written
+  with their body on the same line (`NM() {`, `*NM() {`, `get NM() {`) are names, not values; they used to be
+  read as the bare registry and yielded a dynamic `module-import NativeModules`. The literal name `NativeModules`
+  keeps its behavior (react-native's own `index.js` defines `get NativeModules() { … }`, which still yields that
+  dynamic fact).
+
+  The registry names (`NativeModules` and every `{ NativeModules: X }` alias in the file, plus react-native
+  import aliases) used to send every same-name position down the registry path, which dropped the position
+  without a count when it was not the registry. A local module binding with the name of an alias elsewhere
+  (`const Cam = requireNativeModule('Cam'); Cam.take()` next to `const { NativeModules: Cam } = RN` in another
+  function, or next to `import { NativeModules as Cam }`) and a local `const NativeModules =
+  requireNativeModule('Torch')` lost their true `method-invoke`, and the last destructuring of a name decided
+  for the whole file (`const { NM } = props` in one function erased `NM.A.a()` through a registry alias in
+  another). Each position is now decided on its own: when it is not the registry, it is read like any other
+  name. For the 12 published packages listed below, facts, `--events` output and every limitation count are
+  unchanged apart from the `js-binding-scope:` wording, except react-native 0.88.1: its `js-binding-scope:`
+  first count goes from 63 to 66 and it gains `unattributed-js-native-modules: 3`. Two internal files read
+  members of `const NativeModules = require('../BatchedBridge/NativeModules').default`; those 3 reads are now
+  counted like reads from an imported module, and each use of the values bound from them is counted (8 uses,
+  where 5 escapes were counted before).
+
+- `extract-js` reads names inside template interpolations. The lexer keeps a template as one token, so
+  `` `${M = other}` `` followed by `M.take()` yielded a false `method-invoke`, and `` `${M.take()}` `` disappeared
+  without a count (only an interpolation that mentions a bridge API name was counted, as a lower-bound entry).
+  Each interpolation body is now tokenized again. When it contains an assignment or increment operator or a
+  loop-head `for` (a `for…of`/`for…in` target needs no `=`; a property `x.for` or an object key `{ for: … }` is
+  not a loop head), every name in it that could be the target (not a property
+  name such as the `M` of `o.M = 1`, and not a member, call or tag base such as the `M` of `M.count++` or
+  `` M`t` ``) is treated as a reassignment whose target is uncertain, so that binding is not attributed and its
+  module uses are counted. Uses of module bindings, relative imports and registry aliases (`import
+  { NativeModules as NM }`, `{ NativeModules: NM } = RN`) inside an interpolation are counted in
+  `js-binding-scope:`; calls there are not attributed. The literal registry and lookup API names inside an
+  interpolation stay lower-bound entries. The message now also names uses inside a template interpolation (the
+  prefix is unchanged). Deeply nested templates stay linear.
+
+- `extract-js` no longer reads a property name as a function head. `foo.function(M)` followed by a `{` on the
+  next line was read as a certain `function` head: the block's `M` was hidden as a parameter (a true call there
+  disappeared without a count) and a `var` in that block was confined to it (a false fact after the block). A
+  name after `.` or `?.` followed by `(…)` is a member call — function and method names never follow a `.` — so
+  `foo.bar(M)` followed by a `{` line is no longer a tentative parameter list either, and the call inside that
+  block is attributed instead of counted.
+
 - `extract-js` resolves declaration bindings and one-level string constants by block scope instead of
   one file-wide map. When two function bodies, blocks or methods bound the same name to different
   native modules (`function A() { const M = NativeModules.A; M.x(); }` and
