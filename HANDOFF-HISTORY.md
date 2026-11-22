@@ -298,6 +298,46 @@ _Last updated: 2026-09-20 (네 저장소 호환 릴리스 발행·설치 검증 
 
 아래는 기존 세션의 근거를 보존한 기록이다. 현재 작업과 잔여 검증은 위 절을 우선한다.
 
+## 완료 — js-binding-scope 측정과 extract-js 후속 (PR #164, squash `c9549e6`, 2026-11-16)
+
+HANDOFF.md 현재 상태 절에서 옮긴 원문이다(커밋 해시는 PR 브랜치의 것).
+
+- 2026-11-15: extract-js `js-binding-scope:` 한계를 측정한다 — 브랜치 `ccr-37904670-hxdjsx`의 `057a133`
+  (PR #164로 열림, 미머지·미발행, CHANGELOG `[Unreleased]`). 첫 수는 인식한 모듈 값이 귀속 호출·기록된 선언과 export·
+  원시값 소비 밖에서 쓰인 횟수, 뒤 절은 출처를 따라갈 수 없는 값의 입구(해석되지 않은 import, 네임스페이스
+  import, 값을 쓰는 `require()`, 동적 `import()`) 수다. 뒤 수가 0이 아니면 첫 수가 0이어도 하한으로 남기고, 둘 다
+  0일 때만 줄이 빠진다. 그런 입력(codegen 스펙만 스캔 등)에서는 `impact --strict`가 1→0으로 바뀔 수 있다(재현:
+  스펙+수신 문서). 실제 앱 소스는 거의 항상 패키지를 import해 줄이 남는다(expo-haptics 14.1.4: 사실 동일, `0 …;
+  lower bound because 7`). conformance 벡터·생산자 8곳은 이 줄을 참조하지 않고, 드리프트는 없다(생산자 7곳 current,
+  schemagraph not-vendored). `npm run verify` 통과. GLM 리뷰는 `packet-ask`가 없어 실행하지 못했다.
+- 2026-11-15 같은 브랜치 후속(PR #164에 포함): 측정 중 발견한 extract-js 사실 누락·거짓 사실을 고쳤다. 커밋마다 실패하는
+  회귀 테스트를 먼저 두고 변이 검사로 확인했다(CHANGELOG `[Unreleased]` `### Fixed`).
+  - `7f6eb19` 선언 초기값의 객체 리터럴·함수 본문 이름을 로컬 선언으로 기록하지 않는다 — import 없이 전역으로
+    읽는 파일의 NativeModules 사실 전체가 사라지던 문제. 타입 주석의 이름도 선언자로 읽지 않는다.
+  - `c66eee5` 선언이 문장 끝(ASI 줄바꿈, for 머리의 `)`, 블록 끝 `}`)에서 끝난다 — 세미콜론 없는 코드·for-of 뒤에서
+    첫 선언이 파일 끝까지 이어져 뒤의 바인딩·export가 수집되지 않던 문제(원래 후보 목록 밖, 같은 함수에서 발견).
+  - `42fd6fd` `import X, * as NS`의 default X를 잃지 않고, 두 네임스페이스 형태를 모두 인식한다.
+  - `98c4d03` 속성 자리 브리지 API 이름(`OBJ.NativeModules`·`OBJ.TurboModuleRegistry`·`OBJ.requireNativeModule(…)`)은
+    체인 길이가 아니라 OBJ가 그 API를 내보내는 모듈(react-native·Expo)인지로 판정한다. 그 밖의 객체는 사실 없이
+    `unattributed-js-native-modules:`로 센다(메시지 확장). 속성 자리 이름은 파일 바인딩·별칭으로 읽지 않아 홀수
+    체인 위치의 거짓 method-invoke·module-import가 없어졌다.
+  - expo-haptics 14.1.4 사실은 수정마다 바이트 단위로 같았다. 적대 입력 시간은 수정 전 트리와 같은 범위다.
+- 2026-11-16 PR #164 독립 리뷰("수정 후 머지 가능") 반영 — 아래 커밋은 PR에 푸시됐다. 이후 재검토 반영처럼 그 뒤에
+  쌓인 커밋의 푸시 여부는 `git status`(origin 대비 ahead)로 확인한다:
+  - `5a6949a` B1: 초기값 없는 타입 주석 선언(`let timer: Timer`)이 다음 줄 선언의 초기값을 가져가 거짓
+    `Haptics.cancel`과 사라진 한계를 만들던 문제. 같은 수정이 이번 릴리스의 주석 건너뛰기가 `Map<string, Array<number>>`의
+    `>>`에서 파일 끝까지 넘어가던 회귀(리뷰 밖에서 재현)도 고친다. impact --strict 종단 테스트 포함.
+  - `e4fc95a` S1·S2: 대괄호 분류의 인자 재탐색(이차)과 비교 `<`에서 파일 끝까지 가던 타입 인수 탐색을 없앴다.
+    리뷰 입력 nestcall 32k head 약 20초 → 0.3~0.75초, lt 6000 main 약 7초·head 약 15초 → 0.2~0.4초.
+  - `c57965d` S3a import 문이 아닌 `import` 낱말(import.meta·객체 키·JSX 글자)이 뒤 코드를 삼키던 문제와 그 계수,
+    S3b 템플릿 보간의 브리지 API 언급 계수·문서, S3c 초기값 제네릭 호출 인수의 쉼표, S4 Babel·TS interop
+    (`_interopRequireDefault(require('react-native'))`의 `.default.NativeModules`) 사실 유지, N2 이중 계수 제거,
+    N3 버려지는 식 문장 비계수, N1 `as const`·non-null 줄 끝 ASI와 CHANGELOG 정정, N5 문서.
+  - 실제 패키지 7개(react-native 0.88.1, screens 4.30.1, vision-camera 5.2.4 등)에서 리뷰 반영 전후 사실 차이 없음.
+- 2026-11-16 PR #164 델타 재검토("수정 후 머지 가능") 반영: S-A 초기값 제네릭 덩어리 건너뛰기가 안쪽 괄호의 `>`와
+  짝지어 세미콜론 없는 뒤 문장을 삼키던 문제(안쪽 괄호는 그 안에서 연 제네릭만 닫는다 — main부터 있던 거짓 `M.x` 호출도
+  사라짐), S-B 템플릿 정규식의 이차 시간, N-b 기본 import 변환 `.default`를 react-native로 한정(Expo 패키지는 센다) — `ecf87ea`.
+
 ## 완료 — README 영·한 퇴고 (PR #79 머지, squash `ea4cb95`)
 
 - 브랜치 `docs/readme-rn-update`: 양쪽 README의 RN 절을 머지된 구현(mechanism 구분·
