@@ -240,8 +240,15 @@ interface ScanContext {
    * 더 안쪽 것을 고른다 — 이 구간 안의 더 안쪽 선언은 매개변수를 이기고, 매개변수는 바깥 선언을 가린다.
    */
   readonly paramShadows: ParamShadowIndex;
-  /** 매개변수 가림을 만든 괄호 목록의 여는 `(` 위치다(구조 분해 대입과 매개변수 패턴을 가른다). */
-  readonly parameterListOpens: ReadonlySet<number>;
+  /**
+   * 매개변수 가림을 만든 괄호 목록의 여는 `(` 위치 → 함수 머리인지 정하지 못한 목록인지다(구조 분해 대입과 매개변수
+   * 패턴을 가른다).
+   */
+  readonly parameterListOpens: ReadonlyMap<number, boolean>;
+  /** 구조 분해 패턴 괄호(여는 위치)마다 감싼 패턴을 따라 올라 닿는 첫 괄호의 계산 결과다(-1 없음). 한 번만 오른다. */
+  readonly patternRoots: Map<number, number>;
+  /** 괄호(여는 위치·for 머리 여부)마다 구조 분해 대입 대상인지의 판정 결과다. */
+  readonly assignmentPatterns: Map<number, boolean>;
   /**
    * 이 파일이 선언한 로컬 이름이다(`function`·`class`·`const` 등). 위치별 판정은 declaredLocallyAt을 쓴다 —
    * `const`·`let`·`var` 선언은 블록 범위 표로, 함수·클래스 선언은 파일 전체로 본다.
@@ -456,7 +463,10 @@ function createBoundContext(source: string): ScanContext {
     divertingGroups: new Map(),
     identifierEscapes: new Map(),
     paramShadows: new ParamShadowIndex(paramShadows),
-    parameterListOpens: new Set(paramShadows.flatMap(({ from }) => (tokens[from]?.text === '(' ? [from] : []))),
+    parameterListOpens: new Map(paramShadows.flatMap(({ from, uncertain }) =>
+      (tokens[from]?.text === '(' ? [[from, uncertain === true] as const] : []))),
+    patternRoots: new Map(),
+    assignmentPatterns: new Map(),
     localNames: new Set(),
     functionOrClassNames: new Set(),
     requireSpecifiers: new Map(),
@@ -701,23 +711,7 @@ function collectBindings(context: ScanContext): void {
       }
       continue;
     }
-    // 모듈 객체의 재대입은 그 위치에서 이름을 차지한 선언의 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다.
-    // 대입·복합 대입(`&&=`·`+=` 등)·증감과 for-of/in의 선언 없는 대상이다. `obj.prop = v`의 prop은 로컬 바인딩이 아니라
-    // 속성명이므로 제외한다.
-    if (token.kind === 'identifier' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
-      reassignsName(tokens, index)) {
-      invalidateBinding(context, token.text, index);
-    }
-    // 구조 분해 대입(`({ M } = mocks)`·`[a, M] = pair`·`for ([k, M] of pairs)`)의 대상 이름도 재대입이다.
-    if ((token.text === '=' || (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in'))) &&
-      (tokens[index - 1]?.text === '}' || tokens[index - 1]?.text === ']')) {
-      const open = openingOf(tokens, index - 1);
-      if (open !== undefined && isAssignmentPattern(context, open, token.text !== '=')) {
-        for (const { index: at } of patternBindingNames(tokens, open, index - 1)) {
-          invalidateBinding(context, tokens[at]!.text, at);
-        }
-      }
-    }
+    noteReassignment(context, index);
     // CommonJS `module.exports = <expr>`는 default export와 같다.
     if (
       token.kind === 'identifier' && token.text === 'module' &&
@@ -751,19 +745,63 @@ function collectBindings(context: ScanContext): void {
 }
 
 /**
+ * 위치 `index`의 토큰이 재대입이면 표에 반영한다. 바깥 순회와 선언 초기값 구간(`const r = (M = x)`·`const s = [N] = a`
+ * — 선언 수집이 읽고 바깥 순회는 건너뛴다) 양쪽에서 부른다.
+ *
+ * 모듈 객체의 재대입은 그 위치에서 이름을 차지한 선언의 바인딩을 무효화한다 — 해석 이름이 바뀌었을 수 있다. 대입·
+ * 복합 대입(`&&=`·`+=` 등)·증감과 for-of/in의 선언 없는 대상이다. `obj.prop = v`의 prop은 로컬 바인딩이 아니라 속성명이다.
+ * 구조 분해 대입(`({ M } = mocks)`·`[a, M] = pair`·`if (c) [M, N] = [N, M]`·`for ([k, M] of pairs)`)의 대상 이름도
+ * 재대입이다. 감싼 대입 패턴의 직접 대상인 안쪽 패턴(`[[M] = x] = y`의 `[M]`)은 바깥 패턴이 함께 무효로 한다 — 패턴마다
+ * 다시 훑으면 깊게 중첩된 대입에서 이차 시간이 든다.
+ */
+function noteReassignment(context: ScanContext, index: number): void {
+  const { tokens } = context;
+  const token = tokens[index]!;
+  if (token.kind === 'identifier' && !['.', '?.'].includes(tokens[index - 1]?.text ?? '') &&
+    reassignsName(tokens, index)) {
+    invalidateBinding(context, token.text, index);
+  }
+  if ((token.text === '=' || (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in'))) &&
+    (tokens[index - 1]?.text === '}' || tokens[index - 1]?.text === ']')) {
+    const open = openingOf(tokens, index - 1);
+    if (open !== undefined && !coveredByEnclosingPattern(context, open) &&
+      isAssignmentPattern(context, open, token.text !== '=')) {
+      for (const { index: at } of patternBindingNames(tokens, open, index - 1)) {
+        invalidateBinding(context, tokens[at]!.text, at);
+      }
+    }
+  }
+}
+
+/**
  * 위치 `index`의 이름이 재대입되는지 본다 — 대입 연산자(복합 대입 포함) 앞, 같은 줄의 후위·앞의 전위 증감,
- * for-of/in 머리의 선언 없는 대상(`for (M of xs)`).
+ * for-of/in 머리의 선언 없는 대상(`for (M of xs)`), 괄호로 감싼 대상(`(M) = x`). enum 멤버 초기값(`enum E { M = 1 }`)은
+ * 대입이 아니다.
  */
 function reassignsName(tokens: readonly JsToken[], index: number): boolean {
   const after = tokens[index + 1];
+  const before = tokens[index - 1]?.text;
   if (after !== undefined && (assignmentOperators.has(after.text) ||
     ((after.text === '++' || after.text === '--') && after.line === tokens[index]!.line))) {
+    return !isEnumMemberName(tokens, index);
+  }
+  if (before === '++' || before === '--') return true;
+  if (before === '(' && after?.text === ')' && assignmentOperators.has(tokens[index + 2]?.text ?? '') &&
+    (!isOperandEnd(tokens[index - 2]) || closesControlHead(tokens, index - 2))) {
     return true;
   }
-  const before = tokens[index - 1]?.text;
-  if (before === '++' || before === '--') return true;
   return before === '(' && isForHeader(tokens, index - 1) && after?.kind === 'keyword' &&
     (after.text === 'of' || after.text === 'in');
+}
+
+/** 위치 `close`의 `)`가 제어문 머리(`if (…)`·`while (…)`·`for (…)`·`with (…)`)를 닫는지 본다 — 뒤는 문장의 시작이다. */
+function closesControlHead(tokens: readonly JsToken[], close: number): boolean {
+  if (tokens[close]?.text !== ')') return false;
+  const open = openingOf(tokens, close);
+  if (open === undefined) return false;
+  const head = tokens[open - 1]?.text ?? '';
+  return isForHeader(tokens, open) ||
+    (['if', 'while', 'with'].includes(head) && !['.', '?.'].includes(tokens[open - 2]?.text ?? ''));
 }
 
 /**
@@ -777,35 +815,91 @@ function invalidateBinding(context: ScanContext, name: string, index: number): v
 
 /**
  * 여는 괄호 `open`의 `{…}`·`[…]`가 대입(또는 for-of/in, `forHead`)의 구조 분해 대상인지 본다. 선언 패턴은 선언 수집이
- * 읽고, 매개변수 패턴(`function f({ M } = {})`)은 대입이 아니다. `x[i] = v`의 `[`(피연산자 뒤)는 멤버 접근이고, `:` 뒤의
- * `{…}`는 타입 주석이나 중첩 패턴의 기본값이라 보지 않는다.
+ * 읽고, 확실한 함수 머리의 매개변수 패턴(`function f({ M } = {})`)은 대입이 아니다(함수 머리인지 정하지 못한 목록의
+ * 패턴은 대입으로 보고, 그 매개변수 목록 바깥의 바인딩은 대상이 확실하지 않다고 둔다). `x[i] = v`의 `[`(피연산자 뒤)는
+ * 멤버 접근이다 — 제어문 머리 `)` 뒤(`if (c) [M, N] = …`)는 문장 시작이다. `:` 뒤의 `{…}`는 타입 주석이나 중첩 패턴의
+ * 기본값이라 보지 않는다(`case 'x': [M] = …`의 `[`는 본다). 결과는 괄호마다 기억한다.
  */
 function isAssignmentPattern(context: ScanContext, open: number, forHead: boolean): boolean {
+  const key = open * 2 + (forHead ? 1 : 0);
+  const known = context.assignmentPatterns.get(key);
+  if (known !== undefined) return known;
+  const result = decideAssignmentPattern(context, open, forHead);
+  context.assignmentPatterns.set(key, result);
+  return result;
+}
+
+/** isAssignmentPattern의 판정 본체다(기억하지 않는다). */
+function decideAssignmentPattern(context: ScanContext, open: number, forHead: boolean): boolean {
   const { tokens } = context;
   const before = tokens[open - 1];
   if (forHead) return before?.text === '(' && isForHeader(tokens, open - 1);
-  if (before !== undefined && (before.text === ':' || ['const', 'let', 'var'].includes(before.text) ||
-    (tokens[open]!.text === '[' ? isOperandEnd(before) : !['(', ',', '=', '[', ';', '{', '}'].includes(before.text)))) {
+  if (before !== undefined && (['const', 'let', 'var'].includes(before.text) || (tokens[open]!.text === '['
+    ? isOperandEnd(before) && !closesControlHead(tokens, open - 1)
+    : before.text === ':' || !['(', ',', '=', '[', ';', '{', '}'].includes(before.text)))) {
     return false;
   }
-  // 감싼 패턴(`[`, 패턴 자리의 `{`)을 따라 올라 바로 감싼 괄호가 매개변수 목록이면 매개변수 패턴이다. 함수 본문·블록의
-  // `{`에서 멈춘다 — 기본값 화살표 본문 안의 대입(`f(a = () => { [M] = x; })`)은 대입이다.
-  let cursor = enclosingOpen(tokens, open);
-  while (cursor !== undefined && (tokens[cursor]!.text === '[' ||
-    (tokens[cursor]!.text === '{' && ['(', ',', '[', ':'].includes(tokens[cursor - 1]?.text ?? '')))) {
-    cursor = enclosingOpen(tokens, cursor);
-  }
-  return cursor === undefined || tokens[cursor]!.text !== '(' || !isParameterList(context, cursor);
+  const root = patternRoot(context, open);
+  return root === -1 || tokens[root]!.text !== '(' || parameterListCertainty(context, root) !== 'certain';
 }
 
-/** 여는 `(`가 함수·화살표의 매개변수 목록인지 본다(식 본문 화살표 `(…) => 식` 포함). */
-function isParameterList(context: ScanContext, open: number): boolean {
-  if (context.parameterListOpens.has(open)) return true;
-  const close = findMatching(context.tokens, open, '(', ')');
-  if (close === undefined) return false;
-  let after = close + 1;
-  if (context.tokens[after]?.text === ':') after = returnTypeEnd(context.tokens, after + 1) ?? after;
-  return context.tokens[after]?.text === '=>';
+/** 패턴 자리의 괄호(`[`, 여는 괄호·`,`·`[`·`:` 뒤의 `{`)인지 본다. */
+function isPatternBracket(tokens: readonly JsToken[], open: number): boolean {
+  const text = tokens[open]?.text;
+  return text === '[' || (text === '{' && ['(', ',', '[', ':'].includes(tokens[open - 1]?.text ?? ''));
+}
+
+/**
+ * 감싼 패턴 괄호를 따라 올라 처음 만나는 패턴 아닌 괄호의 위치다(없으면 -1). 함수 본문·블록의 `{`에서 멈춘다 — 기본값
+ * 화살표 본문 안의 대입(`f(a = () => { [M] = x; })`)은 대입이다. 지나간 패턴 괄호마다 결과를 기억해 다시 오르지 않는다.
+ */
+function patternRoot(context: ScanContext, open: number): number {
+  const { tokens } = context;
+  const path: number[] = [];
+  let cursor = enclosingOpen(tokens, open);
+  let root: number | undefined;
+  while (cursor !== undefined && isPatternBracket(tokens, cursor)) {
+    root = context.patternRoots.get(cursor);
+    if (root !== undefined) break;
+    path.push(cursor);
+    cursor = enclosingOpen(tokens, cursor);
+  }
+  root ??= cursor ?? -1;
+  for (const passed of path) context.patternRoots.set(passed, root);
+  return root;
+}
+
+/**
+ * 패턴 괄호 `open`이 감싼 대입 패턴의 직접 대상(요소·`...` 뒤·속성 값)이면 바깥 패턴이 그 이름까지 무효로 하므로 따로
+ * 보지 않는다. 바깥 패턴의 기본값 식 안 대입(`[a = [M] = z] = y`)은 직접 대상이 아니라 따로 본다.
+ */
+function coveredByEnclosingPattern(context: ScanContext, open: number): boolean {
+  const { tokens } = context;
+  if (!['[', ',', ':', '...'].includes(tokens[open - 1]?.text ?? '')) return false;
+  const enclosing = enclosingOpen(tokens, open);
+  if (enclosing === undefined || (tokens[enclosing]!.text !== '[' && tokens[enclosing]!.text !== '{')) return false;
+  const close = findMatching(tokens, enclosing, tokens[enclosing]!.text, tokens[enclosing]!.text === '[' ? ']' : '}');
+  const after = close === undefined ? undefined : tokens[close + 1];
+  if (after?.text === '=') return isAssignmentPattern(context, enclosing, false);
+  return after?.kind === 'keyword' && (after.text === 'of' || after.text === 'in') &&
+    isAssignmentPattern(context, enclosing, true);
+}
+
+/**
+ * 여는 `(`가 매개변수 목록인지와 그 확실성이다. 'certain'은 `function` 머리·화살표(`) =>`, 화살표 함수 식이 올 자리의
+ * `(…): T =>`), 'tentative'는 뒤 `{`로만 추론한 메서드 약칭·삼항 `?` 바로 뒤의 `(…): T =>`, 'none'은 매개변수 목록이
+ * 아닌 경우다.
+ */
+function parameterListCertainty(context: ScanContext, open: number): 'certain' | 'tentative' | 'none' {
+  const known = context.parameterListOpens.get(open);
+  if (known !== undefined) return known ? 'tentative' : 'certain';
+  const { tokens } = context;
+  const close = findMatching(tokens, open, '(', ')');
+  if (close === undefined) return 'none';
+  if (tokens[close + 1]?.text === '=>') return 'certain';
+  if (tokens[close + 1]?.text !== ':' || tokens[returnTypeEnd(tokens, close + 2) ?? -1]?.text !== '=>') return 'none';
+  const kind = arrowParameterKind(tokens, open, true);
+  return kind === 'function' ? 'certain' : kind === 'ambiguous' ? 'tentative' : 'none';
 }
 
 /**
@@ -1077,6 +1171,8 @@ function collectDeclaration(
       endsByLineBreak(tokens, start, index, depth)) {
       return index - 1;
     }
+    // 초기값 구간의 재대입(`const r = (M = x)`, 멈췄던 본문 뒤 `} = defaults`)은 바깥 순회가 보지 못한다.
+    if (!target) noteReassignment(context, index);
     if (depth === 0 && (token.text === '=' ||
       (token.kind === 'keyword' && (token.text === 'of' || token.text === 'in')))) {
       target = false;
@@ -1334,11 +1430,11 @@ const statementKeywords = new Set([
 ]);
 
 /**
- * 여는 `{`를 `var` 범위 판정용으로 나눈다. 'function'은 함수 본문임이 확실한 블록(화살표, 함수·메서드 매개변수 목록
- * 뒤 — 제네릭·반환 타입 포함, 클래스 정적 블록, TS namespace), 'block'은 함수가 아님이 확실한 문장 블록(제어문·
- * `try`·`else`·`do`·문장 사이·`case`/`default` 절의 블록), 'other'는 그 밖(라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음
- * 줄 블록, 클래스 본문·객체 리터럴, 알아보지 못한 형태)이다. `case kind(): {`·삼항 갈래의 `f(x) : T {`처럼 `(…):` 뒤
- * 블록이 절·삼항의 `:` 뒤이면 반환 타입 주석이 아니다.
+ * 여는 `{`를 `var` 범위 판정용으로 나눈다. 'function'은 함수 본문임을 토큰이 확실히 보이는 블록(화살표 `=>` 뒤,
+ * `function` 머리의 매개변수 목록 뒤 — 제네릭·반환 타입 포함, 클래스 정적 블록, TS namespace), 'block'은 함수가 아님이
+ * 확실한 문장 블록(제어문·`try`·`else`·`do`·문장 사이·`case`/`default` 절의 블록), 'other'는 그 밖(메서드 약칭처럼 뒤
+ * `{`로만 추론하는 본문, 라벨 블록, `}`·ASI 줄 뒤 블록, 호출 뒤 다음 줄 블록, 클래스 본문·객체 리터럴, 알아보지 못한
+ * 형태)이다. `case kind(): {`·삼항 갈래의 `f(x) : T {`처럼 `(…):` 뒤 블록이 절·삼항의 `:` 뒤이면 반환 타입 주석이 아니다.
  */
 function classifyBrace(tokens: readonly JsToken[], open: number): 'function' | 'block' | 'other' {
   const before = tokens[open - 1];
@@ -1360,11 +1456,12 @@ function classifyBrace(tokens: readonly JsToken[], open: number): 'function' | '
 }
 
 /**
- * 매개변수 목록처럼 보이는 괄호(`open`..`close`) 뒤 `body`의 `{`가 무엇의 본문인지다. 'function'은 함수 본문임이 확실한
- * 경우(`function` 머리, 메서드 약칭 — 같은 줄의 `{`·반환 타입 주석·수식어 뒤), 'block'은 제어문 머리, 'ambiguous'는 함수
- * 머리일 수도 호출 뒤 다음 줄 블록일 수도 있는 경우(`name(x)` 뒤 줄바꿈 `{`, 거슬러 볼 상한을 넘은 절), 'none'은 함수
- * 머리가 아닌 경우(`case …(…):`·삼항 갈래의 `(…):`, 이름이 아닌 앞 토큰)다. `returnType`은 `)`와 본문 사이에 반환
- * 타입 주석이 있는지다.
+ * 매개변수 목록처럼 보이는 괄호(`open`..`close`) 뒤 `body`의 `{`가 무엇의 본문인지다. 'function'은 `function` 키워드가
+ * 함수 머리임을 확실히 보이는 경우, 'block'은 제어문 머리(`try` 블록 뒤의 `catch` 포함), 'ambiguous'는 메서드 약칭처럼
+ * 뒤 `{`로만 함수 머리로 추론하는 경우(호출 뒤 블록일 수도, 클래스 상속절의 호출일 수도, 줄바꿈 뒤 다른 메서드의
+ * `{`일 수도 있다), 'none'은 함수 머리가 아닌 경우(`case …(…):`·같은 줄 삼항 갈래의 `(…):`, `extends mixin(…) {`의
+ * 상속절 호출, 이름이 아닌 앞 토큰)다. `returnType`은 `)`와 본문 사이에 반환 타입 주석이 있는지다. 함수 머리가 확실할
+ * 때만 그 매개변수가 재대입을 막고 `var`의 함수 본문이 된다 — 추론한 머리의 쓰임은 모듈에 닿으면 센다.
  */
 function parameterListKind(
   tokens: readonly JsToken[],
@@ -1375,33 +1472,43 @@ function parameterListKind(
 ): 'function' | 'block' | 'ambiguous' | 'none' {
   const head = tokens[open - 1];
   if (head === undefined) return 'none';
-  if (controlHeadKeywords.has(head.text) || isForHeader(tokens, open)) return returnType ? 'none' : 'block';
-  // `name<T>(…)` — 이름은 타입 매개변수 앞이다.
+  const catchMethod = head.text === 'catch' && !isCatchClause(tokens, open - 1);
+  if ((controlHeadKeywords.has(head.text) && !catchMethod) || isForHeader(tokens, open)) return returnType ? 'none' : 'block';
+  // `name<T>(…)` — 이름은 타입 매개변수 앞이다. `name?(…)`는 선택 메서드다.
   let name = open - 1;
   if (head.text === '>' || head.text === '>>') {
     const typeOpen = typeParametersOpen(tokens, open - 1);
     if (typeOpen === undefined) return 'none';
     name = typeOpen - 1;
   }
+  if (tokens[name]?.text === '?') name--;
   const nameToken = tokens[name];
   if (nameToken === undefined) return 'none';
   const declared = nameToken.text === 'function' || tokens[name - 1]?.text === 'function' ||
     (nameToken.text === '*' && tokens[name - 1]?.text === 'function') ||
     (tokens[name - 1]?.text === '*' && tokens[name - 2]?.text === 'function');
   if (declared) return 'function';
-  if (!isMethodHead(nameToken)) return 'none';
+  if (!isMethodHead(nameToken) && !(catchMethod && nameToken === head)) return 'none';
+  if (isHeritageCall(tokens, name)) return 'none';
   if (returnType) {
     const clause = clauseBefore(tokens, name);
-    return clause === undefined ? 'function' : clause === 'unknown' ? 'ambiguous' : 'none';
+    if (clause === 'case' || clause === 'ternary') return 'none';
   }
-  // 같은 줄의 `name(x) {`는 메서드 약칭뿐이다. 줄이 바뀌면 호출 문장 뒤의 블록일 수 있다 — 수식어 뒤가 아니면 정하지 않는다.
-  if (tokens[close]!.line === tokens[body]!.line) return 'function';
-  const modifier = tokens[name - 1];
-  return modifier !== undefined && modifier.line === nameToken.line &&
-    (['get', 'set', 'static', 'async', '#'].includes(modifier.text) ||
-      (modifier.text === '*' && !isOperandEnd(tokens[name - 2])))
-    ? 'function'
-    : 'ambiguous';
+  return 'ambiguous';
+}
+
+/** 위치 `index`의 `catch`가 `try {…}` 뒤의 catch 절인지 본다(아니면 `catch(…) {…}` 메서드다). */
+function isCatchClause(tokens: readonly JsToken[], index: number): boolean {
+  if (tokens[index - 1]?.text !== '}') return false;
+  const open = openingOf(tokens, index - 1);
+  return open !== undefined && tokens[open - 1]?.text === 'try';
+}
+
+/** 위치 `name`의 이름(`a.b.mixin`의 끝)이 클래스 상속절 `extends` 뒤 호출의 대상인지 본다. */
+function isHeritageCall(tokens: readonly JsToken[], name: number): boolean {
+  let cursor = name;
+  while (['.', '?.'].includes(tokens[cursor - 1]?.text ?? '') && tokens[cursor - 2]?.kind === 'identifier') cursor -= 2;
+  return tokens[cursor - 1]?.text === 'extends';
 }
 
 /** 거슬러 볼 토큰 수 상한이다(`clauseBefore`). 넘으면 정하지 못한 것으로 본다. */
@@ -1423,12 +1530,14 @@ function clauseBefore(tokens: readonly JsToken[], from: number): 'case' | 'terna
       cursor = opening;
       continue;
     }
-    if (text === '?') return 'ternary';
+    // 줄 끝의 `?`는 삼항일 수도, 세미콜론 없는 선택 속성 선언(`label?`)일 수도 있다.
+    if (text === '?') return tokens[cursor + 1]?.line === token.line ? 'ternary' : 'unknown';
     if (token.kind === 'keyword' && text === 'case' && !['.', '?.'].includes(tokens[cursor - 1]?.text ?? '')) {
       return 'case';
     }
+    // 식 안의 연산자 키워드(`await`·`yield`·`delete`)는 문장 경계가 아니다.
     if (['(', '[', '{', '}', ';', ',', ':', '=>'].includes(text) || assignmentOperators.has(text) ||
-      (token.kind === 'keyword' && statementKeywords.has(text))) {
+      (token.kind === 'keyword' && statementKeywords.has(text) && !['await', 'yield', 'delete'].includes(text))) {
       return undefined;
     }
   }
@@ -1467,16 +1576,25 @@ function returnTypeParamsClose(tokens: readonly JsToken[], open: number): number
   return close === -1 ? undefined : close;
 }
 
-/** 타입 매개변수 목록의 닫는 `>`(위치 `close`)에 짝인 `<` 위치다. */
+/**
+ * 타입 매개변수 목록의 닫는 `>`(위치 `close`)에 짝인 `<` 위치다. 괄호 그룹은 짝으로 건너뛴다 — 기본값의 객체 타입
+ * (`<T = {}>`)·함수 타입에서 멈추면 `function f<T = {}>(M) {…}`의 매개변수를 알아보지 못했다.
+ */
 function typeParametersOpen(tokens: readonly JsToken[], close: number): number | undefined {
   let depth = 0;
   const limit = Math.max(0, close - TYPE_ARGUMENTS_TOKEN_LIMIT);
   for (let cursor = close; cursor >= limit; cursor--) {
     const text = tokens[cursor]!.text;
+    if (text === ')' || text === ']' || text === '}') {
+      const opening = openingOf(tokens, cursor);
+      if (opening === undefined) return undefined;
+      cursor = opening;
+      continue;
+    }
     if (text === '>') depth++;
     else if (text === '>>' || text === '>>>') depth += text.length;
     else if (text === '<' && --depth === 0) return cursor;
-    else if (text === ';' || text === '{' || text === '}') return undefined;
+    else if (text === ';' || text === '{' || text === '(' || text === '[') return undefined;
   }
   return undefined;
 }
@@ -1503,7 +1621,8 @@ function resolveLocal(context: ScanContext, name: string, index: number): Scoped
   const certainFloor = context.paramShadows.innermostCertainFrom(name, index);
   if (certainFloor === floor) return resolution;
   const alternative = context.scopes.resolve(name, index, certainFloor ?? -Infinity);
-  if (!alternative.claimed) return context.importsByLocalName.has(name) ? { claimed: true, hidesOuter: true } : resolution;
+  // 그 목록이 없으면 import·전역(레지스트리 `NativeModules` 포함)일 수 있다.
+  if (!alternative.claimed) return { claimed: true, hidesOuter: true };
   if (alternative.value !== undefined || alternative.hidesModule === true) return { claimed: true, hidesModule: true };
   return alternative.hidesOuter === true ? { claimed: true, hidesOuter: true } : resolution;
 }
@@ -1595,6 +1714,10 @@ function skipTypeAnnotation(
     } else if (typeClosers.has(text)) {
       depth -= typeClosers.get(text)!;
       if (depth < 0) return index;
+    } else if (assigningTypeClosers.has(text)) {
+      // 렉서는 `Array<string>= []`의 `>=`를 한 토큰으로 낸다 — 제네릭을 닫고 기본값을 여는 끝이다.
+      depth -= assigningTypeClosers.get(text)!;
+      if (depth <= 0) return index;
     } else if (depth === 0 &&
       (text === '=' || text === ',' || text === ';')) {
       return index;
@@ -1602,6 +1725,9 @@ function skipTypeAnnotation(
   }
   return tokens.length;
 }
+
+/** 제네릭을 닫으며 곧바로 기본값·초기값을 여는 한 토큰(`>=`·`>>=`·`>>>=`)과 닫는 단계 수다. */
+const assigningTypeClosers: ReadonlyMap<string, number> = new Map([['>=', 1], ['>>=', 2], ['>>>=', 3]]);
 
 /** 타입 깊이를 닫는 토큰과 닫는 단계 수다. `>>`·`>>>`는 중첩 제네릭 두세 단계를 한 번에 닫는다. */
 const typeClosers: ReadonlyMap<string, number> = new Map([
@@ -1638,7 +1764,7 @@ function collectPattern(context: ScanContext, open: number, scope: DeclarationSc
   const after = tokens[close + 1]?.text === ':' ? skipTypeAnnotation(tokens, close + 2) : close + 1;
   const sourceIndex = tokens[after]?.text === '=' ? after + 1 : undefined;
   const source = sourceIndex === undefined ? undefined : tokens[sourceIndex];
-  // 원천 식의 값이 레지스트리 자체일 때만 레지스트리 구조 분해다(`= NativeModules`, `?? {}`·`|| {}` 대체값·`as` 단언).
+  // 원천 식의 값이 레지스트리 자체일 때만 레지스트리 구조 분해다(`= NativeModules`, `?? {}`·`|| {}` 대체값, `as`·`satisfies`).
   // `= NativeModules.Camera`의 이름은 그 모듈의 속성이다 — 모듈 사실은 멤버 접근이 내고, 구조 분해한 값은 센다.
   if (object && source?.kind === 'identifier' && source.text === 'NativeModules' &&
     registryValueEnds(tokens, sourceIndex!)) {
@@ -1663,7 +1789,7 @@ function collectPattern(context: ScanContext, open: number, scope: DeclarationSc
 /** 위치 `index`의 레지스트리 이름이 식의 값으로 끝나는지 본다 — 멤버 접근·호출·`&&`가 이어지면 값은 다른 것이다. */
 function registryValueEnds(tokens: readonly JsToken[], index: number): boolean {
   const next = tokens[index + 1]?.text;
-  if (next === '||' || next === '??' || next === 'as') return true;
+  if (next === '||' || next === '??' || next === 'as' || next === 'satisfies') return true;
   return next === '!' ? endsExpression(tokens, index + 1) : endsExpression(tokens, index);
 }
 
@@ -2170,9 +2296,15 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
       context.destructuredSources.get(token.text)?.property === 'NativeModules')) {
       // 레지스트리를 가져오는 import 절·구조 분해의 이름은 값 사용이 아니고, react-native 출처가 아닌 같은 이름은
       // RN 레지스트리가 아니다(로컬 shim·다른 모듈·매개변수).
-      if (importPositions.has(index) || isPatternDeclarator(tokens, index)) continue;
+      if (importPositions.has(index) || context.declaratorNames.has(index) || isPatternDeclarator(tokens, index)) continue;
       if (isNativeModulesRegistry(context, token.text, index)) {
         index = collectNativeModulesAccess(context, index);
+        continue;
+      }
+      // 그 위치를 가린 선언·매개변수가 잠정적이면(범위를 정하지 못한 `var`, 함수 머리인지 정하지 못한 목록) 레지스트리일
+      // 수도 있다 — 사실로 읽지 않고 범위 밖 참조로 센다.
+      if (registryUndecided(context, token.text, index)) {
+        context.counts.escapedModuleReferences++;
         continue;
       }
       // 다른 모듈에서 가져온 이름(배럴 재수출·대역)은 레지스트리로 단정하지 않는다. 그래도 조용히 버리지 않고 멤버
@@ -2268,6 +2400,19 @@ function isNativeModulesRegistry(context: ScanContext, name: string, index: numb
   if (name !== 'NativeModules') return false;
   if (context.functionOrClassNames.has(name)) return context.requireSpecifiers.get(name) === 'react-native';
   return true;
+}
+
+/**
+ * 위치의 레지스트리 이름(`NativeModules` 또는 react-native에서 가져온 별칭)을 잠정적인 선언·매개변수만 가리는지 본다 —
+ * 범위를 정하지 못한 `var NativeModules`(라벨 블록 안 등)나 `wrap(NativeModules)` 뒤 다음 줄 블록의 인자는 그 위치를 가릴
+ * 수도 아닐 수도 있다. 전역 레지스트리를 이 파일의 함수·클래스 선언이 가리면 아니다.
+ */
+function registryUndecided(context: ScanContext, name: string, index: number): boolean {
+  const local = resolveLocal(context, name, index);
+  if (!local.claimed || (local.hidesOuter !== true && local.hidesModule !== true)) return false;
+  const imports = context.importsByLocalName.get(name) ?? [];
+  if (imports.length > 0) return nativeModulesAlias(context, name);
+  return name === 'NativeModules' && !context.functionOrClassNames.has(name);
 }
 
 /**
@@ -2943,20 +3088,29 @@ function collectParamShadows(tokens: readonly JsToken[]): ParamShadow[] {
   return shadows;
 }
 
+/** 화살표 함수 식이 시작될 수 있는 자리의 앞 토큰이다(대입식이 오는 자리). 단항·이항 연산자 뒤에는 오지 않는다. */
+const arrowHeadPredecessors = new Set(['(', ',', ':', '=>', '{', '}', '[', ';', ...assignmentOperatorTexts()]);
+
+/** 화살표 함수 식 앞에 올 수 있는 키워드다. */
+const arrowHeadKeywords = new Set(['return', 'yield', 'throw', 'default', 'async', 'else', 'do']);
+
 /**
- * 화살표 앞 괄호(`open`)가 매개변수 목록인지다. 반환 타입 주석이 없으면 확실하다. 있으면(`(x): T => {`) 괄호(제네릭
- * 화살표는 `<`) 앞 토큰을 본다 — 피연산자 끝(`async` 제외)이면 호출·괄호식 뒤의 삼항 `:`이고(`busy ? wrap(x) : e =>
- * {…}`의 `(x)`), `case`면 절의 `:`라 매개변수가 아니다. 삼항의 `?` 바로 뒤면(`c ? (x): T => {…} : d`와 `c ? (x) : e =>
- * {…}`) 정하지 않는다.
+ * 화살표 앞 괄호(`open`)가 매개변수 목록인지다. 반환 타입 주석이 없으면(`) =>`) 확실하다. 있으면(`(x): T => {`) 괄호
+ * (제네릭 화살표는 `<`) 앞 토큰이 화살표 함수 식이 올 수 있는 자리(대입·인자·배열·객체 값·문장 시작·`return` 등)일 때만
+ * 확실하다. 그 밖(호출 대상·연산자·`case` 뒤 — `busy ? wrap(x) : e => {…}`, `c ? !(p) : M => {…}`)이면 `(…):`는
+ * 삼항·절의 `:` 앞이라 매개변수가 아니고, 삼항의 `?` 바로 뒤면(`c ? (x): T => {…} : d`와 `c ? (x) : e => {…}`) 정하지
+ * 않는다.
  */
 function arrowParameterKind(tokens: readonly JsToken[], open: number, returnType: boolean): 'function' | 'ambiguous' | 'none' {
   if (!returnType) return 'function';
   let start = open;
   if (tokens[open - 1]?.text === '>' || tokens[open - 1]?.text === '>>') start = typeParametersOpen(tokens, open - 1) ?? open;
   const before = tokens[start - 1];
-  if (before === undefined || before.text === 'async') return 'function';
-  if (isOperandEnd(before) || (before.kind === 'keyword' && before.text === 'case')) return 'none';
-  return before.text === '?' ? 'ambiguous' : 'function';
+  if (before === undefined) return 'function';
+  if (before.text === '?') return 'ambiguous';
+  return arrowHeadPredecessors.has(before.text) || (before.kind === 'keyword' && arrowHeadKeywords.has(before.text))
+    ? 'function'
+    : 'none';
 }
 
 /**
@@ -2972,7 +3126,7 @@ function arrowNameRole(tokens: readonly JsToken[], index: number): 'parameter' |
 
 /**
  * `(` 앞 토큰이 메서드 약칭의 이름(이름·키워드·계산 키 `]`·문자열·숫자 키)인지 본다. 키워드도 메서드 이름이다
- * (`delete(key) {…}`). 제어문 머리 키워드와 `function`은 따로 판정한다.
+ * (`delete(key) {…}`). 제어문 머리 키워드(`catch` 메서드는 parameterListKind가 따로 본다)와 `function`은 제외한다.
  */
 function isMethodHead(token: JsToken | undefined): boolean {
   if (token === undefined) return false;
@@ -3009,13 +3163,17 @@ const valueOnlyKeywords = new Set(['function', 'class', 'return', 'var', 'let', 
 
 /**
  * 반환 타입 주석(시작 위치 `start`) 다음 위치 — 본문 `{` 또는 화살표 `=>` — 다. 괄호·제네릭은 짝까지 건너뛰고, 타입
- * 자리의 `{`(객체 타입)와 타입 안 괄호 뒤의 `=>`(함수 타입)는 타입으로 본다. 문장 끝·상한에서 undefined다.
+ * 자리의 `{`(객체 타입)와 타입 안 괄호 뒤의 `=>`(함수 타입)는 타입으로 본다. 문장 끝·완결된 타입 뒤 ASI 줄바꿈·상한에서
+ * undefined다.
  */
 function returnTypeEnd(tokens: readonly JsToken[], start: number): number | undefined {
   let angles = 0;
   const limit = Math.min(tokens.length, start + TYPE_ARGUMENTS_TOKEN_LIMIT);
   for (let index = start; index < limit; index++) {
     const text = tokens[index]!.text;
+    // 완결된 타입 뒤 ASI 줄바꿈에서 주석이 끝난다 — 세미콜론 없는 오버로드·추상 시그니처(`open(x): void` 다음 줄
+    // 메서드)를 건너 다음 메서드의 `{`를 이 목록의 본문으로 읽지 않는다. 다음 줄 `{`(올맨 스타일 본문)만 이어 본다.
+    if (index > start && angles === 0 && text !== '{' && endsTypeByLineBreak(tokens, index)) return undefined;
     if (text === '(' || text === '[' || (text === '{' && (angles > 0 || typeLiteralOpeners.has(tokens[index - 1]?.text ?? '')))) {
       const inner = findMatching(tokens, index, text, bracketPairs.get(text)!);
       if (inner === undefined) return undefined;
@@ -3079,10 +3237,14 @@ function skipParameterPrefix(tokens: readonly JsToken[], from: number, close: nu
     if (text === '...') {
       index++;
     } else if (text === '@') {
-      // `@Dec`·`@ns.Dec(…)` 데코레이터다.
+      // `@Dec`·`@ns.Dec(…)`·`@Inject<Svc>()` 데코레이터다.
       index++;
       while (tokens[index]?.kind === 'identifier' && ['.', '?.'].includes(tokens[index + 1]?.text ?? '')) index += 2;
       index++;
+      if (tokens[index]?.text === '<') {
+        const closeAngle = skipTypeArguments(tokens, index);
+        if (closeAngle !== undefined) index = closeAngle + 1;
+      }
       if (tokens[index]?.text === '(') index = (findMatching(tokens, index, '(', ')') ?? close) + 1;
     } else if (parameterModifiers.has(text) && ['identifier', 'keyword'].includes(tokens[index + 1]?.kind ?? '') ||
       (parameterModifiers.has(text) && ['{', '['].includes(tokens[index + 1]?.text ?? ''))) {

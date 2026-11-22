@@ -1231,3 +1231,17 @@ test('같은 범위의 var 재선언·깊은 블록의 var가 많아도 스캔�
   elapsed = performance.now() - started;
   assert.ok(elapsed < 3_000, `deep: elapsed ${elapsed.toFixed(0)} ms`);
 });
+
+test('깊게 중첩된 구조 분해 대입도 선형 시간에 대상 이름을 지운다', () => {
+  // 3차 리뷰 SHOULD-FIX 1: `[[[…[M] = x] = x …] = x`의 `=`마다 감싼 괄호를 다시 오르고 패턴을 다시 훑어 1만 6천 단계에
+  // 16초였다(7d663be 0.1초). 감싼 대입 패턴의 직접 대상은 바깥 패턴이 함께 지우고 오른 결과를 기억해 0.1초 안팎이다.
+  const depth = 16_000;
+  const started = performance.now();
+  const scan = scanJsSource(
+    `let M = NativeModules.A;\n${'['.repeat(depth)}M${'] = x'.repeat(depth)};\nM.go();`);
+  const elapsed = performance.now() - started;
+  // M은 재대입돼 바인딩이 아니다 — 호출 후보가 없고 초기값이 범위 밖 참조로 세어진다.
+  assert.deepEqual(scan.memberCalls, []);
+  assert.equal(scan.counts.escapedModuleReferences, 1);
+  assert.ok(elapsed < 3_000, `elapsed ${elapsed.toFixed(0)} ms`);
+});

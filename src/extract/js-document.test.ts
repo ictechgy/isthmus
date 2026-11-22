@@ -725,11 +725,10 @@ test('제네릭·반환 타입·메서드 함수 본문의 var는 그 함수 안
       '  const M = NativeModules.A;',
       '  function pick<T>(x: T) { var M = NativeModules.B; M.go(); }',
       '  function g(): void { var M = NativeModules.C; M.ok(); }',
-      '  class Svc { start(): void { var M = makeFake(); M.fake(); } }',
       '  const cb = function (): void { var M = makeFake(); M.fake2(); };',
       '  function shadow<T>(M: T): Promise<{ a: 1 }> { M.param(); }',
       '  const arrow = (M): number => { M.param2(); };',
-      // 알아보지 못하는 반환 타입(조건 타입)의 본문에서도 var는 그 본문 너머로 넓어지지 않는다.
+      // 조건 반환 타입 함수의 본문에서도 var는 그 본문 너머로 넓어지지 않는다.
       '  function cond<T>(x: T): T extends string ? A : B { var M = NativeModules.D; M.cond(); }',
       '  M.run();',
       '}',
@@ -738,9 +737,24 @@ test('제네릭·반환 타입·메서드 함수 본문의 var는 그 함수 안
   assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
     'method-invoke B.go@4',
     'method-invoke C.ok@5',
-    'method-invoke D.cond@10',
-    'method-invoke A.run@11',
+    'method-invoke D.cond@9',
+    'method-invoke A.run@10',
   ]);
+  // 메서드 약칭 본문은 뒤 `{`로만 추론한 함수 본문이다 — 그 안 var의 범위를 정하지 못해, var와 바깥 블록 선언 사이의
+  // 같은 이름 쓰임을 귀속하지 않고 센다(3차 리뷰 원칙: 토큰이 보이지 않는 분류는 잠정이다).
+  const method = assemble({
+    'src/c.ts': [
+      "import { NativeModules } from 'react-native';",
+      '{',
+      '  const M = NativeModules.A;',
+      '  class Svc { start(): void { var M = makeFake(); M.fake(); } }',
+      '  M.run();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(method).filter((line) => line.startsWith('method-invoke')), []);
+  // M.fake(그 블록이 함수 본문이 아니면 바깥 블록의 A)·M.run 둘이다.
+  assert.ok(bindingScope(method)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(method));
   // 알아본 함수 본문의 블록 안 var는 그 함수 전체를 확실히 가린다 — 바깥 A를 정하지 못한 쓰임으로 세지 않는다.
   const exact = assemble({
     'src/b.ts': [
@@ -867,7 +881,7 @@ test('괄호로 끝나는 case 절 식 뒤 블록은 함수 본문이 아니다'
       '  }',
       '  M.go();',
       '}',
-      'class S { start(): void { var M = makeFake(); } stop() { M.ok(); } }',
+      'function start(): void { var M = makeFake(); } function stop() { M.ok(); }',
     ].join('\n'),
   });
   assert.deepEqual(factLines(document), ['module-import A@2', 'method-invoke A.ok@10']);
@@ -984,7 +998,7 @@ test('끌어올린 var가 차지한 앞 대입은 바깥 바인딩을 지우지 
 
 test('함수 머리인지 정하지 못한 다음 줄 블록의 인자 이름은 바깥 모듈 쓰임을 조용히 가리지 않는다', () => {
   // `wrap(M)` 뒤 다음 줄 `{`는 호출 뒤 블록일 수도, 다음 줄 `{`의 메서드일 수도 있다. 전에는 매개변수로 단정해 바깥 A의
-  // 호출이 한계 없이 사라졌다. 같은 줄 `{`의 메서드는 매개변수가 확실하다. const enum 멤버 이름은 값 쓰임이 아니다.
+  // 호출이 한계 없이 사라졌다. const enum 멤버 이름은 값 쓰임이 아니다.
   const document = assemble({
     'src/a.ts': [
       "import { NativeModules } from 'react-native';",
@@ -1002,8 +1016,9 @@ test('함수 머리인지 정하지 못한 다음 줄 블록의 인자 이름은
     ].join('\n'),
   });
   assert.deepEqual(factLines(document), ['module-import A@2']);
-  // wrap 인자·M.go·run의 인자(호출이면 값 쓰임)·M.fake 넷이다.
-  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 4 native module references '), bindingScope(document));
+  // wrap 인자·M.go·run의 인자(호출이면 값 쓰임)·M.fake, 그리고 같은 줄 `{`의 메서드도 뒤 `{`로만 추론한 머리라 stop의
+  // 인자·M.param까지 여섯이다(3차 리뷰 원칙).
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 6 native module references '), bindingScope(document));
 });
 
 test('매개변수의 타입 주석·기본값·패턴 키는 바깥 바인딩을 가리지 않는다', () => {
@@ -1028,4 +1043,158 @@ test('매개변수의 타입 주석·기본값·패턴 키는 바깥 바인딩�
   assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
     'method-invoke Camera.take@3', 'method-invoke Camera.open@4', 'method-invoke Camera.close@5', 'method-invoke Camera.snap@6',
   ]);
+});
+
+test('뒤 `{`로만 추론한 매개변수 목록은 재대입을 막지 않고 상속절 호출·세미콜론 없는 시그니처는 매개변수가 아니다', () => {
+  // 3차 리뷰 BLOCKER 1: 같은 줄 `name(x) {` 규칙이 `extends withEvents(M) {`를 확실한 매개변수 목록으로 읽어 클래스 본문의
+  // 재대입이 바깥 M을 지우지 못했고(거짓 A.go), 반환 타입 건너기가 세미콜론 없는 오버로드·추상 시그니처(`open(Camera:
+  // string): void` 다음 줄)를 넘어 다음 메서드의 `{`까지 가서 같은 일이 났다. JSX 글자 `setup(Q) {…}`도 같다. 확실한
+  // 매개변수 목록(`function` 머리·화살표)만 재대입을 막고, 추론한 목록 바깥은 무효로 하며 쓰임을 센다.
+  const document = assemble({
+    'src/a.tsx': [
+      "import { NativeModules } from 'react-native';",
+      'let M = NativeModules.A;',
+      'class Foo extends withEvents(M) { reset() { M = makeFake(); } }',
+      'let Camera = NativeModules.Camera;',
+      'export class Store {',
+      '  open(Camera: string): void',
+      '  open(name: string, fallback?: string) { Camera = makeFake(); }',
+      '}',
+      'let P = NativeModules.P;',
+      'abstract class Base {',
+      '  abstract open(P): void',
+      '  reset() { P = makeFake(); }',
+      '}',
+      'let Q = NativeModules.Q;',
+      'const el = <Text>Retry setup(Q) {Q = makeFake()}</Text>;',
+      'M.go(); Camera.take(); P.go(); Q.go();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), []);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 6 native module references '), bindingScope(document));
+  // 같은 오인이 쓰임도 조용히 가렸다(상속절 안 메서드의 N.go는 모든 트리에서, 추상 시그니처 뒤 메서드의 N.stop은 7d663be부터).
+  const uses = assemble({
+    'src/b.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const N = NativeModules.B;',
+      'class Bar extends mixin(N) { run() { N.go(); } }',
+      'abstract class Base {',
+      '  abstract open(N): void',
+      '  run2() { N.stop(); }',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(uses).filter((line) => line.startsWith('method-invoke')), ['method-invoke B.go@3', 'method-invoke B.stop@6']);
+});
+
+test('연산자 뒤 괄호 갈래의 삼항 화살표는 반환 타입이 아니라 단일 매개변수 화살표다', () => {
+  // 3차 리뷰 BLOCKER 2: `enabled ? !(paused) : M => {…}`를 `(paused): M =>`(반환 타입 M)로 읽어 매개변수 M이 가리지 못했다
+  // (거짓 A.go, node로 확인한 진실은 매개변수). 반환 타입이 붙은 화살표 매개변수는 화살표 함수 식이 올 자리 뒤에만 있다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'const run = enabled ? !(paused) : M => { M.go(); };',
+      'const run2 = enabled ? base + (offset) : M => { M.stop(); };',
+      'const run3 = async () => (ready ? await (load) : M => { M.h(); });',
+      'const typed = (x): M => { M.ok(); };',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2', 'method-invoke A.ok@6']);
+  assert.equal(bindingScope(document), undefined);
+});
+
+test('제어문 머리·case 절 뒤 배열 대입, 괄호 대상, 선언 초기값 안 대입도 재대입이고 enum 멤버 초기값은 아니다', () => {
+  // 3차 리뷰 SHOULD-FIX 2(모든 트리의 거짓 A.go): `if (c) [M, N] = …`의 `[`를 멤버 접근으로, `case 'mock': [P] = …`의
+  // `[`를 타입 주석 뒤로 읽었다. `(Q) = x`와 선언 초기값 안의 대입(`const r = (R = x)`, 중첩 `[[S] = x] = y`)도 놓쳤다.
+  // enum 멤버 초기값(`enum Flags { T = 1 }`)을 재대입으로 읽어 참 T.t를 잃던 것도 고친다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'let M = NativeModules.A, N = NativeModules.B, P = NativeModules.C, Q = NativeModules.D, R = NativeModules.E, '
+        + 'S = NativeModules.F;',
+      'function flip(c) { if (c) [M, N] = [N, M]; }',
+      "function reset(k) { switch (k) { case 'mock': [P] = mocks; break; } }",
+      'function paren() { (Q) = makeFake(); }',
+      'const r = (R = makeFake()), s = [[S] = x] = y;',
+      'let T = NativeModules.G;',
+      'enum Flags { T = 1, U = 2 }',
+      'M.go(); N.go(); P.go(); Q.go(); R.go(); S.go(); T.t();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), ['method-invoke G.t@9']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 6 native module references '), bindingScope(document));
+});
+
+test('기본값 있는 제네릭·`>=` 토큰·제네릭 데코레이터 뒤에서도 매개변수를 알아본다', () => {
+  // 3차 리뷰 SHOULD-FIX 3(모든 트리): 타입 매개변수 짝 찾기가 `<T = {}>`의 `{}`에서 멈춰 매개변수 M이 가리지 못했다.
+  // SHOULD-FIX 4(6a5075a부터): 렉서가 `Array<string>= []`의 `>=`를 한 토큰으로 내 타입 주석이 목록 끝까지 갔고, `@Inject<Svc>()`
+  // 데코레이터를 건너지 못해 매개변수 M을 잃었다. 생성자는 메서드 약칭이라 그 매개변수 쓰임은 센다.
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'function f<T = {}>(M: T) { M.go(); }',
+      'function g<T extends Record<string, unknown> = {}>(M: T) { M.d(); }',
+      'function h(list: Array<string>= [], M) { M.e(); }',
+      'class K { constructor(@Inject<Svc>() M: Svc) { M.f(); } }',
+      'M.top();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import A@2', 'method-invoke A.top@7']);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(document));
+});
+
+test('선택 속성 뒤·선택·catch 메서드의 매개변수, 호출 인자의 구조 분해 대입, satisfies 원천을 바로 읽는다', () => {
+  // 3차 리뷰 니트: 줄 끝 `label?`를 삼항으로 읽어 다음 메서드 매개변수를 잃었고(6a5075a 회귀), 선택 메서드 `run2?(M)`·
+  // `catch(M)` 메서드의 매개변수는 모든 트리에서 가리지 못했다. `c ? fn({ N } = d) : other => {}`는 호출 인자의 대입인데
+  // 매개변수 패턴으로 읽었다. `try {…} catch (M)`는 그대로 catch 절이다(그 매개변수는 가리지 않는다 — 기존 한계).
+  const document = assemble({
+    'src/a.ts': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.A;',
+      'class K {',
+      '  label?',
+      '  run(M): void { M.go() }',
+      '  run2?(M: X): void { M.stop(); }',
+      '  catch(M) { return M.h(); }',
+      '}',
+      'function t() { try { work(); } catch (M) { log(); } M.top(); }',
+      'let N = NativeModules.B;',
+      'const r = c ? fn({ N } = defaults) : other => { other.x(); };',
+      'N.go();',
+      'const { Camera } = NativeModules satisfies Record<string, unknown>;',
+      'Camera.take();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import A@2', 'method-invoke A.top@9', 'module-import B@10', 'module-import Camera@13', 'method-invoke Camera.take@14',
+  ]);
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: '), document.limitations.join('\n'));
+});
+
+test('잠정적인 선언·매개변수가 가린 레지스트리 접근은 사실로 읽지 않고 센다', () => {
+  // 3차 리뷰 니트: `wrap(NativeModules)` 뒤 다음 줄 블록과 라벨 블록의 `var NativeModules = mock` 뒤에서 레지스트리 접근이
+  // 한계 없이 사라졌다(잠정 가림 계수가 모듈 바인딩·import만 보았다). 둘 다 레지스트리일 수도 아닐 수도 있다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'wrap(NativeModules)',
+      '{',
+      '  NativeModules.Camera.take();',
+      '}',
+      'function f() {',
+      '  lbl: { var NativeModules = makeMock(); break lbl; }',
+      '  NativeModules.Torch.on();',
+      '}',
+      'NativeModules.Haptics.go();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), ['module-import Haptics@10', 'method-invoke Haptics.go@10']);
+  // wrap 인자(호출이면 레지스트리 값)·Camera 접근·Torch 접근 셋이다.
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 3 native module references '), bindingScope(document));
+  // import 없이 전역 레지스트리를 읽는 파일도 같다.
+  const global = assemble({ 'src/b.js': 'wrap(NativeModules)\n{\n  NativeModules.Camera.take();\n}' });
+  assert.deepEqual(global.facts, []);
+  assert.ok(bindingScope(global)?.startsWith('js-binding-scope: 2 native module references '), bindingScope(global));
 });
