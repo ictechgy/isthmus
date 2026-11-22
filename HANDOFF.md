@@ -101,9 +101,8 @@ _Last updated: 2026-11-22_
     넓은 실행(이 커밋, 문제 0): 레지스트리 1~120(133,749개), 별칭 1~120(131,509), 충돌 1~120(136,888), 확장 1~150(171,468), 충돌+확장
     1~60(68,757), 기본 1~60(68,470). 같은 생성기 시드 1~10 × 300에서 실패 프로그램: `55aef42` 레지스트리 129·별칭 467·충돌 259·
     충돌+확장 163(확장은 시드 1~40 × 1,500에서 37의 1개), main 269·525·1,708·1,526·확장 129.
-  - 공개 패키지 12개: 사실·`--events` 출력은 main과 모두 같고, 한계 수는 react-native 0.88.1의
-    js-binding-scope 첫 수(63 → 58)만 다르다 — 아래 후속 후보 "CommonJS로 가져온 `NativeModules`"의 두 내부 파일이다(대역으로 판정되는
-    로컬 선언에서 만든 바인딩의 쓰임 5개가 빠졌다). 나머지 차이는 js-binding-scope 문구뿐이다.
+  - 공개 패키지 12개: 사실·`--events` 출력은 main과 모두 같았지만 react-native 0.88.1의 js-binding-scope 첫 수가 63 → 58로
+    줄었다. 이 커밋(`af6e204`)이 처음 만든 축소였다 — 기존 동작으로 적었던 것은 틀렸다. 아래 델타 리뷰 B1에서 고쳤다.
   - 시간(부하 12~17, 세 번의 최솟값, 3만 2천 반복, main/`55aef42`/이 커밋): 거둔 읽기 1.66/1.72/1.57초,
     남긴 읽기 0.84/0.77/0.86, 정하지 못한 읽기·별칭 1.86/0.95/1.61, 거둔 구조 분해 1.39/1.45/2.20, 거둔 export 0.50/0.57/0.63, 별칭 충돌
     2.00/3.48/2.40, 보간 별칭·`for` 0.30/0.86/1.13, typescript.js 3.05/2.49/2.65. 리뷰 생성기(`mock`·`alias`·`aliassame`·`tmpl`·`tmplnames`·
@@ -114,6 +113,50 @@ _Last updated: 2026-11-22_
     225, CLI 0/1/2/64·패키지 계약). 앞의 두 실행은 부하 17~18에서 `js-scan.test.ts`의 선형 시간 테스트(재선언 상한 6초)만 7.1초로
     실패했다 — 그 테스트를 커버리지로 따로 돌리면 이 커밋 1.85초·main 2.04초로 통과하고, 입력 시간은 main·이 커밋 모두 0.65초다.
     그 두 실행에서 건너뛴 뒤 단계(조인·빌드·스크립트·계약)도 따로 통과했다. 부하가 내린 세 번째 실행은 전부 통과했다.
+- 2026-11-22 PR #167 델타 리뷰(`55aef42..af6e204`, `af6e204`는 푸시됨) 반영(같은 브랜치, 그 위에 커밋, 미푸시). 차단 1·고칠 것
+  1·잔소리 4. 지적마다 main·`55aef42`·`af6e204`에서 재현했다(리뷰 재현 입력 `r4-delta-isthmus/cases`).
+  - B1(차단, 계수 축소): react-native 0.88.1 js-binding-scope 63 → 58이 대신 세는 것 없이 줄었다. 내부의 `const NativeModules =
+    require('../BatchedBridge/NativeModules').default`는 실제로 레지스트리인데, react-native가 아닌 값의 로컬 선언으로 읽혀 멤버
+    접근을 세지 않았고(main부터), `af6e204`가 거기서 꺼낸 바인딩(`viewManager`·`legacyModule`)을 확실히 거두며 그 쓰임 계수 5개까지
+    없앴다. 고침: 레지스트리 출처 표에서 react-native가 아닌 모듈 require 출처 선언에 그 specifier를 문자열 값 자리에 표시하고
+    `importedFromOtherModule`이 그것을 다른 모듈 import로 본다 — CommonJS 꼴도 ES import 꼴처럼 멤버 접근·꺼낸 이름마다
+    `unattributed-js-native-modules:`로 센다(리뷰 시안). 더해서 다른 모듈(ES import·require)에서 가져온 원천의 읽기는 정하지 못한
+    것으로 거둬 그 바인딩의 쓰임을 센다 — 축소를 설명하는 대신 없앴다. 공개 패키지 12개를 다시 재면 사실·`--events`·한계 수가 main과 모두 같고 react-native 0.88.1만
+    js-binding-scope 첫 수 63 → 66(하한 2563 그대로)과 `unattributed-js-native-modules: 3`이 더해진다 — `PaperUIManager.js`의
+    `NativeModules[viewConfig.Manager]` 둘과 `TurboModuleRegistry.js`의 `NativeModules[name]` 하나가 출처 모름 접근이고, 거기서 꺼낸
+    `viewManager`(4 → 6)·`legacyModule`(1 → 2)의 쓰임을 모두 센다(소비 위치 포함). main 대비 줄어든 수는 없다.
+  - S1(거짓 사실): 같은 범위 `var` 묶음은 처음 본 값 객체를 대표로 두고 별칭·`export { C }`가 그 객체를 받아, 대역에서 꺼낸 두 번째
+    읽기의 객체만 거두면 거짓 Camera.take가 이 파일과 다른 파일에 남았다(main부터, CHANGELOG 주장과 어긋남). `withdraw`가 무효로 한
+    묶음의 대표 값도 거두고(값 객체마다 많아야 두 번, 선형), 거둔 값 지도(확실성 포함)로 export를 정리한다. 확실하게 거둔 값을 나중에
+    불확실하게 거두면 다시 처리해 그 쓰임을 센다(리뷰 시안의 주의점 — 집합이면 쓰임 둘이 조용히 빠진다).
+  - N1: 속성 이름 `x.for`·`x.for(M)`이 보간의 대입 판정을 켰다 — 반복문 머리(`for (`·`for await`)의 `for`만 본다.
+  - N2: 거둔 레지스트리 구조 분해의 중첩 패턴 계수(`{ Camera: { take } }`)를 되돌리지 않았다 — 읽기에 기록해 확실히 거둘 때 뺀다
+    (정하지 못하면 남긴다).
+  - N3: 새 출처 `{ NativeModules: NM } = require('react-native')`가 식 본문 화살표·`catch` 매개변수를 가리지 않는 기존 한계에 닿아
+    `items.forEach(NM => NM.Camera.take())`가 새 거짓 사실이었다. 그 이름이 표가 가리지 않는 자리(식 본문 화살표·`catch` 매개변수,
+    함수·클래스 선언 이름, 패턴 매개변수 포함 — 넓게 본다)에도 쓰이면 이 출처의 선언에 별도 값(`REGISTRY_AT_RISK_VALUE`)을 주어
+    사실 대신 센다. 기존 출처(전역·import·`= RN`)의 같은 한계는 그대로다(후속 후보 "가림 공백").
+  - N4: CHANGELOG·GRAPH-EXCHANGE·이 문서·PR 초안의 과장을 고쳤다.
+  - 근거: 새 테스트(문서 3 새 테스트, 기존 3 확장)는 `af6e204`에서 실패한다. 되돌림 변형 16종(B1 표시 없음·import 판정 없음·다른
+    모듈 확실 무효, S1 연쇄 없음·집합 방문·직접 값만 export 정리, N1 점 판정 없음·머리 판정 없음, N2 빼지 않음·늘 뺌, N3 위험 없음·
+    위험 미계수·위험을 레지스트리로·블록 화살표도 위험·`catch` 없음·패턴 오름 없음)과 앞 두 차례 변형 31종(옮겨진 다섯은 새 코드에
+    다시 맞춤)이 모두 단위 테스트에 잡힌다. 오라클 생성기는 바꾸지 않았다(고정 시드 선택 유지) — 이번 꼴은 계수 정밀도(N1·N2·B1
+    계수)라 기준이 null인 호출을 판정하지 못하는 오라클 밖이거나, 여러 선언 모델이 필요하거나(S1), 기존 가림 공백에 닿는다(N3).
+    넓은 실행(이 커밋, 문제 0): 레지스트리 1~120(133,749개), 별칭 1~120(131,509), 충돌 1~120(136,888), 확장 1~150(171,468), 충돌+확장
+    1~60(68,757), 기본 1~60(68,470). 별칭 모드는 생성한 `catch(NM)` 메서드·`function NM` 식 때문에 require 별칭이 위험 표시가 되어
+    귀속 628개가 계수로 옮겨 갔다(51,168 → 50,540). 고정 시드 오라클 테스트는 그대로 통과한다.
+  - 입력: 델타 리뷰 입력 61개(파일 57·여러 파일 문서 4), 이전 리뷰 입력 130개, 내 입력 37개, 적대 입력 65개를 main·`af6e204`·이
+    커밋에서 비교했다. `af6e204`와 다른 것은 델타 지적 입력과, 이전 입력 중 6개의 계수 추가(다른 모듈 출처 — ES import 파생 쓰임,
+    다른 모듈 require 별칭)뿐이다.
+  - 시간(부하 11~13, main/`af6e204`/이 커밋, 1만 6천 → 6만 4천): 리뷰 생성기 `destr` 1.24/1.20/1.51 → 5.07/7.12/5.23초, `aliases`
+    0.36/0.36/0.65 → 1.39/1.17/1.28, `group` 0.44/0.48/0.56 → 1.48/2.43/1.80, `exports` 0.44/0.42/0.39 → 1.27/1.02/1.18, `sharedalias`
+    0.62/0.49/0.48 → 2.11/1.76/1.65, `uncertain` 1.32/1.39/1.34 → 4.20/4.72/4.99, `tmplfor` 0.14/0.56/0.37 → 0.40/1.68/2.15(이 커밋
+    1만 6천~12만 8천 0.60/0.60/1.24/2.42초 — 선형). 이전 리뷰 생성기(이 커밋 1만 6천 → 6만 4천)는 2.3~4.6배, typescript.js
+    2.31/2.03/2.24초. N3 위험 판정은 토큰을 한 번 훑는다(후보 이름 자리만 감싼 괄호를 오른다) — 서로 다른 require 별칭과 같은 이름
+    식 본문 화살표 8천/1만 6천/3만 2천 쌍이 0.53/0.65/1.30초다(처음 쓴 이름별 전체 훑기는 이차였다).
+  - `npm run verify` 첫 실행에서 통과(부하 9~13; 타입 검사, 호환성, conformance 352, 제품 테스트 1,433개·커버리지 라인 99.21/분기
+    95.29/함수 98.42 — `js-scan.ts` 99.52/93.26/99.50, `js-scopes.ts` 100/96.11/100, `lexer.ts` 98.90/97.99/100, Phase 0 조인 15, clean
+    build, 스크립트 225, CLI 0/1/2/64·패키지 계약). 선형 시간 테스트 재실행은 필요 없었다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -131,7 +174,9 @@ _Last updated: 2026-11-22_
   `B.b`와, 같은 `g`에서 `const { NativeModules } = RN` 뒤 접근은 거짓 사실이다(재현: 이번 브랜치 HEAD에서도 그대로). 모듈 객체
   선언도 레지스트리 출처 표처럼 위치를 덮는 선언으로 판정하면 고칠 수 있다(`isReactNativeNamespace`·`propertyBaseSpecifier`).
 - extract-js 가림 공백(기존 동작): 블록 범위 표에 넣지 않는 이름 — `catch (M)` 매개변수, 함수·클래스 선언 이름, 식 본문
-  화살표 매개변수(`M => M.x()`) — 은 같은 이름의 바깥 모듈 바인딩을 가리지 않아 그 안의 호출이 바깥 모듈로 귀속될 수 있다. JSX 속성 `name={…}`은 재대입으로 읽혀 같은 이름 바인딩을 지운다(사실이 줄 뿐이다).
+  화살표 매개변수(`M => M.x()`, `(M) => M.x()`) — 은 같은 이름의 바깥 모듈 바인딩을 가리지 않아 그 안의 호출이 바깥 모듈로 귀속될 수
+  있다. 레지스트리 이름도 같다(전역 `NativeModules`, import 별칭, `= RN` 별칭 — `(NativeModules) => NativeModules.Camera.take()`가 거짓
+  사실). PR #167이 새로 연 `require('react-native')` 별칭 출처만 그 이름이 이런 자리에 쓰이면 사실 대신 센다. JSX 속성 `name={…}`은 재대입으로 읽혀 같은 이름 바인딩을 지운다(사실이 줄 뿐이다).
   속성 자리 API로 만든 초기값(`var M = _reactNative.NativeModules.A`)은 바인딩이 아니어서 Babel 출력의 `M.x()`는 귀속되지
   않는다(초기값을 js-binding-scope로 센다).
 - extract-js 4차 리뷰가 기록만 하라고 한 기존 결함 중 B2(레지스트리 출처가 이름 단위)·S2(템플릿 보간)·`b07`(`foo.function(M)` 뒤
@@ -148,12 +193,6 @@ _Last updated: 2026-11-22_
   `const NM = RN.NativeModules`는 사실·계수는 내지만(초기값을 한 번 센다) 바인딩하지 않아 그 뒤 `C.go()`·`NM.Cam.go()`는 쓰임마다
   세지 않는다. 오라클 `alias` 모드는 이 꼴을 내지 않는다. 같은 쪽 기존 부정확: `const NativeModules = require('react-native')`(모듈
   객체 전체)와 `const { NativeModules } = require('react-native').Foo`도 레지스트리로 읽는다(specifier만 본다).
-- extract-js CommonJS로 가져온 `NativeModules`(기존 동작, main부터): `const NativeModules = require('<react-native 아닌 모듈>')`은
-  react-native가 아닌 값의 로컬 선언이라 레지스트리가 아니고 그 멤버 접근은 세지 않는다. 같은 것을 ES import로 가져오면
-  `unattributed-js-native-modules:`로 센다(배럴·대역일 수 있다). react-native 0.88.1 내부 `PaperUIManager.js`·
-  `TurboModuleRegistry.js`가 이 꼴(`require('../BatchedBridge/NativeModules').default`)이고, 그 멤버로 만든 바인딩(`viewManager`·
-  `legacyModule`)의 쓰임 5개는 출처를 보지 않던 바인딩 때문에 세어졌다가 PR #167 리뷰 반영으로 빠졌다(js-binding-scope 63 → 58,
-  사실 동일). CommonJS 꼴도 import 꼴처럼 세려면 `importedFromOtherModule`이 다른 모듈 require 선언을 보게 하면 된다.
 - extract-js 객체 리터럴 키 `NativeModules:`(기존 동작, main부터): `const cfg = { NativeModules: 1 }`의 키를 베어 레지스트리 값으로 읽어
   동적 `module-import NativeModules`를 낸다(`dynamic-module-names:`로 센다 — 정적 거짓 사실은 아니다). 단축 속성 `{ NativeModules }`는
   값 쓰임이라 맞다. 키 자리(`{`·`,` 뒤, `:` 앞) 판정이 필요하다.
@@ -206,7 +245,9 @@ _Last updated: 2026-11-22_
   바인딩의 접근, 템플릿 보간 안의 모듈 쓰임은 사실 대신 계수가 된다. `foo.bar(M)` 뒤 다음 줄 블록 안 호출은 계수 대신 사실이 된다.
   PR #167 리뷰 반영으로 대역에서 꺼낸 바인딩(`const Camera = NativeModules['Camera']`)의 거짓 method-invoke도 사라지고(정하지 못하면
   쓰임마다 센다), 레지스트리 별칭과 이름이 같은 로컬 모듈 바인딩·`require('react-native')` 별칭 구조 분해의 호출은 사실이 되며,
-  보간 안 레지스트리 별칭 쓰임은 첫 수에 든다. `check --strict`·`impact --strict` 결과가 바뀔 수 있다.
+  보간 안 레지스트리 별칭 쓰임은 첫 수에 든다. 델타 리뷰 반영으로 react-native가 아닌 모듈의 require로 가져온 `NativeModules`의 접근이
+  `unattributed-js-native-modules:`에 들고(react-native 0.88.1에 새 줄, 3), 다른 모듈에서 가져온 원천에서 꺼낸 바인딩의 쓰임이 첫 수에
+  든다. `check --strict`·`impact --strict` 결과가 바뀔 수 있다.
 
 ## Resume Prompt
 
