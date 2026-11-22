@@ -438,3 +438,144 @@ test('속성 자리 브리지 API 호출은 패키지 멤버 호출로 겹쳐 �
   assert.ok(counted.limitations.some((line) => line.startsWith('unattributed-js-native-modules: 1 ')));
   assert.ok(!counted.limitations.some((line) => line.startsWith('unattributed-js-package-calls:')), counted.limitations.join('\n'));
 });
+
+/** 사실을 `종류 채널.메서드@줄` 문자열로 줄여 비교한다. */
+function factLines(document: ReturnType<typeof assemble>): string[] {
+  return document.facts.map((fact) =>
+    `${fact.kind} ${fact.channel}${fact.method === undefined ? '' : `.${fact.method}`}@${fact.location?.line}`);
+}
+
+test('형제 함수·블록·메서드가 같은 이름을 다른 모듈에 묶으면 호출을 각자의 모듈로 귀속한다', () => {
+  // 바인딩 지도가 파일 전역이던 때는 마지막 선언이 이겨 앞 함수의 호출이 거짓 모듈(B.x)로 귀속됐다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'function A() { const M = NativeModules.A; M.x(); }',
+      'function B() { const M = NativeModules.B; M.y(); }',
+      'if (ready) { const S = NativeModules.C; S.z(); } else { const S = NativeModules.D; S.w(); }',
+      'class Panel { open() { let P = NativeModules.E; P.p(); } close() { let P = NativeModules.F; P.q(); } }',
+      // Babel 출력처럼 함수마다 var로 다시 선언해도 함수 본문이 범위다.
+      'function C() { var V = NativeModules.G; V.g(); }',
+      'function D() { var V = NativeModules.H; V.h(); }',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke A.x@2',
+    'method-invoke B.y@3',
+    'method-invoke C.z@4',
+    'method-invoke D.w@4',
+    'method-invoke E.p@5',
+    'method-invoke F.q@5',
+    'method-invoke G.g@6',
+    'method-invoke H.h@7',
+  ]);
+  // 모든 초기값이 그 범위의 바인딩으로 추적되므로 범위 밖 참조가 없다.
+  assert.equal(bindingScope(document), undefined);
+});
+
+test('형제 함수의 같은 이름 문자열 상수는 각자의 범위에서만 모듈 이름이 된다', () => {
+  const document = assemble({
+    'src/a.js': [
+      "import { requireNativeModule } from 'expo-modules-core';",
+      "function a() { const name = 'Alpha'; requireNativeModule(name).go(); }",
+      "function b() { const name = 'Beta'; requireNativeModule(name).go(); }",
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document), [
+    'module-import Alpha@2',
+    'method-invoke Alpha.go@2',
+    'module-import Beta@3',
+    'method-invoke Beta.go@3',
+  ]);
+});
+
+test('안쪽 범위의 같은 이름 선언은 바깥 모듈 바인딩과 import를 가린다', () => {
+  // 안쪽 M·Cam은 모듈이 아닌 값이다. 전에는 안쪽 선언을 무시하고 바깥 바인딩·import로 귀속해 거짓 호출을 냈다.
+  const document = assemble({
+    'src/cam.js': "import { NativeModules } from 'react-native';\nexport default NativeModules.Camera;",
+    'src/app.js': [
+      "import { NativeModules } from 'react-native';",
+      "import Cam from './cam';",
+      'const M = NativeModules.Outer;',
+      'function run() { const M = makeFake(); M.fake(); }',
+      'function shoot() { const Cam = makeFake(); Cam.fake(); }',
+      'for (const M of fakes) { M.fake(); }',
+      'M.real();',
+      'Cam.open();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(document).filter((line) => line.startsWith('method-invoke')), [
+    'method-invoke Outer.real@7',
+    'method-invoke Camera.open@8',
+  ]);
+  // 안쪽 Cam의 호출은 import 위 호출이 아니다 — 해석하지 못한 import 위 호출로도 세지 않는다.
+  const unresolved = assemble({
+    'src/app.js': "import Cam from './missing';\nfunction shoot() { const Cam = makeFake(); Cam.fake(); }\nCam.open();",
+  });
+  assert.ok(unresolved.limitations.includes(
+    'unattributed-js-relative-calls: 1 member calls on imports that did not resolve inside the scanned file set '
+    + 'could not be attributed to a module name'), unresolved.limitations.join('\n'));
+});
+
+test('같은 함수에서 다른 모듈로 다시 선언되거나 블록 밖에서 쓰인 var는 귀속하지 않고 범위 밖 참조로 센다', () => {
+  for (const [source, expectedScope] of [
+    // 다시 선언한 var는 같은 변수다 — M.x()는 A일 수도 B일 수도 있다. 두 초기값이 추적되지 않는다(2).
+    ['function f(c) {\n  var M = NativeModules.A;\n  if (c) { var M = NativeModules.B; }\n  M.x();\n}', 2],
+    // 블록 밖의 같은 함수 위치에서는 값이 정해지지 않는다 — 귀속하지 않는 쓰임을 센다(1).
+    ['function f(c) {\n  if (c) { var M = NativeModules.A; }\n  M.x();\n}', 1],
+    // 끌어올린 var는 함수 전체에서 바깥 이름을 가린다 — 바깥 Outer로 귀속하지 않는다.
+    ['const M = NativeModules.Outer;\nfunction f(c) {\n  if (c) { var M = makeFake(); }\n  M.fake();\n}\nM.real();', 0],
+    // 본문이 블록이 아닌 for 머리 선언은 본문 끝을 찾지 않고 감싼 블록 끝까지 가린다 — 가린 바깥 모듈의 쓰임을 센다(2).
+    ['const M = NativeModules.Outer;\nfor (const M of fakes) M.fake();\nM.real();', 2],
+  ] as const) {
+    const document = assemble({ 'src/a.js': source });
+    const calls = factLines(document).filter((line) => line.startsWith('method-invoke'));
+    assert.deepEqual(calls, source.includes('M.real();') && expectedScope === 0 ? ['method-invoke Outer.real@6'] : [],
+      source);
+    const scope = bindingScope(document);
+    if (expectedScope === 0) assert.equal(scope, undefined, source);
+    else assert.ok(scope?.startsWith(`js-binding-scope: ${expectedScope} native module references `), `${source}\n${scope}`);
+  }
+});
+
+test('범위 밖 참조는 그 위치의 이름이 모듈 바인딩일 때만 센다', () => {
+  // 다른 함수의 같은 이름은 그 위치의 모듈 값이 아니다 — 전에는 파일 전역 이름으로 보고 b의 인자도 셌다.
+  const document = assemble({
+    'src/a.js': [
+      "import { NativeModules } from 'react-native';",
+      'function a() { const M = NativeModules.A; register(M); }',
+      'function b() { register(M); }',
+    ].join('\n'),
+  });
+  assert.ok(bindingScope(document)?.startsWith('js-binding-scope: 1 native module references '), bindingScope(document));
+});
+
+test('한 함수의 NativeModules·조회 API 대역 선언은 다른 위치의 전역 해석을 바꾸지 않는다', () => {
+  // import 없이 전역 레지스트리를 읽는 파일이다. 대역 선언은 그 함수 안에서만 레지스트리·Expo 조회 API를 가린다.
+  // 로컬 대역 조회 함수의 호출도 이름 경계 사실(Fake)은 그대로 내고 해석 경로(mechanism)만 생략한다(기존 규칙).
+  const document = assemble({
+    'src/a.js': [
+      'function setup() { const NativeModules = mockModules(); NativeModules.Fake.x(); }',
+      'function helper() { const requireNativeModule = fakeLoader; requireNativeModule("Fake"); }',
+      'NativeModules.Camera.take();',
+      "requireNativeModule('Haptics');",
+    ].join('\n'),
+  });
+  assert.deepEqual(document.facts.map((fact) =>
+    `${fact.kind} ${fact.channel}${fact.method === undefined ? '' : `.${fact.method}`} ${fact.mechanism ?? '-'}`), [
+    'module-import Fake -',
+    'module-import Camera -',
+    'method-invoke Camera.take -',
+    'module-import Haptics expo',
+  ]);
+  // react-native import가 있어도 안쪽 대역 선언이 이긴다 — 전에는 대역의 선언자 이름을 베어 레지스트리 사실로,
+  // 대역의 접근을 거짓 Fake 사실로 냈다.
+  const imported = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      'function setup() { const NativeModules = mockModules(); NativeModules.Fake.x(); }',
+      'NativeModules.Camera.take();',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(imported), ['module-import Camera@3', 'method-invoke Camera.take@3']);
+});

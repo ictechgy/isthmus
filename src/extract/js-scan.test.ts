@@ -1164,3 +1164,16 @@ test('템플릿 보간의 브리지 API 언급은 템플릿 길이에 선형으�
   assert.equal(interpolationMentionsBridgeApi('`NativeModules ${a}`'), false);
   assert.equal(scanJsSource('const s = `${NativeModules.Camera.getName()}`').counts.untracedBindings, 1);
 });
+
+test('멤버 호출 후보는 호출 위치에서 선언이 묶은 모듈 값을 싣고 import 이름은 문서 단계에 맡긴다', () => {
+  const scan = scanJsSource([
+    "import Shared from './shared';",
+    "function a() { const M = requireNativeModule('A'); M.x(); Shared.s(); }",
+    "function b() { const M = requireNativeModule('B'); M.y(); const Shared = local(); Shared.t(); }",
+  ].join('\n'));
+  assert.deepEqual(scan.memberCalls.map((call) => [call.ident, call.method, call.binding ?? null]), [
+    ['M', 'x', { name: 'A' }],
+    ['Shared', 's', null],
+    ['M', 'y', { name: 'B' }],
+  ]);
+});

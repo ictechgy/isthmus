@@ -90,6 +90,33 @@
 
 ### Fixed
 
+- `extract-js` resolves declaration bindings and one-level string constants by block scope instead of
+  one file-wide map. When two function bodies, blocks or methods bound the same name to different
+  native modules (`function A() { const M = NativeModules.A; M.x(); }` and
+  `function B() { const M = NativeModules.B; M.y(); }`), the last declaration won and A's call became a
+  false `B.x` `method-invoke`; the same happened to `const name = 'Alpha'` /
+  `requireNativeModule(name)` in sibling functions (a false `module-import Beta`). A non-module
+  declaration of the same name in an inner scope (a local fake, a destructured name, a `for…of`
+  variable) was ignored, so its calls were attributed to the outer binding or to an import (a false
+  `Outer.fake` or `Camera.take`). Each use now resolves to the innermost declaration that covers it:
+  `const`/`let` apply in their block (a `for` header declaration in its loop), and `var` applies its
+  value in the block that declares it while claiming the name in the whole enclosing function body. A
+  name redeclared in the same scope with a different module, or reassigned, is not attributed (its
+  initializers are counted in `js-binding-scope:`, as before for reassignment). Uses whose value the
+  scope cannot decide — a `var` read outside its declaring block, or a name after a `for` header
+  declaration whose body is not a block (the scan widens that declaration to the enclosing block instead
+  of finding the end of the body statement) — that hide a module binding are not attributed and are
+  counted in `js-binding-scope:`, whose message now also names redeclared bindings and uses outside the
+  block a declaration is scoped to. Escape counting follows the same scopes, so a same-name use in another
+  function is no longer counted as a module reference. A local `NativeModules`, Expo lookup API or
+  `require` stand-in declared with `const`/`let`/`var` now changes the global reading only inside its
+  scope (function and class declaration names still apply to the whole file), and inside that scope it
+  wins over a react-native `NativeModules` import: a test helper's `const NativeModules = mock` used to
+  yield a bare registry fact for its own declarator and false facts for its accesses. Bridge facts and
+  limitation counts of 12 published packages (react-native 0.88.1, react-native-screens 4.30.1,
+  react-native-vision-camera 5.2.4, expo-haptics 14.1.4, expo-camera 58.0.14, react-native-svg 15.16.1
+  and six others) are unchanged; they bind native modules at module scope.
+
 - `extract-js` no longer records names inside a declaration's initializer as local declarations. An
   object literal or function body in an initializer (`const api = { cam: NativeModules.Camera }`,
   `const run = () => { load(a, NativeModules.Camera) }`) used to be read as a destructuring pattern, so
