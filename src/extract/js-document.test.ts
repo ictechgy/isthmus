@@ -1378,6 +1378,15 @@ test('레지스트리가 아닌 NativeModules에서 꺼낸 바인딩·구조 분
   ]) {
     assert.deepEqual(assemble({ 'src/a.js': text }).facts, [], text);
   }
+  // PR #167 델타 리뷰: 대역에서 꺼낸 중첩 구조 분해(`{ Camera: { take } }`)로 센 범위 밖 참조도 거둔다 — 모듈이 아니다.
+  for (const text of [
+    "const { NativeModules } = require('react-native');\nfunction t() {\n  const NativeModules = { Camera: { take() {} } };\n  const { Camera: { take } } = NativeModules;\n  take();\n}",
+    'function t(NativeModules) {\n  const { Camera: { take }, ...rest } = NativeModules;\n  take();\n}',
+  ]) {
+    const document = assemble({ 'src/n.js': text });
+    assert.deepEqual(document.facts, [], text);
+    assert.equal(bindingScope(document), undefined, text);
+  }
   // 뒤에 온 다른 모듈 import면 멤버 접근·꺼낸 이름마다 출처 모름으로 센다.
   for (const text of [
     "function a() { const C = NativeModules.Camera; C.take(); }\nimport { NativeModules } from 'other-lib';",
@@ -1394,6 +1403,9 @@ test('레지스트리가 아닌 NativeModules에서 꺼낸 바인딩·구조 분
     ["let { NativeModules } = require('react-native');\nfunction a() { const { Camera } = NativeModules; Camera.take(); }\nfunction b() { NativeModules = mock; }", 4],
     ["function f() {\n  if (x) { var { NativeModules } = require('react-native'); }\n  const { Camera } = NativeModules;\n  Camera.take();\n  Camera.close();\n}", 3],
     ["function f() {\n  if (x) { var { NativeModules } = require('react-native'); }\n  const C = NativeModules.Camera;\n  C.take();\n  C.close();\n}", 3],
+    // 레지스트리일 수도 있는 원천의 중첩 구조 분해는 그 계수를 남긴다(확실히 대역일 때만 거둔다) — 살아남지 못한 선언, 원천
+    // 접근, 중첩 패턴, 대입 대상이다.
+    ["let { NativeModules } = require('react-native');\nfunction a() { const { Camera: { take } } = NativeModules; take(); }\nfunction r() { NativeModules = mock; }", 4],
   ] as const) {
     const document = assemble({ 'src/c.js': text });
     assert.deepEqual(document.facts, [], text);
@@ -1416,6 +1428,83 @@ test('레지스트리가 아닌 NativeModules에서 꺼낸 바인딩·구조 분
     'module-import Camera@2', 'method-invoke Camera.take@3', 'method-invoke Camera.open@2',
     'module-import Torch@2', 'method-invoke Torch.on@3', 'module-import Haptics@3', 'method-invoke Haptics.go@4',
   ]);
+});
+
+test('같은 범위 var 묶음의 대표 값을 받은 별칭·export도 거둔다', () => {
+  // PR #167 델타 리뷰 S1: 같은 범위의 `var C` 두 번은 처음 본 값 객체를 대표로 두고 별칭(`const D = C`)·`export { C }`가 그 객체를
+  // 받는다. 대역에서 꺼낸 두 번째 읽기의 객체만 거두면 별칭·export가 남아 거짓 Camera.take가 이 파일과 다른 파일에 남았다.
+  const shared = [
+    'var C = NativeModules.Camera;',
+    '{',
+    '  const NativeModules = { Camera: { take() {} } };',
+    '  var C = NativeModules.Camera;',
+    '}',
+  ];
+  const document = assemble({
+    'src/a.js': [...shared, 'const D = C;', 'D.take();'].join('\n'),
+    'src/b.js': [...shared, 'export { C };'].join('\n'),
+    'src/c.js': "import { C } from './b';\nC.take();",
+  });
+  assert.deepEqual(factLines(document), ['module-import Camera@1', 'module-import Camera@1']);
+  // 확실하게 거둔 뒤 같은 값 객체를 불확실하게 다시 거두면 그 쓰임을 센다 — 확실한 대역 읽기(2행)가 먼저 대표 값을 거두고,
+  // 재대입된 레지스트리 읽기(3행)가 불확실하게 거둔다. 살아남지 못한 레지스트리 선언, 3행 접근, 대입 대상, D 초기값의 C,
+  // D의 쓰임 둘이다(전에는 D의 쓰임이 조용히 빠질 수 있었다).
+  const ordered = assemble({
+    'src/d.js': [
+      "let { NativeModules } = require('react-native');",
+      '{ const NativeModules = mock; var C = NativeModules.Camera; }',
+      'var C = NativeModules.Camera;',
+      'const D = C;',
+      'D.take();',
+      'D.close();',
+      'function r() { NativeModules = mock; }',
+    ].join('\n'),
+  });
+  assert.deepEqual(ordered.facts, []);
+  assert.ok(bindingScope(ordered)?.startsWith('js-binding-scope: 6 native module references '), bindingScope(ordered));
+});
+
+test('react-native가 아닌 모듈의 require로 가져온 NativeModules는 import 꼴처럼 세고 거기서 꺼낸 바인딩의 쓰임도 센다', () => {
+  // PR #167 델타 리뷰 B1: `const NativeModules = require('../BatchedBridge/NativeModules').default`(react-native 내부 — 실제로
+  // 레지스트리다)는 react-native가 아닌 값의 로컬 선언으로 읽혀 멤버 접근을 세지 않았고, 거기서 꺼낸 바인딩을 거두면서 그 쓰임
+  // 계수까지 사라졌다(main 2 → 0). 다른 모듈에서 가져온 NativeModules는 ES import든 require든 대역일 수도 레지스트리를 다시
+  // 내보낸 것일 수도 있다 — 멤버 접근을 `unattributed-js-native-modules:`로 세고, 거기서 꺼낸 바인딩의 쓰임도 센다.
+  const unattributed = (document: ReturnType<typeof assemble>) =>
+    document.limitations.find((line) => line.startsWith('unattributed-js-native-modules: '))?.split(' ')[1];
+  for (const [text, scope, accesses] of [
+    ["const NativeModules = require('../BatchedBridge/NativeModules').default;\nfunction f(name) {\n  const v = NativeModules[name];\n  v && Object.keys(v);\n  return v;\n}", 3, '1'],
+    ["const NativeModules = require('../BatchedBridge/NativeModules').default;\nconst v = NativeModules.Camera;\nv.take();\nNativeModules.Torch.on();", 1, '2'],
+    ["const { NativeModules } = require('other-lib');\nconst v = NativeModules.Camera;\nv.take();\nNativeModules.Torch.on();", 1, '2'],
+    ["const { NativeModules: NM } = require('other-lib');\nNM.Camera.take();", 0, '1'],
+    ["const NativeModules = require('../BatchedBridge/NativeModules');\nconst { Camera } = NativeModules;\nCamera.take();", 1, '1'],
+    ["import { NativeModules } from 'other-lib';\nconst v = NativeModules.Camera;\nv.take();\nNativeModules.Torch.on();", 1, '2'],
+  ] as const) {
+    const document = assemble({ 'src/a.js': text });
+    assert.deepEqual(document.facts, [], text);
+    assert.equal(unattributed(document), accesses, text);
+    assert.ok(bindingScope(document)?.startsWith(`js-binding-scope: ${scope} native module references `), text);
+  }
+});
+
+test('표가 가리지 않는 자리에도 쓰이는 require 별칭 레지스트리는 사실 대신 센다', () => {
+  // PR #167 델타 리뷰 N3: 새 출처 `const { NativeModules: NM } = require('react-native')`가 식 본문 화살표·`catch` 매개변수를
+  // 가리지 않는 기존 한계에 닿아 `items.forEach(NM => NM.Camera.take())`가 거짓 Camera.take를 냈다(main은 이 출처를 읽지 않아
+  // 사실이 없었다). 그 이름이 표가 가리지 않는 자리에도 쓰이면 이 출처로는 사실을 내지 않고 센다.
+  for (const [text, count] of [
+    ["const { NativeModules: NM } = require('react-native');\nitems.forEach(NM => NM.Camera.take());", 2],
+    ["const { NativeModules: NM } = require('react-native');\nitems.forEach((NM) => NM.Camera.take());", 2],
+    ["function a() {\n  const { NativeModules: NM } = require('react-native');\n  try { x(); } catch (NM) { NM.Camera.take(); }\n}", 2],
+    ["function a() {\n  const { NativeModules: NM } = require('react-native');\n  NM.Camera.open();\n}\nfunction b() {\n  const g = ({ NM }) => NM.Camera.take();\n}", 1],
+  ] as const) {
+    const document = assemble({ 'src/a.js': text });
+    assert.deepEqual(document.facts, [], text);
+    assert.ok(bindingScope(document)?.startsWith(`js-binding-scope: ${count} native module references `), text);
+  }
+  // 블록 본문 화살표는 매개변수가 가리므로 그대로 사실이다.
+  const kept = assemble({
+    'src/b.js': "const { NativeModules: NM } = require('react-native');\nNM.Haptics.go();\nitems.forEach((NM) => { NM.Camera.take(); });",
+  });
+  assert.deepEqual(factLines(kept), ['module-import Haptics@2', 'method-invoke Haptics.go@2']);
 });
 
 test('레지스트리 별칭과 이름이 같은 다른 범위의 선언은 그 위치에서 다른 이름처럼 읽는다', () => {
@@ -1450,6 +1539,7 @@ test('템플릿 보간 안의 재대입은 바인딩을 지우고 보간 안의 
     // PR #167 리뷰: 보간 안 for-of/in의 선언 없는 대상도 재대입이다(전에는 대입·증감 토큰만 봐 거짓 Camera.take였다).
     ['log(`${(() => { for (M of fakes); })()}`);', 3],
     ['log(`${(() => { for (M in table); })()}`);', 3],
+    ['log(`${(async () => { for await (M of stream); })()}`);', 3],
   ] as const) {
     const document = assemble({
       'src/a.js': `import { NativeModules } from 'react-native';\nlet M = NativeModules.Camera;\n${line}\nM.take();`,
@@ -1485,10 +1575,12 @@ test('템플릿 보간 안의 재대입은 바인딩을 지우고 보간 안의 
       'const label = `${M === other ? "a" : "b"}`;',
       'log(`${o.M = 1}`);',
       'log(`${M`t`.length + (n = 1)}`);',
+      // PR #167 델타 리뷰: 속성 이름·객체 키 `for`는 반복문 머리가 아니다(전에는 참 Camera.take가 "재대입"으로 세어졌다).
+      'log(`${foo(M, x.for)} ${x.for(M)} ${f({ for: M })}`);',
       'M.take();',
     ].join('\n'),
   });
-  assert.deepEqual(factLines(kept), ['module-import Camera@2', 'method-invoke Camera.take@7']);
+  assert.deepEqual(factLines(kept), ['module-import Camera@2', 'method-invoke Camera.take@8']);
   // PR #167 리뷰: 보간 안 레지스트리 별칭 쓰임은 사실도 계수도 없이 사라졌다(브리지 API 낱말 검사는 별칭을 못 본다). 위치에서
   // 레지스트리인 별칭 쓰임을 센다. 브리지 API 이름 그대로인 NativeModules는 그대로 하한으로만 세고, 다른 모듈의 별칭은 아니다.
   for (const [text, count] of [

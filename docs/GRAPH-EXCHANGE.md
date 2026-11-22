@@ -444,11 +444,14 @@ for 머리 선언 뒤, 무엇을 대입했는지 모르는 재대입 뒤, 잠정
 — 같은 이름의 로컬 모듈 바인딩(`const Cam = requireNativeModule('Cam')`)의 호출은 그대로 사실이다.
 레지스트리 멤버로 만든 바인딩(`const C = NativeModules.Camera`·`NativeModules['Camera']`)과 레지스트리 구조 분해(`const { A } =
 NativeModules`)는 모든 선언·재대입·import를 본 뒤 그 자리를 판정한다 — 레지스트리가 아니면 그 바인딩·별칭·export·구조 분해
-사실을 거두고(다른 모듈 import면 꺼낸 이름마다 `unattributed-js-native-modules:`로 센다), 레지스트리일 수도 있으면 그 바인딩의
-쓰임마다 첫 수로 센다.
+사실을 거두고(같은 범위에 두 번 선언한 `var`는 처음 본 값을 별칭·export에 넘기므로 그 값도 함께 거둔다), 레지스트리일 수도
+있으면(정하지 못한 레지스트리 선언, 다른 모듈에서 가져온 `NativeModules`) 그 바인딩의 쓰임마다 첫 수로 센다.
+`const { NativeModules: NM } = require('react-native')` 출처는 그 이름이 표가 가리지 않는 자리(식 본문 화살표·`catch` 매개변수,
+함수·클래스 선언 이름 — 아래의 가림 공백)에도 쓰이면 사실을 내지 않고 그 위치의 쓰임을 첫 수로 센다.
 매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
-다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수를
-`unattributed-js-native-modules:` 한계로 센다.
+다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수(구조 분해면 꺼낸 이름 수)를
+`unattributed-js-native-modules:` 한계로 센다 — ES import와 react-native가 아닌 모듈의 `require`(`const NativeModules =
+require('…').default`, `const { NativeModules } = require('other-lib')`)가 같다.
 속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
 `TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
 인라인 `require('react-native')`, Babel·TS 변환의 `_interopRequireWildcard`·`__importStar` 결과와
@@ -494,7 +497,7 @@ module-import 사실은 내지만 바인딩으로 추적하지 않으므로, 그
 API 이름을 언급하는 템플릿 리터럴. 템플릿 보간(`${…}`) 안은 이름을 찾는 데만 다시 토큰화한다 — 그
 안의 사실은 나오지 않고, 브리지 API 이름은 이 수로, 모듈 바인딩·상대 import 이름의 쓰임은 첫 수로
 드러난다(레지스트리 별칭 `import { NativeModules as NM }`의 쓰임도 첫 수다 — 브리지 API 낱말이 아니다). 대입·증감 연산자나
-`for`(for-of/in 대상)가 있는 보간은 그 안에서 대입 대상이 될 수 있는 이름(속성 이름 `o.M = 1`의 M, 멤버 접근·호출·태그 호출의
+반복문 머리의 `for`(for-of/in 대상 — 속성 이름 `x.for`·객체 키 `{ for: … }`는 아니다)가 있는 보간은 그 안에서 대입 대상이 될 수 있는 이름(속성 이름 `o.M = 1`의 M, 멤버 접근·호출·태그 호출의
 대상 `M.n++`·`` M`t` ``의 M은 아니다)을 대상이 확실하지 않은 재대입으로 본다. 이 입구가 모듈을 담는지는 알 수 없으므로 이
 수가 0이 아니면 첫 수가 0이어도 줄을 싣고 첫 수가 하한임을 밝힌다. 인식하지 않는
 API(전역 객체 등)와 스캔하지 않은 파일의 사용은 이 계수 밖이다.

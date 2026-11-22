@@ -118,10 +118,26 @@
   known — while collecting, a later hoisted `var NativeModules = mock`, a reassignment in another function, a
   later `import RN`, `import { NativeModules } from 'other-lib'` or `function NativeModules` is not yet seen.
   When the position is not the registry, the binding, its aliases (`const D = Camera`), its exports and the
-  destructuring facts are withdrawn; from another module's import, each destructured name is counted in
-  `unattributed-js-native-modules:`; when the position may be the registry, each use of the binding is counted
-  in `js-binding-scope:`. A registry destructuring after a late `import RN from 'react-native'` or after an
-  undecided same-name `var` in another function now keeps its true facts.
+  destructuring facts are withdrawn. A same-scope `var` declared twice keeps the first value it saw, and aliases
+  and exports receive that value, so withdrawing one declaration's value also withdraws the group's value (a
+  stand-in `var C = NativeModules.Camera` inside a block used to leave `const D = C; D.take()` and an exported
+  `C` as false facts, in another file too). When the position may be the registry — an undecided registry
+  declaration, or a `NativeModules` taken from another module by an ES import or by a `require` of a module
+  other than react-native (inside react-native, `require('../BatchedBridge/NativeModules').default` is the
+  registry) — each use of the binding is counted in `js-binding-scope:`. A registry destructuring after a late
+  `import RN from 'react-native'` or after an undecided same-name `var` in another function now keeps its true
+  facts.
+
+  A `NativeModules` taken by a `require` of a module other than react-native (`const NativeModules =
+  require('…').default`, `const { NativeModules } = require('other-lib')`) is now counted like the ES-import form:
+  each member access and each destructured name in `unattributed-js-native-modules:`. It was read as a local
+  stand-in and its accesses were not counted at all.
+
+  The new `const { NativeModules: NM } = require('react-native')` origin is not trusted when the same name is
+  also used where the scan does not shadow (an expression-bodied arrow or `catch` parameter, a function or class
+  declaration name — a known gap for every registry name): its positions are counted in `js-binding-scope:`
+  instead of yielding facts, so `items.forEach(NM => NM.Camera.take())` does not yield a false
+  `Camera.take`.
 
   The registry names (`NativeModules` and every `{ NativeModules: X }` alias in the file, plus react-native
   import aliases) used to send every same-name position down the registry path, which dropped the position
@@ -132,17 +148,18 @@
   for the whole file (`const { NM } = props` in one function erased `NM.A.a()` through a registry alias in
   another). Each position is now decided on its own: when it is not the registry, it is read like any other
   name. For the 12 published packages listed below, facts, `--events` output and every limitation count are
-  unchanged apart from the `js-binding-scope:` wording, except the `js-binding-scope:` first count of
-  react-native 0.88.1 (63 → 58): two internal files read members of `const NativeModules =
-  require('../BatchedBridge/NativeModules').default`, a local declaration that is not the react-native
-  registry by the rule above (its accesses were not counted before either), and the 5 uses of the values bound
-  from it are no longer counted.
+  unchanged apart from the `js-binding-scope:` wording, except react-native 0.88.1: its `js-binding-scope:`
+  first count goes from 63 to 66 and it gains `unattributed-js-native-modules: 3`. Two internal files read
+  members of `const NativeModules = require('../BatchedBridge/NativeModules').default`; those 3 reads are now
+  counted like reads from an imported module, and each use of the values bound from them is counted (8 uses,
+  where 5 escapes were counted before).
 
 - `extract-js` reads names inside template interpolations. The lexer keeps a template as one token, so
   `` `${M = other}` `` followed by `M.take()` yielded a false `method-invoke`, and `` `${M.take()}` `` disappeared
   without a count (only an interpolation that mentions a bridge API name was counted, as a lower-bound entry).
   Each interpolation body is now tokenized again. When it contains an assignment or increment operator or a
-  `for` (a `for…of`/`for…in` target needs no `=`), every name in it that could be the target (not a property
+  loop-head `for` (a `for…of`/`for…in` target needs no `=`; a property `x.for` or an object key `{ for: … }` is
+  not a loop head), every name in it that could be the target (not a property
   name such as the `M` of `o.M = 1`, and not a member, call or tag base such as the `M` of `M.count++` or
   `` M`t` ``) is treated as a reassignment whose target is uncertain, so that binding is not attributed and its
   module uses are counted. Uses of module bindings, relative imports and registry aliases (`import

@@ -217,10 +217,20 @@ interface RegistryRead {
   readonly facts: ScannedFact[];
   /** 레지스트리 구조 분해였으면 그 최상위 항목 수다(다른 모듈 import로 판정이 바뀌면 그만큼 센다). */
   patternEntries: number;
+  /** 레지스트리 구조 분해의 중첩 패턴 항목으로 센 범위 밖 참조 수다(레지스트리가 아닌 것이 확실하면 거둔다). */
+  nestedEscapes: number;
 }
 
 /** 레지스트리 출처 표에서 react-native 레지스트리를 담은 선언의 값이다. 이 표 밖으로 나가지 않는다. */
 const REGISTRY_VALUE: BoundName = { name: 'NativeModules' };
+
+/**
+ * 레지스트리 출처 표에서 레지스트리를 담았지만 그 위치를 차지했다고 단정할 수 없는 선언의 값이다 — `require('react-native')`
+ * 에서 별칭으로 구조 분해한 이름이 파일 어딘가에서 표가 가리지 않는 자리(식 본문 화살표·`catch` 매개변수, 함수·클래스 선언
+ * 이름)에도 쓰인다. 그 자리는 바깥 선언을 가리지 않는 기존 한계라, 이 출처를 레지스트리로 확정하면 거짓 사실이 새로 생긴다.
+ * 이 값에 닿는 위치는 사실 대신 센다(registryUndecided). 이름이 달라 REGISTRY_VALUE와 한 묶음으로 합쳐지지 않는다.
+ */
+const REGISTRY_AT_RISK_VALUE: BoundName = { name: 'NativeModules?' };
 
 interface ScanContext {
   readonly source: string;
@@ -240,6 +250,8 @@ interface ScanContext {
   readonly registryCandidates: ReadonlySet<string>;
   /** 수집 중 레지스트리 접근으로 읽은 `NativeModules` 자리 → 그 자리에서 만든 값·사실이다. 동결 뒤 판정한다. */
   readonly registryReads: Map<number, RegistryRead>;
+  /** 블록 범위 표가 가리지 않는 자리(식 본문 화살표·`catch` 매개변수 등)에도 쓰이는 후보 이름이다. 처음 필요할 때 만든다. */
+  unshadowedCandidates?: ReadonlySet<string>;
   /** 후보 이름의 선언·재대입 기록이다(수집 순서). 수집이 끝나면 레지스트리 출처 표를 다시 만든다. */
   readonly registryEvents: RegistryEvent[];
   /**
@@ -586,6 +598,65 @@ function isRegistryOrigin(context: ScanContext, name: string, origin: RegistryOr
 }
 
 /**
+ * 레지스트리 출처 표에 넣을 선언의 값이다 — 레지스트리 출처면 REGISTRY_VALUE, 그중 `require('react-native')`의 별칭 구조
+ * 분해(`const { NativeModules: NM } = require('react-native')`)이고 그 이름이 표가 가리지 않는 자리에도 쓰이면
+ * REGISTRY_AT_RISK_VALUE다.
+ */
+function registryValueFor(context: ScanContext, name: string, origin: RegistryOrigin | undefined): BoundName | undefined {
+  if (!isRegistryOrigin(context, name, origin)) return undefined;
+  const requireAlias = name !== 'NativeModules' && origin?.specifier === 'react-native' && origin.source === undefined;
+  if (!requireAlias) return REGISTRY_VALUE;
+  context.unshadowedCandidates ??= unshadowedCandidateNames(context);
+  return context.unshadowedCandidates.has(name) ? REGISTRY_AT_RISK_VALUE : REGISTRY_VALUE;
+}
+
+/** 넓게 잡은 감싼 괄호를 따라 오르는 단계 상한이다. 넘으면 표가 가리지 않는 자리로 본다(세는 쪽). */
+const UNSHADOWED_WALK_LIMIT = 64;
+
+/**
+ * 레지스트리 후보 이름 중 파일 어딘가에서 블록 범위 표가 가리지 않는 자리에 쓰이는 이름이다 — 식 본문 화살표 매개변수
+ * (`NM => …`, `(a, NM) => …`, `({ NM }) => …`), `catch (NM)`·`catch ({ NM })` 매개변수, `function NM`·`class NM` 선언 이름이다.
+ * 넓게 본다(기본값 식 안 이름도 넣는다 — 세는 쪽). 토큰을 한 번 훑고 후보 이름의 자리만 감싼 괄호를 오른다(단계 상한 있음).
+ */
+function unshadowedCandidateNames(context: ScanContext): Set<string> {
+  const { tokens } = context;
+  const names = new Set<string>();
+  tokens.forEach((token, index) => {
+    if (token.kind !== 'identifier' || names.has(token.text) || !context.registryCandidates.has(token.text) ||
+      ['.', '?.'].includes(tokens[index - 1]?.text ?? '')) {
+      return;
+    }
+    const unshadowed = ['function', 'class'].includes(tokens[index - 1]?.text ?? '') ||
+      (tokens[index + 1]?.text === '=>' ? tokens[index + 2]?.text !== '{' : insideUnshadowedList(tokens, index));
+    if (unshadowed) names.add(token.text);
+  });
+  return names;
+}
+
+/** 위치를 감싼 첫 `(`가 식 본문 화살표의 매개변수 목록이거나 `catch` 목록인지 본다(패턴 괄호 `{`·`[`는 지나 오른다). */
+function insideUnshadowedList(tokens: readonly JsToken[], index: number): boolean {
+  let open = enclosingOpen(tokens, index);
+  for (let steps = 0; open !== undefined && tokens[open]!.text !== '('; steps++) {
+    if (steps > UNSHADOWED_WALK_LIMIT) return true;
+    open = enclosingOpen(tokens, open);
+  }
+  if (open === undefined) return false;
+  if (tokens[open - 1]?.text === 'catch') return true;
+  const close = findMatching(tokens, open, '(', ')');
+  return close !== undefined && tokens[close + 1]?.text === '=>' && tokens[close + 2]?.text !== '{';
+}
+
+/**
+ * 레지스트리 후보 선언이 react-native가 아닌 모듈의 require에서 왔으면 그 specifier다(`const NativeModules =
+ * require('../BatchedBridge/NativeModules').default`, `const { NativeModules } = require('other-lib')`). 같은 것을 ES import로
+ * 가져온 꼴처럼 다른 모듈에서 가져온 것이라 레지스트리인지 모른다(importedFromOtherModule).
+ */
+function otherModuleRequire(name: string, origin: RegistryOrigin | undefined): string | undefined {
+  if (origin?.specifier === undefined || origin.specifier === 'react-native') return undefined;
+  return name === 'NativeModules' || origin.property === 'NativeModules' ? origin.specifier : undefined;
+}
+
+/**
  * 수집 기록을 모든 import를 본 출처로 새 레지스트리 출처 표에 다시 넣고 동결한다. 수집 중 표는 그때까지 본 import로
  * 출처를 정했다 — 구조 분해 뒤에 온 `import RN from 'react-native'`도 여기서 반영한다. 기록은 후보 이름의 선언·재대입뿐이다.
  *
@@ -601,10 +672,14 @@ function replayRegistryEvents(context: ScanContext): ScopedBindingTable {
       table.invalidate(event.name, event.index, event.floor, event.certainFloor);
       return;
     }
-    // 표의 추적 초기값 위치를 선언 번호로 써서 동결 뒤 값이 살아남은 레지스트리 선언을 가린다.
-    table.declare(isRegistryOrigin(context, event.input.name, event.origin)
-      ? { ...event.input, value: REGISTRY_VALUE, initializerStart: registryDeclarations++ }
-      : event.input);
+    // 표의 추적 초기값 위치를 선언 번호로 써서 동결 뒤 값이 살아남은 레지스트리 선언을 가린다. 다른 모듈 require에서 온
+    // 선언은 그 specifier를 문자열 값(`literal`) 자리에 둔다 — 이 표에는 문자열 상수가 없고, 모듈 값·`hidesModule` 판정에 닿지
+    // 않는다(importedFromOtherModule만 읽는다).
+    const value = registryValueFor(context, event.input.name, event.origin);
+    const other = otherModuleRequire(event.input.name, event.origin);
+    table.declare(value === REGISTRY_VALUE
+      ? { ...event.input, value, initializerStart: registryDeclarations++ }
+      : value !== undefined ? { ...event.input, value } : other === undefined ? event.input : { ...event.input, literal: other });
   });
   table.freeze();
   context.counts.escapedModuleReferences += registryDeclarations - table.trackedInitializerStarts().length;
@@ -624,7 +699,7 @@ function resolveRegistry(context: ScanContext, name: string, index: number): Sco
 function registryRead(context: ScanContext, start: number): RegistryRead {
   let read = context.registryReads.get(start);
   if (read === undefined) {
-    read = { values: [], facts: [], patternEntries: 0 };
+    read = { values: [], facts: [], patternEntries: 0, nestedEscapes: 0 };
     context.registryReads.set(start, read);
   }
   return read;
@@ -649,22 +724,22 @@ function recordRegistryValue(read: RegistryRead, value: BoundName): BoundName {
  */
 function validateRegistryReads(context: ScanContext): void {
   const withdrawnFacts = new Set<ScannedFact>();
-  const withdrawnValues = new Set<BoundName>();
+  const withdrawnValues = new Map<BoundName, boolean>();
   for (const [start, read] of context.registryReads) {
     if (isNativeModulesRegistry(context, 'NativeModules', start)) continue;
-    const uncertain = registryUndecided(context, 'NativeModules', start);
-    for (const value of read.values) {
-      context.scopes.withdraw(value, uncertain);
-      withdrawnValues.add(value);
-    }
+    // 다른 모듈(ES import·require)에서 가져온 NativeModules는 대역일 수도 레지스트리를 다시 내보낸 것일 수도 있다
+    // (react-native 내부의 `require('../BatchedBridge/NativeModules')`) — 정하지 못한 것으로 보고 그 바인딩의 쓰임을 센다.
+    const otherModule = importedFromOtherModule(context, 'NativeModules', start);
+    const uncertain = otherModule || registryUndecided(context, 'NativeModules', start);
+    for (const value of read.values) context.scopes.withdraw(value, uncertain, withdrawnValues);
     for (const fact of read.facts) {
       withdrawnFacts.add(fact);
       if (fact.dynamic) context.counts.dynamicModuleNames--;
     }
+    // 레지스트리가 아닌 것이 확실하면 중첩 패턴(`{ Camera: { take } }`)으로 센 범위 밖 참조도 거둔다.
+    if (!uncertain) context.counts.escapedModuleReferences -= read.nestedEscapes;
     // 다른 모듈에서 가져온 원천의 구조 분해는 꺼낸 이름마다 출처 모름으로 센다(멤버 접근은 두 번째 순회가 센다).
-    if (read.patternEntries > 0 && importedFromOtherModule(context, 'NativeModules', start)) {
-      context.counts.untracedApiAccesses += read.patternEntries;
-    }
+    if (read.patternEntries > 0 && otherModule) context.counts.untracedApiAccesses += read.patternEntries;
   }
   if (withdrawnValues.size > 0) {
     for (const [name, value] of context.namedExports) if (withdrawnValues.has(value)) context.namedExports.delete(name);
@@ -969,12 +1044,15 @@ function noteReassignment(context: ScanContext, index: number): void {
 const interpolationAssigningTokens = new Set([...assignmentOperatorTexts(), '++', '--']);
 
 /**
- * 보간 본문 조각의 토큰이 재대입을 만들 수 있는지 본다 — 대입·복합 대입 연산자, 증감, 그리고 선언 없는 대상을 받는
- * for-of/in 머리의 `for`(`` `${(() => { for (M of xs); })()}` ``)다.
+ * 보간 본문 조각의 위치 `at` 토큰이 재대입을 만들 수 있는지 본다 — 대입·복합 대입 연산자, 증감, 그리고 선언 없는 대상을
+ * 받는 for-of/in 머리의 `for`(`` `${(() => { for (M of xs); })()}` ``)다. `for`는 반복문 머리일 때만이다 — 속성 이름
+ * (`x.for`·`x.for(M)`)과 객체 키(`{ for: 1 }`)는 아니다.
  */
-function assignsInInterpolation(token: JsToken): boolean {
-  return (token.kind === 'punct' && interpolationAssigningTokens.has(token.text)) ||
-    (token.kind === 'keyword' && token.text === 'for');
+function assignsInInterpolation(segment: readonly JsToken[], at: number): boolean {
+  const token = segment[at]!;
+  if (token.kind === 'punct') return interpolationAssigningTokens.has(token.text);
+  return token.kind === 'keyword' && token.text === 'for' && !['.', '?.'].includes(segment[at - 1]?.text ?? '') &&
+    ['(', 'await'].includes(segment[at + 1]?.text ?? '');
 }
 
 /**
@@ -986,7 +1064,7 @@ function assignsInInterpolation(token: JsToken): boolean {
  */
 function noteInterpolationReassignments(context: ScanContext, index: number): void {
   for (const segment of context.interpolations.get(index) ?? []) {
-    if (!segment.some(assignsInInterpolation)) continue;
+    if (!segment.some((_, at) => assignsInInterpolation(segment, at))) continue;
     const names = new Set<string>();
     segment.forEach((token, at) => {
       const after = segment[at + 1];
@@ -1550,7 +1628,8 @@ function declareName(
   // 레지스트리 출처 표에는 범위와 출처만 넣는다 — 수집 중에는 그때까지 본 import로 출처를 정한다(replayRegistryEvents).
   if (context.registryCandidates.has(name)) {
     context.registryEvents.push({ kind: 'declare', input, ...(origin === undefined ? {} : { origin }) });
-    context.registryScopes.declare(isRegistryOrigin(context, name, origin) ? { ...input, value: REGISTRY_VALUE } : input);
+    const value = registryValueFor(context, name, origin);
+    context.registryScopes.declare(value === undefined ? input : { ...input, value });
   }
 }
 
@@ -2024,8 +2103,10 @@ function collectPattern(context: ScanContext, open: number, scope: DeclarationSc
     // 다른 모듈 import면 꺼낸 이름마다 `unattributed-js-native-modules:`로 세고, 정하지 못하면 그 바인딩의 쓰임을 센다).
     const read = registryRead(context, sourceIndex!);
     const factStart = context.facts.length;
+    const escapesBefore = context.counts.escapedModuleReferences;
     read.patternEntries = collectDestructuredBindings(context, open, close, scope, exported, read);
     read.facts.push(...context.facts.slice(factStart));
+    read.nestedEscapes = context.counts.escapedModuleReferences - escapesBefore;
     context.destructuredRegistrySources.add(sourceIndex!);
     return after;
   }
@@ -2663,7 +2744,7 @@ function isNativeModulesRegistry(context: ScanContext, name: string, index: numb
   if (local.claimed) {
     if (local.parameter === true) return false;
     const registry = resolveRegistry(context, name, index);
-    return registry.claimed && registry.value !== undefined;
+    return registry.claimed && registry.value === REGISTRY_VALUE;
   }
   const imports = context.importsByLocalName.get(name) ?? [];
   if (imports.length > 0) return nativeModulesAlias(context, name);
@@ -2691,8 +2772,9 @@ function registryUndecided(context: ScanContext, name: string, index: number): b
       (alternative.value !== undefined || alternative.hidesModule === true);
   }
   if (local.claimed) {
+    // 레지스트리일 수 있지만 그 위치를 차지했다고 단정할 수 없는 선언(REGISTRY_AT_RISK_VALUE)도 센다.
     const registry = resolveRegistry(context, name, index);
-    if (registry.claimed && registry.hidesModule === true) return true;
+    if (registry.claimed && (registry.hidesModule === true || registry.value === REGISTRY_AT_RISK_VALUE)) return true;
   }
   if (!local.claimed || (local.hidesOuter !== true && local.hidesModule !== true)) return false;
   const imports = context.importsByLocalName.get(name) ?? [];
@@ -2715,6 +2797,11 @@ function declaredLocallyAt(context: ScanContext, name: string, index: number): b
  */
 function importedFromOtherModule(context: ScanContext, name: string, index: number): boolean {
   const local = resolveLocal(context, name, index);
+  // `const NativeModules = require('<react-native 아닌 모듈>')`도 import 꼴처럼 다른 모듈에서 가져온 것이다.
+  if (local.claimed && local.parameter !== true) {
+    const registry = resolveRegistry(context, name, index);
+    if (registry.claimed && registry.literal !== undefined) return true;
+  }
   if (local.claimed && local.hidesOuter !== true) return false;
   const imports = context.importsByLocalName.get(name) ?? [];
   return imports.length > 0 && imports.every(({ specifier }) => specifier !== 'react-native');

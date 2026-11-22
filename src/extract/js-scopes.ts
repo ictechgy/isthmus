@@ -315,13 +315,27 @@ export class ScopedBindingTable {
    * 모든 선언을 본 판정이 뒤집었을 때 쓴다(레지스트리였던 `NativeModules`가 아니게 된 위치). `uncertain`이면 대상이
    * 확실하지 않은 재대입처럼 그 묶음의 쓰임을 정하지 못한 모듈 바인딩으로 센다(`hidesModule`). 동결 전에는 쓰지 않는다
    * — 동결이 수집 중의 무효를 지우고 다시 계산한다.
+   *
+   * 묶음은 처음 본 값 객체를 대표 값으로 두고 별칭·export는 그 객체를 받는다(같은 범위의 `var C = …` 두 번). 그래서 무효로 한
+   * 묶음의 대표 값이 다른 객체면 그것도 거둔다. `visited`는 값 객체마다 이미 거둔 확실성이다 — 같은 객체를 확실하게 거둔
+   * 뒤라도 불확실하게 다시 거두면 그 쓰임을 센다. 값 객체마다 많아야 두 번 보므로 선언 수에 선형이다. 거둔 값 객체를 담은
+   * `visited`를 돌려준다(export 정리용).
    */
-  withdraw(value: BoundName, uncertain: boolean): void {
+  withdraw(value: BoundName, uncertain: boolean, visited = new Map<BoundName, boolean>()): Map<BoundName, boolean> {
     if (!this.#frozen) throw new Error('scoped binding table is not frozen');
-    for (const { group } of this.#byValue.get(value) ?? []) {
-      group.invalidated = true;
-      if (uncertain) group.invalidatedUncertainly = true;
+    const pending = [value];
+    while (pending.length > 0) {
+      const next = pending.pop()!;
+      const seen = visited.get(next);
+      if (seen === true || (seen === false && !uncertain)) continue;
+      visited.set(next, uncertain);
+      for (const { group } of this.#byValue.get(next) ?? []) {
+        group.invalidated = true;
+        if (uncertain) group.invalidatedUncertainly = true;
+        if (group.module !== undefined && group.module !== null && group.module !== next) pending.push(group.module);
+      }
     }
+    return visited;
   }
 
   /**
