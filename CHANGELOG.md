@@ -121,7 +121,10 @@
   destructuring facts are withdrawn. A same-scope `var` declared twice keeps the first value it saw, and aliases
   and exports receive that value, so withdrawing one declaration's value also withdraws the group's value (a
   stand-in `var C = NativeModules.Camera` inside a block used to leave `const D = C; D.take()` and an exported
-  `C` as false facts, in another file too). When the position may be the registry — an undecided registry
+  `C` as false facts, in another file too). This also withdraws a true call made before the stand-in
+  redeclaration (`var C = NativeModules.Camera; const D = C; D.take(); { const NativeModules = mock; var C =
+  NativeModules.Camera; }` — at runtime `D.take()` reaches the native module): the `var` holds two values, and,
+  as for any redeclared value, the first initializer is counted instead. When the position may be the registry — an undecided registry
   declaration, or a `NativeModules` taken from another module by an ES import or by a `require` of a module
   other than react-native (inside react-native, `require('../BatchedBridge/NativeModules').default` is the
   registry) — each use of the binding is counted in `js-binding-scope:`. A registry destructuring after a late
@@ -131,13 +134,30 @@
   A `NativeModules` taken by a `require` of a module other than react-native (`const NativeModules =
   require('…').default`, `const { NativeModules } = require('other-lib')`) is now counted like the ES-import form:
   each member access and each destructured name in `unattributed-js-native-modules:`. It was read as a local
-  stand-in and its accesses were not counted at all.
+  stand-in and its accesses were not counted at all. For a `NativeModules` from another module, a read counts
+  once in `unattributed-js-native-modules:` and each later use of a binding made from it counts once in
+  `js-binding-scope:` — no position is counted twice, but the two lines overlap for such sources and should not
+  be added together to count unattributed calls. Compared with main, the ES-import form changes too:
+  `import { NativeModules } from 'other-lib'; const v = NativeModules.Camera; v.take();` gave a `method-invoke
+  Camera.take` without any `module-import`, and `const { Camera, Torch } = NativeModules` gave nothing for its
+  uses. Both are now counted: the scan cannot tell whether another module's `NativeModules` is the registry
+  re-exported (as inside react-native) or a stand-in, so a fact would claim a native module the document cannot
+  back.
 
   The new `const { NativeModules: NM } = require('react-native')` origin is not trusted when the same name is
-  also used where the scan does not shadow (an expression-bodied arrow or `catch` parameter, a function or class
-  declaration name — a known gap for every registry name): its positions are counted in `js-binding-scope:`
-  instead of yielding facts, so `items.forEach(NM => NM.Camera.take())` does not yield a false
-  `Camera.take`.
+  also used where the scan does not shadow (an expression-bodied arrow parameter, including one with a
+  TypeScript return type such as `(NM): Promise<void> => …`; a `catch` parameter; a function, generator
+  (`function* NM`, `async function* NM`) or class declaration name — a known gap for every registry name): its
+  positions are counted in `js-binding-scope:` instead of yielding facts, so `items.forEach(NM =>
+  NM.Camera.take())` does not yield a false `Camera.take`. The check is broad on purpose: a TypeScript function
+  type `type F = (NM: string) => void` or a default `(x = NM) => x` also turns true `NM` calls elsewhere in the
+  file into counts.
+
+  For registry alias names, object and type literal keys (`{ NM: 1 }`) and object or class method names written
+  with their body on the same line (`NM() {`, `*NM() {`, `get NM() {`) are names, not values; they used to be
+  read as the bare registry and yielded a dynamic `module-import NativeModules`. The literal name `NativeModules`
+  keeps its behavior (react-native's own `index.js` defines `get NativeModules() { … }`, which still yields that
+  dynamic fact).
 
   The registry names (`NativeModules` and every `{ NativeModules: X }` alias in the file, plus react-native
   import aliases) used to send every same-name position down the registry path, which dropped the position

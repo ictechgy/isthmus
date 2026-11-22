@@ -446,12 +446,17 @@ for 머리 선언 뒤, 무엇을 대입했는지 모르는 재대입 뒤, 잠정
 NativeModules`)는 모든 선언·재대입·import를 본 뒤 그 자리를 판정한다 — 레지스트리가 아니면 그 바인딩·별칭·export·구조 분해
 사실을 거두고(같은 범위에 두 번 선언한 `var`는 처음 본 값을 별칭·export에 넘기므로 그 값도 함께 거둔다), 레지스트리일 수도
 있으면(정하지 못한 레지스트리 선언, 다른 모듈에서 가져온 `NativeModules`) 그 바인딩의 쓰임마다 첫 수로 센다.
-`const { NativeModules: NM } = require('react-native')` 출처는 그 이름이 표가 가리지 않는 자리(식 본문 화살표·`catch` 매개변수,
-함수·클래스 선언 이름 — 아래의 가림 공백)에도 쓰이면 사실을 내지 않고 그 위치의 쓰임을 첫 수로 센다.
+`const { NativeModules: NM } = require('react-native')` 출처는 그 이름이 표가 가리지 않는 자리(식 본문 화살표 매개변수 — 반환 타입이
+붙은 `(NM): T => …` 포함 —, `catch` 매개변수, 함수·생성기(`function* NM`)·클래스 선언 이름 — 아래의 가림 공백)에도 쓰이면 사실을
+내지 않고 그 위치의 쓰임을 첫 수로 센다. 넓게 본다 — TS 함수 타입 `(NM: string) => void`나 기본값 `(x = NM) => x`도 그 자리로 본다.
+레지스트리 별칭의 객체·타입 리터럴 키(`{ NM: 1 }`)와 같은 줄에 본문이 붙은 객체·클래스 메서드 이름(`NM() {`·`*NM() {`·
+`get NM() {`)은 이름 자리라 레지스트리 값으로 읽지 않는다(이름 그대로인 `NativeModules`의 키·메서드 이름은 아직 동적 사실을 낸다).
 매개변수 기본값 식(`(native = NativeModules.Camera) => …`)의 이름은 매개변수가 아니라 바깥 바인딩을 읽는다.
 다른 모듈(배럴 재수출·대역)에서 가져온 `NativeModules`는 레지스트리로 단정하지 않고, 그 멤버 접근 수(구조 분해면 꺼낸 이름 수)를
 `unattributed-js-native-modules:` 한계로 센다 — ES import와 react-native가 아닌 모듈의 `require`(`const NativeModules =
-require('…').default`, `const { NativeModules } = require('other-lib')`)가 같다.
+require('…').default`, `const { NativeModules } = require('other-lib')`)가 같다. 그 원천에서 꺼낸 바인딩(`const v =
+NativeModules.Camera`)은 사실을 내지 않고 그 쓰임마다 `js-binding-scope:` 첫 수로 센다 — 한 위치를 두 번 세지는 않지만, 이런
+원천에서는 두 줄이 겹치므로(읽기는 앞 줄, 그 값의 쓰임은 뒤 줄) 미귀속 호출 수를 구하려고 두 줄을 더하지 않는다.
 속성 자리(`OBJ.NAME`)의 브리지 API 이름은 OBJ가 그 API를 내보내는 모듈 객체일 때만 읽는다 — `NativeModules`·
 `TurboModuleRegistry`·`requireNativeComponent`·`codegenNativeComponent`는 react-native 모듈 객체(위 세 형태와
 인라인 `require('react-native')`, Babel·TS 변환의 `_interopRequireWildcard`·`__importStar` 결과와

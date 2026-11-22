@@ -1500,11 +1500,56 @@ test('표가 가리지 않는 자리에도 쓰이는 require 별칭 레지스트
     assert.deepEqual(document.facts, [], text);
     assert.ok(bindingScope(document)?.startsWith(`js-binding-scope: ${count} native module references `), text);
   }
+  // PR #167 재확인 리뷰: 생성기 함수 이름(`function* NM`, `async function* NM`, `function* NM() {…}` 식)과 반환 타입이 붙은 식 본문
+  // 화살표(`(NM): T => …`, `<T,>(NM: T): T => …`, 괄호로 감싼 함수 반환 타입)의 매개변수도 표가 가리지 않는 자리다(전에는 거짓
+  // Camera.take가 남았다).
+  const head = "const { NativeModules: NM } = require('react-native');\nNM.Camera.open();\n";
+  for (const [tail, count] of [
+    ['function outer() { function* NM() {} return NM.Camera.take(); }', 3],
+    ['async function outer() { async function* NM() {} return NM.Camera.take(); }', 3],
+    ['const f = function* NM() { return NM.Camera.take(); };', 2],
+    ['const f = (NM): Promise<void> => NM.Camera.take();', 3],
+    ['const f = <T,>(NM: T): T => NM.Camera.take();', 3],
+    ['const f = async (NM): Promise<number> => NM.Camera.take();', 3],
+    ['const f = (a: string, NM?: number): ((x: number) => void) => NM.Camera.take();', 3],
+  ] as const) {
+    const document = assemble({ 'src/c.js': head + tail });
+    assert.deepEqual(document.facts, [], tail);
+    assert.ok(bindingScope(document)?.startsWith(`js-binding-scope: ${count} native module references `), tail);
+  }
+  // 생성기·일반 메서드 이름은 범위에 이름을 묶지 않고, 블록 본문은 반환 타입이 붙어도 매개변수가 가린다 — 그대로 사실이다.
+  for (const tail of [
+    'class K { *NM() { return 1; } }',
+    'class K { async *NM() { return 1; } }',
+    'const o = { *NM() { return 1; } };',
+    'function f(NM): void { NM.Camera.take(); }',
+    'const f = (NM): void => { NM.Camera.take(); };',
+  ]) {
+    assert.deepEqual(factLines(assemble({ 'src/d.js': head + tail })), ['module-import Camera@2', 'method-invoke Camera.open@2'], tail);
+  }
   // 블록 본문 화살표는 매개변수가 가리므로 그대로 사실이다.
   const kept = assemble({
     'src/b.js': "const { NativeModules: NM } = require('react-native');\nNM.Haptics.go();\nitems.forEach((NM) => { NM.Camera.take(); });",
   });
   assert.deepEqual(factLines(kept), ['module-import Haptics@2', 'method-invoke Haptics.go@2']);
+});
+
+test('객체 키·메서드 이름 자리의 레지스트리 별칭은 값이 아니다', () => {
+  // PR #167 재확인 중 확인: 객체·타입 리터럴 키(`{ NM: 1 }`)와 객체·클래스 메서드 이름(`NM() {`, `*NM() {`, `get NM() {`)을 베어
+  // 레지스트리 값으로 읽어 동적 `module-import NativeModules`를 냈다 — 새 require 별칭 출처로도 닿았다. 이름 자리라 값 쓰임이
+  // 아니다. 이름 그대로인 `NativeModules`는 main부터의 동작 그대로다(HANDOFF 후속 후보).
+  for (const text of [
+    "const { NativeModules: NM } = require('react-native');\nNM.Camera.open();\nclass K { NM() { return 1; } *NM2() {} get NM3() { return 1; } }\nconst o = { NM: 1, NM() {}, *NM() {} };",
+    "import { NativeModules as NM } from 'react-native';\nNM.Camera.open();\nconst o = { NM: 1, get NM() { return 1; } };",
+  ]) {
+    assert.deepEqual(factLines(assemble({ 'src/a.js': text })), ['module-import Camera@2', 'method-invoke Camera.open@2'], text);
+  }
+  // 단축 속성(`{ NM }`)·계산 키(`[NM]`)는 값 쓰임이다. 다음 줄 `{`는 호출 뒤 블록일 수도 있어(올맨 메서드와 가르지 못한다) 값
+  // 쓰임으로 둔다.
+  const values = assemble({
+    'src/b.js': "import { NativeModules as NM } from 'react-native';\nconst o = { NM };\nconst p = { [NM]: 1 };\nfunction f() {\n  NM(x)\n  {\n    noop();\n  }\n}",
+  });
+  assert.deepEqual(factLines(values), ['module-import NativeModules@2', 'module-import NativeModules@3', 'module-import NativeModules@5']);
 });
 
 test('레지스트리 별칭과 이름이 같은 다른 범위의 선언은 그 위치에서 다른 이름처럼 읽는다', () => {

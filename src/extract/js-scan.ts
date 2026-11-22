@@ -615,8 +615,10 @@ const UNSHADOWED_WALK_LIMIT = 64;
 
 /**
  * 레지스트리 후보 이름 중 파일 어딘가에서 블록 범위 표가 가리지 않는 자리에 쓰이는 이름이다 — 식 본문 화살표 매개변수
- * (`NM => …`, `(a, NM) => …`, `({ NM }) => …`), `catch (NM)`·`catch ({ NM })` 매개변수, `function NM`·`class NM` 선언 이름이다.
- * 넓게 본다(기본값 식 안 이름도 넣는다 — 세는 쪽). 토큰을 한 번 훑고 후보 이름의 자리만 감싼 괄호를 오른다(단계 상한 있음).
+ * (`NM => …`, `(a, NM) => …`, `({ NM }) => …`, 반환 타입이 붙은 `(NM): T => …`·`<T,>(NM: T): T => …`), `catch (NM)`·
+ * `catch ({ NM })` 매개변수, `function NM`·`function* NM`(`async` 포함)·`class NM` 선언 이름이다. 넓게 본다(기본값 식 안 이름,
+ * TS 함수 타입 `(NM: string) => void`의 이름도 넣는다 — 세는 쪽). 토큰을 한 번 훑고 후보 이름의 자리만 감싼 괄호를 오른다(단계
+ * 상한 있음). 생성기 메서드 이름(`*NM() {}`)은 범위에 이름을 묶지 않아 넣지 않는다.
  */
 function unshadowedCandidateNames(context: ScanContext): Set<string> {
   const { tokens } = context;
@@ -627,13 +629,17 @@ function unshadowedCandidateNames(context: ScanContext): Set<string> {
       return;
     }
     const unshadowed = ['function', 'class'].includes(tokens[index - 1]?.text ?? '') ||
+      (tokens[index - 1]?.text === '*' && tokens[index - 2]?.text === 'function') ||
       (tokens[index + 1]?.text === '=>' ? tokens[index + 2]?.text !== '{' : insideUnshadowedList(tokens, index));
     if (unshadowed) names.add(token.text);
   });
   return names;
 }
 
-/** 위치를 감싼 첫 `(`가 식 본문 화살표의 매개변수 목록이거나 `catch` 목록인지 본다(패턴 괄호 `{`·`[`는 지나 오른다). */
+/**
+ * 위치를 감싼 첫 `(`가 식 본문 화살표의 매개변수 목록(반환 타입 주석 `): T =>` 포함)이거나 `catch` 목록인지 본다(패턴 괄호
+ * `{`·`[`는 지나 오른다).
+ */
 function insideUnshadowedList(tokens: readonly JsToken[], index: number): boolean {
   let open = enclosingOpen(tokens, index);
   for (let steps = 0; open !== undefined && tokens[open]!.text !== '('; steps++) {
@@ -643,7 +649,11 @@ function insideUnshadowedList(tokens: readonly JsToken[], index: number): boolea
   if (open === undefined) return false;
   if (tokens[open - 1]?.text === 'catch') return true;
   const close = findMatching(tokens, open, '(', ')');
-  return close !== undefined && tokens[close + 1]?.text === '=>' && tokens[close + 2]?.text !== '{';
+  if (close === undefined) return false;
+  const arrow = tokens[close + 1]?.text === ':' ? returnTypeEnd(tokens, close + 2) : close + 1;
+  // 반환 타입을 읽지 못하면(`): ((x: number) => void) => …`처럼 괄호로 감싼 함수 타입) 식 본문 화살표일 수 있다 — 넣는다(세는 쪽).
+  if (arrow === undefined) return true;
+  return tokens[arrow]?.text === '=>' && tokens[arrow + 1]?.text !== '{';
 }
 
 /**
@@ -2646,7 +2656,10 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
     if (!property && (context.registryCandidates.has(token.text) || nativeModulesAlias(context, token.text))) {
       // 레지스트리를 가져오는 import 절·구조 분해의 이름은 값 사용이 아니고, react-native 출처가 아닌 같은 이름은
       // RN 레지스트리가 아니다(로컬 shim·다른 모듈·매개변수).
-      if (importPositions.has(index) || context.declaratorNames.has(index) || isPatternDeclarator(tokens, index)) continue;
+      if (importPositions.has(index) || context.declaratorNames.has(index) || isPatternDeclarator(tokens, index) ||
+        (token.text !== 'NativeModules' && isRegistryNamePosition(tokens, index))) {
+        continue;
+      }
       if (isNativeModulesRegistry(context, token.text, index)) {
         index = collectNativeModulesAccess(context, index);
         continue;
@@ -2718,6 +2731,27 @@ function collectCalls(context: ScanContext, importPositions: ReadonlySet<number>
       index = collectBoundMemberCall(context, index);
     }
   }
+}
+
+/**
+ * 레지스트리 별칭 이름이 값이 아니라 이름인 자리인지 본다 — 객체·타입 리터럴 키(`{ NM: 1 }`, `{ a, NM: x }`)와 객체·클래스 본문의
+ * 메서드 이름(`NM() {`, `*NM() {`, `async NM() {`, `get NM() {` — 같은 줄의 본문 `{`가 따르는 괄호 목록 앞 이름이고 감싼
+ * 괄호가 `{`다. 같은 줄에서 호출 뒤에 블록이 올 수 없으므로 호출이 아니다). 전에는 베어 레지스트리 값으로 읽어 동적
+ * `module-import NativeModules`를 냈다. 이름 그대로인 `NativeModules`에는 쓰지 않는다 — main부터의 동작(react-native
+ * `index.js`의 `get NativeModules() { return require(…).default; }`가 동적 사실을 낸다)을 공개 패키지 출력과 함께 따로 정한다.
+ */
+function isRegistryNamePosition(tokens: readonly JsToken[], index: number): boolean {
+  const before = tokens[index - 1]?.text ?? '';
+  if (tokens[index + 1]?.text === ':' && (before === '{' || before === ',')) return true;
+  if (tokens[index + 1]?.text !== '(' || before === 'function' || (before === '*' && tokens[index - 2]?.text === 'function')) {
+    return false;
+  }
+  const open = enclosingOpen(tokens, index);
+  if (open === undefined || tokens[open]!.text !== '{') return false;
+  const close = findMatching(tokens, index + 1, '(', ')');
+  if (close === undefined) return false;
+  const body = tokens[close + 1]?.text === ':' ? returnTypeEnd(tokens, close + 2) : close + 1;
+  return body !== undefined && tokens[body]?.text === '{' && tokens[body]!.line === tokens[close]!.line;
 }
 
 /**
