@@ -157,6 +157,36 @@ _Last updated: 2026-11-22_
   - `npm run verify` 첫 실행에서 통과(부하 9~13; 타입 검사, 호환성, conformance 352, 제품 테스트 1,433개·커버리지 라인 99.21/분기
     95.29/함수 98.42 — `js-scan.ts` 99.52/93.26/99.50, `js-scopes.ts` 100/96.11/100, `lexer.ts` 98.90/97.99/100, Phase 0 조인 15, clean
     build, 스크립트 225, CLI 0/1/2/64·패키지 계약). 선형 시간 테스트 재실행은 필요 없었다.
+- 2026-11-22 PR #167 재확인 리뷰(`af6e204..d8639c2`, `d8639c2`는 푸시됨) 반영(같은 브랜치, 그 위에 커밋, 미푸시). B1·S1·N1·N2는
+  고쳐졌고 12개 패키지는 사실 동일·main보다 낮은 수 없음이 확인됐다. 남은 고칠 것 1과 잔소리 3.
+  - N3(고칠 것, 새 거짓 사실): require 별칭 위험 판정이 생성기 이름(`function* NM`, `async function* NM`)과 반환 타입이 붙은 식 본문
+    화살표(`(NM): Promise<void> => …`, `<T,>(NM: T): T => …`)를 놓쳐 거짓 Camera.take가 남았다(main 없음, 문서는 덮는다고 했다). 리뷰
+    시안대로 `*` 앞 `function`을 보고, 매개변수 목록 뒤 `:`이면 `returnTypeEnd`로 화살표를 찾는다. 반환 타입을 읽지 못하면(괄호로
+    감싼 함수 반환 타입) 위험으로 본다. 생성기·일반 메서드 이름(`*NM() {}`)은 범위에 이름을 묶지 않아 위험이 아니다.
+  - 확인 중 찾은 것: 레지스트리 별칭의 객체 키(`{ NM: 1 }`)와 메서드 이름(`NM() {`·`*NM() {`·`get NM() {`)을 베어 레지스트리 값으로
+    읽어 동적 `module-import NativeModules`를 냈다(새 출처로도 닿았다). 레지스트리 입구에서 이름 자리로 건너뛴다(같은 줄 본문의
+    메서드만 — 다음 줄 `{`는 호출 뒤 블록과 가르지 못해 값으로 둔다). 이름 그대로인 `NativeModules`에도 쓰면 react-native 0.88.1
+    `index.js:307`의 `get NativeModules() { return require('./Libraries/BatchedBridge/NativeModules').default; }`가 내던 동적 사실이
+    빠져 12개 패키지 사실이 main과 달라진다 — 게터 이름은 값 쓰임이 아니지만 그 자리는 실제로 레지스트리를 내보내므로, 별칭에만
+    쓰고 이름 그대로인 경우는 후속 후보로 남겼다.
+  - N-a: 다른 모듈 원천은 읽기가 `unattributed-js-native-modules:`, 꺼낸 바인딩의 쓰임이 js-binding-scope에 들어 두 줄이 겹친다(한
+    위치를 두 번 세지는 않는다) — 더하지 말라고 CHANGELOG·GRAPH-EXCHANGE에 적고, main 대비 ES import 꼴(`const v =
+    NativeModules.Camera; v.take()`의 module-import 없는 `Camera.take`)이 계수로 바뀐 이유를 적었다.
+  - N-b·N-c: 아래 후속 후보에 예시와 함께 적었다(위험 판정 과다 발동, `var` 재선언 앞 참 호출).
+  - 근거: 새·확장 테스트(N3 테스트 확장, 이름 자리 새 테스트)는 `d8639c2`에서 실패한다. 되돌림 변형 7종(생성기 없음, 반환 타입 없음,
+    못 읽은 반환 타입을 안전으로, 키 판정 없음, 메서드 판정 없음, 함수 이름도 메서드로, 다음 줄 본문도 메서드로)이 모두 잡힌다.
+    넓은 실행(이 커밋, 문제 0): 별칭 1~120(131,509개, 귀속 50,526·계수 32,369 — 위험 판정이 넓어져 `d8639c2`보다 14개가 계수로),
+    충돌 1~120(136,888), 충돌+확장 1~60(68,757), 레지스트리 1~120(133,749). 고정 시드 오라클 테스트도 통과한다. 생성기는 바꾸지
+    않았다(이번 꼴 — 생성기 이름·반환 타입 화살표·이름 자리 — 은 기존 가림 공백이나 이름 자리 판정이 오라클 모델 밖이다).
+  - 입력: 재확인 리뷰 입력 49개(파일 47·여러 파일 문서 2), 이전 리뷰 입력 130개, 내 입력 19개를 main·`d8639c2`·이 커밋에서 비교했다.
+    `d8639c2`와 다른 것 20개는 모두 N3·별칭 이름 자리 입력이다. 앞 차례 내 적대 입력·델타 리뷰 입력은 지난 정리 때 지웠다.
+  - 공개 패키지 12개: 사실·`--events`는 main과 모두 같고, 한계 수는 react-native 0.88.1만 js-binding-scope 63 → 66(하한 2563 그대로)과
+    `unattributed-js-native-modules: 3`이다(지난 차례와 같다). main보다 낮은 수는 없다.
+  - 시간(부하 8~11, main/`d8639c2`/이 커밋, 1만 6천 → 6만 4천): 리뷰 생성기 `aliasheavy` 0.90/1.28/1.24 → 3.91/4.51/4.04초,
+    `catchheavy` 0.47/0.49/0.49 → 1.70/1.81/1.99, `catchlate` 0.48/0.31/0.35 → 1.09/1.05/1.65(이 커밋 1만 6천~12만 8천
+    0.45/0.64/1.27/2.02초 — 선형), `walkheavy` 1.33/1.53/1.54 → 5.27/5.78/5.95, `cjs` 0.82/1.03/1.54 → 3.03/3.74/3.63.
+  - `npm run verify` 첫 실행에서 통과(부하 8~10; 제품 테스트 1,434개·커버리지 라인 99.21/분기 95.28/함수 98.42 — `js-scan.ts`
+    99.53/93.23/99.51, conformance 352, Phase 0 조인 15, clean build, 스크립트 225, CLI 0/1/2/64·패키지 계약).
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
@@ -193,9 +223,20 @@ _Last updated: 2026-11-22_
   `const NM = RN.NativeModules`는 사실·계수는 내지만(초기값을 한 번 센다) 바인딩하지 않아 그 뒤 `C.go()`·`NM.Cam.go()`는 쓰임마다
   세지 않는다. 오라클 `alias` 모드는 이 꼴을 내지 않는다. 같은 쪽 기존 부정확: `const NativeModules = require('react-native')`(모듈
   객체 전체)와 `const { NativeModules } = require('react-native').Foo`도 레지스트리로 읽는다(specifier만 본다).
-- extract-js 객체 리터럴 키 `NativeModules:`(기존 동작, main부터): `const cfg = { NativeModules: 1 }`의 키를 베어 레지스트리 값으로 읽어
-  동적 `module-import NativeModules`를 낸다(`dynamic-module-names:`로 센다 — 정적 거짓 사실은 아니다). 단축 속성 `{ NativeModules }`는
-  값 쓰임이라 맞다. 키 자리(`{`·`,` 뒤, `:` 앞) 판정이 필요하다.
+- extract-js 객체 키·메서드 이름 자리의 `NativeModules`(기존 동작, main부터): `{ NativeModules: 1 }`의 키와 `class K { *NativeModules()
+  {} }`·`get NativeModules() {}`의 이름을 베어 레지스트리 값으로 읽어 동적 `module-import NativeModules`를 낸다(`dynamic-module-names:`로
+  센다 — 정적 거짓 사실은 아니다). react-native 0.88.1 `index.js:307`의 게터 `get NativeModules() { return require(…).default; }`가 이
+  꼴이다 — 그 자리는 실제로 레지스트리를 내보내므로 사실을 지울지(공개 패키지 출력이 바뀐다) 대신 셀지를 정해야 한다. 레지스트리
+  별칭(`NM`)은 PR #167에서 이름 자리로 건너뛴다.
+- extract-js require 별칭 위험 판정의 과다 발동(PR #167, 세는 쪽): `const { NativeModules: NM } = require('react-native')`의 이름이
+  표가 가리지 않는 자리에도 쓰이는지를 넓게 본다 — TS 함수 타입 `type F = (NM: string) => void;`, 기본값 `(x = NM) => x`, 괄호로 감싼
+  반환 타입을 읽지 못한 목록도 위험으로 본다. 그 파일의 참 `NM.Camera.open()`은 사실 대신 계수가 된다(main은 이 출처를 읽지 않아
+  사실이 없었다). 좁히려면 타입 별칭·타입 주석 자리의 함수 타입과 기본값 식을 가르면 된다.
+- extract-js 같은 범위 `var` 재선언 앞의 참 호출(PR #167 S1의 결과, 기존 규칙): `var C = NativeModules.Camera; const D = C; D.take();
+  { const NativeModules = mock; var C = NativeModules.Camera; }`의 `D.take()`는 실행하면 네이티브 Camera를 부르지만, 그 `var`가 두 값을
+  가져 묶음 전체를 거두므로 사실 없이 첫 초기값만 센다(main·`55aef42`는 `Camera.take`, `af6e204`는 `Camera.take`와 계수 1). 같은 범위의
+  다른 값 재선언은 초기값을 세는 기존 규칙이다. 위치마다 그때까지의 선언만 보면 살릴 수 있지만 `var` 끌어올림 때문에 앞 위치도 뒤
+  선언의 값일 수 있어(함수 안 재대입) 지금은 하지 않는다.
 - extract-js 잠정 분류의 과다 계수(3차 리뷰 반영, 건전성은 오라클로 확인): 메서드 약칭의 매개변수가 바깥 모듈 바인딩과 같은
   이름이면 그 쓰임을 세고, 메서드 본문의 `var`는 범위를 정하지 못한 선언이라 그 쓰임과 바깥 같은 이름 블록 선언의 쓰임을 센다.
   추상·오버로드 시그니처의 매개변수 이름은 값 쓰임으로 세어질 수 있다. JSX 글자 안의 `NAME = …`은 선언 초기값 안에서도 재대입으로
