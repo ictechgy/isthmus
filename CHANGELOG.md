@@ -96,14 +96,22 @@
   after it, often to the end of the file. The facts and counts in that code disappeared; the template was counted once
   as an untraced entry only when that code mentioned a bridge API name. The hidden code could also hide a same-name inner
   declaration, which left a false `method-invoke` for a call after the template ended. Inside an interpolation, a `/`
-  now starts a regular expression when the code before it cannot end a value (an operator, an opening bracket, the
-  start of the interpolation, or a keyword that precedes an expression such as `typeof`, `return`, `in` or `new`) and
-  the literal closes on the same line. After a name (contextual keywords such as `get` and `of`, and keywords used as
-  property names, included), a number, a literal, a closing bracket, `++`/`--`, a TypeScript non-null `!` or the `<` of
-  a JSX closing tag, the `/` stays a division. A candidate that does not close on its line also stays a division, as
-  before. Remaining gaps: `await` or `yield` used as a plain name and followed by a division is read as the start of a
-  literal when another `/` follows on that line, and a literal right after the `)` of an `if (…)` head or the `}` of a
-  block inside a function in the interpolation is still read as a division. For the 12 published packages, facts and
+  now starts a regular expression only when three things hold. First, the code before it is the start of the
+  interpolation, `(`, `[`, `{`, or another operator or punctuation mark (`=`, `=>`, `,`, `;`, `:`, `?`, `+`, `&&`, a prefix
+  `!` and so on), or one of the reserved words `case`, `delete`, `do`, `else`, `in`, `instanceof`, `new`, `return`,
+  `throw`, `typeof` and `void` (not after `.` or `#`). Second, the next character is not `>` (`/>` ends a JSX tag such as
+  `<Fade in />`). Third, the literal closes on the same line. Everywhere else the `/` stays a division, as before. That
+  covers names (contextual keywords such as `get` and `of`, `await` and `yield`, reserved words after `.` or `#`, and
+  names with non-ASCII letters), numbers, literals, regular expressions, `)`, `]`, the `}` of a nested block, `++`/`--`,
+  a postfix `!` (TypeScript non-null), every `<` and every `>` except the one in `=>` (type arguments such as
+  `` `${n as Fixed<2> / 100}` ``). A candidate that does not close on its line is a division, and so is a `/` that
+  directly follows it. Known gaps, all read as on main: a regular expression right after `)` or `}` (`if (x) /re/`, `while (x)
+  /re/`, `for (;;) /re/`, a block `}`), after `of` (`for (m of /re/)`), `...` (`[.../re/]`), `<` (`a < /re/`), `++`/`--`
+  (`++/re/.lastIndex`) or `>` (a TypeScript assertion `<RegExp>/x/`), after `await` or `yield` inside an async function or
+  generator, a regular expression that starts with `>` (`/>"/`), JSX text that starts with `/` after `>`, and quotes in
+  JSX text. Where main misread two regular expressions in one interpolation and the two errors cancelled out
+  (`` `${f(/"/g, />"/)}` ``), this change may correct one and not the other, so such a template can now run on where
+  main ended it correctly. For the 12 published packages, facts and
   `--events` output are unchanged, and so is every limitation count except one: react-native 0.88.1's
   `js-binding-scope:` untraced-entry number goes from 2563 to 2562 (its first count stays 66). In
   `scripts/spm/scaffold-package-swift.js` such a template ran on, and the word `import` inside a JSDoc comment

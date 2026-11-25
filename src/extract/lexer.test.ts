@@ -348,6 +348,20 @@ test('보간 안 정규식 리터럴의 따옴표·백틱·중괄호·슬래시�
     ['`${a !== /"/}`', ['a !== /"/']],
     ['`${<a>{x}</a>}"/`', ['<a>{x}</a>']],
     ['`${f(/[)}"/`', ['f(/[)']],
+    // PR #168 리뷰: 타입 인수의 `>`(S1), JSX 자기 닫음 태그 앞 예약어 이름 속성(S2), 이름으로 쓴 `await`·`yield`(S3), private
+    // 이름과 비ASCII 글자가 붙은 예약어 꼴 이름(N1) 뒤의 `/`를 정규식으로 읽어 보간 끝을 삼켰다(main은 맞게 읽었다).
+    ['`${f<T> / 2}"/`', ['f<T> / 2']],
+    ['`${x as Array<T> / 2}"/`', ['x as Array<T> / 2']],
+    ['`${new Foo<T> / 2}"/`', ['new Foo<T> / 2']],
+    ['`<b>${render(<Fade in />)}</b>"/`', ['render(<Fade in />)']],
+    ['`${render(<Foo new />)}"/`', ['render(<Foo new />)']],
+    ['`${await / 2}"/`', ['await / 2']],
+    ['`${yield / 2}"/`', ['yield / 2']],
+    ['`${this.#new / 2}"/`', ['this.#new / 2']],
+    ['`${this.#in / 2}"/`', ['this.#in / 2']],
+    ['`${this.#return / 2}"/`', ['this.#return / 2']],
+    ['`${Δin / 2}"/`', ['Δin / 2']],
+    ['`${éreturn / 2}"/`', ['éreturn / 2']],
   ];
   for (const [text, segments] of [...regexes, ...divisions]) {
     const tokens = tokenizeJsSource(`${text}; after('"', "}", a / b);`);
@@ -359,6 +373,13 @@ test('보간 안 정규식 리터럴의 따옴표·백틱·중괄호·슬래시�
   // 정규식 리터럴은 줄을 넘지 못한다 — 다음 줄의 `/`에서 닫힌 것으로 보지 않는다.
   const unclosed = tokenizeJsSource('`${f(/x)}"`;\nafter(a / b);');
   assert.deepEqual(unclosed.slice(0, 3).map((token) => token.text), ['`${f(/x)}"`', ';', 'after']);
+  // PR #168 리뷰 N2: 닫히지 않은 후보(깨진 코드) 뒤의 `/`가 다음 줄의 `/`까지 정규식으로 삼켜 템플릿이 파일 끝까지 갔다 — 닫히지
+  // 않은 후보는 나눗셈이고 그 뒤는 값 뒤다.
+  for (const terminator of ['\r', '\n']) {
+    const broken = tokenizeJsSource(`x = \`\${(/${terminator}/}\`;/`);
+    assert.deepEqual(broken.filter((token) => token.kind === 'template').map((token) => token.text),
+      [`\`\${(/${terminator}/}\``], JSON.stringify(terminator));
+  }
 });
 
 test('보간 안의 닫히지 않는 정규식 후보가 많아도 후보마다 줄 끝까지 다시 훑지 않는다', () => {

@@ -265,18 +265,20 @@ function readTemplate(
 
 /**
  * 보간 본문에서 바로 앞 코드가 끝난 모양이다 — 다음 `/`가 정규식 리터럴의 시작인지 가른다. `value`는 값이 끝난
- * 자리(이름·숫자·리터럴·닫는 괄호·증감 뒤)라 `/`가 나눗셈이고, `operator`는 값이 시작될 자리(보간 시작·연산자·여는
- * 괄호·식 앞 예약어 뒤)라 정규식이며, `dot`은 속성 이름이 올 자리(`.` 뒤)라 그 뒤 예약어도 이름이다.
+ * 자리(이름·숫자·리터럴·닫는 괄호·증감·`>`·`<` 뒤, valueEndingCharacter)라 `/`가 나눗셈이고, `operator`는 값이 시작될
+ * 자리(보간 시작·그 밖의 연산자·여는 괄호·식 앞 예약어 뒤)라 정규식이며, `dot`은 속성·private 이름이 올 자리(`.`·`#` 뒤)라
+ * 그 뒤 예약어도 이름이다.
  */
 type InterpolationPrevious = 'value' | 'operator' | 'dot';
 
 /**
- * 뒤에 식이 오는 예약어다 — 이 낱말 뒤의 `/`는 정규식 리터럴이다(`typeof /x/`, `return /x/.test(s)`). 토크나이저의
- * keywords와 달리 문맥 키워드(`get`·`set`·`of`·`as`·`from`·`async`·`static`)는 넣지 않는다 — 보간 안에서는 대개 값 이름이라
- * (`size.get / 2`) 그 뒤 `/`를 정규식으로 읽으면 나눗셈이 보간 끝을 삼킬 수 있다.
+ * 뒤에 식이 오는 예약어다 — 이 낱말 뒤의 `/`는 정규식 리터럴이다(`typeof /x/`, `return /x/.test(s)`). 변수 이름이 될 수 없는
+ * 예약어만 넣는다. 토크나이저의 keywords와 달리 문맥 키워드(`get`·`set`·`of`·`as`·`from`·`async`·`static`)와, async 함수·생성기
+ * 밖에서는 이름인 `await`·`yield`는 넣지 않는다 — 보간 안에서는 대개 값 이름이라(`size.get / 2`, `var await;` 뒤 `` `${await / 2}` ``)
+ * 그 뒤 `/`를 정규식으로 읽으면 나눗셈이 보간 끝을 삼킬 수 있다. 이 판정은 감싼 함수의 종류를 모른다.
  */
 const expressionKeywords = new Set([
-  'await', 'case', 'delete', 'do', 'else', 'in', 'instanceof', 'new', 'return', 'throw', 'typeof', 'void', 'yield',
+  'case', 'delete', 'do', 'else', 'in', 'instanceof', 'new', 'return', 'throw', 'typeof', 'void',
 ]);
 
 /**
@@ -352,11 +354,11 @@ function readRegexLiteral(source: string, start: number, memo: RegexFailureMemo)
  *
  * 정규식 리터럴을 통째로 건너뛰는 것이 목적이다 — 그 안의 따옴표·백틱·중괄호·`//`(`` `${s.replace(/"/g, '')}` ``,
  * `/\//g`, `/{/`)를 문자열·템플릿·깊이·주석으로 읽으면 보간 끝을 놓쳐 템플릿이 파일 뒤쪽까지 이어졌고, 그 뒤 코드의
- * 사실과 계수가 조용히 사라졌다. 정규식인지는 토크나이저(isRegexPosition)처럼 앞 코드로 가르되 앞이 연산자·여는 괄호·
- * 보간 시작·식 앞 예약어일 때만 정규식 자리로 본다. 같은 줄에서 닫히지 않는 후보는 나눗셈으로 본다(전과 같은 읽기다) —
- * 정규식이 아닌 `/`(깨진 코드 등)가 줄 끝까지 삼키지 않게 한다. 판정은 앞 코드와 그 위치부터 줄 끝까지의 글자로만
- * 정해지므로(memo는 판정을 바꾸지 않는다) 같은 템플릿 원문을 읽는 skipInterpolation과 templateInterpolationCode가 같은
- * 경계를 찾는다.
+ * 사실과 계수가 조용히 사라졌다. 정규식인지는 토크나이저(isRegexPosition)처럼 앞 코드로 가르되 앞이 `operator` 자리
+ * (InterpolationPrevious)이고 바로 뒤가 `>`가 아닐 때(`/>`는 JSX 자기 닫음 태그다)만 정규식 후보로 본다. 같은 줄에서
+ * 닫히지 않는 후보는 나눗셈으로 보고(전과 같은 읽기다) 그 뒤를 값 뒤로 둔다 — 깨진 코드의 `/`가 줄 끝까지, 또는 다음 줄의
+ * `/`까지 삼키지 않게 한다. 판정은 앞 코드와 그 위치부터 줄 끝까지의 글자로만 정해지므로(memo는 판정을 바꾸지 않는다) 같은
+ * 템플릿 원문을 읽는 skipInterpolation과 templateInterpolationCode가 같은 경계를 찾는다.
  */
 function readInterpolationCode(
   source: string,
@@ -369,37 +371,54 @@ function readInterpolationCode(
     (char.charCodeAt(0) >= 0x80 && /\s/u.test(char))) {
     return start + 1;
   }
-  if (isIdentifierPart(char)) {
+  if (isWordCharacter(char)) {
     let end = start + 1;
-    while (end < source.length && isIdentifierPart(source[end]!)) end++;
-    // 속성 이름(`x.return`)은 예약어여도 값이다.
+    while (end < source.length && isWordCharacter(source[end]!)) end++;
+    // 속성·private 이름(`x.return`, `this.#new`)은 예약어여도 값이다.
     const word = source.slice(start, end);
     frame.previous = frame.previous !== 'dot' && expressionKeywords.has(word) ? 'operator' : 'value';
     return end;
   }
-  if (char === '/' && frame.previous === 'operator') {
+  // `/>`는 JSX 자기 닫음 태그의 끝이다 — 예약어 이름 속성(`<Fade in />`) 뒤에서도 정규식으로 읽지 않는다.
+  if (char === '/' && frame.previous === 'operator' && source[start + 1] !== '>') {
     const end = readRegexLiteral(source, start, memo);
     if (end !== undefined) {
       frame.previous = 'value';
       return end;
     }
+    // 닫히지 않는 후보(깨진 코드)는 나눗셈이되 그 뒤를 값 뒤로 둔다 — 다음 `/`가 정규식으로 이어져 삼키지 않는다.
+    frame.previous = 'value';
+    return start + 1;
   }
   if ((char === '+' || char === '-') && source[start + 1] === char) {
     // `count++ / total`의 `/`는 나눗셈이다(토크나이저와 같다).
     frame.previous = 'value';
     return start + 2;
   }
-  frame.previous = valueEndingCharacter(char, frame.previous) ? 'value' : char === '.' ? 'dot' : 'operator';
+  frame.previous = valueEndingCharacter(source, start, frame.previous) ? 'value'
+    : char === '.' || char === '#' ? 'dot' : 'operator';
   return start + 1;
 }
 
 /**
- * 보간 본문에서 그 글자 뒤의 `/`를 나눗셈으로 볼 글자인지다 — 닫는 `)`·`]`, 값 뒤의 TS non-null 단언 `!`(`count! / total` —
- * `a != b`의 `!`도 값 뒤지만 바로 뒤 `=`가 다시 연산자 자리로 돌린다), JSX 닫는 태그의 `<`(`</a>` — 비교 대상으로 정규식을
- * 두는 코드는 없다), 이름의 일부인 비ASCII 글자다. 잘못 보더라도 나눗셈 쪽이라 정규식으로 삼키지 않는다.
+ * 보간 본문에서 낱말(이름·예약어·숫자)을 이루는 글자다 — ASCII 이름 글자와 공백이 아닌 비ASCII 글자다. 비ASCII 글자에서
+ * 낱말을 끊으면 `Δin`·`éreturn`의 뒤 조각을 예약어로 읽는다.
  */
-function valueEndingCharacter(char: string, previous: InterpolationPrevious): boolean {
-  if (char === ')' || char === ']' || char === '<' || char.charCodeAt(0) >= 0x80) return true;
+function isWordCharacter(char: string): boolean {
+  return isIdentifierPart(char) || (char.charCodeAt(0) >= 0x80 && !/\s/u.test(char));
+}
+
+/**
+ * 보간 본문에서 `start`의 글자 뒤의 `/`를 나눗셈으로 볼 글자인지다 — 닫는 `)`·`]`, 값 뒤의 TS non-null 단언 `!`(`count! /
+ * total` — `a != b`의 `!`도 값 뒤지만 바로 뒤 `=`가 다시 연산자 자리로 돌린다), 모든 `<`(JSX 닫는 태그 `</a>`와 비교 `a <
+ * b` — 비교 대상으로 정규식을 두는 코드는 없다), `=` 바로 뒤가 아닌 `>`(타입 인수 `f<T> / 2`·`x as Array<T> / 2`, 비교·시프트 —
+ * `=>`의 `>`는 연산자 자리다)다. 잘못 보더라도 나눗셈 쪽이라 정규식으로 삼키지 않는다(TS 타입 단언 `<RegExp>/x/`와 `>` 뒤
+ * JSX 글자의 `/`는 전처럼 나눗셈이다).
+ */
+function valueEndingCharacter(source: string, start: number, previous: InterpolationPrevious): boolean {
+  const char = source[start]!;
+  if (char === ')' || char === ']' || char === '<') return true;
+  if (char === '>') return source[start - 1] !== '=';
   return char === '!' && previous === 'value';
 }
 

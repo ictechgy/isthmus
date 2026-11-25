@@ -1674,6 +1674,23 @@ test('보간 안 정규식 리터럴 뒤의 코드도 읽는다', () => {
   assert.deepEqual(factLines(shadowed), ['module-import Camera@2']);
 });
 
+test('보간 안 값 뒤의 나눗셈은 정규식으로 읽지 않아 뒤 코드를 삼키지 않는다', () => {
+  // PR #168 리뷰 S1·S2·S3·N1: 타입 인수 `>`, `<Fade in />`의 예약어 이름 속성, 이름으로 쓴 `await`, private 이름·비ASCII 글자가
+  // 붙은 예약어 꼴 이름 뒤의 `/`를 정규식 시작으로 읽어 템플릿이 뒤 코드를 삼켰고, 참 Camera.take가 한계 없이 사라졌다.
+  const header = "import { NativeModules } from 'react-native';\nconst Cam = NativeModules.Camera;";
+  for (const [path, line] of [
+    ['src/a.ts', 'const label = (n: number) => `${n as Fixed<2> / 100} / ${max}`;'],
+    ['src/b.tsx', 'const html = `<body>${renderToString(<Fade in />)}</body>`;'],
+    ['src/c.js', 'var await = 2; const half = `${await / 2}"/`;'],
+    ['src/d.js', 'class K { #new = 1; m() { return `${this.#new / 2}"/`; } }'],
+    ['src/e.js', 'const Δin = 1; const r = `${Δin / 2}"/`;'],
+  ] as const) {
+    const document = assemble({ [path]: `${header}\n${line}\nCam.take();` });
+    assert.deepEqual(factLines(document), ['module-import Camera@2', 'method-invoke Camera.take@4'], line);
+    assert.deepEqual(document.limitations, [], line);
+  }
+});
+
 test('속성 자리의 function·이름 뒤 다음 줄 블록은 함수 본문이 아니다', () => {
   // 기록된 결함 b07: `foo.function(M)` 뒤 다음 줄 `{`의 속성 이름 `function`을 함수 키워드로 읽어 블록 안 M을 확실히 가렸다
   // (참 Camera.take가 조용히 사라졌다). 같은 오인으로 그 블록의 `var`를 함수 본문에 가둬 블록 뒤 쓰임을 바깥 Camera로
