@@ -303,3 +303,99 @@ test('깊게 중첩된 템플릿의 보간 코드도 원문 길이에 선형으�
   assert.equal(segments.at(-1), 'M = x');
   assert.ok(reads() <= 4 * text.length, `character reads ${reads()} for ${text.length} characters`);
 });
+
+test('보간 안 정규식 리터럴의 따옴표·백틱·중괄호·슬래시는 템플릿 경계가 아니다', () => {
+  // 정규식을 읽지 않던 보간 건너뛰기는 `/"/g`의 `"`를 문자열 시작으로, `/\//g`의 `//`를 줄 주석으로, `/{/`의 `{`를 깊이로
+  // 읽어 템플릿이 파일 뒤쪽까지 이어졌다(react-native 0.88.1 `scripts/spm/*.js`의 꼴) — 그 뒤 코드의 사실이 조용히 사라졌다.
+  const regexes: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ["`${s.replace(/\"/g, '')}`", ["s.replace(/\"/g, '')"]],
+    ["`${s.replace(/'/g, '')}`", ["s.replace(/'/g, '')"]],
+    ["`${p.replace(/\\//g, '.')}`", ["p.replace(/\\//g, '.')"]],
+    ["`${p.replace(/\\/\"/g, '.')}`", ["p.replace(/\\/\"/g, '.')"]],
+    ["`${s.replace(/`/g, '')}`", ["s.replace(/`/g, '')"]],
+    ["`${s.replace(/{/g, '')}x`", ["s.replace(/{/g, '')"]],
+    ["`${s.replace(/}/g, '')}x`", ["s.replace(/}/g, '')"]],
+    ["`${s.replace(/[/\"]/g, '')}`", ["s.replace(/[/\"]/g, '')"]],
+    ["`${s.replace(/\\${/g, '')}`", ["s.replace(/\\${/g, '')"]],
+    // 식 앞 예약어·연산자·화살표 뒤도 정규식 자리다. 중첩 템플릿 안 보간도 같다.
+    ['`${typeof /"/}`', ['typeof /"/']],
+    ["`${a ?? /'/}`", ["a ?? /'/"]],
+    ['`${(x) => /"/.test(x)}`', ['(x) => /"/.test(x)']],
+    ['`${`in${s.replace(/"/g, "")}`}`', ['``', 's.replace(/"/g, "")']],
+    // 여러 줄로 이어진 메서드 사슬(react-native `quoteIfNeeded`)이다.
+    ["`\"${s\n  .replace(/\\\\/g, '\\\\\\\\')\n  .replace(/\"/g, '\\\\\"')}\"`",
+      ["s\n  .replace(/\\\\/g, '\\\\\\\\')\n  .replace(/\"/g, '\\\\\"')"]],
+  ];
+  // 값 뒤의 `/`는 나눗셈이라 그 뒤 따옴표·중괄호를 삼키지 않는다 — 이름(문맥 키워드 `get`·`set`, 속성 자리 예약어 포함)·
+  // 숫자·리터럴·정규식·닫는 괄호·증감·TS non-null 단언 뒤, JSX 닫는 태그(`</a>`)도 그렇다. 같은 줄에서 닫히지 않는 후보(`/[`)는
+  // 전처럼 나눗셈이다. 템플릿 글자와 뒤에 붙이는 코드에 `/`가 있어 나눗셈을 정규식으로 잘못 읽으면 그 `/`에서 닫혀 경계가
+  // 어긋난다.
+  const divisions: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['`${a / b}"${c}"/`', ['a / b', 'c']],
+    ['`${get / 2}"${set / 3}"/`', ['get / 2', 'set / 3']],
+    ['`${x.get / 2 / 3}"/`', ['x.get / 2 / 3']],
+    ['`${x.return / 2}"/`', ['x.return / 2']],
+    ['`${(a) / 2}"/`', ['(a) / 2']],
+    ['`${xs[0] / 2}"/`', ['xs[0] / 2']],
+    ['`${{ a: 1 } / 2}"/`', ['{ a: 1 } / 2']],
+    ["`${'a' / 2}\"/`", ["'a' / 2"]],
+    ['`${`a` / 2}"/`', ['`` / 2']],
+    ['`${/a/g / 2}"/`', ['/a/g / 2']],
+    ['`${1.5e3 / 2}"/`', ['1.5e3 / 2']],
+    ['`${café / 2}"/`', ['café / 2']],
+    ['`${i++ / 2}"${j}"/`', ['i++ / 2', 'j']],
+    ['`${(done! / total!) * 100}%"/`', ['(done! / total!) * 100']],
+    ['`${a !== /"/}`', ['a !== /"/']],
+    ['`${<a>{x}</a>}"/`', ['<a>{x}</a>']],
+    ['`${f(/[)}"/`', ['f(/[)']],
+    // PR #168 리뷰: 타입 인수의 `>`(S1), JSX 자기 닫음 태그 앞 예약어 이름 속성(S2), 이름으로 쓴 `await`·`yield`(S3), private
+    // 이름과 비ASCII 글자가 붙은 예약어 꼴 이름(N1) 뒤의 `/`를 정규식으로 읽어 보간 끝을 삼켰다(main은 맞게 읽었다).
+    ['`${f<T> / 2}"/`', ['f<T> / 2']],
+    ['`${x as Array<T> / 2}"/`', ['x as Array<T> / 2']],
+    ['`${new Foo<T> / 2}"/`', ['new Foo<T> / 2']],
+    ['`<b>${render(<Fade in />)}</b>"/`', ['render(<Fade in />)']],
+    ['`${render(<Foo new />)}"/`', ['render(<Foo new />)']],
+    ['`${await / 2}"/`', ['await / 2']],
+    ['`${yield / 2}"/`', ['yield / 2']],
+    ['`${this.#new / 2}"/`', ['this.#new / 2']],
+    ['`${this.#in / 2}"/`', ['this.#in / 2']],
+    ['`${this.#return / 2}"/`', ['this.#return / 2']],
+    ['`${Δin / 2}"/`', ['Δin / 2']],
+    ['`${éreturn / 2}"/`', ['éreturn / 2']],
+  ];
+  for (const [text, segments] of [...regexes, ...divisions]) {
+    const tokens = tokenizeJsSource(`${text}; after('"', "}", a / b);`);
+    assert.deepEqual(tokens.slice(0, 3).map((token) => [token.kind, token.text]),
+      [['template', text], ['punct', ';'], ['identifier', 'after']], text);
+    // 보간 코드 조각도 같은 경계로 꺼낸다(정규식은 조각에 그대로 남는다).
+    assert.deepEqual(templateInterpolationCode(text), segments, text);
+  }
+  // 정규식 리터럴은 줄을 넘지 못한다 — 다음 줄의 `/`에서 닫힌 것으로 보지 않는다.
+  const unclosed = tokenizeJsSource('`${f(/x)}"`;\nafter(a / b);');
+  assert.deepEqual(unclosed.slice(0, 3).map((token) => token.text), ['`${f(/x)}"`', ';', 'after']);
+  // PR #168 리뷰 N2: 닫히지 않은 후보(깨진 코드) 뒤의 `/`가 다음 줄의 `/`까지 정규식으로 삼켜 템플릿이 파일 끝까지 갔다 — 닫히지
+  // 않은 후보는 나눗셈이고 그 뒤는 값 뒤다.
+  for (const terminator of ['\r', '\n']) {
+    const broken = tokenizeJsSource(`x = \`\${(/${terminator}/}\`;/`);
+    assert.deepEqual(broken.filter((token) => token.kind === 'template').map((token) => token.text),
+      [`\`\${(/${terminator}/}\``], JSON.stringify(terminator));
+  }
+});
+
+test('보간 안의 닫히지 않는 정규식 후보가 많아도 후보마다 줄 끝까지 다시 훑지 않는다', () => {
+  // 한 줄에 템플릿이 많고 템플릿마다 같은 줄에서 닫히지 않는 후보(`/[`)가 있으면 후보마다 줄 끝까지 훑어 이차였다. 실패한
+  // 경로를 (위치, 문자 클래스 안 여부)로 기억해 나중 후보는 그 자리에 닿으면 멈춘다.
+  const size = 2_000;
+  const text = `const t = [${'`${(/[}`, '.repeat(size)}];\nafter();`;
+  const { source, reads } = countingSource(text);
+  const tokens = tokenizeJsSource(source);
+  assert.equal(tokens.filter((token) => token.kind === 'template').length, size);
+  assert.equal(tokens.at(-4)?.text, 'after');
+  // 토큰화는 글자마다 위치 계산·구두점 판정으로 여러 번 읽는다(main도 이 입력에서 약 11배, 이 판정을 더해 약 14배 — 크기와
+  // 무관). 후보마다 줄 끝까지 훑으면 크기의 약 1,000배다.
+  assert.ok(reads() <= 20 * text.length, `character reads ${reads()} for ${text.length} characters`);
+  const template = `\`${'${(/[}'.repeat(size)}\``;
+  const counted = countingSource(template);
+  assert.equal(templateInterpolationCode(counted.source).length, size);
+  assert.ok(counted.reads() <= 8 * template.length, `character reads ${counted.reads()} for ${template.length} characters`);
+});
