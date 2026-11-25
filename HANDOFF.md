@@ -115,7 +115,11 @@ _Last updated: 2026-11-25_
     토큰 열이 `aaabd72`와 같고, 12개 패키지 출력은 `aaabd72`·main 비교 결과와 같다(사실·`--events` 동일, react-native 2563 → 2562만).
   - 시간(CPU 시간, main/`aaabd72`/이 커밋): typescript.js 토큰화 0.94/0.84/0.88초, 추출 main 2.06·이 커밋 2.07초. 적대 생성기는 3만 2천
     → 25만 6천 배에서 선형이다.
-  - VERIFY_R2
+  - `npm run verify` 통과(`f93a11f`, 부하 10~16; 타입 검사, 호환성, conformance 352, 제품 테스트 1,438개·커버리지 라인 99.21/분기
+    95.31/함수 98.42 — `lexer.ts` 99.22/98.58/100, `js-scan.ts` 99.53/93.23/99.51, Phase 0 조인 15, clean build, 스크립트 225, CLI
+    0/1/2/64·패키지 계약). 앞의 세 실행(부하 15~27)은 템플릿이 없는 벽시계 선형 시간 테스트만 실패했다(`js-scan.test.ts` 재선언
+    9.1~10.7초 > 6초, 한 번은 `js-scopes.test.ts` 형제 범위 8.8초 — 렉서를 쓰지 않는다). 그 입력의 CPU 시간은 main/`aaabd72`/이 커밋
+    0.86/0.62/0.75초이고, 따로 돌리면 통과한다. 그 실행에서 건너뛴 뒤 단계도 따로 통과했다.
 - 생산자 사본 드리프트는 `node scripts/conformance-drift.mjs <producer>=<checkout> ...`로 본다. 이 후속 직전에는
   cartograph·kartograph의 `http-limitation-scope.json`만 생산자 케이스 차이였고, 나머지는 consumer 전용 케이스 차이
   (`stale-consumer-only`, 드리프트로 셈)였다. tsograph는 그 consumer 전용 `dispatch.validate` 케이스를 실행한다.
