@@ -79,6 +79,8 @@ function isRegexPosition(previous: JsToken | undefined): boolean {
 /** 소스를 토큰 열로 바꾼다. 해석 불가 구간도 위치를 보존한 채 other로 남긴다. */
 export function tokenizeJsSource(source: string): JsToken[] {
   const tokens: JsToken[] = [];
+  // 템플릿 보간 안 정규식 후보의 실패 경로를 원문 전체에서 함께 기억한다(템플릿이 많은 긴 한 줄도 선형이다).
+  const regexMemo = new RegexFailureMemo(source.length);
   let index = 0;
   let line = 1;
   let columnOffset = 0;
@@ -150,7 +152,7 @@ export function tokenizeJsSource(source: string): JsToken[] {
       continue;
     }
     if (char === '`') {
-      const template = readTemplate(source, index);
+      const template = readTemplate(source, index, regexMemo);
       advance(Math.max(template.end, start + 1));
       push('template', start, startLine, startColumn, template.value);
       continue;
@@ -234,6 +236,7 @@ function readQuoted(
 function readTemplate(
   source: string,
   start: number,
+  regexMemo: RegexFailureMemo,
 ): { readonly end: number; readonly value?: string } {
   let cursor = start + 1;
   let interpolated = false;
@@ -251,7 +254,7 @@ function readTemplate(
     }
     if (char === '$' && source[cursor + 1] === '{') {
       interpolated = true;
-      cursor = skipInterpolation(source, cursor + 2);
+      cursor = skipInterpolation(source, cursor + 2, regexMemo);
       continue;
     }
     text += char;
@@ -261,11 +264,151 @@ function readTemplate(
 }
 
 /**
- * 보간 건너뛰기가 지금 읽는 문맥이다. 보간 본문은 중괄호 깊이를, 그 안의 문자열
+ * 보간 본문에서 바로 앞 코드가 끝난 모양이다 — 다음 `/`가 정규식 리터럴의 시작인지 가른다. `value`는 값이 끝난
+ * 자리(이름·숫자·리터럴·닫는 괄호·증감 뒤)라 `/`가 나눗셈이고, `operator`는 값이 시작될 자리(보간 시작·연산자·여는
+ * 괄호·식 앞 예약어 뒤)라 정규식이며, `dot`은 속성 이름이 올 자리(`.` 뒤)라 그 뒤 예약어도 이름이다.
+ */
+type InterpolationPrevious = 'value' | 'operator' | 'dot';
+
+/**
+ * 뒤에 식이 오는 예약어다 — 이 낱말 뒤의 `/`는 정규식 리터럴이다(`typeof /x/`, `return /x/.test(s)`). 토크나이저의
+ * keywords와 달리 문맥 키워드(`get`·`set`·`of`·`as`·`from`·`async`·`static`)는 넣지 않는다 — 보간 안에서는 대개 값 이름이라
+ * (`size.get / 2`) 그 뒤 `/`를 정규식으로 읽으면 나눗셈이 보간 끝을 삼킬 수 있다.
+ */
+const expressionKeywords = new Set([
+  'await', 'case', 'delete', 'do', 'else', 'in', 'instanceof', 'new', 'return', 'throw', 'typeof', 'void', 'yield',
+]);
+
+/**
+ * 닫히지 않은 정규식 후보가 지나간 (위치, 문자 클래스 안 여부)를 원문 하나에 대해 기억한다. 같은 위치·상태에서 훑으면
+ * 결과가 같으므로 나중 후보가 그 자리에 닿으면 바로 닫히지 않는다고 판정한다 — 판정은 바꾸지 않고, 닫히지 않는 후보가
+ * 많은 긴 한 줄(압축된 코드)에서 후보마다 줄 끝까지 다시 훑는 이차 시간만 없앤다. 자리마다 상태별로 많아야 한 번 표시한다.
+ */
+class RegexFailureMemo {
+  /** 표시할 원문의 길이다. */
+  private readonly length: number;
+  /** 위치마다 1(클래스 밖)·2(클래스 안) 비트다. 첫 실패 때 만든다. */
+  private marks: Uint8Array | undefined;
+
+  /** @param length 표시할 원문의 길이다. */
+  constructor(length: number) {
+    this.length = length;
+  }
+
+  /** 그 위치·상태에서 시작한 훑기가 닫히지 않는다고 알려져 있는지 본다. */
+  failsFrom(position: number, inClass: boolean): boolean {
+    return this.marks !== undefined && (this.marks[position]! & (inClass ? 2 : 1)) !== 0;
+  }
+
+  /** 닫히지 않은 훑기가 그 위치를 그 상태로 지나갔다고 표시한다. */
+  markFailed(position: number, inClass: boolean): void {
+    this.marks ??= new Uint8Array(this.length);
+    this.marks[position]! |= inClass ? 2 : 1;
+  }
+}
+
+/** 정규식 리터럴이 넘지 못하는 줄 끝 글자다. */
+function isLineTerminator(char: string | undefined): boolean {
+  return char === '\n' || char === '\r' || char === '\u2028' || char === '\u2029';
+}
+
+/**
+ * `start`의 `/`에서 정규식 리터럴을 읽어 같은 줄에서 닫히면 플래그 뒤 위치를, 닫히지 않으면 undefined를 돌려준다. 문자
+ * 클래스 안의 `/`와 이스케이프한 글자는 끝이 아니다. 닫히지 않으면 같은 경로를 다시 따라가며 memo에 표시한다.
+ */
+function readRegexLiteral(source: string, start: number, memo: RegexFailureMemo): number | undefined {
+  const walk = (mark: boolean): number | undefined => {
+    let cursor = start + 1;
+    let inClass = false;
+    while (cursor < source.length && !memo.failsFrom(cursor, inClass)) {
+      if (mark) memo.markFailed(cursor, inClass);
+      const char = source[cursor]!;
+      if (isLineTerminator(char) || (char === '\\' && (cursor + 1 >= source.length || isLineTerminator(source[cursor + 1])))) {
+        return undefined;
+      }
+      if (char === '\\') {
+        cursor += 2;
+        continue;
+      }
+      if (char === '[') inClass = true;
+      else if (char === ']') inClass = false;
+      else if (char === '/' && !inClass) {
+        cursor++;
+        while (cursor < source.length && isIdentifierPart(source[cursor]!)) cursor++;
+        return cursor;
+      }
+      cursor++;
+    }
+    return undefined;
+  };
+  const end = walk(false);
+  if (end === undefined) walk(true);
+  return end;
+}
+
+/**
+ * 보간 본문에서 중괄호·따옴표·백틱·주석이 아닌 코드 한 단위를 읽고 다음 위치를 돌려준다 — 공백 하나, 낱말·숫자 하나,
+ * 정규식 리터럴 하나, `++`·`--` 하나, 그 밖의 글자 하나다. frame.previous를 그 단위 뒤의 모양으로 바꾼다.
+ *
+ * 정규식 리터럴을 통째로 건너뛰는 것이 목적이다 — 그 안의 따옴표·백틱·중괄호·`//`(`` `${s.replace(/"/g, '')}` ``,
+ * `/\//g`, `/{/`)를 문자열·템플릿·깊이·주석으로 읽으면 보간 끝을 놓쳐 템플릿이 파일 뒤쪽까지 이어졌고, 그 뒤 코드의
+ * 사실과 계수가 조용히 사라졌다. 정규식인지는 토크나이저(isRegexPosition)처럼 앞 코드로 가르되 앞이 연산자·여는 괄호·
+ * 보간 시작·식 앞 예약어일 때만 정규식 자리로 본다. 같은 줄에서 닫히지 않는 후보는 나눗셈으로 본다(전과 같은 읽기다) —
+ * 정규식이 아닌 `/`(깨진 코드 등)가 줄 끝까지 삼키지 않게 한다. 판정은 앞 코드와 그 위치부터 줄 끝까지의 글자로만
+ * 정해지므로(memo는 판정을 바꾸지 않는다) 같은 템플릿 원문을 읽는 skipInterpolation과 templateInterpolationCode가 같은
+ * 경계를 찾는다.
+ */
+function readInterpolationCode(
+  source: string,
+  start: number,
+  frame: { previous: InterpolationPrevious },
+  memo: RegexFailureMemo,
+): number {
+  const char = source[start]!;
+  if (char === ' ' || char === '\n' || char === '\t' || char === '\r' ||
+    (char.charCodeAt(0) >= 0x80 && /\s/u.test(char))) {
+    return start + 1;
+  }
+  if (isIdentifierPart(char)) {
+    let end = start + 1;
+    while (end < source.length && isIdentifierPart(source[end]!)) end++;
+    // 속성 이름(`x.return`)은 예약어여도 값이다.
+    const word = source.slice(start, end);
+    frame.previous = frame.previous !== 'dot' && expressionKeywords.has(word) ? 'operator' : 'value';
+    return end;
+  }
+  if (char === '/' && frame.previous === 'operator') {
+    const end = readRegexLiteral(source, start, memo);
+    if (end !== undefined) {
+      frame.previous = 'value';
+      return end;
+    }
+  }
+  if ((char === '+' || char === '-') && source[start + 1] === char) {
+    // `count++ / total`의 `/`는 나눗셈이다(토크나이저와 같다).
+    frame.previous = 'value';
+    return start + 2;
+  }
+  frame.previous = valueEndingCharacter(char, frame.previous) ? 'value' : char === '.' ? 'dot' : 'operator';
+  return start + 1;
+}
+
+/**
+ * 보간 본문에서 그 글자 뒤의 `/`를 나눗셈으로 볼 글자인지다 — 닫는 `)`·`]`, 값 뒤의 TS non-null 단언 `!`(`count! / total` —
+ * `a != b`의 `!`도 값 뒤지만 바로 뒤 `=`가 다시 연산자 자리로 돌린다), JSX 닫는 태그의 `<`(`</a>` — 비교 대상으로 정규식을
+ * 두는 코드는 없다), 이름의 일부인 비ASCII 글자다. 잘못 보더라도 나눗셈 쪽이라 정규식으로 삼키지 않는다.
+ */
+function valueEndingCharacter(char: string, previous: InterpolationPrevious): boolean {
+  if (char === ')' || char === ']' || char === '<' || char.charCodeAt(0) >= 0x80) return true;
+  return char === '!' && previous === 'value';
+}
+
+/**
+ * 보간 건너뛰기가 지금 읽는 문맥이다. 보간 본문은 중괄호 깊이와 바로 앞 코드의 모양(정규식 판정)을, 그 안의 문자열
  * 계열 리터럴(따옴표·중첩 템플릿)은 닫는 따옴표를 기억한다.
  */
 type InterpolationFrame =
-  | { readonly kind: 'interpolation'; depth: number }
+  | { readonly kind: 'interpolation'; depth: number; previous: InterpolationPrevious }
   | { readonly kind: 'quoted'; readonly quote: string };
 
 /**
@@ -273,10 +416,10 @@ type InterpolationFrame =
  *
  * 보간 안의 문자열과 중첩 템플릿, 그 안의 보간은 명시적 스택으로 따라간다 —
  * 중첩마다 재귀하면 수천 단계로 중첩된 템플릿 파일 하나가 호출 스택을 넘긴다.
- * 닫히지 않으면 소스 끝을 돌려준다.
+ * 정규식 리터럴은 readInterpolationCode가 통째로 건너뛴다. 닫히지 않으면 소스 끝을 돌려준다.
  */
-function skipInterpolation(source: string, start: number): number {
-  const frames: InterpolationFrame[] = [{ kind: 'interpolation', depth: 1 }];
+function skipInterpolation(source: string, start: number, memo: RegexFailureMemo): number {
+  const frames: InterpolationFrame[] = [{ kind: 'interpolation', depth: 1, previous: 'operator' }];
   let cursor = start;
   while (cursor < source.length && frames.length > 0) {
     const frame = frames[frames.length - 1]!;
@@ -286,7 +429,7 @@ function skipInterpolation(source: string, start: number): number {
       if (char === '\\') {
         cursor += 2;
       } else if (frame.quote === '`' && char === '$' && source[cursor + 1] === '{') {
-        frames.push({ kind: 'interpolation', depth: 1 });
+        frames.push({ kind: 'interpolation', depth: 1, previous: 'operator' });
         cursor += 2;
       } else {
         if (char === frame.quote) frames.pop();
@@ -294,12 +437,18 @@ function skipInterpolation(source: string, start: number): number {
       }
       continue;
     }
-    if (char === '{') frame.depth++;
+    if (char === '{') {
+      frame.depth++;
+      frame.previous = 'operator';
+    }
     else if (char === '}') {
       frame.depth--;
       if (frame.depth === 0) frames.pop();
+      else frame.previous = 'value';
     }
     else if (char === '\'' || char === '"' || char === '`') {
+      // 리터럴이 닫힌 뒤는 값 뒤다.
+      frame.previous = 'value';
       frames.push({ kind: 'quoted', quote: char });
     }
     // 보간 안의 주석도 중괄호 깊이에 섞이면 안 된다.
@@ -312,18 +461,22 @@ function skipInterpolation(source: string, start: number): number {
       cursor = close === -1 ? source.length : close + 2;
       continue;
     }
+    else {
+      cursor = readInterpolationCode(source, cursor, frame, memo);
+      continue;
+    }
     cursor++;
   }
   return cursor;
 }
 
 /**
- * 보간 코드 추출이 지금 읽는 문맥이다. 템플릿 글자 부분, 보간 본문(중괄호 깊이와 그 보간의 코드 조각 번호), 보간 안의
- * 따옴표 문자열을 구분한다.
+ * 보간 코드 추출이 지금 읽는 문맥이다. 템플릿 글자 부분, 보간 본문(중괄호 깊이, 바로 앞 코드의 모양, 그 보간의 코드 조각
+ * 번호), 보간 안의 따옴표 문자열을 구분한다.
  */
 type CodeFrame =
   | { readonly kind: 'template' }
-  | { readonly kind: 'interpolation'; depth: number; readonly segment: number }
+  | { readonly kind: 'interpolation'; depth: number; previous: InterpolationPrevious; readonly segment: number }
   | { readonly kind: 'quoted'; readonly quote: string; readonly segment: number };
 
 /**
@@ -332,12 +485,14 @@ type CodeFrame =
  * 조각을 다시 토큰화하면 그 자리가 템플릿 토큰이라 태그 호출(`` tag`…` ``)의 대상을 가를 수 있다. 원문의 글자는 많아야
  * 한 조각에 들어가고 중첩 템플릿마다 두 글자만 더하므로 깊게 중첩된 템플릿도 길이에 선형이다.
  *
- * 경계는 토크나이저(readTemplate·skipInterpolation)와 같은 규칙으로 찾는다 — 보간 안의 따옴표 문자열과 주석은 중괄호
- * 깊이에 섞지 않고 조각에 그대로 둔다(조각을 다시 토큰화하면 문자열·주석으로 읽힌다). 닫히지 않은 보간은 원문 끝까지다.
+ * 경계는 토크나이저(readTemplate·skipInterpolation)와 같은 규칙으로 찾는다 — 보간 안의 따옴표 문자열·주석·정규식
+ * 리터럴은 중괄호 깊이에 섞지 않고 조각에 그대로 둔다(조각을 다시 토큰화하면 문자열·주석·정규식으로 읽힌다). 닫히지 않은
+ * 보간은 원문 끝까지다.
  */
 export function templateInterpolationCode(text: string): string[] {
   const segments: string[][] = [];
   const frames: CodeFrame[] = [{ kind: 'template' }];
+  const regexMemo = new RegexFailureMemo(text.length);
   let cursor = text.startsWith('`') ? 1 : 0;
   while (cursor < text.length && frames.length > 0) {
     const frame = frames[frames.length - 1]!;
@@ -349,7 +504,7 @@ export function templateInterpolationCode(text: string): string[] {
         frames.pop();
         cursor++;
       } else if (char === '$' && text[cursor + 1] === '{') {
-        frames.push({ kind: 'interpolation', depth: 1, segment: segments.push([]) - 1 });
+        frames.push({ kind: 'interpolation', depth: 1, previous: 'operator', segment: segments.push([]) - 1 });
         cursor += 2;
       } else {
         cursor++;
@@ -371,6 +526,7 @@ export function templateInterpolationCode(text: string): string[] {
     }
     if (char === '{') {
       frame.depth++;
+      frame.previous = 'operator';
     } else if (char === '}') {
       frame.depth--;
       if (frame.depth === 0) {
@@ -378,17 +534,26 @@ export function templateInterpolationCode(text: string): string[] {
         cursor++;
         continue;
       }
+      frame.previous = 'value';
     } else if (char === '\'' || char === '"') {
+      frame.previous = 'value';
       frames.push({ kind: 'quoted', quote: char, segment: frame.segment });
     } else if (char === '`') {
       // 중첩 템플릿은 글자 부분을 버리고 빈 템플릿 자리만 남긴다 — 그 안의 보간은 새 조각이 된다.
       segment.push('``');
+      frame.previous = 'value';
       frames.push({ kind: 'template' });
       cursor++;
       continue;
     } else if (char === '/' && (text[cursor + 1] === '/' || text[cursor + 1] === '*')) {
       const close = text[cursor + 1] === '/' ? text.indexOf('\n', cursor) : text.indexOf('*/', cursor + 2);
       const end = close === -1 ? text.length : text[cursor + 1] === '/' ? close : close + 2;
+      segment.push(text.slice(cursor, end));
+      cursor = end;
+      continue;
+    } else {
+      // 낱말·정규식 리터럴·그 밖의 코드 글자는 skipInterpolation과 같은 단위로 읽는다.
+      const end = readInterpolationCode(text, cursor, frame, regexMemo);
       segment.push(text.slice(cursor, end));
       cursor = end;
       continue;

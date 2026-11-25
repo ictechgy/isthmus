@@ -90,6 +90,25 @@
 
 ### Fixed
 
+- `extract-js` skips regular expression literals inside template interpolations when it looks for the end of a
+  template. A quote, backtick, brace or `//` inside such a literal (`` `${s.replace(/"/g, '')}` ``, `/\//g`, `/{/`) was
+  read as the start of a string, a nested template, a brace or a line comment, so the template ran on into the code
+  after it, often to the end of the file. The facts and counts in that code disappeared; the template was counted once
+  as an untraced entry only when that code mentioned a bridge API name. The hidden code could also hide a same-name inner
+  declaration, which left a false `method-invoke` for a call after the template ended. Inside an interpolation, a `/`
+  now starts a regular expression when the code before it cannot end a value (an operator, an opening bracket, the
+  start of the interpolation, or a keyword that precedes an expression such as `typeof`, `return`, `in` or `new`) and
+  the literal closes on the same line. After a name (contextual keywords such as `get` and `of`, and keywords used as
+  property names, included), a number, a literal, a closing bracket, `++`/`--`, a TypeScript non-null `!` or the `<` of
+  a JSX closing tag, the `/` stays a division. A candidate that does not close on its line also stays a division, as
+  before. Remaining gaps: `await` or `yield` used as a plain name and followed by a division is read as the start of a
+  literal when another `/` follows on that line, and a literal right after the `)` of an `if (…)` head or the `}` of a
+  block inside a function in the interpolation is still read as a division. For the 12 published packages, facts and
+  `--events` output are unchanged, and so is every limitation count except one: react-native 0.88.1's
+  `js-binding-scope:` untraced-entry number goes from 2563 to 2562 (its first count stays 66). In
+  `scripts/spm/scaffold-package-swift.js` such a template ran on, and the word `import` inside a JSDoc comment
+  further down was read as code and counted as an unparsed `import` word.
+
 - `extract-js` decides whether `NativeModules` (or an alias destructured as `{ NativeModules: NM }`) is the
   react-native registry from the declaration that covers each position instead of by name. One
   `const { NativeModules } = require('react-native')` (or `const { NativeModules } = RN` from the react-native

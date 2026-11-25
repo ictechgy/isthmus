@@ -1640,6 +1640,40 @@ test('템플릿 보간 안의 재대입은 바인딩을 지우고 보간 안의 
   }
 });
 
+test('보간 안 정규식 리터럴 뒤의 코드도 읽는다', () => {
+  // 보간 건너뛰기가 정규식을 읽지 않아 `/"/g`·`/\//g`·`/{/` 안의 글자를 문자열·주석·깊이로 읽었고, 템플릿이 파일 뒤쪽까지
+  // 이어졌다. 뒤의 참 Camera.take는 한계 없이 사라졌다(템플릿 원문이 브리지 API 이름을 언급할 때만 하한으로 셌다).
+  for (const regex of ['/"/g', "/'/g", '/\\//g', '/{/g', '/`/g']) {
+    const document = assemble({
+      'src/a.js': [
+        "import { NativeModules } from 'react-native';",
+        'const Cam = NativeModules.Camera;',
+        'export function label(name) {',
+        `  return \`\${name.replace(${regex}, '')}\`;`,
+        '}',
+        'Cam.take();',
+      ].join('\n'),
+    });
+    assert.deepEqual(factLines(document), ['module-import Camera@2', 'method-invoke Camera.take@6'], regex);
+    assert.deepEqual(document.limitations, [], regex);
+  }
+  // 삼킨 구간이 같은 이름의 안쪽 선언을 가려 거짓 사실도 냈다 — `'"}\`'`의 `"`·`}`·백틱이 삼킴을 끝내면 함수 머리와 대역
+  // 선언 없이 `M.take()`만 보여 바깥 Camera로 귀속됐다.
+  const shadowed = assemble({
+    'src/b.js': [
+      "import { NativeModules } from 'react-native';",
+      'const M = NativeModules.Camera;',
+      "const q = `${s.replace(/\"/g, '')}`;",
+      'function f() {',
+      '  const M = makeFake();',
+      "  log('\"}`');",
+      '  M.take();',
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(factLines(shadowed), ['module-import Camera@2']);
+});
+
 test('속성 자리의 function·이름 뒤 다음 줄 블록은 함수 본문이 아니다', () => {
   // 기록된 결함 b07: `foo.function(M)` 뒤 다음 줄 `{`의 속성 이름 `function`을 함수 키워드로 읽어 블록 안 M을 확실히 가렸다
   // (참 Camera.take가 조용히 사라졌다). 같은 오인으로 그 블록의 `var`를 함수 본문에 가둬 블록 뒤 쓰임을 바깥 Camera로
